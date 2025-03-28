@@ -1,0 +1,65 @@
+# Transformer model configuration
+model:
+  name: "transformer"
+  type: "transformer"
+
+  # Input/output dimensions
+  input_dim: null  # Will be determined from feature count
+  output_dim: 1  # Predict next price movement
+
+  # Model architecture
+  architecture:
+    d_model: 128
+    nhead: 8
+    num_encoder_layers: 4
+    num_decoder_layers: 4
+    dim_feedforward: 512
+    dropout: 0.1
+    activation: "gelu"
+    positional_encoding: true
+    max_sequence_length: 60
+
+  # Training parameters
+  training:
+    batch_size: 32
+    learning_rate: 0.0001
+    weight_decay: 0.0001
+    epochs: 100
+    early_stopping:
+      enabled: true
+      patience: 10
+      min_delta: 0.0001
+    lr_scheduler:
+      type: "reduce_on_plateau"
+      patience: 5
+      factor: 0.5
+      min_lr: 0.00001
+    gradient_clipping: 1.0
+
+  # Evaluation metrics
+  metrics:
+    - "mse"
+    - "mae"
+    - "r2"
+    - "direction_accuracy"
+
+  # Loss function
+  loss:
+    type: "mse"  # Options: mse, mae, huber, custom
+
+  # Optimizer
+  optimizer:
+    type: "adam"  # Options: adam, sgd, rmsprop
+
+  # Regularization
+  regularization:
+    l1: 0.0
+    l2: 0.0001
+
+  # Attention visualization
+  attention_visualization:
+    enabled: true
+
+  # Model export format
+  export:
+    format: "torchscript"  # Options: torchscript, onnx

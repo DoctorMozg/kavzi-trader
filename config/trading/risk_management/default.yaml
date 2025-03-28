@@ -1,0 +1,38 @@
+# Default risk management configuration
+risk_management:
+  # Position sizing
+  position_sizing:
+    method: "fixed_usd"  # Options: fixed_usd, percentage, risk_based, kelly
+    value: 1000.0  # $1000 per position or percentage of portfolio
+    max_capital_per_trade: 0.2  # Maximum 20% of capital per trade
+
+  # Risk limits
+  limits:
+    max_positions: 5  # Maximum number of open positions
+    max_positions_per_symbol: 1  # Maximum positions per symbol
+    max_daily_trades: 10  # Maximum number of trades per day
+    max_drawdown: 0.15  # Maximum 15% drawdown before stopping
+
+  # Stop loss settings
+  stop_loss:
+    enabled: true
+    type: "percent"  # Options: percent, atr, volatility
+    value: 0.03  # 3% stop loss by default
+
+  # Take profit settings
+  take_profit:
+    enabled: true
+    type: "percent"  # Options: percent, atr, risk_multiple, custom
+    value: 0.09  # 9% take profit (3:1 risk-reward)
+
+  # Trailing stop settings
+  trailing_stop:
+    enabled: true
+    activation_percent: 0.03  # Activate after 3% profit
+    callback_rate: 0.01  # 1% callback
+
+  # Portfolio constraints
+  portfolio:
+    max_correlation: 0.7  # Maximum correlation between positions
+    sector_exposure_limit: 0.35  # Maximum 35% in one sector
+    rebalance_threshold: 0.1  # Rebalance when allocation deviates by 10%

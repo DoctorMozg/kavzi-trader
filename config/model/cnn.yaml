@@ -1,0 +1,78 @@
+# CNN model configuration
+model:
+  name: "cnn"
+  type: "cnn"
+
+  # Input/output dimensions
+  input_dim: null  # Will be determined from feature count
+  output_dim: 1  # Predict next price movement
+
+  # Model architecture
+  architecture:
+    channels:
+      - 32
+      - 64
+      - 128
+      - 256
+    kernel_sizes:
+      - 3
+      - 3
+      - 3
+      - 3
+    pool_sizes:
+      - 2
+      - 2
+      - 2
+      - 2
+    fc_layers:
+      - 512
+      - 256
+      - 128
+    dropout: 0.2
+    activation: "relu"
+    batch_norm: true
+
+  # Training parameters
+  training:
+    batch_size: 32
+    learning_rate: 0.0001
+    weight_decay: 0.0001
+    epochs: 100
+    early_stopping:
+      enabled: true
+      patience: 10
+      min_delta: 0.0001
+    lr_scheduler:
+      type: "reduce_on_plateau"
+      patience: 5
+      factor: 0.5
+      min_lr: 0.00001
+    gradient_clipping: 1.0
+
+  # Evaluation metrics
+  metrics:
+    - "mse"
+    - "mae"
+    - "r2"
+    - "direction_accuracy"
+
+  # Loss function
+  loss:
+    type: "mse"  # Options: mse, mae, huber, custom
+
+  # Optimizer
+  optimizer:
+    type: "adam"  # Options: adam, sgd, rmsprop
+
+  # Regularization
+  regularization:
+    l1: 0.0
+    l2: 0.0001
+
+  # Feature map visualization
+  feature_map_visualization:
+    enabled: true
+
+  # Model export format
+  export:
+    format: "torchscript"  # Options: torchscript, onnx
