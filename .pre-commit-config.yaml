@@ -1,3 +1,6 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+exclude: ^(scripts/|alembic/versions/)
 repos:
   - repo: meta
     hooks:
@@ -23,7 +26,7 @@ repos:
       - id: mypy
         args: [ --config-file, mypy.ini ]
         types: [python]
-        additional_dependencies: [types-PyYAML, pydantic]
+        additional_dependencies: [types-PyYAML, pydantic, types-requests]
 
   - repo: https://github.com/MarcoGorelli/absolufy-imports
     rev: v0.3.1

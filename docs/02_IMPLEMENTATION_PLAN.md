@@ -34,7 +34,7 @@ The Foundation phase establishes the core infrastructure, project structure, and
 
 ### Week 2: Database and API Connectors
 
-#### Step 1: Database Schema and ORM
+#### Step 1: Database Schema and ORM → COMPLETED
 - Set up PostgreSQL database connection
 - Implement SQLAlchemy models for all entities
 - Create Alembic migration system
@@ -48,7 +48,7 @@ The Foundation phase establishes the core infrastructure, project structure, and
 - Implement error handling and retry logic
 - **Deliverable**: Functional Binance API client with test coverage
 
-#### Step 3: CLI Framework → COMPLETED
+#### Step 3: CLI Framework
 - Implement Click-based CLI structure
 - Create command registration system
 - Integrate CLI with Hydra configuration

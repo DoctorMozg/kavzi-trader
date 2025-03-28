@@ -11,7 +11,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.commons.time_utility import now_ts
+from src.commons.time_utility import utc_now
 
 
 class DateTimeWithTimezoneSchema(BaseModel):
@@ -56,5 +56,5 @@ class TimestampedSchema(DateTimeWithTimezoneSchema):
     This schema provides standardized timestamp fields with proper timezone handling.
     """
 
-    created_at: Annotated[datetime, Field(default_factory=now_ts)]
-    updated_at: Annotated[datetime, Field(default_factory=now_ts)]
+    created_at: Annotated[datetime, Field(default_factory=utc_now)]
+    updated_at: Annotated[datetime, Field(default_factory=utc_now)]

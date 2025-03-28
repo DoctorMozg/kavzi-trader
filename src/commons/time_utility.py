@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-def now_ts() -> datetime:
+def utc_now() -> datetime:
     """
     Get the current UTC timestamp with timezone information.
 
@@ -39,7 +39,7 @@ def timestamp_filename(prefix: str, extension: str = "json") -> str:
         >>> timestamp_filename("model", "pt")
         'model_20230615_123045.pt'
     """
-    ts = now_ts()
+    ts = utc_now()
     timestamp_str = ts.strftime("%Y%m%d_%H%M%S")
     return f"{prefix}_{timestamp_str}.{extension}"
 

@@ -8,7 +8,7 @@ and trades.
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from sqlalchemy import (
     Boolean,
@@ -24,6 +24,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.data.storage.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from src.data.storage.models.model import ModelModel
 
 
 class StrategyModel(BaseModel):
@@ -334,7 +337,8 @@ class PerformanceModel(BaseModel):
         )
 
         # Calculate drawdown and other metrics
-        # This is a simplified version - full implementation would have more complex calculations
+        # This is a simplified version - full implementation
+        # would have more complex calculations
         max_drawdown = 0  # Placeholder
         sharpe_ratio = None  # Placeholder
         average_profit = None

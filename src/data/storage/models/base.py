@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.commons.time_utility import now_ts
+from src.commons.time_utility import utc_now
 from src.data.storage.database import Base
 
 
@@ -29,11 +29,11 @@ class BaseModel(Base):
     __abstract__ = True
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    created_at: Mapped[datetime] = mapped_column(nullable=False, default=now_ts)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         nullable=False,
-        default=now_ts,
-        onupdate=now_ts,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
     def to_dict(self) -> dict[str, Any]:

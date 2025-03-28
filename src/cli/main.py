@@ -39,6 +39,10 @@ def cli(verbose: bool, config: str | None) -> None:
     if config:
         logger.info(f"Using configuration file: {config}")
 
+    from dotenv import load_dotenv
+
+    load_dotenv()  # take environment variables
+
 
 @cli.group()
 def data() -> None:
@@ -69,6 +73,9 @@ def fetch_data(
         limit: Maximum number of candles
     """
     click.echo(f"Fetching {symbol} data with {interval} interval")
+    click.echo(f"Start date: {start_date}")
+    click.echo(f"End date: {end_date}")
+    click.echo(f"Limit: {limit}")
     # Implementation will be added later
 
 
@@ -116,6 +123,8 @@ def run_backtest(plan: str, start_date: str | None, end_date: str | None) -> Non
         end_date: Backtest end date (YYYY-MM-DD)
     """
     click.echo(f"Running backtest with plan {plan}")
+    click.echo(f"Start date: {start_date}")
+    click.echo(f"End date: {end_date}")
     # Implementation will be added later
 
 
@@ -165,6 +174,7 @@ def live_trade(plan: str, check_balance: bool) -> None:
         check_balance: Verify account balance before trading
     """
     click.echo(f"Starting live trading with plan {plan}")
+    click.echo(f"Check balance: {check_balance}")
     # Implementation will be added later
 
 
@@ -186,6 +196,7 @@ def setup_system(database: bool, force: bool) -> None:
     """
     if database:
         click.echo("Initializing database")
+        click.echo(f"Force: {force}")
         # Implementation will be added later
 
 

@@ -7,7 +7,7 @@ These models map to the database tables for storing model metadata and training 
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import (
     Boolean,
@@ -20,6 +20,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.data.storage.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from src.data.storage.models.trading import StrategyModel
 
 
 class ModelModel(BaseModel):
@@ -175,10 +178,10 @@ class ModelTrainingRunModel(BaseModel):
         Returns:
             ModelTrainingRunModel instance
         """
-        from src.commons.time_utility import now_ts
+        from src.commons.time_utility import utc_now
 
         if start_time is None:
-            start_time = now_ts()
+            start_time = utc_now()
 
         return cls(
             model_id=model_id,
