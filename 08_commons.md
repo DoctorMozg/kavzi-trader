@@ -49,4 +49,4 @@ The commons package provides essential utilities for:
 - Centralized logging configuration
 - Standard schemas for models requiring timestamp fields
 
-These utilities ensure consistent handling of common concerns across the KavziTrader platform. 
+These utilities ensure consistent handling of common concerns across the KavziTrader platform.

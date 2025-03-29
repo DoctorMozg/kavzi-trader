@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: false
 ---
 ## Commons Package Classes and Functions
@@ -29,7 +29,7 @@ MILLISECONDS_IN_SECOND - constant to convert MS to SEC
 - **utc_now()**
   - Gets current UTC timestamp with timezone information
   - Use case: Generate consistent UTC timestamps across the application
-  
+
 - **utc_timestamp(time: float)**
   - Convert timestamps in seconds to datetime with UTC timezone information
   - Use case: Generate consistent UTC timestamps from seconds across the application
@@ -60,7 +60,7 @@ The commons package provides essential utilities for:
 - Centralized logging configuration
 - Standard schemas for models requiring timestamp fields
 
-These utilities ensure consistent handling of common concerns across the KavziTrader platform. 
+These utilities ensure consistent handling of common concerns across the KavziTrader platform.
 
 
 USE THIS COMMONS WHEN POSSIBLE, DON'T DUPLICATE CODE

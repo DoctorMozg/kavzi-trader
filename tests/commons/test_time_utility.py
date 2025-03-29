@@ -3,6 +3,7 @@ Tests for time utility functions.
 """
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -40,13 +41,13 @@ def test_timestamp_filename() -> None:
     assert isinstance(filename, str)
     assert filename.startswith("test_")
     assert filename.endswith(".csv")
-    
+
     # Default extension
     filename = timestamp_filename("test")
     assert filename.endswith(".json")
 
 
-def test_timestamp_path(tmp_path) -> None:
+def test_timestamp_path(tmp_path: Path) -> None:
     """Test generation of timestamped path."""
     path = timestamp_path("test", tmp_path, "csv")
     assert str(path).startswith(str(tmp_path))
@@ -79,4 +80,4 @@ def test_milliseconds_to_datetime() -> None:
     assert dt.year == 2021
     assert dt.month == 1
     assert dt.day == 1
-    assert dt.tzinfo == UTC 
+    assert dt.tzinfo == UTC
