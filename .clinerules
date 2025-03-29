@@ -403,6 +403,18 @@ description: Type Hints & Function Design
 - Use `TypedDict` for dictionaries with known structure
 - Use `Literal` for parameters with specific string values
 - Use `Protocol` for structural typing
+- Always import the types you use in annotations
+- Return type annotations must match the actual return type of the function
+- For functions that return Pydantic models, use the specific model type rather than generic types:
+  ```python
+  # WRONG
+  def get_candlesticks() -> list[dict[str, Any]]:
+      # Implementation
+  
+  # CORRECT
+  def get_candlesticks() -> list[CandlestickSchema]:
+      # Implementation
+  ```
 
 ## Function Design
 - Keep functions small and focused (< 30 lines)
