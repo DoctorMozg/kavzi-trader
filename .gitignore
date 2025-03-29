@@ -12,11 +12,6 @@ wheels/
 
 .env
 
-#VSCode
-.vscode
-!.vscode/launch.json
-!.vscode/tasks.json
-
 # Data
 /data/*
 

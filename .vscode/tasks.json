@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Docker Compose Services",
+      "type": "shell",
+      "command": "docker compose up -d",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "icon": {
+        "id": "server"
+      },
+      "presentation": {    
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "options": {
+        "statusbar": {
+            "color": "#a8e6d1"
+        }
+      },
+      "problemMatcher": [],
+      "detail": "Start PostgreSQL, Redis, and PgAdmin containers defined in docker-compose.yml"
+    },
+    {
+      "label": "Pre-Commit Hooks",
+      "type": "shell",
+      "command": "uv run pre-commit run --all-files",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "icon": {
+        "id": "check-all"
+      },
+      "presentation": {    
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "options": {
+        "statusbar": {
+            "color": "#bd95e2"
+        }
+      },
+      "problemMatcher": [],
+      "detail": "Run pre-commit hooks"
+    },
+  ]
+} 
