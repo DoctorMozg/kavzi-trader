@@ -4,7 +4,6 @@ KavziTrader - Neural Network-Based Crypto Trading Platform.
 This module serves as the main entry point for the KavziTrader CLI.
 """
 
-import logging
 import sys
 from pathlib import Path
 
@@ -14,11 +13,10 @@ import click
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger("kavzitrader")
+from src.commons.logging import setup_logging
+
+# Initialize logger
+logger = setup_logging(name="kavzitrader")
 
 
 @click.group()
@@ -33,7 +31,8 @@ logger = logging.getLogger("kavzitrader")
 def cli(verbose: bool, config: str | None) -> None:
     """KavziTrader - Neural Network-Based Crypto Trading Platform."""
     if verbose:
-        logger.setLevel(logging.DEBUG)
+        # Update the log level if verbose mode is enabled
+        logger.setLevel("DEBUG")
         logger.debug("Verbose mode enabled")
 
     if config:

@@ -1,0 +1,31 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Type Hints & Function Design
+
+## Type Hints (Mandatory)
+- Always use Python 3.11+ type hint syntax:
+  - Use `list[str]` instead of `List[str]`
+  - Use `dict[str, int]` instead of `Dict[str, int]`
+  - Use `T | None` instead of `Optional[T]`
+  - Use `T1 | T2` instead of `Union[T1, T2]`
+- Use `TypedDict` for dictionaries with known structure
+- Use `Literal` for parameters with specific string values
+- Use `Protocol` for structural typing
+
+## Function Design
+- Keep functions small and focused (< 30 lines)
+- Functions should do one thing well
+- Use descriptive function names
+- Limit parameters (≤ 5)
+- Use keyword arguments for clarity
+- Return meaningful values
+- Document with docstrings (Google style)
+
+## No Function Overloading
+- Function overloading is strictly prohibited
+- Use distinct function names for different behaviors
+- Use optional parameters with clear defaults
+- Consider factory functions or class methods for complex creation patterns

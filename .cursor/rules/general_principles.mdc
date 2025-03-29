@@ -1,0 +1,37 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# KavziTrader General Principles
+
+## Keep It Simple (KISS)
+- Prefer simple solutions over complex ones
+- Break complex problems into simpler sub-problems
+- Avoid premature optimization
+
+## Avoid Overengineering
+- Add complexity only when clearly needed
+- Solve the problem at hand, not hypothetical future problems
+- Question designs requiring excessive configuration
+
+## Code Clarity
+- Write code that clearly expresses intent
+- Use descriptive variable and function names
+- Limit nesting to 3-4 levels for better readability
+- Add comments explaining "why" not "what"
+
+## DRY (Don't Repeat Yourself)
+- Avoid code duplication
+- Extract reusable functionality
+- Define constants and configuration in one place
+
+## SOLID Principles
+- **S**ingle Responsibility: Each class should have only one reason to change
+- **O**pen/Closed: Open for extension, closed for modification
+- **L**iskov Substitution: Subtypes must be substitutable for base types
+- **I**nterface Segregation: Keep interfaces focused and minimal
+- **D**ependency Inversion: Depend on abstractions, not implementations
+
+## OTHER
+- If working with time variables - always add _ms, _s postfix according to units

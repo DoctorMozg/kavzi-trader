@@ -4,41 +4,20 @@ Binance WebSocket client implementation.
 This module provides a WebSocket client for real-time data from Binance.
 """
 
-import asyncio
 import json
 import logging
 from collections.abc import Callable
-from typing import Any, Protocol, TypeVar, Union, cast
+from threading import Lock
+from typing import Any, cast
 
-from binance.websocket.spot.websocket_client import SpotWebsocketClient
+from binance import ThreadedWebsocketManager
+from binance.exceptions import BinanceAPIException
 
-from src.api.binance.constants import (
-    BINANCE_WS_TESTNET_URL,
-    BINANCE_WS_URL,
-    KLINE_INTERVALS,
-)
+from src.api.binance.constants import KLINE_INTERVALS
+from src.api.binance.schemas.callback import KlineData, TickerData, TradeData
 from src.api.common.exceptions import APIError
 
 logger = logging.getLogger(__name__)
-
-# Type aliases for callback types
-T = TypeVar("T", bound=dict[str, Any])
-
-
-class MessageHandler(Protocol):
-    """Protocol for handling WebSocket messages."""
-
-    def __call__(self, message: dict[str, Any]) -> None: ...
-
-
-class AsyncMessageHandler(Protocol):
-    """Protocol for handling WebSocket messages asynchronously."""
-
-    async def __call__(self, message: dict[str, Any]) -> None: ...
-
-
-# Union type for both sync and async handlers
-CallbackType = Union[MessageHandler, AsyncMessageHandler]
 
 
 class BinanceWebsocketClient:
@@ -46,7 +25,8 @@ class BinanceWebsocketClient:
     Binance WebSocket client for real-time market data.
 
     This class provides methods to stream market data from Binance using WebSockets.
-    It wraps the python-binance library's WebSocketClient for easier integration.
+    It wraps the python-binance library's ThreadedWebsocketManager for easier
+    integration.
     """
 
     def __init__(
@@ -54,140 +34,179 @@ class BinanceWebsocketClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         testnet: bool = False,
-        on_message: CallbackType | None = None,
+        on_message: Callable[[dict[str, Any]], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
         on_close: Callable[[], None] | None = None,
-        error_callback: Callable[[Exception], None] | None = None,
-    ):
+    ) -> None:
         """
-        Initialize Binance WebSocket client.
+        Initialize the Binance WebSocket client.
 
         Args:
-            api_key: API key for authenticated streams
-            api_secret: API secret for authenticated streams
-            testnet: Whether to use the testnet
-            on_message: Callback for received messages
-            on_error: Callback for errors
-            on_close: Callback for connection close
-            error_callback: Alternative error callback
+            api_key: Binance API key
+            api_secret: Binance API secret
+            testnet: Whether to use testnet
+            on_message: Callback for all messages
+            on_error: Callback for WebSocket errors
+            on_close: Callback for WebSocket close
         """
         self.api_key = api_key
         self.api_secret = api_secret
         self.testnet = testnet
-        self.ws_url = BINANCE_WS_TESTNET_URL if testnet else BINANCE_WS_URL
 
-        self.client = SpotWebsocketClient(
-            stream_url=self.ws_url,
-            on_message=self._on_message,
-            on_close=self._on_close,
-            on_error=self._on_error,
+        # Create the ThreadedWebsocketManager
+        self.twm = ThreadedWebsocketManager(
+            api_key=api_key,
+            api_secret=api_secret,
+            testnet=testnet,
         )
 
         # Store active streams for management
-        self.active_streams: set[str] = set()
+        self.active_streams: dict[str, int] = {}  # stream_name -> socket_id
+        self._lock = Lock()  # Lock for thread-safe operations on active_streams
 
         # User-provided callbacks
         self.on_message_callback = on_message
-        self.on_error_callback = on_error or error_callback
+        self.on_error_callback = on_error
         self.on_close_callback = on_close
 
         # Stream-specific callbacks
-        self.stream_callbacks: dict[str, CallbackType] = {}
+        self.stream_callbacks: dict[str, Callable[[dict[str, Any]], None]] = {}
+
+        # Flag to track if the WebSocket manager is running
+        self._is_running = False
 
     def start(self) -> None:
         """Start the WebSocket connection."""
-        try:
-            self.client.start()
-            logger.info("Binance WebSocket client started")
-        except Exception as e:
-            logger.exception("Failed to start Binance WebSocket client: %s", e)
-            raise APIError(f"Failed to start WebSocket client: {e!s}")
+        if not self._is_running:
+            try:
+                # Start the ThreadedWebsocketManager
+                self.twm.start()
+                self._is_running = True
+                logger.info("Binance WebSocket client started")
+            except Exception as e:
+                logger.exception("Failed to start Binance WebSocket client")
+                raise APIError("Failed to start WebSocket client") from e
 
     def stop(self) -> None:
         """Stop the WebSocket connection."""
-        try:
-            self.client.stop()
-            self.active_streams.clear()
-            logger.info("Binance WebSocket client stopped")
-        except Exception as e:
-            logger.exception("Failed to stop Binance WebSocket client: %s", e)
-            raise APIError(f"Failed to stop WebSocket client: {e!s}")
+        if self._is_running:
+            try:
+                # Stop all streams
+                self.twm.stop()
+                with self._lock:
+                    self.active_streams.clear()
+                    self.stream_callbacks.clear()
+                self._is_running = False
+                logger.info("Binance WebSocket client stopped")
+            except Exception as e:
+                logger.exception("Failed to stop Binance WebSocket client")
+                raise APIError("Failed to stop WebSocket client") from e
 
-    async def _process_message(self, stream: str, data: dict[str, Any]) -> None:
+    def _process_message(self, msg: dict[str, Any]) -> None:
         """
-        Process a message and route it to the appropriate callback.
+        Process a message received from the WebSocket.
 
         Args:
-            stream: Stream name
-            data: Message data
+            msg: Message received from WebSocket
         """
-        callback = self.stream_callbacks.get(stream)
-        if callback:
-            if asyncio.iscoroutinefunction(callback):
-                # Async callback
-                await cast(AsyncMessageHandler, callback)(data)
-            else:
-                # Sync callback
-                cast(MessageHandler, callback)(data)
+        # If message is an error, log it and call the error callback
+        if "error" in msg:
+            error_msg = f"WebSocket error: {msg['error']}"
+            logger.error(error_msg)
+            if self.on_error_callback:
+                self.on_error_callback(APIError(error_msg))
+            return
 
-    def _on_message(self, message: dict[str, Any]) -> None:
+        # Try to get stream name from the message
+        stream_name = self._get_stream_name_from_message(msg)
+
+        # Call the specific stream callback if available
+        if stream_name and stream_name in self.stream_callbacks:
+            try:
+                self.stream_callbacks[stream_name](msg)
+            except Exception:
+                logger.exception("Error in stream callback")
+                excp = APIError("Error in stream callback")
+                if self.on_error_callback:
+                    self.on_error_callback(excp)
+
+        # Always call the general callback if provided
+        if self.on_message_callback:
+            self.on_message_callback(msg)
+
+    def _get_stream_name_from_message(self, msg: dict[str, Any]) -> str | None:  # noqa: PLR0911
         """
-        Internal message handler.
-
-        Processes the message and routes it to the appropriate callback.
+        Extract stream name from a message.
 
         Args:
-            message: Message received from WebSocket
+            msg: Message received from WebSocket
+
+        Returns:
+            Stream name if found, None otherwise
         """
-        try:
-            # If message has a stream field, it's from a combined stream
-            stream = message.get("stream")
-            data = message.get("data", message)
+        # Different message types have different structures
+        if "stream" in msg:  # Multiplex socket format
+            return cast(str, msg["stream"])
 
-            if stream and stream in self.stream_callbacks:
-                # Call the specific callback for this stream
-                asyncio.create_task(self._process_message(stream, data))
+        # For single streams, use event type and symbol
+        event_type = msg.get("e")
+        symbol = msg.get("s", "").lower() if msg.get("s") else None
 
-            # Always call the general callback if provided
-            if self.on_message_callback:
-                if asyncio.iscoroutinefunction(self.on_message_callback):
-                    # Async callback
-                    asyncio.create_task(
-                        cast(AsyncMessageHandler, self.on_message_callback)(message),
-                    )
-                else:
-                    # Sync callback
-                    cast(MessageHandler, self.on_message_callback)(message)
+        # Handle kline event type
+        if event_type == "kline" and symbol:
+            interval = msg.get("k", {}).get("i")
+            if interval:
+                return f"{symbol}@kline_{interval}"
 
-            # Log debug information
-            logger.debug("Received WebSocket message: %s", json.dumps(message)[:200])
-        except Exception as e:
-            logger.exception("Error processing WebSocket message: %s", e)
-            self._on_error(e)
+        # Handle ticker event type
+        elif event_type == "24hrTicker" and symbol:
+            return f"{symbol}@ticker"
 
-    def _on_error(self, error: Exception) -> None:
+        # Handle trade event type
+        elif event_type == "trade" and symbol:
+            return f"{symbol}@trade"
+
+        # Handle depth event type
+        elif event_type == "depth" and symbol:
+            # Find the depth stream with this symbol in active_streams
+            with self._lock:
+                for stream_name in self.active_streams:
+                    if stream_name.startswith(f"{symbol}@depth"):
+                        return stream_name
+            # Fallback to the basic depth format
+            return f"{symbol}@depth"
+
+        # Return None if we couldn't identify the stream
+        return None
+
+    def _create_message_handler(
+        self,
+        _stream_name: str,  # We're not using this parameter directly
+    ) -> Callable[[dict[str, Any]], None]:
         """
-        Internal error handler.
+        Create a message handler function for a specific stream.
 
         Args:
-            error: Error object
+            _stream_name: Name of the stream (unused but kept for API compatibility)
+
+        Returns:
+            Message handler function
         """
-        error_msg = str(error)
-        logger.error("WebSocket error: %s", error_msg)
-        if self.on_error_callback:
-            self.on_error_callback(error)
 
-    def _on_close(self) -> None:
-        """Internal close handler."""
-        logger.info("WebSocket connection closed")
-        if self.on_close_callback:
-            self.on_close_callback()
+        def handle_message(msg: dict[str, Any]) -> None:
+            # Log the message for debugging
+            logger.debug("Received WebSocket message: %s", json.dumps(msg)[:200])
 
-    async def subscribe_kline_stream(
+            # Process the message
+            self._process_message(msg)
+
+        return handle_message
+
+    def subscribe_kline_stream(
         self,
         symbol: str,
         interval: str,
-        callback: CallbackType,
+        callback: Callable[[KlineData], None],
     ) -> str:
         """
         Subscribe to kline/candlestick data stream.
@@ -209,24 +228,36 @@ class BinanceWebsocketClient:
         symbol = symbol.lower()
         stream_name = f"{symbol}@kline_{interval}"
 
-        self.stream_callbacks[stream_name] = callback
+        # Store the callback
+        with self._lock:
+            self.stream_callbacks[stream_name] = callback  # type: ignore
 
-        await self._start_websocket()
-        self.client.kline(
-            symbol=symbol,
-            interval=interval,
-            id=1,
-            callback=self._on_message,
-        )
-        self.active_streams.add(stream_name)
-        logger.info("Subscribed to kline stream: %s", stream_name)
+        # Ensure the WebSocket manager is running
+        self.start()
 
-        return stream_name
+        try:
+            # Start the kline socket
+            socket_id = self.twm.start_kline_socket(
+                callback=self._create_message_handler(stream_name),
+                symbol=symbol.upper(),
+                interval=interval,
+            )
 
-    async def subscribe_ticker_stream(
+            # Store the socket ID for management
+            with self._lock:
+                self.active_streams[stream_name] = socket_id
+
+            logger.info("Subscribed to kline stream: %s", stream_name)
+        except BinanceAPIException as err:
+            logger.exception("Failed to subscribe to kline stream")
+            raise APIError(f"Failed to subscribe to kline stream: {err!s}") from err
+        else:
+            return stream_name
+
+    def subscribe_ticker_stream(
         self,
         symbol: str,
-        callback: CallbackType,
+        callback: Callable[[TickerData], None],
     ) -> str:
         """
         Subscribe to 24hr ticker updates stream.
@@ -241,63 +272,277 @@ class BinanceWebsocketClient:
         symbol = symbol.lower()
         stream_name = f"{symbol}@ticker"
 
-        self.stream_callbacks[stream_name] = callback
+        # Store the callback
+        with self._lock:
+            self.stream_callbacks[stream_name] = callback  # type: ignore
 
-        await self._start_websocket()
-        self.client.ticker(symbol=symbol, id=1, callback=self._on_message)
-        self.active_streams.add(stream_name)
-        logger.info("Subscribed to ticker stream: %s", stream_name)
+        # Ensure the WebSocket manager is running
+        self.start()
 
-        return stream_name
+        try:
+            # Start the symbol ticker socket
+            socket_id = self.twm.start_symbol_ticker_socket(
+                callback=self._create_message_handler(stream_name),
+                symbol=symbol.upper(),
+            )
 
-    async def _start_websocket(self) -> None:
-        """Start the WebSocket connection if not already started."""
-        if not self.is_connected():
-            self.start()
+            # Store the socket ID for management
+            with self._lock:
+                self.active_streams[stream_name] = socket_id
 
-    async def unsubscribe_stream(self, stream_name: str) -> None:
+            logger.info("Subscribed to ticker stream: %s", stream_name)
+        except BinanceAPIException as err:
+            logger.exception("Failed to subscribe to ticker stream")
+            raise APIError("Failed to subscribe to ticker stream") from err
+        else:
+            return stream_name
+
+    def subscribe_trades_stream(
+        self,
+        symbol: str,
+        callback: Callable[[TradeData], None],
+    ) -> str:
+        """
+        Subscribe to trade updates stream.
+
+        Args:
+            symbol: Trading pair symbol (e.g., "BTCUSDT")
+            callback: Callback for trade data
+
+        Returns:
+            Stream name
+        """
+        symbol = symbol.lower()
+        stream_name = f"{symbol}@trade"
+
+        # Store the callback
+        with self._lock:
+            self.stream_callbacks[stream_name] = callback  # type: ignore
+
+        # Ensure the WebSocket manager is running
+        self.start()
+
+        try:
+            # Start the trade socket
+            socket_id = self.twm.start_trade_socket(
+                callback=self._create_message_handler(stream_name),
+                symbol=symbol.upper(),
+            )
+
+            # Store the socket ID for management
+            with self._lock:
+                self.active_streams[stream_name] = socket_id
+
+            logger.info("Subscribed to trades stream: %s", stream_name)
+        except BinanceAPIException as err:
+            logger.exception("Failed to subscribe to trades stream")
+            raise APIError("Failed to subscribe to trades stream") from err
+        else:
+            return stream_name
+
+    def subscribe_depth_stream(
+        self,
+        symbol: str,
+        callback: Callable[[dict[str, Any]], None],
+        depth: int = 20,
+    ) -> str:
+        """
+        Subscribe to order book depth stream.
+
+        Args:
+            symbol: Trading pair symbol (e.g., "BTCUSDT")
+            callback: Callback for depth data
+            depth: Depth of the order book (5, 10, or 20)
+
+        Returns:
+            Stream name
+        """
+        if depth not in (5, 10, 20):
+            raise ValueError("Depth must be 5, 10, or 20")
+
+        symbol = symbol.lower()
+        stream_name = f"{symbol}@depth{depth}"
+
+        # Store the callback
+        with self._lock:
+            self.stream_callbacks[stream_name] = callback
+
+        # Ensure the WebSocket manager is running
+        self.start()
+
+        try:
+            # Start the depth socket
+            socket_id = self.twm.start_depth_socket(
+                callback=self._create_message_handler(stream_name),
+                symbol=symbol.upper(),
+                depth=depth,
+            )
+
+            # Store the socket ID for management
+            with self._lock:
+                self.active_streams[stream_name] = socket_id
+
+            logger.info("Subscribed to depth stream: %s", stream_name)
+        except BinanceAPIException as err:
+            logger.exception("Failed to subscribe to depth stream")
+            raise APIError("Failed to subscribe to depth stream") from err
+        else:
+            return stream_name
+
+    def subscribe_multiplex_streams(
+        self,
+        streams: list[str],
+        callback: Callable[[dict[str, Any]], None],
+    ) -> str:
+        """
+        Subscribe to multiple streams at once.
+
+        Args:
+            streams: List of stream names
+            callback: Callback for stream data
+
+        Returns:
+            Multiplex stream ID
+        """
+        if not streams:
+            raise ValueError("At least one stream must be provided")
+
+        # Store streams as lowercase
+        streams = [s.lower() for s in streams]
+        stream_id = "/".join(streams)
+
+        # Store the callback for each individual stream
+        with self._lock:
+            for stream in streams:
+                self.stream_callbacks[stream] = callback
+
+        # Ensure the WebSocket manager is running
+        self.start()
+
+        try:
+            # Start the multiplex socket
+            socket_id = self.twm.start_multiplex_socket(
+                callback=self._create_message_handler(stream_id),
+                streams=streams,
+            )
+
+            # Store the socket ID for management
+            with self._lock:
+                self.active_streams[stream_id] = socket_id
+
+            logger.info("Subscribed to multiplex streams: %s", stream_id)
+        except BinanceAPIException as err:
+            logger.exception("Failed to subscribe to multiplex streams")
+            raise APIError("Failed to subscribe to multiplex streams") from err
+        else:
+            return stream_id
+
+    def subscribe_user_data_stream(
+        self,
+        callback: Callable[[dict[str, Any]], None],
+    ) -> str:
+        """
+        Subscribe to user data stream for account and order updates.
+
+        Args:
+            callback: Callback for user data events
+
+        Returns:
+            Stream name (user-data-stream-id)
+        """
+        if not self.api_key or not self.api_secret:
+            raise ValueError("API key and secret are required for user data stream")
+
+        stream_name = "user-data-stream"
+
+        # Store the callback
+        with self._lock:
+            self.stream_callbacks[stream_name] = callback
+
+        # Ensure the WebSocket manager is running
+        self.start()
+
+        try:
+            # Start the user data socket
+            socket_id = self.twm.start_user_socket(
+                callback=self._create_message_handler(stream_name),
+            )
+
+            # Store the socket ID for management
+            with self._lock:
+                self.active_streams[stream_name] = socket_id
+
+            logger.info("Subscribed to user data stream")
+        except BinanceAPIException as err:
+            logger.exception("Failed to subscribe to user data stream")
+            raise APIError("Failed to subscribe to user data stream") from err
+        else:
+            return stream_name
+
+    def unsubscribe_stream(self, stream_name: str) -> None:
         """
         Unsubscribe from a stream.
 
         Args:
             stream_name: Name of the stream to unsubscribe from
         """
-        if stream_name in self.active_streams:
-            try:
-                # Close the specific stream
-                # The API doesn't provide a direct way to close a single stream
-                # so we need to close all and reopen the ones we want to keep
-                self.client.stop_socket(stream_name)
-                self.active_streams.remove(stream_name)
-                self.stream_callbacks.pop(stream_name, None)
-                logger.info("Unsubscribed from stream: %s", stream_name)
-            except Exception as e:
-                logger.error("Failed to unsubscribe from stream %s: %s", stream_name, e)
-                raise APIError(f"Failed to unsubscribe: {e!s}")
+        stream_name = stream_name.lower()
 
-    async def unsubscribe_all_streams(self) -> None:
-        """Unsubscribe from all streams."""
         try:
-            self.stop()
-            logger.info("Unsubscribed from all streams")
-        except Exception as e:
-            logger.error("Failed to unsubscribe from all streams: %s", e)
-            raise APIError(f"Failed to unsubscribe: {e!s}")
+            with self._lock:
+                if stream_name in self.active_streams:
+                    socket_id = self.active_streams[stream_name]
 
-    async def list_active_streams(self) -> list[str]:
+                    # Stop the socket
+                    self.twm.stop_socket(socket_id)
+
+                    # Remove it from managed streams
+                    del self.active_streams[stream_name]
+                    if stream_name in self.stream_callbacks:
+                        del self.stream_callbacks[stream_name]
+
+                    logger.info("Unsubscribed from stream: %s", stream_name)
+                else:
+                    logger.warning(
+                        "Attempted to unsubscribe from a non-active stream: %s",
+                        stream_name,
+                    )
+        except Exception as err:
+            logger.exception("Error unsubscribing from stream")
+            raise APIError(f"Error unsubscribing from stream: {err!s}") from err
+
+    def unsubscribe_all_streams(self) -> None:
+        """Unsubscribe from all active streams and stop the WebSocket manager."""
+        try:
+            # Stop the WebSocket manager (disconnects all sockets)
+            self.stop()
+
+            # Clear all active streams and callbacks
+            with self._lock:
+                self.active_streams.clear()
+                self.stream_callbacks.clear()
+
+            logger.info("Unsubscribed from all streams")
+        except Exception as err:
+            logger.exception("Error unsubscribing from all streams")
+            msg = "Error unsubscribing from all streams"
+            raise APIError(f"{msg}: {err!s}") from err
+
+    def list_active_streams(self) -> list[str]:
         """
         List active streams.
 
         Returns:
             List of active stream names
         """
-        return list(self.active_streams)
+        with self._lock:
+            return list(self.active_streams.keys())
 
     def is_connected(self) -> bool:
         """
-        Check if the WebSocket is connected.
+        Check if the WebSocket manager is running.
 
         Returns:
             True if connected, False otherwise
         """
-        return hasattr(self.client, "_conn") and self.client._conn is not None
+        return self._is_running

@@ -1,0 +1,41 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Testing
+
+## Test Structure
+- Use pytest for all tests
+- Organize tests to mirror the structure of the application code
+- Use descriptive test names that explain the expected behavior
+- Group related tests in classes when appropriate
+- Use fixtures for test setup and teardown
+
+## Test Coverage
+- Aim for at least 80% code coverage
+- All critical paths must have tests
+- Include both positive and negative test cases
+- Test edge cases and boundary conditions
+
+## Mocking and Fixtures
+- Use pytest fixtures for reusable test components
+- Mock external dependencies appropriately
+- Use `monkeypatch` for modifying behavior during tests
+- Create factory fixtures for complex objects
+
+## Assertions
+- Use plain `assert` statements instead of unittest-style methods
+- Write clear assertion messages:
+  ```python
+  # WRONG: assert result == expected
+  # CORRECT: assert result == expected, f"Expected {expected}, got {result}"
+  ```
+- For complex assertions, break them down into multiple assert statements
+- Use appropriate assertion helpers from pytest when needed
+
+## Test Isolation
+- Tests should not depend on each other
+- Clean up resources after tests complete
+- Avoid global state modifications that affect other tests
+- Use temporary directories and files when testing I/O operations

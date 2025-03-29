@@ -1,0 +1,29 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Project Setup and Development Tools
+
+## Python Version
+- This project requires Python 3.13
+
+## Package Management with UV
+
+- Always use `uv` for Python package management
+- Use `uv` for installing dependencies, creating virtual environments, and running Python scripts
+- Never use pip or other package managers directly
+
+## Pre-commit Checks
+
+- Run pre-commit checks before pushing code:
+  ```bash
+  uv run pre-commit run --all-files
+  ```
+- Fix any issues identified by pre-commit before committing
+
+## Development Environment
+
+- Use a consistent development environment
+- Configure your editor to use the project's linting and formatting rules
+- Ensure all dependencies are properly installed in your virtual environment

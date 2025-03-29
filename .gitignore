@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+.*_cache/
 
 # Virtual environments
 .venv
@@ -15,3 +16,9 @@ wheels/
 .vscode
 !.vscode/launch.json
 !.vscode/tasks.json
+
+# Data
+data/
+
+# Tests
+test_output/

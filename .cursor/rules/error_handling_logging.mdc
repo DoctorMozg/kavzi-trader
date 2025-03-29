@@ -1,0 +1,35 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Error Handling & Logging
+
+## Error Handling
+- Use specific exception types
+- Handle exceptions at the appropriate level
+- Use context managers (`with` statements) for resource management
+- Add context information when re-raising exceptions
+- Fail early and clearly
+
+## Logging
+- Each module should have its own logger instance
+- Use appropriate logging levels:
+  - `DEBUG`: Detailed information for diagnostics
+  - `INFO`: Confirmation things are working
+  - `WARNING`: Something unexpected happened
+  - `ERROR`: Problem prevented function execution
+  - `CRITICAL`: Serious error
+
+## Critical Logging Practices
+- Always use `logger.exception()` instead of `logger.error()` when handling exceptions
+- Avoid f-strings in log messages - use string formatting:
+  ```python
+  # WRONG: logger.debug(f"Found {user_count} users")
+  # CORRECT: logger.debug("Found %d users", get_user_count())
+  ```
+- Include contextual information in log messages
+- Use structured logging for complex data:
+  ```python
+  logger.info("User updated", extra={"user_id": user.id, "fields": changed_fields})
+  ```

@@ -1,0 +1,33 @@
+---
+description: Working with GIT
+globs: 
+alwaysApply: false
+---
+# Version Control Practices
+
+## Commit Messages
+- Write clear, concise commit messages
+- Start with a verb in imperative mood (Add, Fix, Update, Remove, etc.)
+- Keep the first line under 50 characters
+- If needed, add more details after a blank line
+
+## Branching
+- Use feature branches for new development
+- Follow Git Flow or similar branching strategy:
+  - `main`: Production-ready code
+  - `develop`: Development branch
+  - `feature/<name>`: New features
+  - `bugfix/<name>`: Bug fixes
+  - `release/<version>`: Release preparation
+
+## Pull Requests
+- Create pull requests for code review before merging
+- Keep PRs focused and of manageable size
+- Include appropriate tests
+- Reference related issues
+
+## General Practices
+- Keep commits focused and atomic
+- Follow semantic versioning for releases
+- Don't commit generated files or credentials
+- Regularly pull from the main branch to stay up-to-date

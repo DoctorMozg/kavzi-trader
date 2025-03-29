@@ -1,253 +1,332 @@
 """
-Tests for Binance WebSocket client.
-
-This module contains tests for the Binance WebSocket client implementation.
+Tests for Binance WebSocket client implementation.
 """
 
-import asyncio
-from collections.abc import AsyncGenerator
+import logging
+from collections.abc import Callable, Generator
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
-from src.api.binance import BinanceWebsocketClient
-from src.api.binance.websocket import CallbackType
+from src.api.binance.schemas.callback import KlineData, TickerData, TradeData
+from src.api.binance.websocket import BinanceWebsocketClient
 
-
-@pytest_asyncio.fixture
-async def ws_client() -> AsyncGenerator[BinanceWebsocketClient, None]:
-    """Create a Binance WebSocket client for testing."""
-    client = BinanceWebsocketClient(testnet=True)
-    yield client
-    # Cleanup
-    await client.unsubscribe_all_streams()
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
-@pytest.mark.asyncio()
-async def test_kline_stream(ws_client: BinanceWebsocketClient) -> None:
-    """Test kline stream subscription and message handling."""
-    # Mock the callback function
-    callback = MagicMock()
-
-    # Cast the mock to the correct type for type checking purposes
-    typed_callback = cast(CallbackType, callback)
-
-    # Start the WebSocket client with a mock
-    with patch.object(ws_client, "_start_websocket", return_value=None) as mock_start:
-        # Subscribe to kline stream
-        await ws_client.subscribe_kline_stream("BTCUSDT", "1m", typed_callback)
-
-        # Verify that the WebSocket was started
-        mock_start.assert_called_once()
-
-        # Check that the stream was added correctly
-        assert len(ws_client.active_streams) == 1
-        stream_name = "btcusdt@kline_1m"
-        assert stream_name in ws_client.active_streams
-
-        # Manually trigger the callback to simulate a message
-        test_data: dict[str, Any] = {
-            "e": "kline",
-            "E": 1672515782136,
-            "s": "BTCUSDT",
-            "k": {
-                "t": 1672515780000,
-                "T": 1672515839999,
-                "s": "BTCUSDT",
-                "i": "1m",
-                "f": 100,
-                "L": 200,
-                "o": "16500.00",
-                "c": "16510.00",
-                "h": "16515.00",
-                "l": "16498.00",
-                "v": "10.5",
-                "n": 100,
-                "x": False,
-                "q": "173250.00",
-                "V": "5.2",
-                "Q": "86000.00",
-                "B": "0",
-            },
-        }
-
-        # Simulate message processing
-        await ws_client._process_message(stream_name, test_data)
-
-        # Check that the callback was called with the processed data
-        callback.assert_called_once()
-
-        # Unsubscribe from the stream
-        await ws_client.unsubscribe_stream(stream_name)
-
-        # Check that the stream was removed
-        assert len(ws_client.active_streams) == 0
+@pytest.fixture()
+def mock_twm() -> Generator[MagicMock, None, None]:
+    """Create a mock of ThreadedWebsocketManager."""
+    with patch("src.api.binance.websocket.ThreadedWebsocketManager") as mock_twm_class:
+        mock_twm = mock_twm_class.return_value
+        yield mock_twm
 
 
-@pytest.mark.asyncio()
-async def test_ticker_stream(ws_client: BinanceWebsocketClient) -> None:
-    """Test ticker stream subscription and message handling."""
-    callback = MagicMock()
-    typed_callback = cast(CallbackType, callback)
-
-    with patch.object(ws_client, "_start_websocket", return_value=None) as mock_start:
-        # Subscribe to ticker stream
-        await ws_client.subscribe_ticker_stream("BTCUSDT", typed_callback)
-
-        mock_start.assert_called_once()
-        assert len(ws_client.active_streams) == 1
-        stream_name = "btcusdt@ticker"
-        assert stream_name in ws_client.active_streams
-
-        # Clean up
-        await ws_client.unsubscribe_stream(stream_name)
-        assert len(ws_client.active_streams) == 0
+@pytest.fixture()
+def ws_client(mock_twm: MagicMock) -> BinanceWebsocketClient:
+    """Create a Binance websocket client with mocked dependencies."""
+    return BinanceWebsocketClient(testnet=True)
 
 
-@pytest.mark.asyncio()
-async def test_order_book_stream(ws_client: BinanceWebsocketClient) -> None:
-    """Test order book stream subscription and message handling."""
-    callback = MagicMock()
+def test_kline_stream(ws_client: BinanceWebsocketClient, mock_twm: MagicMock) -> None:
+    """Test subscribing to a kline stream."""
+    # Mock callback function
+    callback_mock = MagicMock()
+    callback = cast(Callable[[KlineData], None], callback_mock)
 
-    with patch.object(ws_client, "_start_websocket", return_value=None) as mock_start:
-        # Subscribe to depth stream
-        await ws_client.subscribe_depth_stream(
-            "BTCUSDT",
-            callback,
-            update_speed="100ms",
-        )
+    # Subscribe to kline stream
+    stream_name = ws_client.subscribe_kline_stream("BTCUSDT", "1m", callback)
 
-        mock_start.assert_called_once()
-        assert len(ws_client.active_streams) == 1
-        stream_name = "btcusdt@depth@100ms"
-        assert stream_name in ws_client.active_streams
+    # Verify ThreadedWebsocketManager was started
+    mock_twm.start.assert_called_once()
 
-        # Clean up
-        await ws_client.unsubscribe_stream(stream_name)
-        assert len(ws_client.active_streams) == 0
+    # Verify the kline socket was started with correct parameters
+    mock_twm.start_kline_socket.assert_called_once()
+    args, kwargs = mock_twm.start_kline_socket.call_args
+    assert kwargs["symbol"] == "BTCUSDT"
+    assert kwargs["interval"] == "1m"
 
+    # Verify stream is tracked in active_streams
+    assert stream_name in ws_client.active_streams
 
-@pytest.mark.asyncio()
-async def test_trades_stream(ws_client: BinanceWebsocketClient) -> None:
-    """Test trades stream subscription and message handling."""
-    callback = MagicMock()
+    # Test message processing
+    handler = kwargs["callback"]
+    test_data = {
+        "e": "kline",
+        "s": "BTCUSDT",
+        "k": {"i": "1m", "c": "50000", "v": "10.5"},
+    }
 
-    with patch.object(ws_client, "_start_websocket", return_value=None) as mock_start:
-        # Subscribe to trades stream
-        await ws_client.subscribe_trades_stream("BTCUSDT", callback)
-
-        mock_start.assert_called_once()
-        assert len(ws_client.active_streams) == 1
-        stream_name = "btcusdt@trade"
-        assert stream_name in ws_client.active_streams
-
-        # Manually trigger the callback with test data
-        test_data = {
-            "e": "trade",
-            "E": 1672515782136,
-            "s": "BTCUSDT",
-            "t": 12345,
-            "p": "16500.00",
-            "q": "0.5",
-            "b": 88,
-            "a": 99,
-            "T": 1672515782136,
-            "m": True,
-            "M": True,
-        }
-
-        ws_client._process_message(stream_name, test_data)
-        callback.assert_called_once()
-
-        # Clean up
-        await ws_client.unsubscribe_stream(stream_name)
-        assert len(ws_client.active_streams) == 0
+    # Call the handler and verify callback was called
+    handler(test_data)
+    callback_mock.assert_called_once_with(test_data)
 
 
-@pytest.mark.asyncio()
-async def test_multiple_streams(ws_client: BinanceWebsocketClient) -> None:
-    """Test subscribing to multiple streams."""
-    callback1 = MagicMock()
-    callback2 = MagicMock()
-    typed_callback1 = cast(CallbackType, callback1)
-    typed_callback2 = cast(CallbackType, callback2)
+def test_ticker_stream(ws_client: BinanceWebsocketClient, mock_twm: MagicMock) -> None:
+    """Test subscribing to a ticker stream."""
+    # Mock callback function
+    callback_mock = MagicMock()
+    callback = cast(Callable[[TickerData], None], callback_mock)
 
-    with patch.object(ws_client, "_start_websocket", return_value=None) as mock_start:
-        # Subscribe to multiple streams
-        await ws_client.subscribe_kline_stream("BTCUSDT", "1m", typed_callback1)
-        await ws_client.subscribe_ticker_stream("ETHUSDT", typed_callback2)
+    # Subscribe to ticker stream
+    stream_name = ws_client.subscribe_ticker_stream("ETHUSDT", callback)
 
-        assert mock_start.call_count == 2
-        assert len(ws_client.active_streams) == 2
+    # Verify ThreadedWebsocketManager was started
+    mock_twm.start.assert_called_once()
 
-        # Check that both streams are active
-        assert "btcusdt@kline_1m" in ws_client.active_streams
-        assert "ethusdt@ticker" in ws_client.active_streams
+    # Verify the ticker socket was started with correct parameters
+    mock_twm.start_symbol_ticker_socket.assert_called_once()
+    args, kwargs = mock_twm.start_symbol_ticker_socket.call_args
+    assert kwargs["symbol"] == "ETHUSDT"
 
-        # Clean up
-        await ws_client.unsubscribe_all_streams()
-        assert len(ws_client.active_streams) == 0
+    # Verify stream is tracked in active_streams
+    assert stream_name in ws_client.active_streams
+
+    # Test message processing
+    handler = kwargs["callback"]
+    test_data = {
+        "e": "24hrTicker",
+        "s": "ETHUSDT",
+        "c": "3000",
+        "v": "100.5",
+    }
+
+    # Call the handler and verify callback was called
+    handler(test_data)
+    callback_mock.assert_called_once_with(test_data)
 
 
-@pytest.mark.asyncio()
-async def test_error_handling(ws_client: BinanceWebsocketClient) -> None:
-    """Test error handling in WebSocket client."""
-    # Test with a mock error_callback
-    error_callback = MagicMock()
+def test_depth_stream(ws_client: BinanceWebsocketClient, mock_twm: MagicMock) -> None:
+    """Test subscribing to a depth stream."""
+    # Mock callback function
+    callback_mock = MagicMock()
+    callback = cast(Callable[[dict[str, Any]], None], callback_mock)
 
-    # Create a client with an error callback
-    client_with_error_cb = BinanceWebsocketClient(
-        testnet=True,
-        error_callback=error_callback,
+    # Subscribe to depth stream
+    stream_name = ws_client.subscribe_depth_stream(
+        "BNBUSDT",
+        callback,
+        depth=10,
     )
 
-    # Simulate an error
-    error = Exception("Test error")
-    client_with_error_cb._on_error(error)
+    # Verify ThreadedWebsocketManager was started
+    mock_twm.start.assert_called_once()
 
-    # Check that the error callback was called with the error
-    error_callback.assert_called_once_with(error)
+    # Verify the depth socket was started with correct parameters
+    mock_twm.start_depth_socket.assert_called_once()
+    args, kwargs = mock_twm.start_depth_socket.call_args
+    assert kwargs["symbol"] == "BNBUSDT"
+    assert kwargs["depth"] == 10
+
+    # Verify stream is tracked in active_streams
+    assert stream_name in ws_client.active_streams
+
+    # Test message processing
+    handler = kwargs["callback"]
+    test_data = {
+        "e": "depth",
+        "s": "BNBUSDT",
+        "b": [["300", "1.0"]],
+        "a": [["301", "2.0"]],
+    }
+
+    # Call the handler and verify callback was called
+    handler(test_data)
+    callback_mock.assert_called_once_with(test_data)
 
 
-@pytest.mark.asyncio()
-async def test_async_callback() -> None:
-    """Test using async callbacks with WebSocket client."""
+def test_trades_stream(ws_client: BinanceWebsocketClient, mock_twm: MagicMock) -> None:
+    """Test subscribing to a trades stream."""
+    # Mock callback function
+    callback_mock = MagicMock()
+    callback = cast(Callable[[TradeData], None], callback_mock)
 
-    # Define an async callback function
-    async def async_callback(message: dict[str, Any]) -> None:
-        pass
+    # Subscribe to trades stream
+    stream_name = ws_client.subscribe_trades_stream("ADAUSDT", callback)
 
-    # Create a mock for this async function
-    async_mock = MagicMock()
-    async_mock.__call__ = MagicMock(return_value=None)
+    # Verify ThreadedWebsocketManager was started
+    mock_twm.start.assert_called_once()
 
-    # Check if is coroutine function
-    assert asyncio.iscoroutinefunction(async_callback)
+    # Verify the trade socket was started with correct parameters
+    mock_twm.start_trade_socket.assert_called_once()
+    args, kwargs = mock_twm.start_trade_socket.call_args
+    assert kwargs["symbol"] == "ADAUSDT"
 
-    # Create client with the async callback
-    client = BinanceWebsocketClient(testnet=True)
+    # Verify stream is tracked in active_streams
+    assert stream_name in ws_client.active_streams
 
-    # Test the _process_message method with an async callback
-    with patch.object(
-        client,
-        "stream_callbacks",
-        {
-            "test_stream": async_callback,
+    # Test message processing
+    handler = kwargs["callback"]
+    test_data = {
+        "e": "trade",
+        "s": "ADAUSDT",
+        "p": "1.5",
+        "q": "100",
+    }
+
+    # Call the handler and verify callback was called
+    handler(test_data)
+    callback_mock.assert_called_once_with(test_data)
+
+
+def test_multiplex_streams(
+    ws_client: BinanceWebsocketClient,
+    mock_twm: MagicMock,
+) -> None:
+    """Test subscribing to multiple streams at once."""
+    # Mock callback function
+    callback_mock = MagicMock()
+    callback = cast(Callable[[dict[str, Any]], None], callback_mock)
+
+    # Subscribe to multiple streams
+    streams = ["btcusdt@kline_1m", "ethusdt@ticker"]
+    stream_name = ws_client.subscribe_multiplex_streams(streams, callback)
+
+    # Verify ThreadedWebsocketManager was started
+    mock_twm.start.assert_called_once()
+
+    # Verify the multiplex socket was started with correct parameters
+    mock_twm.start_multiplex_socket.assert_called_once()
+    args, kwargs = mock_twm.start_multiplex_socket.call_args
+    assert kwargs["streams"] == streams
+
+    # Verify stream is tracked in active_streams
+    assert stream_name in ws_client.active_streams
+
+    # Test message processing
+    handler = kwargs["callback"]
+    test_data = {
+        "stream": "btcusdt@kline_1m",
+        "data": {
+            "e": "kline",
+            "s": "BTCUSDT",
+            "k": {"i": "1m", "c": "50000", "v": "10.5"},
         },
-    ):
-        # Mock asyncio.iscoroutinefunction to return True
-        with patch("asyncio.iscoroutinefunction", return_value=True):
-            # Mock the async callback execution
-            with patch("asyncio.create_task") as mock_create_task:
-                # Simulate processing a message
-                client._on_message(
-                    {
-                        "stream": "test_stream",
-                        "data": {"test": "data"},
-                    },
-                )
+    }
 
-                # Verify create_task was called
-                assert mock_create_task.called
+    # Call the handler and verify callback was called
+    handler(test_data)
+    callback_mock.assert_called_once_with(test_data)
+
+
+def test_unsubscribe_stream(
+    ws_client: BinanceWebsocketClient,
+    mock_twm: MagicMock,
+) -> None:
+    """Test unsubscribing from a stream."""
+    # First subscribe to a stream
+    callback_mock = MagicMock()
+    callback = cast(Callable[[KlineData], None], callback_mock)
+
+    stream_name = ws_client.subscribe_kline_stream("BTCUSDT", "1m", callback)
+    assert stream_name in ws_client.active_streams
+
+    # Now unsubscribe
+    ws_client.unsubscribe_stream(stream_name)
+
+    # Verify stop_socket was called
+    mock_twm.stop_socket.assert_called_once()
+
+    # Verify stream was removed from active_streams
+    assert stream_name not in ws_client.active_streams
+
+    # Verify callback was removed
+    assert stream_name not in ws_client.stream_callbacks
+
+
+def test_unsubscribe_all_streams(
+    ws_client: BinanceWebsocketClient,
+    mock_twm: MagicMock,
+) -> None:
+    """Test unsubscribing from all streams."""
+    # First subscribe to multiple streams
+    callback_mock = MagicMock()
+    callback = cast(Callable[[KlineData | TickerData], None], callback_mock)
+
+    ws_client.subscribe_kline_stream("BTCUSDT", "1m", callback)
+    ws_client.subscribe_ticker_stream("ETHUSDT", callback)
+
+    # Verify we have active streams
+    assert len(ws_client.active_streams) > 0
+
+    # Now unsubscribe from all
+    ws_client.unsubscribe_all_streams()
+
+    # Verify all streams were removed
+    assert len(ws_client.active_streams) == 0
+    assert len(ws_client.stream_callbacks) == 0
+
+
+def test_error_handling() -> None:
+    """Test error handling in WebSocket callbacks."""
+    # Setup a mock that will receive error messages
+    error_callback_mock = MagicMock()
+
+    # Create a client with the error callback
+    ws_client = BinanceWebsocketClient(
+        testnet=True,
+        on_error=error_callback_mock,
+    )
+
+    # Manually trigger message processing with an error message
+    error_msg = {
+        "error": "error",
+        "m": "Test error message",
+    }
+
+    # Process the error message
+    ws_client._process_message(error_msg)
+
+    # Verify the error callback was called
+    error_callback_mock.assert_called_once()
+    args, _ = error_callback_mock.call_args
+    assert isinstance(args[0], Exception)
+
+
+def test_get_stream_name_from_message(
+    ws_client: BinanceWebsocketClient,
+) -> None:
+    """Test extracting stream names from different message types."""
+    # Test kline message
+    kline_msg = {
+        "e": "kline",
+        "s": "BTCUSDT",
+        "k": {"i": "1m"},
+    }
+    stream_name = ws_client._get_stream_name_from_message(kline_msg)
+    assert stream_name == "btcusdt@kline_1m"
+
+    # Test ticker message
+    ticker_msg = {
+        "e": "24hrTicker",
+        "s": "ETHUSDT",
+    }
+    stream_name = ws_client._get_stream_name_from_message(ticker_msg)
+    assert stream_name == "ethusdt@ticker"
+
+    # Test trade message
+    trade_msg = {
+        "e": "trade",
+        "s": "BNBUSDT",
+    }
+    stream_name = ws_client._get_stream_name_from_message(trade_msg)
+    assert stream_name == "bnbusdt@trade"
+
+    # Test depth message
+    depth_msg = {
+        "e": "depth",
+        "s": "ADAUSDT",
+    }
+    stream_name = ws_client._get_stream_name_from_message(depth_msg)
+    assert stream_name == "adausdt@depth"
+
+    # Test multiplex format
+    multiplex_msg = {
+        "stream": "btcusdt@kline_1m",
+        "data": {},
+    }
+    stream_name = ws_client._get_stream_name_from_message(multiplex_msg)
+    assert stream_name == "btcusdt@kline_1m"

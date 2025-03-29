@@ -1,0 +1,59 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# File and Class Organization
+
+## One Class Per File
+- Each logical class should be in its own file
+- Related helper functions can be in the same file as the class they support
+
+## Path Handling
+- Always use `pathlib.Path` for file path manipulation
+- String paths are strictly prohibited
+- Example:
+  ```python
+  # CORRECT
+  from pathlib import Path
+
+  def save_data(data: list, output_dir: Path) -> None:
+      output_dir.mkdir(parents=True, exist_ok=True)
+      with open(output_dir / "data.json", "w") as f:
+          json.dump(data, f)
+  ```
+
+## Class Naming Conventions
+- Pydantic models: Use the `Schema` postfix
+  ```python
+  class UserSchema(BaseModel):
+      # fields
+  ```
+- Database models: Use the `Model` postfix
+  ```python
+  class UserModel(Base):
+      # fields
+  ```
+- Service/Business Logic: Use descriptive names without specific postfixes
+  ```python
+  class TradingStrategy:
+      # implementation
+  ```
+
+## File Naming
+- Use snake_case for file names
+- File names should reflect primary class or functionality
+- Group related files in appropriate packages
+
+## Import Organization
+1. Standard library imports
+2. Third-party library imports
+3. Local/application imports
+4. Import the class's dependencies
+
+## Code Layout and Formatting
+- Use Ruff for linting and formatting
+- Line length: 88 characters
+- 4 spaces for indentation (no tabs)
+- 2 blank lines before top-level classes/functions
+- 1 blank line between methods

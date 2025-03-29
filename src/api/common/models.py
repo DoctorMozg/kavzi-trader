@@ -100,9 +100,11 @@ class TradeSchema(BaseModel):
     qty: Decimal
     time: datetime
     is_buyer_maker: bool
-    is_best_match: bool | None = None
+    is_best_match: bool = True
+    quote_qty: Decimal = Decimal("0")
+    first_trade_id: int | None = None
+    last_trade_id: int | None = None
     # Optional fields that may be present in some exchanges
-    quote_qty: Decimal | None = None
     buyer_order_id: int | None = None
     seller_order_id: int | None = None
 

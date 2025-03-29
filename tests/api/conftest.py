@@ -5,9 +5,11 @@ This module contains fixtures and setup for testing the API connectors.
 """
 
 import os
+from typing import Any
 
 import pytest
 
+from src.api.binance import BinanceClient
 from src.commons.time_utility import utc_now
 
 # Skip integration tests if no API keys are available
@@ -19,19 +21,18 @@ skip_integration = pytest.mark.skipif(
 
 
 @pytest.fixture()
-def binance_testnet_client():
+def binance_testnet_client() -> BinanceClient:
     """
     Create a Binance testnet client for testing.
 
     This client uses the testnet environment and doesn't require API keys.
     """
-    from src.api.binance import BinanceClient
 
     return BinanceClient(testnet=True)
 
 
 @pytest.fixture()
-def binance_client_with_keys():
+def binance_client_with_keys() -> BinanceClient:
     """
     Create a Binance client with API keys for integration testing.
 
@@ -53,7 +54,7 @@ def binance_client_with_keys():
 
 
 @pytest.fixture()
-def mock_response_time():
+def mock_response_time() -> dict[str, int]:
     """Mock server time response."""
     return {
         "serverTime": int(utc_now().timestamp() * 1000),
@@ -61,7 +62,7 @@ def mock_response_time():
 
 
 @pytest.fixture()
-def mock_symbol_info():
+def mock_symbol_info() -> dict[str, Any]:
     """Mock symbol info response."""
     return {
         "symbol": "BTCUSDT",
@@ -88,7 +89,7 @@ def mock_symbol_info():
 
 
 @pytest.fixture()
-def mock_orderbook():
+def mock_orderbook() -> dict[str, Any]:
     """Mock orderbook response."""
     return {
         "lastUpdateId": 123456789,
@@ -106,7 +107,7 @@ def mock_orderbook():
 
 
 @pytest.fixture()
-def mock_trades():
+def mock_trades() -> list[dict[str, Any]]:
     """Mock trades response."""
     return [
         {
@@ -129,7 +130,7 @@ def mock_trades():
 
 
 @pytest.fixture()
-def mock_klines():
+def mock_klines() -> list[list[Any]]:
     """Mock klines response."""
     return [
         [
@@ -164,7 +165,7 @@ def mock_klines():
 
 
 @pytest.fixture()
-def mock_ticker():
+def mock_ticker() -> dict[str, Any]:
     """Mock ticker response."""
     return {
         "symbol": "BTCUSDT",
@@ -192,7 +193,7 @@ def mock_ticker():
 
 
 @pytest.fixture()
-def mock_account():
+def mock_account() -> dict[str, Any]:
     """Mock account response."""
     return {
         "makerCommission": 10,
@@ -220,7 +221,7 @@ def mock_account():
 
 
 @pytest.fixture()
-def mock_order_response():
+def mock_order_response() -> dict[str, Any]:
     """Mock order response."""
     return {
         "symbol": "BTCUSDT",

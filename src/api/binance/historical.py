@@ -1,55 +1,48 @@
 """
 Binance Historical Data Client.
 
-This module provides a specialized client for downloading large amounts of historical data
-from Binance efficiently, with support for batching, parallelization, and rate limiting.
+This module provides a specialized client for downloading large amounts
+of historical data
+from Binance efficiently, with support for batching, parallelization, and
+rate limiting.
 """
 
-from enum import Enum
 import logging
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, TypeVar
 
 import dateparser
 import pandas as pd
-from pydantic import BaseModel
-from tqdm import tqdm
+from pydantic import BaseModel, Field
 
 from src.api.binance.client import BinanceClient
 from src.api.binance.constants import KLINE_INTERVALS
 from src.api.common.exceptions import APIError, RateLimitError
 from src.api.common.models import CandlestickSchema, TradeSchema
+from src.commons.time_utility import (
+    MILLISECONDS_IN_SECOND,
+    milliseconds_to_datetime,
+    utc_now,
+)
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
 
-class DataSaveFormat(str, Enum):
-    """Data save format options."""
-
-    CSV = "csv"
-    PARQUET = "parquet"
-    JSON = "json"
-
-
-@dataclass
-class DownloadBatchConfig:
+class DownloadBatchConfigSchema(BaseModel):
     """Configuration for a download batch."""
 
     symbol: str
     interval: str
     start_time: datetime
     end_time: datetime
-    batch_size: int = 1000
-    max_workers: int = 4
-    save_format: DataSaveFormat = DataSaveFormat.PARQUET
-    output_dir: str = "./data"
+    batch_size: int = Field(default=1000, gt=0)
+    max_workers: int = Field(default=4, gt=0)
+    output_dir: Path = Field(default=Path("./data"))
 
 
 class BinanceHistoricalDataClient:
@@ -61,22 +54,21 @@ class BinanceHistoricalDataClient:
     - Parallel downloads using ThreadPoolExecutor
     - Smart batching to maximize throughput
     - Automatic rate limiting
-    - Multiple output formats
+    - CSV output format
     - Progress tracking
     """
 
     def __init__(
         self,
-        api_key: str | None = None,
-        api_secret: str | None = None,
+        api_key: None | str = None,
+        api_secret: None | str = None,
         testnet: bool = False,
         timeout: int = 60,
         max_workers: int = 4,
         batch_size: int = 1000,
-        output_dir: str = "./data",
-        save_format: DataSaveFormat = DataSaveFormat.PARQUET,
-        proxies: dict[str, str] | None = None,
-    ):
+        output_dir: Path = Path("./data"),
+        proxies: None | dict[str, str] = None,
+    ) -> None:
         """
         Initialize the Binance Historical Data Client.
 
@@ -88,7 +80,6 @@ class BinanceHistoricalDataClient:
             max_workers: Maximum number of concurrent download workers
             batch_size: Default size of each download batch
             output_dir: Default directory to save downloaded data
-            save_format: Default format to save data (csv, parquet, json)
             proxies: Proxy configuration for requests
         """
         self.client = BinanceClient(
@@ -101,42 +92,9 @@ class BinanceHistoricalDataClient:
         self.max_workers = max_workers
         self.batch_size = batch_size
         self.output_dir = output_dir
-        self.save_format = save_format
 
         # Create output directory if it doesn't exist
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-    @staticmethod
-    def date_to_milliseconds(date_str: str) -> int:
-        """
-        Convert a date string to milliseconds.
-
-        Args:
-            date_str: Date string in readable format, e.g., "1 Jan, 2020", "1 hour ago UTC"
-
-        Returns:
-            Milliseconds since epoch
-        """
-        # Parse the date with dateparser
-        parsed_date = dateparser.parse(date_str)
-        if not parsed_date:
-            raise ValueError(f"Could not parse date string: {date_str}")
-
-        # Return timestamp in milliseconds
-        return int(parsed_date.timestamp() * 1000)
-
-    @staticmethod
-    def milliseconds_to_datetime(milliseconds: int) -> datetime:
-        """
-        Convert milliseconds to datetime.
-
-        Args:
-            milliseconds: Milliseconds since epoch
-
-        Returns:
-            Datetime object
-        """
-        return datetime.fromtimestamp(milliseconds / 1000)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_batch_intervals(
         self,
@@ -188,14 +146,13 @@ class BinanceHistoricalDataClient:
         data: list[T],
         symbol: str,
         data_type: str,
-        interval: str | None = None,
-        start_time: datetime | None = None,
-        end_time: datetime | None = None,
-        save_format: DataSaveFormat | None = None,
-        output_dir: str | None = None,
-    ) -> str:
+        interval: None | str = None,
+        start_time: None | datetime = None,
+        end_time: None | datetime = None,
+        output_dir: None | Path = None,
+    ) -> Path:
         """
-        Save data to a file.
+        Save data to a CSV file.
 
         Args:
             data: Data to save
@@ -204,22 +161,20 @@ class BinanceHistoricalDataClient:
             interval: Kline interval if applicable
             start_time: Start time for the data
             end_time: End time for the data
-            save_format: Format to save data (defaults to self.save_format)
             output_dir: Directory to save data (defaults to self.output_dir)
 
         Returns:
             Path to the saved file
         """
         if not data:
-            logger.warning(f"No data to save for {symbol} {data_type}")
-            return ""
+            logger.warning("No data to save for %s %s", symbol, data_type)
+            return Path()  # Return empty Path to match return type
 
         # Use defaults if not specified
-        format_to_use = save_format or self.save_format
         dir_to_use = output_dir or self.output_dir
 
         # Create directory if it doesn't exist
-        Path(dir_to_use).mkdir(parents=True, exist_ok=True)
+        dir_to_use.mkdir(parents=True, exist_ok=True)
 
         # Create filename based on data type and time range
         time_suffix = ""
@@ -232,34 +187,24 @@ class BinanceHistoricalDataClient:
         filename_base = f"{symbol}_{data_type}{interval_part}_{time_suffix}"
 
         # Create pandas DataFrame from data
-        df = pd.DataFrame([item.model_dump() for item in data])
+        data_df = pd.DataFrame([item.model_dump() for item in data])
 
-        # Save according to specified format
-        if format_to_use == DataSaveFormat.CSV:
-            filepath = os.path.join(dir_to_use, f"{filename_base}.csv")
-            df.to_csv(filepath, index=False)
-        elif format_to_use == DataSaveFormat.PARQUET:
-            filepath = os.path.join(dir_to_use, f"{filename_base}.parquet")
-            df.to_parquet(filepath, index=False)
-        elif format_to_use == DataSaveFormat.JSON:
-            filepath = os.path.join(dir_to_use, f"{filename_base}.json")
-            df.to_json(filepath, orient="records", date_format="iso")
-        else:
-            raise ValueError(f"Unsupported save format: {format_to_use}")
+        # Save to CSV
+        filepath = dir_to_use / f"{filename_base}.csv"
+        data_df.to_csv(filepath, index=False)
 
-        logger.info(f"Saved {len(data)} records to {filepath}")
+        logger.info("Saved %d records to %s", len(data), filepath)
         return filepath
 
-    async def download_klines(
+    def download_klines(  # noqa: C901, PLR0912
         self,
         symbol: str,
         interval: str,
         start_time: str | datetime,
-        end_time: str | datetime | None = None,
-        batch_size: int | None = None,
-        max_workers: int | None = None,
-        save_format: DataSaveFormat | None = None,
-        output_dir: str | None = None,
+        end_time: None | str | datetime = None,
+        batch_size: None | int = None,
+        max_workers: None | int = None,
+        output_dir: None | Path = None,
         save_progress: bool = True,
     ) -> list[CandlestickSchema]:
         """
@@ -271,8 +216,8 @@ class BinanceHistoricalDataClient:
             start_time: Start time for the download (string or datetime)
             end_time: End time for the download (string or datetime, defaults to now)
             batch_size: Size of each download batch (defaults to self.batch_size)
-            max_workers: Maximum number of concurrent workers (defaults to self.max_workers)
-            save_format: Format to save data (defaults to self.save_format)
+            max_workers: Maximum number of concurrent workers
+            (defaults to self.max_workers)
             output_dir: Directory to save data (defaults to self.output_dir)
             save_progress: Whether to save each batch as it completes
 
@@ -288,9 +233,9 @@ class BinanceHistoricalDataClient:
             start_time_dt = start_time
 
         if end_time is None:
-            end_time_dt = datetime.now()
+            end_time_dt = utc_now()
         elif isinstance(end_time, str):
-            end_time_dt = dateparser.parse(end_time)
+            end_time_dt = dateparser.parse(end_time)  # type: ignore
             if not end_time_dt:
                 raise ValueError(f"Could not parse end_time: {end_time}")
         else:
@@ -310,14 +255,23 @@ class BinanceHistoricalDataClient:
         # Prepare for downloads
         all_data: list[CandlestickSchema] = []
 
+        logger.info(
+            "Starting download of %s %s klines from %s to %s (%d batches)",
+            symbol,
+            interval,
+            start_time_dt,
+            end_time_dt,
+            len(batches),
+        )
+
         # Set up ThreadPoolExecutor for parallel downloads
         with ThreadPoolExecutor(max_workers=max_workers_to_use) as executor:
             futures = []
 
             # Create download tasks for each batch
             for batch in batches:
-                batch_start = self.milliseconds_to_datetime(batch["start_time"])
-                batch_end = self.milliseconds_to_datetime(batch["end_time"])
+                batch_start = milliseconds_to_datetime(batch["start_time"])
+                batch_end = milliseconds_to_datetime(batch["end_time"])
 
                 # Submit download task
                 future = executor.submit(
@@ -329,36 +283,49 @@ class BinanceHistoricalDataClient:
                 )
                 futures.append((future, batch_start, batch_end))
 
-            # Process results with progress bar
-            with tqdm(
-                total=len(futures),
-                desc=f"Downloading {symbol} {interval} klines",
-            ) as pbar:
-                for future, batch_start, batch_end in futures:
-                    try:
-                        batch_data = future.result()
-                        if batch_data:
-                            all_data.extend(batch_data)
+            # Process results
+            completed = 0
+            for future, batch_start, batch_end in futures:
+                try:
+                    batch_data = future.result()
+                    if batch_data:
+                        all_data.extend(batch_data)
 
-                            # Save batch data if requested
-                            if save_progress:
-                                self._save_data(
-                                    data=batch_data,
-                                    symbol=symbol,
-                                    data_type="klines",
-                                    interval=interval,
-                                    start_time=batch_start,
-                                    end_time=batch_end,
-                                    save_format=save_format,
-                                    output_dir=output_dir,
-                                )
+                        # Save batch data if requested
+                        if save_progress:
+                            self._save_data(
+                                data=batch_data,
+                                symbol=symbol,
+                                data_type="klines",
+                                interval=interval,
+                                start_time=batch_start,
+                                end_time=batch_end,
+                                output_dir=output_dir,
+                            )
 
-                        pbar.update(1)
-                    except Exception as e:
-                        logger.error(
-                            f"Error downloading batch {batch_start} to {batch_end}: {e}",
-                        )
-                        pbar.update(1)
+                    completed += 1
+                    logger.info(
+                        "Completed batch %d/%d for %s %s klines (%.1f%%)",
+                        completed,
+                        len(futures),
+                        symbol,
+                        interval,
+                        (completed / len(futures)) * 100,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Error downloading batch %s to %s",
+                        batch_start,
+                        batch_end,
+                    )
+                    completed += 1
+
+        logger.info(
+            "Completed download of %s %s klines: %d records retrieved",
+            symbol,
+            interval,
+            len(all_data),
+        )
 
         # Save all data if requested and not already saved by batch
         if all_data and not save_progress:
@@ -369,7 +336,6 @@ class BinanceHistoricalDataClient:
                 interval=interval,
                 start_time=start_time_dt,
                 end_time=end_time_dt,
-                save_format=save_format,
                 output_dir=output_dir,
             )
 
@@ -394,48 +360,30 @@ class BinanceHistoricalDataClient:
         Returns:
             List of candlestick data
         """
-        max_retries = 3
-        retry_delay = 2  # seconds
+        try:
+            # Get klines using the standard client
+            klines = self.client.get_klines(
+                symbol=symbol,
+                interval=interval,
+                start_time=start_time,
+                end_time=end_time,
+                limit=1000,  # Maximum allowed by Binance
+            )
+        except RateLimitError as e:
+            raise APIError("Rate limit hit") from e
+        except APIError:
+            logger.exception("API error downloading klines")
+            raise
+        else:
+            return klines
 
-        for retry in range(max_retries):
-            try:
-                # Get klines using the standard client
-                klines = self.client.get_klines(
-                    symbol=symbol,
-                    interval=interval,
-                    start_time=start_time,
-                    end_time=end_time,
-                    limit=1000,  # Maximum allowed by Binance
-                )
-                return klines
-
-            except RateLimitError as e:
-                # Handle rate limiting with exponential backoff
-                wait_time = retry_delay * (2**retry)
-                logger.warning(f"Rate limit hit, retrying in {wait_time}s: {e}")
-                time.sleep(wait_time)
-
-            except APIError as e:
-                logger.error(f"API error downloading klines: {e}")
-                # Only retry certain errors
-                if "timeout" in str(e).lower() or "5xx" in str(e):
-                    time.sleep(retry_delay)
-                else:
-                    raise
-
-        # If we get here, all retries failed
-        logger.error(f"Failed to download klines after {max_retries} retries")
-        return []
-
-    async def download_trades(
+    def download_trades(  # noqa: C901, PLR0912
         self,
         symbol: str,
         start_time: str | datetime,
-        end_time: str | datetime | None = None,
-        batch_size: int | None = None,
-        max_workers: int | None = None,
-        save_format: DataSaveFormat | None = None,
-        output_dir: str | None = None,
+        end_time: None | str | datetime = None,
+        max_workers: None | int = None,
+        output_dir: None | Path = None,
         save_progress: bool = True,
     ) -> list[TradeSchema]:
         """
@@ -445,9 +393,9 @@ class BinanceHistoricalDataClient:
             symbol: Trading pair symbol (e.g., "BTCUSDT")
             start_time: Start time for the download (string or datetime)
             end_time: End time for the download (string or datetime, defaults to now)
-            batch_size: Size of each download batch (defaults to self.batch_size)
-            max_workers: Maximum number of concurrent workers (defaults to self.max_workers)
-            save_format: Format to save data (defaults to self.save_format)
+            batch_size: Size of each download batch (not used for trades)
+            max_workers: Maximum number of concurrent workers
+            (defaults to self.max_workers)
             output_dir: Directory to save data (defaults to self.output_dir)
             save_progress: Whether to save each batch as it completes
 
@@ -463,9 +411,9 @@ class BinanceHistoricalDataClient:
             start_time_dt = start_time
 
         if end_time is None:
-            end_time_dt = datetime.now()
+            end_time_dt = utc_now()
         elif isinstance(end_time, str):
-            end_time_dt = dateparser.parse(end_time)
+            end_time_dt = dateparser.parse(end_time)  # type: ignore
             if not end_time_dt:
                 raise ValueError(f"Could not parse end_time: {end_time}")
         else:
@@ -490,6 +438,14 @@ class BinanceHistoricalDataClient:
         all_data: list[TradeSchema] = []
         max_workers_to_use = max_workers or self.max_workers
 
+        logger.info(
+            "Starting download of %s trades from %s to %s (%d batches)",
+            symbol,
+            start_time_dt,
+            end_time_dt,
+            len(batches),
+        )
+
         # Set up ThreadPoolExecutor for parallel downloads
         with ThreadPoolExecutor(max_workers=max_workers_to_use) as executor:
             futures = []
@@ -505,32 +461,46 @@ class BinanceHistoricalDataClient:
                 )
                 futures.append((future, batch["start_time"], batch["end_time"]))
 
-            # Process results with progress bar
-            with tqdm(total=len(futures), desc=f"Downloading {symbol} trades") as pbar:
-                for future, batch_start, batch_end in futures:
-                    try:
-                        batch_data = future.result()
-                        if batch_data:
-                            all_data.extend(batch_data)
+            # Process results
+            completed = 0
+            for future, batch_start, batch_end in futures:
+                try:
+                    batch_data = future.result()
+                    if batch_data:
+                        all_data.extend(batch_data)
 
-                            # Save batch data if requested
-                            if save_progress:
-                                self._save_data(
-                                    data=batch_data,
-                                    symbol=symbol,
-                                    data_type="trades",
-                                    start_time=batch_start,
-                                    end_time=batch_end,
-                                    save_format=save_format,
-                                    output_dir=output_dir,
-                                )
+                        # Save batch data if requested
+                        if save_progress:
+                            self._save_data(
+                                data=batch_data,
+                                symbol=symbol,
+                                data_type="trades",
+                                start_time=batch_start,
+                                end_time=batch_end,
+                                output_dir=output_dir,
+                            )
 
-                        pbar.update(1)
-                    except Exception as e:
-                        logger.error(
-                            f"Error downloading trades batch {batch_start} to {batch_end}: {e}",
-                        )
-                        pbar.update(1)
+                    completed += 1
+                    logger.info(
+                        "Completed batch %d/%d for %s trades (%.1f%%)",
+                        completed,
+                        len(futures),
+                        symbol,
+                        (completed / len(futures)) * 100,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Error downloading trades batch %s to %s",
+                        batch_start,
+                        batch_end,
+                    )
+                    completed += 1
+
+        logger.info(
+            "Completed download of %s trades: %d records retrieved",
+            symbol,
+            len(all_data),
+        )
 
         # Save all data if requested and not already saved by batch
         if all_data and not save_progress:
@@ -540,7 +510,6 @@ class BinanceHistoricalDataClient:
                 data_type="trades",
                 start_time=start_time_dt,
                 end_time=end_time_dt,
-                save_format=save_format,
                 output_dir=output_dir,
             )
 
@@ -563,86 +532,85 @@ class BinanceHistoricalDataClient:
         Returns:
             List of trade data
         """
-        max_retries = 3
-        retry_delay = 2  # seconds
-
+        max_iterations = 100  # Safety limit for iterations
         # For trades, we need to use historical_trades with fromId
         # First, get the trade ID close to our start time
-        for retry in range(max_retries):
-            try:
-                # Convert times to milliseconds
-                start_ms = int(start_time.timestamp() * 1000)
-                end_ms = int(end_time.timestamp() * 1000)
+        # Convert times to milliseconds
+        start_ms = int(start_time.timestamp() * MILLISECONDS_IN_SECOND)
+        end_ms = int(end_time.timestamp() * MILLISECONDS_IN_SECOND)
 
-                # First, get trades around our start time
-                first_trades = self.client.get_historical_trades(
-                    symbol=symbol,
-                    limit=1,
-                    start_time=start_ms,
+        # First, get trades around our start time
+        first_trades = self.client.get_historical_trades(
+            symbol=symbol,
+            limit=1,
+            start_time=start_ms,
+        )
+
+        if not first_trades:
+            return []
+
+        from_id = first_trades[0].id
+        all_trades = []
+
+        # Keep fetching trades until we reach the end time
+        iteration_count = 0
+        while iteration_count < max_iterations:
+            iteration_count += 1
+            batch = self.client.get_historical_trades(
+                symbol=symbol,
+                limit=1000,
+                from_id=from_id,
+            )
+
+            if not batch:
+                break
+
+            # Filter trades by time
+            valid_trades = [
+                t
+                for t in batch
+                if start_ms
+                <= int(t.time.timestamp() * MILLISECONDS_IN_SECOND)
+                <= end_ms
+            ]
+
+            all_trades.extend(valid_trades)
+
+            # Check if we've reached the end time
+            last_trade_time = int(batch[-1].time.timestamp() * MILLISECONDS_IN_SECOND)
+            if last_trade_time > end_ms:
+                break
+
+            # Safety check for tests - if from_id doesn't change, we're in a loop
+            next_from_id = batch[-1].id + 1
+            if next_from_id == from_id:
+                # We're not making progress, likely in a test with mocked data
+                logger.warning(
+                    "Trade ID not advancing, breaking loop at iteration %d",
+                    iteration_count,
                 )
+                break
 
-                if not first_trades:
-                    return []
+            # Update from_id for next iteration
+            from_id = next_from_id
 
-                from_id = first_trades[0].id
-                all_trades = []
+            # Avoid rate limiting
+            time.sleep(0.1)
 
-                # Keep fetching trades until we reach the end time
-                while True:
-                    batch = self.client.get_historical_trades(
-                        symbol=symbol,
-                        limit=1000,
-                        from_id=from_id,
-                    )
+        # Check if we hit the max iteration limit
+        if iteration_count >= max_iterations:
+            logger.warning(
+                "Reached maximum iteration limit (%d) when downloading trades",
+                max_iterations,
+            )
 
-                    if not batch:
-                        break
+        return all_trades
 
-                    # Filter trades by time
-                    valid_trades = [
-                        t
-                        for t in batch
-                        if start_ms <= int(t.time.timestamp() * 1000) <= end_ms
-                    ]
-
-                    all_trades.extend(valid_trades)
-
-                    # Check if we've reached the end time
-                    last_trade_time = int(batch[-1].time.timestamp() * 1000)
-                    if last_trade_time > end_ms:
-                        break
-
-                    # Update from_id for next iteration
-                    from_id = batch[-1].id + 1
-
-                    # Avoid rate limiting
-                    time.sleep(0.1)
-
-                return all_trades
-
-            except RateLimitError as e:
-                # Handle rate limiting with exponential backoff
-                wait_time = retry_delay * (2**retry)
-                logger.warning(f"Rate limit hit, retrying in {wait_time}s: {e}")
-                time.sleep(wait_time)
-
-            except APIError as e:
-                logger.error(f"API error downloading trades: {e}")
-                # Only retry certain errors
-                if "timeout" in str(e).lower() or "5xx" in str(e):
-                    time.sleep(retry_delay)
-                else:
-                    raise
-
-        # If we get here, all retries failed
-        logger.error(f"Failed to download trades after {max_retries} retries")
-        return []
-
-    async def download_multiple_symbols(
+    def download_multiple_symbols(
         self,
-        config: DownloadBatchConfig,
+        config: DownloadBatchConfigSchema,
         symbols: list[str],
-    ) -> dict[str, str]:
+    ) -> dict[str, Path]:  # Fix return type
         """
         Download data for multiple symbols with the same configuration.
 
@@ -653,19 +621,30 @@ class BinanceHistoricalDataClient:
         Returns:
             Dictionary of symbol to file path
         """
-        results = {}
+        results: dict[str, Path] = {}
+        logger.info(
+            "Starting download for %d symbols with interval %s",
+            len(symbols),
+            config.interval,
+        )
 
-        for symbol in symbols:
+        for i, symbol in enumerate(symbols):
             try:
+                logger.info(
+                    "Processing symbol %d/%d: %s",
+                    i + 1,
+                    len(symbols),
+                    symbol,
+                )
+
                 if config.interval:  # Klines
-                    data = await self.download_klines(
+                    data = self.download_klines(
                         symbol=symbol,
                         interval=config.interval,
                         start_time=config.start_time,
                         end_time=config.end_time,
                         batch_size=config.batch_size,
                         max_workers=config.max_workers,
-                        save_format=config.save_format,
                         output_dir=config.output_dir,
                     )
 
@@ -678,28 +657,36 @@ class BinanceHistoricalDataClient:
                             interval=config.interval,
                             start_time=config.start_time,
                             end_time=config.end_time,
-                            save_format=config.save_format,
                             output_dir=config.output_dir,
                         )
                         results[symbol] = filepath
+                        logger.info(
+                            "Downloaded %d records for %s",
+                            len(data),
+                            symbol,
+                        )
 
-            except Exception as e:
-                logger.error(f"Error downloading data for {symbol}: {e}")
+            except Exception:
+                logger.exception("Error downloading data for %s", symbol)
 
+        logger.info(
+            "Completed download for %d/%d symbols",
+            len(results),
+            len(symbols),
+        )
         return results
 
-    async def download_all_symbols(
+    def download_all_symbols(  # noqa: C901
         self,
         interval: str,
         start_time: str | datetime,
-        end_time: str | datetime | None = None,
-        quote_asset: str | None = None,
-        min_volume: float | None = None,
-        batch_size: int | None = None,
-        max_workers: int | None = None,
-        save_format: DataSaveFormat | None = None,
-        output_dir: str | None = None,
-    ) -> dict[str, str]:
+        end_time: None | str | datetime = None,
+        quote_asset: None | str = None,
+        min_volume: None | float = None,
+        batch_size: None | int = None,
+        max_workers: None | int = None,
+        output_dir: None | Path = None,
+    ) -> dict[str, Path]:  # Fix return type
         """
         Download data for all available symbols matching criteria.
 
@@ -711,15 +698,16 @@ class BinanceHistoricalDataClient:
             min_volume: Minimum 24h volume in USD
             batch_size: Size of each download batch
             max_workers: Maximum number of concurrent workers
-            save_format: Format to save data
             output_dir: Directory to save data
 
         Returns:
             Dictionary of symbol to file path
         """
         # Get exchange information to find available symbols
+        logger.info("Fetching exchange information...")
         exchange_info = self.client.get_exchange_info()
         all_symbols = exchange_info.get("symbols", [])
+        logger.info("Found %d symbols on exchange", len(all_symbols))
 
         # Filter symbols
         filtered_symbols = []
@@ -727,10 +715,13 @@ class BinanceHistoricalDataClient:
         # Get 24h ticker data for volume filtering if needed
         tickers = None
         if min_volume:
+            logger.info("Fetching 24h ticker data for volume filtering...")
             tickers = self.client.get_all_tickers()
             # Create a lookup dictionary
             ticker_map = {t.symbol: t for t in tickers}
+            logger.info("Retrieved ticker data for %d symbols", len(ticker_map))
 
+        logger.info("Filtering symbols...")
         for symbol_info in all_symbols:
             symbol = symbol_info.get("symbol")
             status = symbol_info.get("status")
@@ -751,21 +742,47 @@ class BinanceHistoricalDataClient:
 
             filtered_symbols.append(symbol)
 
+        filter_desc = ""
+        if quote_asset or min_volume:
+            filter_desc = f"(quote_asset={quote_asset}, min_volume={min_volume})"
+
+        logger.info(
+            "Filtered to %d symbols matching criteria %s",
+            len(filtered_symbols),
+            filter_desc,
+        )
+
+        # Process start and end times for config
+        processed_start_time = (
+            start_time
+            if isinstance(start_time, datetime)
+            else dateparser.parse(start_time)
+        )
+        if not processed_start_time:
+            raise ValueError(f"Could not parse start_time: {start_time}")
+
+        # Handle end_time with proper type checking
+        processed_end_time: datetime
+        if end_time is None:
+            processed_end_time = utc_now()
+        elif isinstance(end_time, datetime):
+            processed_end_time = end_time
+        else:
+            parsed_end_time = dateparser.parse(end_time)
+            if not parsed_end_time:
+                raise ValueError(f"Could not parse end_time: {end_time}")
+            processed_end_time = parsed_end_time
+
         # Create download config
-        config = DownloadBatchConfig(
+        config = DownloadBatchConfigSchema(
             symbol="",  # Will be set per download
             interval=interval,
-            start_time=start_time
-            if isinstance(start_time, datetime)
-            else dateparser.parse(start_time),
-            end_time=end_time
-            if isinstance(end_time, datetime) or end_time is None
-            else dateparser.parse(end_time) or datetime.now(),
+            start_time=processed_start_time,
+            end_time=processed_end_time,
             batch_size=batch_size or self.batch_size,
             max_workers=max_workers or self.max_workers,
-            save_format=save_format or self.save_format,
             output_dir=output_dir or self.output_dir,
         )
 
         # Download data for filtered symbols
-        return await self.download_multiple_symbols(config, filtered_symbols)
+        return self.download_multiple_symbols(config, filtered_symbols)

@@ -1,0 +1,54 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Pydantic Models
+
+## Use Pydantic Exclusively
+- Pydantic is mandatory for all data modeling
+- Python's dataclasses are NOT allowed
+- Always prefer Pydantic models over raw dictionaries
+
+## Key Benefits
+- Data validation and type checking
+- Data parsing and conversion
+- Serialization/deserialization
+- Schema generation
+- Comprehensive IDE support
+
+## Naming Conventions
+- All Pydantic models must use the `Schema` postfix:
+  ```python
+  # CORRECT
+  class UserSchema(BaseModel):
+      username: str
+  ```
+
+## Field Definition Best Practices
+- Use `Annotated[T, Field(...)]` syntax instead of `:T = Field(...)`:
+  ```python
+  # PREFERRED
+  class UserSchema(BaseModel):
+      id: Annotated[int, Field(...)]
+      name: Annotated[str, Field(min_length=2)]
+  ```
+
+## Model Validation
+- Never use the `**` unpacking operator to create model instances
+- Always use `model_validate` or `model_validate_json` methods:
+  ```python
+  # WRONG: user = UserSchema(**data_dict)
+  # CORRECT: user = UserSchema.model_validate(data_dict)
+
+  # For JSON
+  user = UserSchema.model_validate_json(json_string)
+  ```
+
+## Model Configuration
+- Use `model_config` for configuration:
+  ```python
+  class TradeOrderSchema(BaseModel):
+      model_config = ConfigDict(frozen=True)
+  ```
+- Consider using `frozen=True` for immutability where appropriate

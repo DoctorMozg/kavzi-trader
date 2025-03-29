@@ -136,3 +136,8 @@ ORDER_SIDE: list[Literal["BUY", "SELL"]] = [
     "BUY",
     "SELL",
 ]
+
+# Error codes
+ERROR_CODE_INVALID_API_KEY = -2015  # API-key format invalid
+ERROR_CODE_UNAUTHORIZED = -2014  # API-key has no permission for the request
+ERROR_CODE_RATE_LIMIT_EXCEEDED = -1429  # Rate limit exceeded
