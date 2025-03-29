@@ -16,7 +16,7 @@ from pathlib import Path
 from src.api.binance import BinanceClient, BinanceWebsocketClient
 
 # Load environment variables and set up logging
-from src.api.binance.schemas.callback import KlineData, TickerData, TradeData
+from src.api.binance.schemas.data_dicts import KlineData, TickerData, TradeData
 from src.commons.logging import setup_logging
 
 # Add src to path to allow imports from src package

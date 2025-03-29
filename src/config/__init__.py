@@ -101,7 +101,7 @@ class NormalizationConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     method: Literal["standard", "minmax", "robust", "none"] = "standard"
-    feature_range: Annotated[list[float], Field([-1, 1], min_items=2, max_items=2)]
+    feature_range: Annotated[list[float], Field([-1, 1], min_length=2, max_length=2)]
 
 
 class SequenceConfig(BaseModel):

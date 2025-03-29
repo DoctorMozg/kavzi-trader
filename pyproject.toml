@@ -24,7 +24,6 @@ dependencies = [
     "seaborn>=0.13.2",
     "sqlalchemy>=2.0.40",
     "tensorboard>=2.19.0",
-    "torch>=2.6.0",
     "websockets>=15.0.1",
 ]
 

@@ -5,11 +5,15 @@ This module contains fixtures and setup for testing the API connectors.
 """
 
 import os
+from collections.abc import Generator
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.api.binance import BinanceClient
+from src.api.binance.client import BinanceClient
+from src.api.binance.historical.client import BinanceHistoricalDataClient
+from src.api.binance.websocket.client import BinanceWebsocketClient
 from src.commons.time_utility import utc_now
 
 # Skip integration tests if no API keys are available
@@ -27,7 +31,6 @@ def binance_testnet_client() -> BinanceClient:
 
     This client uses the testnet environment and doesn't require API keys.
     """
-
     return BinanceClient(testnet=True)
 
 
@@ -38,8 +41,6 @@ def binance_client_with_keys() -> BinanceClient:
 
     This client uses real API keys from environment variables.
     """
-    from src.api.binance import BinanceClient
-
     api_key = os.environ.get("BINANCE_TEST_API_KEY")
     api_secret = os.environ.get("BINANCE_TEST_API_SECRET")
 
@@ -51,6 +52,71 @@ def binance_client_with_keys() -> BinanceClient:
         api_secret=api_secret,
         testnet=True,
     )
+
+
+@pytest.fixture()
+def mock_binance_client() -> MagicMock:
+    """Create a mock Binance client for testing."""
+    return MagicMock(spec=BinanceClient)
+
+
+@pytest.fixture()
+def mock_stream_manager() -> Generator[MagicMock, None, None]:
+    """Create a mock StreamManager for testing."""
+    with patch("src.api.binance.websocket.stream_manager.StreamManager") as mock_class:
+        mock_manager = mock_class.return_value
+        mock_manager._lock = MagicMock()  # Mock the lock for testing
+        mock_manager.twm = MagicMock()  # Mock the ThreadedWebsocketManager
+        yield mock_manager
+
+
+@pytest.fixture()
+def mock_twm() -> Generator[MagicMock, None, None]:
+    """Create a mock of ThreadedWebsocketManager."""
+    with patch(
+        "src.api.binance.websocket.stream_manager.ThreadedWebsocketManager",
+    ) as mock_twm_class:
+        mock_twm = mock_twm_class.return_value
+        yield mock_twm
+
+
+@pytest.fixture()
+def historical_client(
+    mock_binance_client: MagicMock,
+) -> Generator[BinanceHistoricalDataClient, None, None]:
+    """Create a historical data client with mocked dependencies for testing."""
+    # Use a temp directory for test outputs
+    import tempfile
+    from pathlib import Path
+
+    output_dir = Path(tempfile.mkdtemp())
+
+    with patch(
+        "src.api.binance.historical.client.BinanceClient",
+        return_value=mock_binance_client,
+    ):
+        client = BinanceHistoricalDataClient(
+            testnet=True,
+            output_dir=output_dir,
+            max_workers=2,
+            batch_size=100,
+        )
+        yield client
+
+        # Clean up temp directory after test
+        for file in output_dir.iterdir():
+            file.unlink()
+        output_dir.rmdir()
+
+
+@pytest.fixture()
+def websocket_client(mock_stream_manager: MagicMock) -> BinanceWebsocketClient:
+    """Create a websocket client with mocked dependencies for testing."""
+    with patch(
+        "src.api.binance.websocket.client.StreamManager",
+        return_value=mock_stream_manager,
+    ):
+        return BinanceWebsocketClient(testnet=True)
 
 
 @pytest.fixture()

@@ -11,7 +11,7 @@ fetch:
   default_interval: "1h"
   store_csv: false
   validate: true
-  
+
   # Default intervals to collect (can be overridden in CLI)
   intervals:
     - "1m"
@@ -20,7 +20,7 @@ fetch:
     - "1h"
     - "4h"
     - "1d"
-    
+
   # Default symbols to collect (can be overridden in CLI)
   symbols:
     - "BTCUSDT"
@@ -49,8 +49,8 @@ incremental:
 api:
   weight_per_request: 1
   max_weight_per_minute: 1200  # Binance limit
-  
+
 # Database configuration
 database:
   batch_size: 1000
-  use_bulk_insert: true 
+  use_bulk_insert: true

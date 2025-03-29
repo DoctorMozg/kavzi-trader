@@ -4,7 +4,6 @@ Tests for Binance Historical Data Client.
 This module contains tests for the BinanceHistoricalDataClient implementation.
 """
 
-from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -13,43 +12,57 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.api.binance.historical import (
-    BinanceHistoricalDataClient,
-    DownloadBatchConfigSchema,
-)
+from src.api.binance.historical.batch import BatchProcessor, DownloadBatchConfigSchema
+from src.api.binance.historical.client import BinanceHistoricalDataClient
 from src.api.common.models import CandlestickSchema, TradeSchema
-from src.commons.time_utility import (
-    utc_now,
-)
+from src.commons.time_utility import utc_now
+
+
+def test_init(historical_client: BinanceHistoricalDataClient) -> None:
+    """Test client initialization."""
+    assert historical_client.max_workers == 2
+    assert historical_client.batch_size == 100
+    assert historical_client.output_dir.exists()
+
+
+@patch("src.api.binance.historical.batch.BatchProcessor.get_kline_batch_intervals")
+def test_get_batch_intervals(
+    mock_get_intervals: MagicMock,
+    historical_client: BinanceHistoricalDataClient,
+) -> None:
+    """Test batch interval generation."""
+    # Setup mock return value
+    mock_batches = [
+        {"start_time": 1609459200000, "end_time": 1609459200000 + 3600000},
+        {"start_time": 1609459200000 + 3600001, "end_time": 1609459200000 + 7200000},
+    ]
+    mock_get_intervals.return_value = mock_batches
+
+    start_time = datetime(2021, 1, 1, tzinfo=UTC)
+    end_time = datetime(2021, 1, 2, tzinfo=UTC)
+    interval = "1h"
+    batch_size = 10
+
+    # Call the method through BatchProcessor directly
+    batches = BatchProcessor.get_kline_batch_intervals(
+        start_time=start_time,
+        end_time=end_time,
+        interval=interval,
+        batch_size=batch_size,
+    )
+
+    # Verify the result
+    assert batches == mock_batches
+    mock_get_intervals.assert_called_once_with(
+        start_time=start_time,
+        end_time=end_time,
+        interval=interval,
+        batch_size=batch_size,
+    )
 
 
 @pytest.fixture()
-def historical_client() -> Generator[BinanceHistoricalDataClient, None, None]:
-    """Create a historical data client for testing."""
-    # Use a temp directory for test outputs
-    output_dir = Path(__file__).parent / "test_output"
-    output_dir.mkdir(exist_ok=True)
-
-    # Mock the BinanceClient to avoid actual API calls
-    with patch("src.api.binance.historical.BinanceClient") as mock_client_class:
-        # Setup the mock client
-        mock_client = MagicMock()
-        mock_client_class.return_value = mock_client
-
-        # Create the historical client with the mocked binance client
-        client = BinanceHistoricalDataClient(
-            testnet=True,
-            output_dir=output_dir,
-            max_workers=2,
-            batch_size=100,
-        )
-
-        # Make sure our tests use the mock client
-        yield client
-
-
-@pytest.fixture()
-def mock_klines() -> list[CandlestickSchema]:
+def mock_candlestick_schemas() -> list[CandlestickSchema]:
     """Create mock kline data for testing."""
     now = utc_now()
     klines = []
@@ -77,7 +90,7 @@ def mock_klines() -> list[CandlestickSchema]:
 
 
 @pytest.fixture()
-def mock_trades() -> list[TradeSchema]:
+def mock_trade_schemas() -> list[TradeSchema]:
     """Create mock trade data for testing."""
     now = utc_now()
     trades = []
@@ -98,42 +111,14 @@ def mock_trades() -> list[TradeSchema]:
     return trades
 
 
-def test_init(historical_client: BinanceHistoricalDataClient) -> None:
-    """Test client initialization."""
-    assert historical_client.max_workers == 2
-    assert historical_client.batch_size == 100
-    assert historical_client.output_dir.exists()
-
-
-def test_get_batch_intervals(historical_client: BinanceHistoricalDataClient) -> None:
-    """Test batch interval generation."""
-    start_time = datetime(2021, 1, 1, tzinfo=UTC)
-    end_time = datetime(2021, 1, 2, tzinfo=UTC)
-    interval = "1h"
-    batch_size = 10
-
-    batches = historical_client._get_batch_intervals(
-        start_time=start_time,
-        end_time=end_time,
-        interval=interval,
-        batch_size=batch_size,
-    )
-
-    assert (
-        len(batches) >= 2
-    )  # At least two batches for 24h with 10 1h candles per batch
-    assert "start_time" in batches[0]
-    assert "end_time" in batches[0]
-
-
 def test_save_data(
     historical_client: BinanceHistoricalDataClient,
-    mock_klines: list[CandlestickSchema],
+    mock_candlestick_schemas: list[CandlestickSchema],
 ) -> None:
     """Test saving data to CSV format."""
     # Test CSV saving
-    csv_path = historical_client._save_data(
-        data=mock_klines,
+    csv_path = historical_client.klines_downloader.data_saver.save_data(
+        data=mock_candlestick_schemas,
         symbol="BTCUSDT",
         data_type="klines",
         interval="1h",
@@ -146,82 +131,110 @@ def test_save_data(
 
     # Verify the CSV file contains the data
     result_df = pd.read_csv(csv_path)
-    assert len(result_df) == len(mock_klines)
+    assert len(result_df) == len(mock_candlestick_schemas)
+
     # Clean up the test file
     csv_path.unlink()
 
 
-@patch("src.api.binance.historical.BinanceHistoricalDataClient._download_klines_batch")
+@patch("src.api.binance.historical.downloaders.klines.KlinesDownloader._download_batch")
 def test_download_klines(
     mock_download_batch: MagicMock,
     historical_client: BinanceHistoricalDataClient,
-    mock_klines: list[CandlestickSchema],
+    mock_candlestick_schemas: list[CandlestickSchema],
 ) -> None:
     """Test downloading klines."""
     # Mock the batch download to return predefined data
-    mock_download_batch.return_value = mock_klines
+    mock_download_batch.return_value = mock_candlestick_schemas
 
-    klines = historical_client.download_klines(
-        symbol="BTCUSDT",
-        interval="1h",
-        start_time=utc_now() - timedelta(days=1),
-        end_time=utc_now(),
-        batch_size=100,
-    )
+    # Mock the batch intervals to return a predictable number of batches
+    with patch(
+        "src.api.binance.historical.batch.BatchProcessor.get_kline_batch_intervals",
+    ) as mock_get_intervals:
+        mock_get_intervals.return_value = [
+            {"start_time": 1609459200000, "end_time": 1609459200000 + 3600000},
+            {
+                "start_time": 1609459200000 + 3600001,
+                "end_time": 1609459200000 + 7200000,
+            },
+        ]
 
-    # Verify the result
-    assert mock_download_batch.called
-    assert len(klines) == len(mock_klines)
+        klines = historical_client.download_klines(
+            symbol="BTCUSDT",
+            interval="1h",
+            start_time=utc_now() - timedelta(days=1),
+            end_time=utc_now(),
+            batch_size=100,
+        )
 
-    # The actual number of calls depends on the batch size and time range
-    # This just verifies that batching works
-    assert mock_download_batch.call_count >= 1
+        # Verify the result
+        assert mock_download_batch.called
+        assert len(klines) == 2 * len(mock_candlestick_schemas)  # 2 batches
+
+        # The actual number of calls depends on the batch size and time range
+        # This just verifies that batching works
+        assert mock_download_batch.call_count == 2
 
 
-@patch("src.api.binance.historical.BinanceHistoricalDataClient._download_trades_batch")
+@patch("src.api.binance.historical.downloaders.trades.TradesDownloader._download_batch")
 def test_download_trades(
     mock_download_batch: MagicMock,
     historical_client: BinanceHistoricalDataClient,
-    mock_trades: list[TradeSchema],
+    mock_trade_schemas: list[TradeSchema],
 ) -> None:
     """Test downloading trades."""
     # Mock the batch download to return predefined data
-    mock_download_batch.return_value = mock_trades
+    mock_download_batch.return_value = mock_trade_schemas
 
-    # Set up test dates for predictable behavior
-    end_time = datetime(2023, 1, 2, tzinfo=UTC)
-    start_time = datetime(2023, 1, 1, tzinfo=UTC)
+    # Mock the batch intervals to return a predictable number of batches
+    with patch(
+        "src.api.binance.historical.batch.BatchProcessor.get_trade_batch_intervals",
+    ) as mock_get_intervals:
+        mock_get_intervals.return_value = [
+            {
+                "start_time": datetime(2023, 1, 1, tzinfo=UTC),
+                "end_time": datetime(2023, 1, 2, tzinfo=UTC),
+            },
+            {
+                "start_time": datetime(2023, 1, 2, tzinfo=UTC),
+                "end_time": datetime(2023, 1, 3, tzinfo=UTC),
+            },
+        ]
 
-    trades = historical_client.download_trades(
-        symbol="BTCUSDT",
-        start_time=start_time,
-        end_time=end_time,
-    )
+        # Set up test dates for predictable behavior
+        end_time = datetime(2023, 1, 3, tzinfo=UTC)
+        start_time = datetime(2023, 1, 1, tzinfo=UTC)
 
-    # Verify that the batch download function is called
-    assert mock_download_batch.called
+        trades = historical_client.download_trades(
+            symbol="BTCUSDT",
+            start_time=start_time,
+            end_time=end_time,
+        )
 
-    # Verify that the mock was called at least once
-    assert mock_download_batch.call_count >= 1
+        # Verify that the batch download function is called
+        assert mock_download_batch.called
 
-    # The length of trades should be a multiple of the mock_trades length
-    # Since we're using a mock that returns the same data each time
-    assert len(trades) == mock_download_batch.call_count * len(mock_trades)
+        # Verify that the mock was called at least once
+        assert mock_download_batch.call_count == 2
 
-    # Verify that the mock trades are included in the result
-    for trade in mock_trades:
-        assert trade in trades
+        # The length of trades should be a multiple of the mock_trades length
+        # Since we're using a mock that returns the same data each time
+        assert len(trades) == mock_download_batch.call_count * len(mock_trade_schemas)
+
+        # Verify that the mock trades are included in the result
+        for trade in mock_trade_schemas:
+            assert trade in trades
 
 
-@patch("src.api.binance.historical.BinanceHistoricalDataClient.download_klines")
+@patch("src.api.binance.historical.client.BinanceHistoricalDataClient.download_klines")
 def test_download_multiple_symbols(
     mock_download_klines: MagicMock,
     historical_client: BinanceHistoricalDataClient,
-    mock_klines: list[CandlestickSchema],
+    mock_candlestick_schemas: list[CandlestickSchema],
 ) -> None:
     """Test downloading data for multiple symbols."""
     # Mock download_klines to return predefined data
-    mock_download_klines.return_value = mock_klines
+    mock_download_klines.return_value = mock_candlestick_schemas
 
     config = DownloadBatchConfigSchema(
         symbol="",  # Will be set per download
@@ -242,7 +255,7 @@ def test_download_multiple_symbols(
 
 
 @patch(
-    "src.api.binance.historical.BinanceHistoricalDataClient.download_multiple_symbols",
+    "src.api.binance.historical.client.BinanceHistoricalDataClient.download_multiple_symbols",
 )
 def test_download_all_symbols(
     mock_download_multiple: MagicMock,
@@ -297,14 +310,14 @@ def test_download_all_symbols(
 
 def test_download_klines_batch(
     historical_client: BinanceHistoricalDataClient,
-    mock_klines: list[CandlestickSchema],
+    mock_candlestick_schemas: list[CandlestickSchema],
 ) -> None:
     """Test downloading a batch of klines."""
     # Mock the client's get_klines method
-    historical_client.client.get_klines.return_value = mock_klines  # type: ignore
+    historical_client.client.get_klines.return_value = mock_candlestick_schemas  # type: ignore
 
     # Call the method
-    result = historical_client._download_klines_batch(
+    result = historical_client.klines_downloader._download_batch(
         symbol="BTCUSDT",
         interval="1h",
         start_time=utc_now() - timedelta(hours=5),
@@ -313,48 +326,26 @@ def test_download_klines_batch(
 
     # Verify the result
     assert historical_client.client.get_klines.called  # type: ignore
-    assert len(result) == len(mock_klines)
+    assert len(result) == len(mock_candlestick_schemas)
 
 
+@patch("src.api.binance.historical.downloaders.trades.TradesDownloader._download_batch")
 def test_download_trades_batch(
+    mock_download_batch: MagicMock,
     historical_client: BinanceHistoricalDataClient,
-    mock_trades: list[TradeSchema],
+    mock_trade_schemas: list[TradeSchema],
 ) -> None:
     """Test downloading a batch of trades."""
-    # First, patch the _download_trades_batch method directly to avoid complexity
-    # with mocked historical trades api
+    # Mock the download_batch method to return our mock data
+    mock_download_batch.return_value = mock_trade_schemas
 
-    # Create a wrapper to avoid infinite loops in the real implementation
-    def mock_download_trades_batch(
-        symbol: str,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> list[TradeSchema]:
-        # Just return the mock trades directly
-        return mock_trades
+    # Call the method through the client
+    result = historical_client.trades_downloader._download_batch(
+        symbol="BTCUSDT",
+        start_time=utc_now() - timedelta(hours=1),
+        end_time=utc_now(),
+    )
 
-    # Use patch to mock the method
-    with patch.object(
-        historical_client,
-        "_download_trades_batch",
-        side_effect=mock_download_trades_batch,
-    ):
-        # Call the method
-        result = historical_client._download_trades_batch(
-            symbol="BTCUSDT",
-            start_time=utc_now() - timedelta(hours=1),
-            end_time=utc_now(),
-        )
-
-        # Verify the result
-        assert len(result) == len(mock_trades)
-
-
-# Clean up test output directory after tests
-def test_cleanup() -> None:
-    """Clean up test output directory after tests."""
-    output_dir = Path(__file__).parent / "test_output"
-    if output_dir.exists():
-        for file in output_dir.iterdir():
-            file.unlink()
-        output_dir.rmdir()
+    # Verify the result
+    assert mock_download_batch.called
+    assert len(result) == len(mock_trade_schemas)

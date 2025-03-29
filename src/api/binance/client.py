@@ -130,8 +130,9 @@ class BinanceClient:
         )
 
         logger.info(
-            "Initialized Binance client with %s",
-            f"testnet={testnet}, timeout={timeout}",
+            "Initialized Binance client with testnet=%s, timeout=%s",
+            testnet,
+            timeout,
         )
 
     def _handle_error(self, error: Exception) -> None:
@@ -170,14 +171,14 @@ class BinanceClient:
 
         raise APIError(f"Unexpected error: {message}")
 
-    def _get_timestamp(self) -> int:
+    def _get_timestamp_ms(self) -> int:
         """
         Get current timestamp in milliseconds.
 
         Returns:
             Current timestamp in milliseconds
         """
-        return int(time.time() * 1000)
+        return int(time.time() * MILLISECONDS_IN_SECOND)
 
     @handle_api_errors
     def ping(self) -> bool:
@@ -355,7 +356,7 @@ class BinanceClient:
         start_time_ms = None
         if start_time is not None:
             if isinstance(start_time, datetime):
-                start_time_ms = int(start_time.timestamp() * 1000)
+                start_time_ms = int(start_time.timestamp() * MILLISECONDS_IN_SECOND)
             else:
                 start_time_ms = start_time
 
@@ -413,14 +414,14 @@ class BinanceClient:
         start_time_ms = None
         if start_time is not None:
             if isinstance(start_time, datetime):
-                start_time_ms = int(start_time.timestamp() * 1000)
+                start_time_ms = int(start_time.timestamp() * MILLISECONDS_IN_SECOND)
             else:
                 start_time_ms = start_time
 
         end_time_ms = None
         if end_time is not None:
             if isinstance(end_time, datetime):
-                end_time_ms = int(end_time.timestamp() * 1000)
+                end_time_ms = int(end_time.timestamp() * MILLISECONDS_IN_SECOND)
             else:
                 end_time_ms = end_time
 
@@ -489,14 +490,14 @@ class BinanceClient:
         start_time_ms = None
         if start_time is not None:
             if isinstance(start_time, datetime):
-                start_time_ms = int(start_time.timestamp() * 1000)
+                start_time_ms = int(start_time.timestamp() * MILLISECONDS_IN_SECOND)
             else:
                 start_time_ms = start_time
 
         end_time_ms = None
         if end_time is not None:
             if isinstance(end_time, datetime):
-                end_time_ms = int(end_time.timestamp() * 1000)
+                end_time_ms = int(end_time.timestamp() * MILLISECONDS_IN_SECOND)
             else:
                 end_time_ms = end_time
 
@@ -784,19 +785,14 @@ class BinanceClient:
         Returns:
             List of open orders
         """
-        try:
-            params = {}
-            if symbol is not None:
-                params["symbol"] = symbol
+        params = {}
+        if symbol is not None:
+            params["symbol"] = symbol
 
-            response = self.client.get_open_orders(**params)
+        response = self.client.get_open_orders(**params)
 
-            # Convert the response to our schema
-            return [self._parse_order_response(order) for order in response]
-
-        except Exception as e:
-            self._handle_error(e)
-            raise
+        # Convert the response to our schema
+        return [self._parse_order_response(order) for order in response]
 
     def _parse_order_response(self, response: dict[str, Any]) -> OrderResponseSchema:
         """
