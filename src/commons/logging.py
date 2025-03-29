@@ -41,7 +41,7 @@ def setup_logging(
         logger.handlers.clear()
 
     # Determine log level
-    level_str = log_level or (config.log_level if config else "INFO")
+    level_str = log_level or (config.system.log_level if config else "INFO")
     level_map = {
         "DEBUG": logging.DEBUG,
         "INFO": logging.INFO,
@@ -49,12 +49,12 @@ def setup_logging(
         "ERROR": logging.ERROR,
         "CRITICAL": logging.CRITICAL,
     }
-    level = level_map.get(level_str, logging.INFO)
+    level = level_map.get(level_str, logging.DEBUG)
     logger.setLevel(level)
 
     # Define formatter
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "%(asctime)s [%(levelname)s] %(name)s %(filename)s:%(lineno)d - %(message)s",
     )
 
     # Add console handler if requested
@@ -79,7 +79,7 @@ def setup_logging(
 
     # If config is provided and log_file wasn't specified, check for data_dir/logs
     elif config and not log_file:
-        log_dir = config.data_dir / "logs"
+        log_dir = Path(config.system.data_dir) / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / f"{name}.log"
 

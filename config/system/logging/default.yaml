@@ -4,7 +4,7 @@ logging:
   disable_existing_loggers: false
   formatters:
     standard:
-      format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+      format: '%(asctime)s [%(levelname)s] %(name)s %(filename)s:%(lineno)d - %(message)s'
   handlers:
     console:
       class: logging.StreamHandler
@@ -15,7 +15,7 @@ logging:
       class: logging.handlers.RotatingFileHandler
       level: INFO
       formatter: standard
-      filename: ${system.log_dir:logs}/kavzitrader.log
+      filename: ${system.data_dir}/logs/kavzitrader.log
       maxBytes: 10485760  # 10MB
       backupCount: 10
   loggers:

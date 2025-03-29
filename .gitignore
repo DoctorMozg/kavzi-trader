@@ -20,5 +20,8 @@ wheels/
 # Data
 data/
 
+# Hydra config
+!hydra_config/data
+
 # Tests
 test_output/
