@@ -12,7 +12,7 @@
       "icon": {
         "id": "server"
       },
-      "presentation": {    
+      "presentation": {
         "reveal": "always",
         "panel": "dedicated"
       },
@@ -35,7 +35,7 @@
       "icon": {
         "id": "check-all"
       },
-      "presentation": {    
+      "presentation": {
         "reveal": "always",
         "panel": "dedicated"
       },
@@ -48,4 +48,4 @@
       "detail": "Run pre-commit hooks"
     },
   ]
-} 
+}

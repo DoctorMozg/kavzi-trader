@@ -4,6 +4,7 @@ Data management commands for the KavziTrader CLI.
 
 import click
 
+from src.cli.commands.historical import historical
 from src.commons.logging import get_logger
 
 # Initialize logger
@@ -13,6 +14,10 @@ logger = get_logger(name="kavzitrader.cli.data")
 @click.group()
 def data() -> None:
     """Data management commands."""
+
+
+# Add historical data commands
+data.add_command(historical)
 
 
 @data.command("fetch")

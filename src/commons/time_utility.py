@@ -113,3 +113,55 @@ def milliseconds_to_datetime(milliseconds: int) -> datetime:
         Datetime object
     """
     return utc_timestamp(milliseconds / MILLISECONDS_IN_SECOND)
+
+
+def parse_date_string(date_str: str) -> datetime:
+    """
+    Parse a date string into a datetime object with UTC timezone.
+
+    This function handles various date formats and ensures the result
+    has proper timezone information.
+
+    Args:
+        date_str: Date string in various formats (e.g., YYYY-MM-DD,
+                 YYYY-MM-DD HH:MM:SS, "1 day ago", etc.)
+
+    Returns:
+        datetime: Parsed datetime object with UTC timezone
+
+    Raises:
+        ValueError: If the date string cannot be parsed
+    """
+    parsed_date = dateparser.parse(
+        date_str,
+        settings={"TIMEZONE": "UTC", "RETURN_AS_TIMEZONE_AWARE": True},
+    )
+    if not parsed_date:
+        raise ValueError(f"Could not parse date: {date_str}")
+    return parsed_date
+
+
+def parse_date_range(
+    start_date: str,
+    end_date: str | None = None,
+) -> tuple[datetime, datetime | None]:
+    """
+    Parse start and end date strings into datetime objects.
+
+    Args:
+        start_date: Start date string
+        end_date: Optional end date string
+
+    Returns:
+        tuple: (start_datetime, end_datetime or None)
+
+    Raises:
+        ValueError: If date format is invalid
+    """
+    start_time = parse_date_string(start_date)
+
+    end_time = None
+    if end_date:
+        end_time = parse_date_string(end_date)
+
+    return start_time, end_time
