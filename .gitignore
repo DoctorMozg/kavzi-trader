@@ -18,7 +18,7 @@ wheels/
 !.vscode/tasks.json
 
 # Data
-data/
+/data/*
 
 # Hydra config
 !hydra_config/data

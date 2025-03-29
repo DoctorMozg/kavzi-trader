@@ -1,0 +1,56 @@
+# Historical data collection configuration
+
+# General settings
+enabled: true
+default_output_dir: data/historical
+
+# Fetch configuration
+fetch:
+  max_workers: 4
+  batch_size: 1000
+  default_interval: "1h"
+  store_csv: false
+  validate: true
+  
+  # Default intervals to collect (can be overridden in CLI)
+  intervals:
+    - "1m"
+    - "5m"
+    - "15m"
+    - "1h"
+    - "4h"
+    - "1d"
+    
+  # Default symbols to collect (can be overridden in CLI)
+  symbols:
+    - "BTCUSDT"
+    - "ETHUSDT"
+    - "BNBUSDT"
+    - "ADAUSDT"
+    - "DOGEUSDT"
+
+# Validation configuration
+validation:
+  max_gap_percent: 2.0
+  check_sequence: true
+  check_outliers: true
+  outlier_std_threshold: 3.0
+  min_volume: 0.0
+
+# Incremental update configuration
+incremental:
+  check_gaps: true
+  look_back_periods: 5
+  auto_fill_gaps: true
+  retry_attempts: 3
+  retry_delay_seconds: 10
+
+# API configuration
+api:
+  weight_per_request: 1
+  max_weight_per_minute: 1200  # Binance limit
+  
+# Database configuration
+database:
+  batch_size: 1000
+  use_bulk_insert: true 

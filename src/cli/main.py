@@ -22,6 +22,9 @@ from src.config.hydra_util import (
     resolve_relative_paths,
 )
 
+# Import our historical data commands
+from src.data.collection.cli.commands import historical_command
+
 # Initialize logger
 logger = setup_logging(name="kavzitrader")
 
@@ -142,6 +145,10 @@ def data() -> None:
     """Data management commands."""
 
 
+# Register the historical data commands as a subgroup of data
+data.add_command(historical_command)
+
+
 @data.command("fetch")
 @click.option("--symbol", required=True, help="Trading pair symbol")
 @click.option("--interval", default="1h", help="Timeframe (1m, 5m, 1h, etc.)")
@@ -177,6 +184,11 @@ def fetch_data(
     click.echo(f"Config: {config}")
     # Implementation will be added later
 
+    # Note: Consider redirecting users to the more full-featured historical fetch command
+    click.echo(
+        "\nTip: For more options, try 'kavzitrader data historical fetch' instead."
+    )
+
 
 @cli.group()
 def model() -> None:
@@ -198,7 +210,8 @@ def train_model(ctx: click.Context, config_name: str, symbol: str) -> None:
     # Access the configuration from the context
     config = ctx.obj["app_config"]
 
-    click.echo(f"Training model {config_name} for {symbol}")
+    click.echo(f"Training model with config: {config_name}")
+    click.echo(f"Symbol: {symbol}")
     click.echo(f"Config: {config}")
     # Implementation will be added later
 
@@ -228,14 +241,14 @@ def run_backtest(
     Run a backtest with the specified trading plan.
 
     Args:
-        plan: Trading plan file
+        plan: Trading plan file path
         start_date: Backtest start date (YYYY-MM-DD)
         end_date: Backtest end date (YYYY-MM-DD)
     """
     # Access the configuration from the context
     config = ctx.obj["app_config"]
 
-    click.echo(f"Running backtest with plan {plan}")
+    click.echo(f"Running backtest with plan: {plan}")
     click.echo(f"Start date: {start_date}")
     click.echo(f"End date: {end_date}")
     click.echo(f"Config: {config}")
@@ -261,13 +274,14 @@ def paper_trade(ctx: click.Context, plan: str, capital: float) -> None:
     Run paper trading with the specified trading plan.
 
     Args:
-        plan: Trading plan file
+        plan: Trading plan file path
         capital: Initial capital
     """
     # Access the configuration from the context
     config = ctx.obj["app_config"]
 
-    click.echo(f"Starting paper trading with plan {plan} and capital {capital}")
+    click.echo(f"Starting paper trading with plan: {plan}")
+    click.echo(f"Initial capital: ${capital}")
     click.echo(f"Config: {config}")
     # Implementation will be added later
 
@@ -290,13 +304,13 @@ def live_trade(ctx: click.Context, plan: str, check_balance: bool) -> None:
     Run live trading with the specified trading plan.
 
     Args:
-        plan: Trading plan file
-        check_balance: Verify account balance before trading
+        plan: Trading plan file path
+        check_balance: Whether to verify account balance
     """
     # Access the configuration from the context
     config = ctx.obj["app_config"]
 
-    click.echo(f"Starting live trading with plan {plan}")
+    click.echo(f"Starting LIVE TRADING with plan: {plan}")
     click.echo(f"Check balance: {check_balance}")
     click.echo(f"Config: {config}")
     # Implementation will be added later
@@ -313,20 +327,20 @@ def system() -> None:
 @click.pass_context
 def setup_system(ctx: click.Context, database: bool, force: bool) -> None:
     """
-    Set up system components.
+    Set up the system with the specified components.
 
     Args:
-        database: Initialize database
-        force: Force setup (overwrite)
+        database: Whether to initialize the database
+        force: Whether to force setup (overwrite)
     """
     # Access the configuration from the context
     config = ctx.obj["app_config"]
 
-    if database:
-        click.echo("Initializing database")
-        click.echo(f"Force: {force}")
-        click.echo(f"Config: {config}")
-        # Implementation will be added later
+    click.echo("Setting up system")
+    click.echo(f"Initialize database: {database}")
+    click.echo(f"Force: {force}")
+    click.echo(f"Config: {config}")
+    # Implementation will be added later
 
 
 @cli.command("config")
@@ -339,20 +353,27 @@ def setup_system(ctx: click.Context, database: bool, force: bool) -> None:
 @click.pass_context
 def config_command(ctx: click.Context, show: bool, validate: bool) -> None:
     """
-    Manage configuration settings.
+    Show or validate the current configuration.
 
     Args:
-        show: Show the current configuration
-        validate: Validate the configuration without running any command
+        show: Whether to show the configuration
+        validate: Whether to validate the configuration
     """
-    if show:
-        # Access the configuration from the context
-        hydra_config = ctx.obj["config"]
-        print_config(hydra_config)
+    # Access the configuration from the context
+    config = ctx.obj.get("config")
+    app_config = ctx.obj.get("app_config")
+
+    if show and config:
+        print_config(config)
+        return
 
     if validate:
-        # We've already validated the config when loading it, so just report success
-        click.echo("Configuration validation successful")
+        click.echo("Configuration is valid")
+        click.echo(f"App Config: {app_config}")
+        return
+
+    click.echo("Use --show to display the current configuration")
+    click.echo("Use --validate to validate the configuration")
 
 
 @cli.command("test-config")
@@ -363,37 +384,36 @@ def config_command(ctx: click.Context, show: bool, validate: bool) -> None:
 )
 @click.argument("hydra_overrides", nargs=-1)
 @click.pass_context
-def test_config(ctx: click.Context, section: str, hydra_overrides: tuple[str]) -> None:  # noqa: ARG001
+def test_config(ctx: click.Context, section: str, hydra_overrides: tuple[str]) -> None:
     """
-    Test command to demonstrate Hydra configuration integration.
-
-    This command displays values from the specified section of the configuration.
-    You can override these values using Hydra syntax, for example:
-
-    kavzitrader test-config --section=system system.log_level=DEBUG
+    Test configuration with the specified hydra overrides.
 
     Args:
         section: Configuration section to display
+        hydra_overrides: Hydra configuration overrides
     """
-    # Access the Hydra configuration from the context
-    hydra_config = ctx.obj["config"]
+    from omegaconf import OmegaConf
 
-    click.echo(f"\nTesting configuration - Section: {section}")
-    click.echo("=" * 50)
+    # Add any overrides from the argument to the ones from ctx
+    ctx_overrides = ctx.obj.get("hydra_overrides", []) if ctx.obj else []
+    all_overrides = list(ctx_overrides) + list(hydra_overrides)
 
-    # Display the requested section
-    if section in hydra_config:
-        section_config = hydra_config[section]
-        for key, value in section_config.items():
-            click.echo(f"{section}.{key}: {value}")
+    click.echo(f"Testing configuration with section: {section}")
+    click.echo(f"Overrides: {all_overrides}")
+
+    # Get Hydra configuration
+    config = get_config(overrides=all_overrides)
+    # Extract the requested section
+    if section in config:
+        section_config = config[section]
+        click.echo(f"Configuration section '{section}':")
+        click.echo(OmegaConf.to_yaml(section_config))
     else:
-        available_sections = ", ".join(hydra_config.keys())
-        click.echo(
-            f"Section '{section}' not found. Available sections: {available_sections}",
-        )
-
-    click.echo("\nFull configuration can be displayed with 'kavzitrader config --show'")
+        click.echo(f"Section '{section}' not found in configuration")
+        click.echo("Available sections:")
+        for key in config.keys():
+            click.echo(f"  - {key}")
 
 
 if __name__ == "__main__":
-    cli(obj={})
+    cli(obj={})  # pylint: disable=no-value-for-parameter
