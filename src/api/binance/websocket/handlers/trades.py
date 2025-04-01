@@ -6,7 +6,7 @@ This module provides a handler for trade WebSocket streams.
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Awaitable
 
 from src.api.binance.schemas.data_dicts import TradeData
 from src.api.binance.websocket.handlers.base import BaseStreamHandler
@@ -22,10 +22,10 @@ class TradeStreamHandler(BaseStreamHandler[TradeData]):
         """Initialize the TradeStreamHandler."""
         super().__init__(stream_manager)
 
-    def subscribe(
+    async def subscribe(
         self,
         symbol: str,
-        callback: Callable[[TradeData], None],
+        callback: Callable[[TradeData], Awaitable[None]],
         **kwargs: Any,  # noqa: ANN401, ARG002
     ) -> str:
         """
@@ -42,8 +42,8 @@ class TradeStreamHandler(BaseStreamHandler[TradeData]):
         symbol = symbol.lower()
         stream_name = f"{symbol}@trade"
 
-        return self._start_socket(
-            socket_func=self.stream_manager.twm.start_trade_socket,
+        return await self._start_socket(
+            socket_func=self.stream_manager.bsm.trade_socket,
             stream_name=stream_name,
             callback=callback,
             symbol=symbol.upper(),

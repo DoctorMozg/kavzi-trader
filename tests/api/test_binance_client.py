@@ -15,21 +15,15 @@ from src.api.common.models import CandlestickSchema
 from src.commons.time_utility import utc_now
 
 
-@pytest.fixture()
-def client() -> BinanceClient:
-    """Create a Binance client for testing."""
-    return BinanceClient(testnet=True)
-
-
-def test_ping(client: BinanceClient) -> None:
+async def test_ping(binance_testnet_client: BinanceClient) -> None:
     """Test ping functionality."""
-    result = client.ping()
+    result = await binance_testnet_client.ping()
     assert result
 
 
-def test_server_time(client: BinanceClient) -> None:
+async def test_server_time(binance_testnet_client: BinanceClient) -> None:
     """Test server time functionality."""
-    result = client.get_server_time()
+    result = await binance_testnet_client.get_server_time()
     assert "serverTime" in result
     server_time = datetime.fromtimestamp(result["serverTime"] / 1000, UTC)
     # Server time should be within 10 seconds of local time
@@ -37,33 +31,33 @@ def test_server_time(client: BinanceClient) -> None:
     assert abs((server_time - local_time).total_seconds()) < 10
 
 
-def test_get_exchange_info(client: BinanceClient) -> None:
+async def test_get_exchange_info(binance_testnet_client: BinanceClient) -> None:
     """Test exchange info functionality."""
-    info = client.get_exchange_info()
+    info = await binance_testnet_client.get_exchange_info()
     assert "symbols" in info
     assert len(info["symbols"]) > 0
 
 
-def test_get_symbol_info(client: BinanceClient) -> None:
+async def test_get_symbol_info(binance_testnet_client: BinanceClient) -> None:
     """Test symbol info functionality."""
-    info = client.get_symbol_info("BTCUSDT")
+    info = await binance_testnet_client.get_symbol_info("BTCUSDT")
     assert info.symbol == "BTCUSDT"
     assert info.base_asset == "BTC"
     assert info.quote_asset == "USDT"
 
 
-def test_get_orderbook(client: BinanceClient) -> None:
+async def test_get_orderbook(binance_testnet_client: BinanceClient) -> None:
     """Test orderbook functionality."""
-    orderbook = client.get_orderbook("BTCUSDT", limit=5)
+    orderbook = await binance_testnet_client.get_orderbook("BTCUSDT", limit=5)
     assert len(orderbook.bids) == 5
     assert len(orderbook.asks) == 5
     assert orderbook.last_update_id is not None
     assert orderbook.timestamp is not None
 
 
-def test_get_recent_trades(client: BinanceClient) -> None:
+async def test_get_recent_trades(binance_testnet_client: BinanceClient) -> None:
     """Test recent trades functionality."""
-    trades = client.get_recent_trades("BTCUSDT", limit=10)
+    trades = await binance_testnet_client.get_recent_trades("BTCUSDT", limit=10)
     assert len(trades) == 10
     assert isinstance(trades[0].id, int)
     assert isinstance(trades[0].price, Decimal)
@@ -71,9 +65,9 @@ def test_get_recent_trades(client: BinanceClient) -> None:
     assert isinstance(trades[0].time, datetime)
 
 
-def test_get_agg_trades(client: BinanceClient) -> None:
+async def test_get_agg_trades(binance_testnet_client: BinanceClient) -> None:
     """Test aggregate trades functionality."""
-    agg_trades = client.get_agg_trades("BTCUSDT", limit=10)
+    agg_trades = await binance_testnet_client.get_agg_trades("BTCUSDT", limit=10)
     assert len(agg_trades) == 10
     assert isinstance(agg_trades[0].id, int)
     assert isinstance(agg_trades[0].price, Decimal)
@@ -83,13 +77,13 @@ def test_get_agg_trades(client: BinanceClient) -> None:
     assert isinstance(agg_trades[0].last_trade_id, int)
 
 
-def test_get_klines(client: BinanceClient) -> None:
+async def test_get_klines(binance_testnet_client: BinanceClient) -> None:
     """Test klines functionality."""
     # Get klines for the last day
     end_time = utc_now()
     start_time = end_time - timedelta(days=1)
 
-    klines = client.get_klines(
+    klines = await binance_testnet_client.get_klines(
         symbol="BTCUSDT",
         interval="1h",
         start_time=start_time,
@@ -115,29 +109,29 @@ def test_get_klines(client: BinanceClient) -> None:
     assert first_kline.symbol == "BTCUSDT"
 
 
-def test_get_ticker(client: BinanceClient) -> None:
+async def test_get_ticker(binance_testnet_client: BinanceClient) -> None:
     """Test ticker functionality."""
-    ticker = client.get_ticker("BTCUSDT")
+    ticker = await binance_testnet_client.get_ticker("BTCUSDT")
     assert ticker.symbol == "BTCUSDT"
     assert isinstance(ticker.last_price, Decimal)
     assert isinstance(ticker.volume, Decimal)
 
 
-def test_get_all_tickers(client: BinanceClient) -> None:
+async def test_get_all_tickers(binance_testnet_client: BinanceClient) -> None:
     """Test all tickers functionality."""
-    tickers = client.get_all_tickers()
+    tickers = await binance_testnet_client.get_all_tickers()
     assert len(tickers) > 0
     assert all(hasattr(t, "symbol") for t in tickers)
     assert all(hasattr(t, "last_price") for t in tickers)
 
 
-def test_create_test_order(client: BinanceClient) -> None:
+async def test_create_test_order(binance_testnet_client: BinanceClient) -> None:
     """Test creating a test order."""
     # Skip if no API credentials
-    if not client.api_key or not client.api_secret:
+    if not binance_testnet_client.api_key or not binance_testnet_client.api_secret:
         pytest.skip("No API credentials available")
 
-    test_order = client.create_order(
+    test_order = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
         side="BUY",
         order_type="LIMIT",
@@ -151,14 +145,14 @@ def test_create_test_order(client: BinanceClient) -> None:
     assert test_order.status.value == "NEW"
 
 
-def test_order_helpers(client: BinanceClient) -> None:
+async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
     """Test order helper methods."""
     # Skip if no API credentials
-    if not client.api_key or not client.api_secret:
+    if not binance_testnet_client.api_key or not binance_testnet_client.api_secret:
         pytest.skip("No API credentials available")
 
     # Test limit buy
-    test_limit_buy = client.create_order(
+    test_limit_buy = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
         side="BUY",
         order_type="LIMIT",
@@ -171,7 +165,7 @@ def test_order_helpers(client: BinanceClient) -> None:
     assert test_limit_buy.type.value == "LIMIT"
 
     # Test limit sell
-    test_limit_sell = client.create_order(
+    test_limit_sell = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
         side="SELL",
         order_type="LIMIT",
@@ -184,7 +178,7 @@ def test_order_helpers(client: BinanceClient) -> None:
     assert test_limit_sell.type.value == "LIMIT"
 
     # Test market buy
-    test_market_buy = client.create_order(
+    test_market_buy = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
         side="BUY",
         order_type="MARKET",
@@ -195,7 +189,7 @@ def test_order_helpers(client: BinanceClient) -> None:
     assert test_market_buy.type.value == "MARKET"
 
     # Test market sell
-    test_market_sell = client.create_order(
+    test_market_sell = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
         side="SELL",
         order_type="MARKET",
@@ -206,13 +200,13 @@ def test_order_helpers(client: BinanceClient) -> None:
     assert test_market_sell.type.value == "MARKET"
 
 
-def test_invalid_symbol(client: BinanceClient) -> None:
+async def test_invalid_symbol(binance_testnet_client: BinanceClient) -> None:
     """Test error handling for invalid symbols."""
     with pytest.raises(APIError):
-        client.get_symbol_info("INVALID_SYMBOL")
+        await binance_testnet_client.get_symbol_info("INVALID_SYMBOL")
 
 
-def test_invalid_interval(client: BinanceClient) -> None:
+async def test_invalid_interval(binance_testnet_client: BinanceClient) -> None:
     """Test error handling for invalid intervals."""
-    with pytest.raises(APIError):
-        client.get_klines("BTCUSDT", "INVALID_INTERVAL")
+    with pytest.raises(ValueError):
+        await binance_testnet_client.get_klines("BTCUSDT", "INVALID_INTERVAL")

@@ -40,6 +40,7 @@ KavziTrader is an automated trading platform designed to leverage neural network
 ## Technology Stack
 
 ### Core Technologies
+
 - **Python 3.11+**: Main programming language
 - **PyTorch**: Neural network framework
 - **PostgreSQL**: Database storage
@@ -49,6 +50,7 @@ KavziTrader is an automated trading platform designed to leverage neural network
 - **Hydra**: Configuration management framework
 
 ### Key Libraries
+
 - **PyTorch**: Neural network development
 - **python-binance**: Binance API client
 - **SQLAlchemy**: ORM for database operations
@@ -80,14 +82,14 @@ KavziTrader is an automated trading platform designed to leverage neural network
 
 ```
 kavzitrader/
+├── models/                    # Neural network models
+│   ├── architectures/         # Network architectures
+│   ├── training/              # Training pipelines
+│   └── evaluation/            # Model evaluation
 ├── src/
 │   ├── api/                   # API connectors
 │   │   ├── binance/           # Binance API implementation
 │   │   └── common/            # Common API interfaces
-│   ├── models/                # Neural network models
-│   │   ├── architectures/     # Network architectures
-│   │   ├── training/          # Training pipelines
-│   │   └── evaluation/        # Model evaluation
 │   ├── data/                  # Data management
 │   │   ├── loaders/           # Data loading
 │   │   ├── preprocessing/     # Data preprocessing
@@ -101,6 +103,21 @@ kavzitrader/
 │   ├── backtesting/           # Backtesting framework
 │   │   ├── engine/            # Backtesting engine
 │   │   └── reporting/         # Performance metrics
+│   ├── server/                # Continuous server system
+│   │   ├── config.py          # Server configuration schemas
+│   │   ├── modes/             # Server operational modes
+│   │   │   ├── base.py        # Base mode interface
+│   │   │   ├── data_updater.py # Data update mode
+│   │   │   ├── trading.py     # Trading execution mode
+│   │   │   └── prediction.py  # Model inference mode
+│   │   ├── workers/           # Dramatiq task workers
+│   │   │   ├── data_tasks.py  # Data-related tasks
+│   │   │   ├── trading_tasks.py # Trading-related tasks
+│   │   │   └── model_tasks.py # Model-related tasks
+│   │   ├── pubsub/            # Redis pub/sub components
+│   │   │   ├── publisher.py   # Message publisher
+│   │   │   └── subscriber.py  # Message subscriber
+│   │   └── main.py            # Server entry point
 │   └── cli/                   # Command line interfaces
 ├── config/                    # Configuration files
 │   ├── hydra/                 # Hydra configuration
@@ -116,6 +133,7 @@ kavzitrader/
 │   │   ├── execution.yaml     # Execution settings
 │   │   └── plan_templates/    # Trading plan templates
 │   ├── system/                # System configurations
+│   │   └── server/            # Server configurations (Hydra-based)
 │   └── config.yaml            # Main configuration file
 ├── trading_plans/             # User-defined trading plans
 ├── scripts/                   # Utility scripts
@@ -132,9 +150,11 @@ The detailed implementation plan is available in [02_IMPLEMENTATION_PLAN.md](02_
 ## Trading Plan System
 
 ### Overview
+
 The Trading Plan System allows users to define, test, and execute comprehensive trading strategies through a declarative YAML configuration. The system translates these plans into executable trading logic that the platform follows autonomously.
 
 ### Trading Plan Components
+
 1. **Strategy Selection**: Define which trading strategy/model to use
 2. **Entry Conditions**: Specify conditions for entering positions
 3. **Exit Conditions**: Define profit targets, stop-loss, and time-based exits
@@ -144,6 +164,7 @@ The Trading Plan System allows users to define, test, and execute comprehensive 
 7. **Filters**: Market conditions when trading should/shouldn't occur
 
 ### Trading Plan Execution Flow
+
 1. Plan Parsing: Load and validate trading plan from YAML
 2. Market Data: Fetch required market data based on plan
 3. Signal Generation: Apply specified model/strategy to generate signals
@@ -310,6 +331,7 @@ KavziTrader uses Hydra for configuration management, providing a flexible, hiera
 ### Configuration Structure
 
 ```
+
 config/
 ├── hydra/                         # Hydra specific settings
 │   ├── config.yaml                # Base Hydra configuration
@@ -332,6 +354,7 @@ config/
 │   ├── database.yaml              # Database settings
 │   └── notifications.yaml         # Notification settings
 └── config.yaml                    # Main configuration file
+
 ```
 
 ### Configuration Example (Hydra-based)
@@ -525,6 +548,26 @@ kavzitrader
 │       ├── --id <plan_id>              # Plan ID
 │       └── --detailed                  # Show detailed status
 └── system
+    ├── server      # Server management
+    │   ├── start       # Start server in a specific mode
+    │   │   ├── --mode <mode>               # Server mode (data-updater, trading, prediction)
+    │   │   ├── --config-name <name>        # Server configuration name
+    │   │   ├── --workers <n>               # Number of worker processes
+    │   │   └── --foreground                # Run in foreground (don't daemonize)
+    │   ├── stop        # Stop a running server
+    │   │   ├── --id <server_id>            # Server instance ID to stop
+    │   │   └── --all                       # Stop all server instances
+    │   ├── status      # Check server status
+    │   │   ├── --id <server_id>            # Server instance ID to check
+    │   │   └── --detailed                  # Show detailed status
+    │   ├── workers     # Manage server workers
+    │   │   ├── list                        # List active workers
+    │   │   ├── scale <n>                   # Scale workers up or down
+    │   │   └── restart                     # Restart workers
+    │   └── tasks       # View and manage tasks
+    │       ├── list                        # List pending/active tasks
+    │       ├── retry <task_id>             # Retry a failed task
+    │       └── cancel <task_id>            # Cancel a pending task
     ├── setup       # Setup system
     │   ├── --database                  # Initialize database
     │   ├── --config <config_file>      # Config file to use
@@ -582,6 +625,7 @@ The KavziTrader platform features a comprehensive reporting system that provides
 ### Performance Reporting
 
 #### Trade Performance Reports
+
 - **Trade History**: Complete records of all executed trades with entry/exit points, P&L, and reasons
 - **Period Summaries**: Daily, weekly, monthly, and custom period performance analytics
 - **Drawdown Analysis**: Maximum drawdown, drawdown duration, and recovery statistics
@@ -589,6 +633,7 @@ The KavziTrader platform features a comprehensive reporting system that provides
 - **Fee Impact Analysis**: Analysis of trading fees impact on overall performance
 
 #### Strategy Performance Metrics
+
 - **Risk-Adjusted Returns**: Sharpe ratio, Sortino ratio, and Calmar ratio
 - **Alpha/Beta Metrics**: Performance relative to market benchmarks
 - **Strategy Consistency**: Rolling window performance analysis
@@ -596,6 +641,7 @@ The KavziTrader platform features a comprehensive reporting system that provides
 - **Win Rate Analysis**: Win percentage, average win/loss, profit factor
 
 #### Backtest Reporting
+
 - **Parameter Sensitivity**: Analysis of strategy performance across parameter ranges
 - **Monte Carlo Simulations**: Statistical distribution of possible outcomes
 - **Walk-Forward Analysis**: Time-series validation of strategy robustness
@@ -629,6 +675,7 @@ The KavziTrader platform features a comprehensive reporting system that provides
 ### Report Generation
 
 Reports can be generated through:
+
 - CLI commands for scripted/automated reporting
 - Scheduled jobs for periodic reporting
 - Event-triggered reports (after trades, at strategy milestones)
@@ -641,6 +688,7 @@ The KavziTrader platform integrates powerful visualization capabilities to provi
 ### Market Data Visualizations
 
 #### Chart Types
+
 - **Candlestick Charts**: Traditional OHLC representation with customizable timeframes
 - **Line Charts**: Price trends and moving averages
 - **Volume Profiles**: Volume distribution by price levels
@@ -648,6 +696,7 @@ The KavziTrader platform integrates powerful visualization capabilities to provi
 - **Depth Charts**: Order book visualization
 
 #### Technical Indicators
+
 - **Momentum Indicators**: RSI, MACD, Stochastic, etc. with customizable parameters
 - **Volatility Indicators**: Bollinger Bands, ATR, standard deviation
 - **Trend Indicators**: Moving averages, Ichimoku Cloud, directional movement
@@ -655,6 +704,7 @@ The KavziTrader platform integrates powerful visualization capabilities to provi
 - **Custom Indicators**: Support for user-defined technical indicators
 
 #### Pattern Recognition
+
 - **Candlestick Patterns**: Highlighting of recognized patterns (doji, hammer, etc.)
 - **Chart Patterns**: Identification of chart patterns (head & shoulders, triangles)
 - **Support/Resistance**: Dynamic level identification and visualization
@@ -663,12 +713,14 @@ The KavziTrader platform integrates powerful visualization capabilities to provi
 ### Trading Visualizations
 
 #### Portfolio Analytics
+
 - **Asset Allocation**: Pie charts and treemaps of portfolio composition
 - **Performance Attribution**: Contribution of each asset to overall performance
 - **Drawdown Charts**: Visual representation of drawdowns over time
 - **Risk Exposures**: Visualization of risk factors and correlations
 
 #### Trade Analysis
+
 - **Trade Entry/Exit Markers**: Visual indication of trades on price charts
 - **Equity Curves**: Capital growth visualization with drawdown shading
 - **Trade Clustering**: Visualization of trade distribution by time/price
@@ -676,6 +728,7 @@ The KavziTrader platform integrates powerful visualization capabilities to provi
 - **Win/Loss Visualization**: Visual patterns in successful vs. unsuccessful trades
 
 #### Backtesting Results
+
 - **Parameter Sweep Heatmaps**: Performance across parameter combinations
 - **Monte Carlo Simulations**: Distribution plots of simulated outcomes
 - **Regime Analysis**: Performance visualization across different market regimes
@@ -684,6 +737,7 @@ The KavziTrader platform integrates powerful visualization capabilities to provi
 ### Model Visualizations
 
 #### Training Visualizations
+
 - **Loss Curves**: Training and validation loss over time
 - **Learning Rate Plots**: Effects of learning rate on model convergence
 - **Feature Importance**: Bar charts of feature contributions
@@ -691,6 +745,7 @@ The KavziTrader platform integrates powerful visualization capabilities to provi
 - **Activation Visualizations**: Neural network node activation patterns
 
 #### Prediction Visualizations
+
 - **Prediction vs. Actual**: Visual comparison of predicted vs. actual values
 - **Confidence Intervals**: Uncertainty bands around predictions
 - **Classification Boundaries**: Decision boundaries for classification models
@@ -780,7 +835,7 @@ The KavziTrader platform integrates powerful visualization capabilities to provi
    - Performance evaluation
 
 3. **Production Environment**
-   - Dedicated server/cloud instance
+   - Dedicated server instance
    - Database replication
    - Monitoring and alerting
    - Backup and recovery

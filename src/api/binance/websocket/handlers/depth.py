@@ -6,7 +6,7 @@ This module provides a handler for order book depth WebSocket streams.
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Awaitable
 
 from src.api.binance.websocket.handlers.base import BaseStreamHandler
 from src.api.binance.websocket.stream_manager import StreamManager
@@ -21,10 +21,10 @@ class DepthStreamHandler(BaseStreamHandler[dict[str, Any]]):
         """Initialize the DepthStreamHandler."""
         super().__init__(stream_manager)
 
-    def subscribe(
+    async def subscribe(
         self,
         symbol: str,
-        callback: Callable[[dict[str, Any]], None],
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
         **kwargs: Any,  # noqa: ANN401
     ) -> str:
         """
@@ -46,7 +46,7 @@ class DepthStreamHandler(BaseStreamHandler[dict[str, Any]]):
         symbol = symbol.lower()
         stream_name = f"{symbol}@depth{depth}"
 
-        return self._start_socket(
+        return await self._start_socket(
             socket_func=self.stream_manager.twm.start_depth_socket,
             stream_name=stream_name,
             callback=callback,

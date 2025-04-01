@@ -6,7 +6,7 @@ This module provides a handler for kline/candlestick WebSocket streams.
 
 import logging
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, Awaitable, cast
 
 from src.api.binance.constants import KLINE_INTERVALS
 from src.api.binance.schemas.data_dicts import KlineData
@@ -23,10 +23,10 @@ class KlineStreamHandler(BaseStreamHandler[KlineData]):
         """Initialize the KlineStreamHandler."""
         super().__init__(stream_manager)
 
-    def subscribe(
+    async def subscribe(
         self,
         symbol: str,
-        callback: Callable[[KlineData], None],
+        callback: Callable[[KlineData], Awaitable[None]],
         **kwargs: Any,  # noqa: ANN401
     ) -> str:
         """
@@ -54,8 +54,8 @@ class KlineStreamHandler(BaseStreamHandler[KlineData]):
         symbol = symbol.lower()
         stream_name = f"{symbol}@kline_{interval}"
 
-        return self._start_socket(
-            socket_func=self.stream_manager.twm.start_kline_socket,
+        return await self._start_socket(
+            socket_func=self.stream_manager.bsm.kline_socket,
             stream_name=stream_name,
             callback=callback,
             symbol=symbol.upper(),

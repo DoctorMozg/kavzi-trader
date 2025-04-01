@@ -11,9 +11,9 @@ from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from functools import wraps
-from typing import Any, TypeVar, cast
+from typing import Any, Awaitable, TypeVar, cast
 
-from binance.client import Client as BinanceAPIClient
+from binance.async_client import AsyncClient as BinanceAPIClient
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 
 from src.api.binance.constants import (
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-def handle_api_errors(func: Callable[..., T]) -> Callable[..., T]:
+def handle_api_errors(func: Callable[..., T]) -> Callable[..., Awaitable[T]]:
     """
     Decorator to handle API errors from Binance.
 
@@ -181,38 +181,38 @@ class BinanceClient:
         return int(time.time() * MILLISECONDS_IN_SECOND)
 
     @handle_api_errors
-    def ping(self) -> bool:
+    async def ping(self) -> bool:
         """
         Test connectivity to the API.
 
         Returns:
             Dictionary with True on success
         """
-        self.client.ping()
+        await self.client.ping()
         return True
 
     @handle_api_errors
-    def get_server_time(self) -> dict[str, int]:
+    async def get_server_time(self) -> dict[str, int]:
         """
         Get the server time.
 
         Returns:
             Dictionary with {'serverTime': timestamp} in milliseconds
         """
-        return cast(dict[str, int], self.client.get_server_time())
+        return cast(dict[str, int], await self.client.get_server_time())
 
     @handle_api_errors
-    def get_exchange_info(self) -> dict[str, Any]:
+    async def get_exchange_info(self) -> dict[str, Any]:
         """
         Get exchange information including rate limits, symbol information.
 
         Returns:
             Exchange information
         """
-        return cast(dict[str, Any], self.client.get_exchange_info())
+        return cast(dict[str, Any], await self.client.get_exchange_info())
 
     @handle_api_errors
-    def get_symbol_info(self, symbol: str) -> SymbolInfoSchema:
+    async def get_symbol_info(self, symbol: str) -> SymbolInfoSchema:
         """
         Get detailed information for a specific symbol.
 
@@ -223,7 +223,7 @@ class BinanceClient:
             Symbol information
         """
         # Get all symbols and find the one we want
-        exchange_info = self.client.get_exchange_info()
+        exchange_info = await self.client.get_exchange_info()
         symbol_info = None
 
         for info in exchange_info["symbols"]:
@@ -273,7 +273,7 @@ class BinanceClient:
         )
 
     @handle_api_errors
-    def get_orderbook(self, symbol: str, limit: int = 100) -> OrderBookSchema:
+    async def get_orderbook(self, symbol: str, limit: int = 100) -> OrderBookSchema:
         """
         Get order book for a symbol.
 
@@ -284,7 +284,7 @@ class BinanceClient:
         Returns:
             Order book with bids and asks
         """
-        depth = self.client.get_order_book(symbol=symbol, limit=limit)
+        depth = await self.client.get_order_book(symbol=symbol, limit=limit)
 
         # Convert the response to our schema
         bids = [
@@ -305,7 +305,7 @@ class BinanceClient:
         )
 
     @handle_api_errors
-    def get_recent_trades(self, symbol: str, limit: int = 500) -> list[TradeSchema]:
+    async def get_recent_trades(self, symbol: str, limit: int = 500) -> list[TradeSchema]:
         """
         Get recent trades for a symbol.
 
@@ -316,7 +316,7 @@ class BinanceClient:
         Returns:
             List of recent trades
         """
-        trades = self.client.get_recent_trades(symbol=symbol, limit=limit)
+        trades = await self.client.get_recent_trades(symbol=symbol, limit=limit)
 
         # Convert the response to our schema
         return [
@@ -333,7 +333,7 @@ class BinanceClient:
         ]
 
     @handle_api_errors
-    def get_historical_trades(
+    async def get_historical_trades(
         self,
         symbol: str,
         limit: int = 500,
@@ -368,7 +368,7 @@ class BinanceClient:
             params["startTime"] = start_time_ms
 
         # Execute request
-        trades = self.client.get_historical_trades(
+        trades = await self.client.get_historical_trades(
             symbol=symbol,
             limit=limit,
             **params,
@@ -389,7 +389,7 @@ class BinanceClient:
         ]
 
     @handle_api_errors
-    def get_agg_trades(
+    async def get_agg_trades(
         self,
         symbol: str,
         from_id: int | None = None,
@@ -435,7 +435,7 @@ class BinanceClient:
             params["endTime"] = end_time_ms
 
         # Execute request
-        agg_trades = self.client.get_aggregate_trades(
+        agg_trades = await self.client.get_aggregate_trades(
             symbol=symbol,
             limit=limit,
             **params,
@@ -458,7 +458,7 @@ class BinanceClient:
         ]
 
     @handle_api_errors
-    def get_klines(
+    async def get_klines(
         self,
         symbol: str,
         interval: str,
@@ -509,7 +509,7 @@ class BinanceClient:
             params["endTime"] = end_time_ms
 
         # Execute request
-        klines = self.client.get_klines(
+        klines = await self.client.get_klines(
             symbol=symbol,
             interval=interval,
             limit=limit,
@@ -537,7 +537,7 @@ class BinanceClient:
         ]
 
     @handle_api_errors
-    def get_ticker(self, symbol: str) -> TickerSchema:
+    async def get_ticker(self, symbol: str) -> TickerSchema:
         """
         Get 24hr ticker price change statistics for a symbol.
 
@@ -547,7 +547,7 @@ class BinanceClient:
         Returns:
             Ticker statistics
         """
-        ticker = self.client.get_ticker(symbol=symbol)
+        ticker = await self.client.get_ticker(symbol=symbol)
 
         # Convert the response to our schema
         return TickerSchema(
@@ -573,14 +573,14 @@ class BinanceClient:
         )
 
     @handle_api_errors
-    def get_all_tickers(self) -> list[TickerSchema]:
+    async def get_all_tickers(self) -> list[TickerSchema]:
         """
         Get price tickers for all symbols.
 
         Returns:
             List of price tickers
         """
-        tickers = self.client.get_all_tickers()
+        tickers = await self.client.get_all_tickers()
 
         # Convert the response to our schema
         return [
@@ -595,7 +595,7 @@ class BinanceClient:
         ]
 
     @handle_api_errors
-    def get_avg_price(self, symbol: str) -> dict[str, Any]:
+    async def get_avg_price(self, symbol: str) -> dict[str, Any]:
         """
         Get current average price for a symbol.
 
@@ -605,20 +605,20 @@ class BinanceClient:
         Returns:
             Average price information
         """
-        return cast(dict[str, Any], self.client.get_avg_price(symbol=symbol))
+        return cast(dict[str, Any], await self.client.get_avg_price(symbol=symbol))
 
     @handle_api_errors
-    def get_account_info(self) -> dict[str, Any]:
+    async def get_account_info(self) -> dict[str, Any]:
         """
         Get account information (requires API key).
 
         Returns:
             Account information
         """
-        return cast(dict[str, Any], self.client.get_account())
+        return cast(dict[str, Any], await self.client.get_account())
 
     @handle_api_errors
-    def get_asset_balance(self, asset: str) -> dict[str, Any]:
+    async def get_asset_balance(self, asset: str) -> dict[str, Any]:
         """
         Get asset balance for a specific asset (requires API key).
 
@@ -628,10 +628,10 @@ class BinanceClient:
         Returns:
             Asset balance information
         """
-        return cast(dict[str, Any], self.client.get_asset_balance(asset=asset))
+        return cast(dict[str, Any], await self.client.get_asset_balance(asset=asset))
 
     @handle_api_errors
-    def create_order(
+    async def create_order(
         self,
         symbol: str,
         side: OrderSide,
@@ -701,13 +701,13 @@ class BinanceClient:
             params["icebergQty"] = str(iceberg_qty)
 
         # Execute request
-        response = cast(dict[str, Any], self.client.create_order(**params))
+        response = cast(dict[str, Any], await self.client.create_order(**params))
 
         # Convert the response to our schema
         return self._parse_order_response(response)
 
     @handle_api_errors
-    def get_order(
+    async def get_order(
         self,
         symbol: str,
         order_id: int | None = None,
@@ -735,13 +735,13 @@ class BinanceClient:
         if client_order_id is not None:
             params["origClientOrderId"] = client_order_id
 
-        response = cast(dict[str, Any], self.client.get_order(**params))
+        response = cast(dict[str, Any], await self.client.get_order(**params))
 
         # Convert the response to our schema
         return self._parse_order_response(response)
 
     @handle_api_errors
-    def cancel_order(
+    async def cancel_order(
         self,
         symbol: str,
         order_id: int | None = None,
@@ -769,13 +769,13 @@ class BinanceClient:
         if client_order_id is not None:
             params["origClientOrderId"] = client_order_id
 
-        response = cast(dict[str, Any], self.client.cancel_order(**params))
+        response = cast(dict[str, Any], await self.client.cancel_order(**params))
 
         # Convert the response to our schema
         return self._parse_order_response(response)
 
     @handle_api_errors
-    def get_open_orders(self, symbol: str | None = None) -> list[OrderResponseSchema]:
+    async def get_open_orders(self, symbol: str | None = None) -> list[OrderResponseSchema]:
         """
         Get all open orders (requires API key).
 
@@ -789,7 +789,7 @@ class BinanceClient:
         if symbol is not None:
             params["symbol"] = symbol
 
-        response = self.client.get_open_orders(**params)
+        response = await self.client.get_open_orders(**params)
 
         # Convert the response to our schema
         return [self._parse_order_response(order) for order in response]

@@ -2,12 +2,12 @@
 Base downloader for historical data.
 """
 
+import asyncio
 import logging
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Awaitable, Generic, TypeVar
 
 import dateparser
 from pydantic import BaseModel
@@ -62,10 +62,10 @@ class BaseDownloader(Generic[T]):
             raise ValueError(f"Could not parse time: {time_value}")
         return parsed_time
 
-    def execute_parallel_downloads(
+    async def execute_parallel_downloads(
         self,
         batches: list[dict[str, Any]],
-        download_func: Callable,
+        download_func: Callable[..., Awaitable[list[T]]],
         max_workers: int,
         save_progress: bool,
         symbol: str,
@@ -74,12 +74,12 @@ class BaseDownloader(Generic[T]):
         output_dir: Path | None = None,
     ) -> list[T]:
         """
-        Execute parallel downloads for batches.
+        Execute parallel downloads for batches using asyncio.
 
         Args:
             batches: List of batch configurations
-            download_func: Function to download a single batch
-            max_workers: Maximum number of concurrent workers
+            download_func: Async function to download a single batch
+            max_workers: Maximum number of concurrent workers (semaphore limit)
             save_progress: Whether to save each batch as it completes
             symbol: Trading pair symbol
             data_type: Type of data (klines, trades, etc.)
@@ -90,52 +90,62 @@ class BaseDownloader(Generic[T]):
             List of downloaded data
         """
         all_data: list[T] = []
-
-        # Set up ThreadPoolExecutor for parallel downloads
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
-
-            # Create download tasks for each batch
-            for batch in batches:
-                # Submit download task
-                future = executor.submit(download_func, **batch)
-                futures.append((future, batch))
-
-            # Process results
-            completed = 0
-            for future, batch in futures:
+        
+        # Create a semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(max_workers)
+        
+        async def download_with_semaphore(batch_config: dict[str, Any], batch_index: int) -> tuple[list[T], dict[str, Any], int]:
+            """Download a batch with semaphore control."""
+            async with semaphore:
                 try:
-                    batch_data = future.result()
-                    if batch_data:
-                        all_data.extend(batch_data)
-
-                        # Save batch data if requested
-                        if save_progress:
-                            self.data_saver.save_data(
-                                data=batch_data,
-                                symbol=symbol,
-                                data_type=data_type,
-                                interval=interval,
-                                start_time=batch.get("start_time"),
-                                end_time=batch.get("end_time"),
-                                output_dir=output_dir,
-                            )
-
-                    completed += 1
-                    logger.info(
-                        "Completed batch %d/%d for %s %s (%.1f%%)",
-                        completed,
-                        len(futures),
-                        symbol,
-                        data_type + (f" {interval}" if interval else ""),
-                        (completed / len(futures)) * 100,
-                    )
-                except Exception:
+                    # Call the download function with the batch parameters
+                    batch_data = await download_func(**batch_config)
+                    return batch_data, batch_config, batch_index
+                except Exception as e:
                     logger.exception(
-                        "Error downloading batch %s to %s",
-                        batch.get("start_time"),
-                        batch.get("end_time"),
+                        "Error downloading batch %s to %s: %s",
+                        batch_config.get("start_time"),
+                        batch_config.get("end_time"),
+                        str(e),
                     )
-                    completed += 1
+                    return [], batch_config, batch_index
+
+        # Create tasks for all batches
+        tasks = [
+            download_with_semaphore(batch, i)
+            for i, batch in enumerate(batches)
+        ]
+        
+        # Execute all tasks concurrently and process results as they complete
+        total_batches = len(batches)
+        completed = 0
+        
+        for task in asyncio.as_completed(tasks):
+            batch_data, batch, _ = await task
+            completed += 1
+            
+            if batch_data:
+                all_data.extend(batch_data)
+                
+                # Save batch data if requested
+                if save_progress:
+                    self.data_saver.save_data(
+                        data=batch_data,
+                        symbol=symbol,
+                        data_type=data_type,
+                        interval=interval,
+                        start_time=batch.get("start_time"),
+                        end_time=batch.get("end_time"),
+                        output_dir=output_dir,
+                    )
+            
+            logger.info(
+                "Completed batch %d/%d for %s %s (%.1f%%)",
+                completed,
+                total_batches,
+                symbol,
+                data_type + (f" {interval}" if interval else ""),
+                (completed / total_batches) * 100,
+            )
 
         return all_data

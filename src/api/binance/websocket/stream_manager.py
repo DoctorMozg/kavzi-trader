@@ -6,12 +6,11 @@ This module provides functionality for managing WebSocket connections and stream
 
 import json
 import logging
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from threading import Lock
-from typing import Any, cast
+from collections.abc import Callable
+from typing import Any, Awaitable, cast
 
-from binance import ThreadedWebsocketManager
+from binance import BinanceSocketManager
+from binance import ReconnectingWebsocket
 
 from src.api.common.exceptions import APIError
 
@@ -50,8 +49,8 @@ class StreamManager:
         self.api_secret = api_secret
         self.testnet = testnet
 
-        # Create the ThreadedWebsocketManager
-        self.twm = ThreadedWebsocketManager(
+        # Create the BinanceSocketManager
+        self.bsm = BinanceSocketManager(
             api_key=api_key,
             api_secret=api_secret,
             testnet=testnet,
@@ -59,7 +58,6 @@ class StreamManager:
 
         # Store active streams for management
         self.active_streams: dict[str, int] = {}  # stream_name -> socket_id
-        self._lock = Lock()  # Lock for thread-safe operations on active_streams
 
         # User-provided callbacks
         self.on_message_callback = on_message
@@ -72,45 +70,29 @@ class StreamManager:
         # Flag to track if the WebSocket manager is running
         self._is_running: bool = False
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """Start the WebSocket connection."""
         if not self._is_running:
-            try:
-                # Start the ThreadedWebsocketManager
-                self.twm.start()
-                self._is_running = True
-                logger.info("Binance WebSocket client started")
-            except Exception as e:
-                logger.exception("Failed to start Binance WebSocket client")
-                raise APIError("Failed to start WebSocket client") from e
+            # The async BinanceSocketManager doesn't need explicit start
+            self._is_running = True
+            logger.info("Binance WebSocket client started")
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         """Stop the WebSocket connection."""
         if self._is_running:
             try:
-                # Stop all streams
-                self.twm.stop()
-                with self._lock:
-                    self.active_streams.clear()
-                    self.stream_callbacks.clear()
+                # Close all active connections
+                for stream_name in list(self.active_streams.keys()):
+                    await self.unregister_stream(stream_name)
+                
+                self.active_streams.clear()
+                self.stream_callbacks.clear()
                 self._is_running = False
                 logger.info("Binance WebSocket client stopped")
             except Exception as e:
                 logger.exception("Failed to stop Binance WebSocket client")
                 raise APIError("Failed to stop WebSocket client") from e
 
-    @contextmanager
-    def acquire_lock(self) -> Iterator[None]:
-        """
-        Acquire the lock for thread-safe operations.
-
-        This context manager provides safe access to shared resources.
-
-        Yields:
-            None
-        """
-        with self._lock:
-            yield
 
     def add_stream_callback(
         self,
@@ -124,32 +106,27 @@ class StreamManager:
             stream_name: Name of the stream
             callback: Callback function for stream messages
         """
-        with self._lock:
-            self.stream_callbacks[stream_name] = callback
+        self.stream_callbacks[stream_name] = callback
 
     def create_message_handler(
         self,
-    ) -> Callable[[dict[str, Any]], None]:
+    ) -> Callable[[dict[str, Any]], Awaitable[None]]:
         """
         Create a message handler function for a specific stream.
-
-        Args:
-            stream_name: Name of the stream
 
         Returns:
             Message handler function
         """
-
-        def handle_message(msg: dict[str, Any]) -> None:
+        async def handle_message(msg: dict[str, Any]) -> None:
             # Log the message for debugging
             logger.debug("Received WebSocket message: %s", json.dumps(msg)[:200])
 
             # Process the message
-            self._process_message(msg)
+            await self._process_message(msg)
 
         return handle_message
 
-    def _process_message(self, msg: dict[str, Any]) -> None:
+    async def _process_message(self, msg: dict[str, Any]) -> None:
         """
         Process a message received from the WebSocket.
 
@@ -170,7 +147,7 @@ class StreamManager:
         # Call the specific stream callback if available
         if stream_name and stream_name in self.stream_callbacks:
             try:
-                self.stream_callbacks[stream_name](msg)
+                await self.stream_callbacks[stream_name](msg)
             except Exception:
                 logger.exception("Error in stream callback")
                 excp = APIError("Error in stream callback")
@@ -216,10 +193,9 @@ class StreamManager:
         # Handle depth event type
         elif event_type == "depth" and symbol:
             # Find the depth stream with this symbol in active_streams
-            with self._lock:
-                for stream_name in self.active_streams:
-                    if stream_name.startswith(f"{symbol}@depth"):
-                        return stream_name
+            for stream_name in self.active_streams:
+                if stream_name.startswith(f"{symbol}@depth"):
+                    return stream_name
             # Fallback to the basic depth format
             return f"{symbol}@depth"
 
@@ -229,7 +205,7 @@ class StreamManager:
     def register_stream(
         self,
         stream_name: str,
-        socket_id: int,
+        socket: ReconnectingWebsocket,
         callback: Callable[[dict[str, Any]], None],
     ) -> None:
         """
@@ -237,38 +213,36 @@ class StreamManager:
 
         Args:
             stream_name: Name of the stream
-            socket_id: Socket ID from the ThreadedWebsocketManager
+            socket_id: Socket ID from the BinanceSocketManager
             callback: Callback for stream messages
         """
-        with self._lock:
-            self.active_streams[stream_name] = socket_id
-            self.stream_callbacks[stream_name] = callback
+        self.active_streams[stream_name] = socket_id
+        self.stream_callbacks[stream_name] = callback
 
-    def unregister_stream(self, stream_name: str) -> None:
+    async def unregister_stream(self, stream_name: str) -> None:
         """
         Unregister a stream from the manager.
 
         Args:
             stream_name: Name of the stream
         """
-        with self._lock:
-            if stream_name in self.active_streams:
-                socket_id = self.active_streams[stream_name]
+        if stream_name in self.active_streams:
+            socket_id = self.active_streams[stream_name]
 
-                # Stop the socket
-                self.twm.stop_socket(socket_id)
+            # Close the socket connection
+            await self.bsm.stop_socket(socket_id)
 
-                # Remove it from managed streams
-                del self.active_streams[stream_name]
-                if stream_name in self.stream_callbacks:
-                    del self.stream_callbacks[stream_name]
+            # Remove it from managed streams
+            del self.active_streams[stream_name]
+            if stream_name in self.stream_callbacks:
+                del self.stream_callbacks[stream_name]
 
-                logger.info("Unsubscribed from stream: %s", stream_name)
-            else:
-                logger.warning(
-                    "Attempted to unsubscribe from a non-active stream: %s",
-                    stream_name,
-                )
+            logger.info("Unsubscribed from stream: %s", stream_name)
+        else:
+            logger.warning(
+                "Attempted to unsubscribe from a non-active stream: %s",
+                stream_name,
+            )
 
     def list_active_streams(self) -> list[str]:
         """
@@ -277,8 +251,7 @@ class StreamManager:
         Returns:
             List of active stream names
         """
-        with self._lock:
-            return list(self.active_streams.keys())
+        return list(self.active_streams.keys())
 
     def is_connected(self) -> bool:
         """

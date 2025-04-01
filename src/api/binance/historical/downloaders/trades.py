@@ -23,7 +23,7 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
         """Initialize the TradesDownloader."""
         super().__init__(client)
 
-    def download(
+    async def download(
         self,
         symbol: str,
         start_time: str | datetime,
@@ -75,7 +75,7 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
         ]
 
         # Execute parallel downloads
-        all_data = self.execute_parallel_downloads(
+        all_data = await self.execute_parallel_downloads(
             batches=download_batches,
             download_func=self._download_batch,
             max_workers=max_workers,
@@ -104,7 +104,7 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
 
         return all_data
 
-    def _download_batch(
+    async def _download_batch(
         self,
         symbol: str,
         start_time: datetime,
@@ -127,7 +127,7 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
         end_ms = int(end_time.timestamp() * MILLISECONDS_IN_SECOND)
 
         # First, get trades around our start time
-        first_trades = self.client.get_historical_trades(
+        first_trades = await self.client.get_historical_trades(
             symbol=symbol,
             limit=1,
             start_time=start_ms,
@@ -143,7 +143,7 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
         iteration_count = 0
         while iteration_count < max_iterations:
             iteration_count += 1
-            batch = self.client.get_historical_trades(
+            batch = await self.client.get_historical_trades(
                 symbol=symbol,
                 limit=1000,
                 from_id=from_id,

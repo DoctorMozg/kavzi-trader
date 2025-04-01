@@ -6,7 +6,7 @@ This module provides a handler for ticker WebSocket streams.
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Awaitable
 
 from src.api.binance.schemas.data_dicts import TickerData
 from src.api.binance.websocket.handlers.base import BaseStreamHandler
@@ -22,10 +22,10 @@ class TickerStreamHandler(BaseStreamHandler[TickerData]):
         """Initialize the TickerStreamHandler."""
         super().__init__(stream_manager)
 
-    def subscribe(
+    async def subscribe(
         self,
         symbol: str,
-        callback: Callable[[TickerData], None],
+        callback: Callable[[TickerData], Awaitable[None]],
         **kwargs: Any,  # noqa: ARG002,ANN401
     ) -> str:
         """
@@ -42,8 +42,8 @@ class TickerStreamHandler(BaseStreamHandler[TickerData]):
         symbol = symbol.lower()
         stream_name = f"{symbol}@ticker"
 
-        return self._start_socket(
-            socket_func=self.stream_manager.twm.start_symbol_ticker_socket,
+        return await self._start_socket(
+            socket_func=self.stream_manager.bsm.symbol_ticker_socket,
             stream_name=stream_name,
             callback=callback,
             symbol=symbol.upper(),

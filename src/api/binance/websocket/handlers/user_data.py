@@ -6,7 +6,7 @@ This module provides a handler for user data WebSocket streams.
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Awaitable
 
 from src.api.binance.websocket.handlers.base import BaseStreamHandler
 from src.api.binance.websocket.stream_manager import StreamManager
@@ -21,10 +21,10 @@ class UserDataStreamHandler(BaseStreamHandler[dict[str, Any]]):
         """Initialize the UserDataStreamHandler."""
         super().__init__(stream_manager)
 
-    def subscribe(
+    async def subscribe(
         self,
         symbol: str = "",  # Not used for user data streams # noqa: ARG002
-        callback: Callable[[dict[str, Any]], None] | None = None,
+        callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         **kwargs: Any,  # noqa: ARG002,ANN401
     ) -> str:
         """
@@ -46,8 +46,8 @@ class UserDataStreamHandler(BaseStreamHandler[dict[str, Any]]):
 
         stream_name = "user-data-stream"
 
-        return self._start_socket(
-            socket_func=self.stream_manager.twm.start_user_socket,
+        return await self._start_socket(
+            socket_func=self.stream_manager.bsm.user_socket,
             stream_name=stream_name,
             callback=callback,
         )

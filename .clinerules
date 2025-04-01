@@ -4,9 +4,11 @@ description: Clean Architecture Patterns
 # Clean Architecture Patterns
 
 ## Dependency Injection
+
 - Inject dependencies instead of creating them within classes
 - Use dependency inversion to decouple high-level modules from low-level modules
 - Example:
+
   ```python
   # GOOD - Dependencies injected
   class TradingStrategy:
@@ -22,10 +24,12 @@ description: Clean Architecture Patterns
   ```
 
 ## Command Query Separation
+
 - Separate commands (functions that change state) from queries (functions that return values)
 - Commands should return None or status information
 - Queries should have no side effects
 - Example:
+
   ```python
   # Query: Returns data without side effects
   def get_account_balance(account_id: str) -> float:
@@ -37,22 +41,21 @@ description: Clean Architecture Patterns
   ```
 
 ## Testing Standards
+
 - Write tests for all functionality
 - Use pytest for unit tests
 - Aim for high test coverage (>90%)
 - Write both unit and integration tests
 - Use mock objects to isolate units for testing
 
----
-description: Commons Package
----
 # Commons Package Classes and Functions
 
 ### 1. DateTime Schema Module (datetime_schema.py)
 
 MILLISECONDS_IN_SECOND - constant to convert MS to SEC
 
-#### Classes:
+#### Classes
+
 - **DateTimeWithTimezoneSchema**
   - Base Pydantic model for handling datetime fields with timezone information
   - Use case: Ensure all datetime objects have proper timezone information (UTC)
@@ -61,14 +64,16 @@ MILLISECONDS_IN_SECOND - constant to convert MS to SEC
   - Extends DateTimeWithTimezoneSchema to add created_at and updated_at fields
   - Use case: Base class for any model requiring standardized timestamp tracking
 
-#### Functions:
+#### Functions
+
 - **ensure_timezone** (validator)
   - Validates and converts datetime fields to have UTC timezone
   - Use case: Validator for ensuring datetime fields have proper timezone information
 
 ### 2. Time Utility Module (time_utility.py)
 
-#### Functions:
+#### Functions
+
 - **utc_now()**
   - Gets current UTC timestamp with timezone information
   - Use case: Generate consistent UTC timestamps across the application
@@ -87,7 +92,8 @@ MILLISECONDS_IN_SECOND - constant to convert MS to SEC
 
 ### 3. Logging Module (logging.py)
 
-#### Functions:
+#### Functions
+
 - **setup_logging(config=None, log_level=None, log_file=None, console=True, name="kavzitrader")**
   - Sets up application logging with flexible configuration options
   - Use case: Initialize the application's logging system with console and/or file output
@@ -97,20 +103,31 @@ MILLISECONDS_IN_SECOND - constant to convert MS to SEC
   - Use case: Convenient way to get properly configured loggers across the application
 
 ### Summary
+
 The commons package provides essential utilities for:
+
 - Datetime handling with proper timezone support
 - Consistent timestamp generation and formatting
 - Centralized logging configuration
 - Standard schemas for models requiring timestamp fields
 
+### 3. Async Module (async_utils.py)
+
+#### Dercorator
+
+- **to_async** converts an sync function to the async one
+
 USE THIS COMMONS WHEN POSSIBLE, DON'T DUPLICATE CODE
 
 ---
+
 description: Error Handling & Logging
 ---
+
 # Error Handling & Logging
 
 ## Error Handling
+
 - Use specific exception types
 - Handle exceptions at the appropriate level
 - Use context managers (`with` statements) for resource management
@@ -118,6 +135,7 @@ description: Error Handling & Logging
 - Fail early and clearly
 
 ## Logging
+
 - Each module should have its own logger instance
 - Use appropriate logging levels:
   - `DEBUG`: Detailed information for diagnostics
@@ -127,31 +145,40 @@ description: Error Handling & Logging
   - `CRITICAL`: Serious error
 
 ## Critical Logging Practices
+
 - Always use `logger.exception()` instead of `logger.error()` when handling exceptions
 - Avoid f-strings in log messages - use string formatting:
+
   ```python
   # WRONG: logger.debug(f"Found {user_count} users")
   # CORRECT: logger.debug("Found %d users", get_user_count())
   ```
+
 - Include contextual information in log messages
 - Use structured logging for complex data:
+
   ```python
   logger.info("User updated", extra={"user_id": user.id, "fields": changed_fields})
   ```
 
 ---
+
 description: File and Class Organization
 ---
+
 # File and Class Organization
 
 ## One Class Per File
+
 - Each logical class should be in its own file
 - Related helper functions can be in the same file as the class they support
 
 ## Path Handling
+
 - Always use `pathlib.Path` for file path manipulation
 - String paths are strictly prohibited
 - Example:
+
   ```python
   # CORRECT
   from pathlib import Path
@@ -163,34 +190,43 @@ description: File and Class Organization
   ```
 
 ## Class Naming Conventions
+
 - Pydantic models: Use the `Schema` postfix
+
   ```python
   class UserSchema(BaseModel):
       # fields
   ```
+
 - Database models: Use the `Model` postfix
+
   ```python
   class UserModel(Base):
       # fields
   ```
+
 - Service/Business Logic: Use descriptive names without specific postfixes
+
   ```python
   class TradingStrategy:
       # implementation
   ```
 
 ## File Naming
+
 - Use snake_case for file names
 - File names should reflect primary class or functionality
 - Group related files in appropriate packages
 
 ## Import Organization
+
 1. Standard library imports
 2. Third-party library imports
 3. Local/application imports
 4. Import the class's dependencies
 
 ## Code Layout and Formatting
+
 - Use Ruff for linting and formatting
 - Line length: 88 characters
 - 4 spaces for indentation (no tabs)
@@ -198,32 +234,39 @@ description: File and Class Organization
 - 1 blank line between methods
 
 ---
+
 description: General Principles
 ---
+
 # KavziTrader General Principles
 
 ## Keep It Simple (KISS)
+
 - Prefer simple solutions over complex ones
 - Break complex problems into simpler sub-problems
 - Avoid premature optimization
 
 ## Avoid Overengineering
+
 - Add complexity only when clearly needed
 - Solve the problem at hand, not hypothetical future problems
 - Question designs requiring excessive configuration
 
 ## Code Clarity
+
 - Write code that clearly expresses intent
 - Use descriptive variable and function names
 - Limit nesting to 3-4 levels for better readability
 - Add comments explaining "why" not "what"
 
 ## DRY (Don't Repeat Yourself)
+
 - Avoid code duplication
 - Extract reusable functionality
 - Define constants and configuration in one place
 
 ## SOLID Principles
+
 - **S**ingle Responsibility: Each class should have only one reason to change
 - **O**pen/Closed: Open for extension, closed for modification
 - **L**iskov Substitution: Subtypes must be substitutable for base types
@@ -231,14 +274,18 @@ description: General Principles
 - **D**ependency Inversion: Depend on abstractions, not implementations
 
 ## Time Variables
-- If working with time variables - always add _ms, _s postfix according to units
+
+- If working with time variables - always add _ms,_s postfix according to units
 
 ---
+
 description: Project Setup
 ---
+
 # Project Setup and Development Tools
 
 ## Python Version
+
 - This project requires Python 3.13
 
 ## Package Management with UV
@@ -250,9 +297,11 @@ description: Project Setup
 ## Pre-commit Checks
 
 - Run pre-commit checks before pushing code:
+
   ```bash
   uv run pre-commit run --all-files
   ```
+
 - Fix any issues identified by pre-commit before committing
 
 ## Development Environment
@@ -262,16 +311,20 @@ description: Project Setup
 - Ensure all dependencies are properly installed in your virtual environment
 
 ---
+
 description: Pydantic Models
 ---
+
 # Pydantic Models
 
 ## Use Pydantic Exclusively
+
 - Pydantic is mandatory for all data modeling
 - Python's dataclasses are NOT allowed
 - Always prefer Pydantic models over raw dictionaries
 
 ## Key Benefits
+
 - Data validation and type checking
 - Data parsing and conversion
 - Serialization/deserialization
@@ -279,7 +332,9 @@ description: Pydantic Models
 - Comprehensive IDE support
 
 ## Naming Conventions
+
 - All Pydantic models must use the `Schema` postfix:
+
   ```python
   # CORRECT
   class UserSchema(BaseModel):
@@ -287,7 +342,9 @@ description: Pydantic Models
   ```
 
 ## Field Definition Best Practices
+
 - Use `Annotated[T, Field(...)]` syntax instead of `:T = Field(...)`:
+
   ```python
   # PREFERRED
   class UserSchema(BaseModel):
@@ -296,8 +353,10 @@ description: Pydantic Models
   ```
 
 ## Model Validation
+
 - Never use the `**` unpacking operator to create model instances
 - Always use `model_validate` or `model_validate_json` methods:
+
   ```python
   # WRONG: user = UserSchema(**data_dict)
   # CORRECT: user = UserSchema.model_validate(data_dict)
@@ -307,19 +366,25 @@ description: Pydantic Models
   ```
 
 ## Model Configuration
+
 - Use `model_config` for configuration:
+
   ```python
   class TradeOrderSchema(BaseModel):
       model_config = ConfigDict(frozen=True)
   ```
+
 - Consider using `frozen=True` for immutability where appropriate
 
 ---
+
 description: Testing
 ---
+
 # Testing
 
 ## Test Structure
+
 - Use pytest for all tests
 - Organize tests to mirror the structure of the application code
 - Use descriptive test names that explain the expected behavior
@@ -327,38 +392,46 @@ description: Testing
 - Use fixtures for test setup and teardown
 
 ## Test Coverage
+
 - Aim for at least 80% code coverage
 - All critical paths must have tests
 - Include both positive and negative test cases
 - Test edge cases and boundary conditions
 
 ## Mocking and Fixtures
+
 - Use pytest fixtures for reusable test components
 - Mock external dependencies appropriately
 - Use `monkeypatch` for modifying behavior during tests
 - Create factory fixtures for complex objects
 
 ## Assertions
+
 - Use plain `assert` statements instead of unittest-style methods
 - Write clear assertion messages:
+
   ```python
   # WRONG: assert result == expected
   # CORRECT: assert result == expected, f"Expected {expected}, got {result}"
   ```
+
 - For complex assertions, break them down into multiple assert statements
 - Use appropriate assertion helpers from pytest when needed
 
 ## Test Isolation
+
 - Tests should not depend on each other
 - Clean up resources after tests complete
 - Avoid global state modifications that affect other tests
 - Use temporary directories and files when testing I/O operations
 
 ## Test Type Annotations
+
 - All test functions must have proper type annotations, including for fixture parameters
 - Always annotate test methods with return type `-> None`
 - Always annotate fixture parameters with their correct types
 - Example:
+
   ```python
   # CORRECT
   def test_my_function(self, mock_client: MagicMock, sample_path: Path) -> None:
@@ -368,18 +441,23 @@ description: Testing
   def test_my_function(self, mock_client, sample_path):
       # Test implementation
   ```
+
 - Import all necessary types for annotations (MagicMock, Path, etc.)
 
 ## Test Execution
+
 - Always run tests using UV with PYTHONPATH set to the project root:
+
   ```bash
   PYTHONPATH=. uv run pytest [test_path] [options]
   ```
+
 - Use `-v` for verbose output to see detailed test results
 - Use `-k` to run specific tests by name pattern
 - Use `--cov=src` to measure code coverage
 
 ## Fixtures Organization
+
 - Always place fixtures in the appropriate `conftest.py` file
 - Organize fixtures hierarchically:
   - Place common fixtures in the root `tests/conftest.py`
@@ -390,11 +468,14 @@ description: Testing
 - Document fixtures with clear docstrings explaining their purpose and usage
 
 ---
+
 description: Type Hints & Function Design
 ---
+
 # Type Hints & Function Design
 
 ## Type Hints (Mandatory)
+
 - Always use Python 3.11+ type hint syntax:
   - Use `list[str]` instead of `List[str]`
   - Use `dict[str, int]` instead of `Dict[str, int]`
@@ -406,6 +487,7 @@ description: Type Hints & Function Design
 - Always import the types you use in annotations
 - Return type annotations must match the actual return type of the function
 - For functions that return Pydantic models, use the specific model type rather than generic types:
+
   ```python
   # WRONG
   def get_candlesticks() -> list[dict[str, Any]]:
@@ -417,6 +499,7 @@ description: Type Hints & Function Design
   ```
 
 ## Function Design
+
 - Keep functions small and focused (< 30 lines)
 - Functions should do one thing well
 - Use descriptive function names
@@ -426,23 +509,28 @@ description: Type Hints & Function Design
 - Document with docstrings (Google style)
 
 ## No Function Overloading
+
 - Function overloading is strictly prohibited
 - Use distinct function names for different behaviors
 - Use optional parameters with clear defaults
 - Consider factory functions or class methods for complex creation patterns
 
 ---
+
 description: Version Control
 ---
+
 # Version Control Practices
 
 ## Commit Messages
+
 - Write clear, concise commit messages
 - Start with a verb in imperative mood (Add, Fix, Update, Remove, etc.)
 - Keep the first line under 50 characters
 - If needed, add more details after a blank line
 
 ## Branching
+
 - Use feature branches for new development
 - Follow Git Flow or similar branching strategy:
   - `main`: Production-ready code
@@ -452,24 +540,30 @@ description: Version Control
   - `release/<version>`: Release preparation
 
 ## Pull Requests
+
 - Create pull requests for code review before merging
 - Keep PRs focused and of manageable size
 - Include appropriate tests
 - Reference related issues
 
 ## General Practices
+
 - Keep commits focused and atomic
 - Follow semantic versioning for releases
 - Don't commit generated files or credentials
 - Regularly pull from the main branch to stay up-to-date
 
 ---
+
 description: Code Quality and Linting
 ---
+
 # Code Quality and Linting
 
 ## Exception Handling
+
 - Always use `raise ... from err` or `raise ... from None` within except clauses
+
   ```python
   # WRONG
   try:
@@ -485,10 +579,13 @@ description: Code Quality and Linting
       logger.exception("Error occurred")
       raise CustomException(f"Failed: {e}") from e
   ```
+
 - This preserves the exception context and makes debugging easier
 
 ## Try-Except-Else Structure
+
 - Use the `else` clause in try-except blocks for code that should run only if no exception occurs
+
   ```python
   # WRONG
   try:
@@ -505,17 +602,21 @@ description: Code Quality and Linting
   else:
       return result  # This only runs if no exception occurs
   ```
+
 - This makes the code's intent clearer and separates normal flow from error handling
 
 ## Datetime Handling
+
 - Always use timezone-aware datetime objects
 - Use `utc_now()` from `src.commons.time_utility` instead of `datetime.now()`
 - If you must use `datetime.now()`, always provide a timezone: `datetime.now(tz=UTC)`
 - Remember that naive datetime objects can cause subtle bugs in time calculations
 
 ## Line Length
+
 - Keep lines under 88 characters
 - For long strings in docstrings or log messages, use one of these approaches:
+
   ```python
   # String concatenation with implicit joining
   logger.info(
@@ -531,15 +632,20 @@ description: Code Quality and Linting
   ```
 
 ## Test Security
+
 - For test credentials or secrets, add a `# noqa: S105` comment to indicate it's intentional
+
   ```python
   api_key = "test_api_key"
   api_secret = "test_api_secret"  # noqa: S105 - This is a test value, not a real secret
   ```
+
 - Never use real credentials in tests
 
 ## Pytest Best Practices
+
 - Use specific exception types with `pytest.raises`, not generic `Exception`
+
   ```python
   # WRONG
   with pytest.raises(Exception):
@@ -549,4 +655,5 @@ description: Code Quality and Linting
   with pytest.raises(ValueError):  # Use the specific exception you expect
       function_that_raises()
   ```
+
 - This makes tests more precise and prevents them from passing when the wrong type of exception is raised

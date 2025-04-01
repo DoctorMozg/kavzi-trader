@@ -23,7 +23,7 @@ class KlinesDownloader(BaseDownloader[CandlestickSchema]):
         """Initialize the KlinesDownloader."""
         super().__init__(client)
 
-    def download(
+    async def download(
         self,
         symbol: str,
         interval: str,
@@ -83,7 +83,7 @@ class KlinesDownloader(BaseDownloader[CandlestickSchema]):
         ]
 
         # Execute parallel downloads
-        all_data = self.execute_parallel_downloads(
+        all_data = await self.execute_parallel_downloads(
             batches=download_batches,
             download_func=self._download_batch,
             max_workers=max_workers,
@@ -115,7 +115,7 @@ class KlinesDownloader(BaseDownloader[CandlestickSchema]):
 
         return all_data
 
-    def _download_batch(
+    async def _download_batch(
         self,
         symbol: str,
         interval: str,
@@ -136,7 +136,7 @@ class KlinesDownloader(BaseDownloader[CandlestickSchema]):
         """
         try:
             # Get klines using the standard client
-            klines = self.client.get_klines(
+            klines = await self.client.get_klines(
                 symbol=symbol,
                 interval=interval,
                 start_time=start_time,

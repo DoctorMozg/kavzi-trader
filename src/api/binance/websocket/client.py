@@ -74,7 +74,7 @@ class BinanceWebsocketClient:
         """Stop the WebSocket connection."""
         self.stream_manager.stop()
 
-    def subscribe_kline_stream(
+    async def subscribe_kline_stream(
         self,
         symbol: str,
         interval: str,
@@ -91,13 +91,13 @@ class BinanceWebsocketClient:
         Returns:
             Stream name
         """
-        return self.kline_handler.subscribe(
+        return await self.kline_handler.subscribe(
             symbol=symbol,
             callback=callback,
             interval=interval,
         )
 
-    def subscribe_ticker_stream(
+    async def subscribe_ticker_stream(
         self,
         symbol: str,
         callback: Callable[[TickerData], None],
@@ -112,12 +112,12 @@ class BinanceWebsocketClient:
         Returns:
             Stream name
         """
-        return self.ticker_handler.subscribe(
+        return await self.ticker_handler.subscribe(
             symbol=symbol,
             callback=callback,
         )
 
-    def subscribe_trades_stream(
+    async def subscribe_trades_stream(
         self,
         symbol: str,
         callback: Callable[[TradeData], None],
@@ -132,12 +132,12 @@ class BinanceWebsocketClient:
         Returns:
             Stream name
         """
-        return self.trade_handler.subscribe(
+        return await self.trade_handler.subscribe(
             symbol=symbol,
             callback=callback,
         )
 
-    def subscribe_depth_stream(
+    async def subscribe_depth_stream(
         self,
         symbol: str,
         callback: Callable[[dict[str, Any]], None],
@@ -154,13 +154,13 @@ class BinanceWebsocketClient:
         Returns:
             Stream name
         """
-        return self.depth_handler.subscribe(
+        return await self.depth_handler.subscribe(
             symbol=symbol,
             callback=callback,
             depth=depth,
         )
 
-    def subscribe_multiplex_streams(
+    async def subscribe_multiplex_streams(
         self,
         streams: list[str],
         callback: Callable[[dict[str, Any]], None],
@@ -183,19 +183,18 @@ class BinanceWebsocketClient:
         stream_id = "/".join(streams)
 
         # Store the callback for each individual stream
-        with self.stream_manager.acquire_lock():
-            for stream in streams:
-                self.stream_manager.add_stream_callback(
-                    stream_name=stream,
-                    callback=callback,
-                )
+        for stream in streams:
+            self.stream_manager.add_stream_callback(
+                stream_name=stream,
+                callback=callback,
+            )
 
         # Ensure the WebSocket manager is running
-        self.stream_manager.start()
+        await self.stream_manager.start()
 
         try:
             # Start the multiplex socket
-            socket_id = self.stream_manager.twm.start_multiplex_socket(
+            socket = await self.stream_manager.bsm.multiplex_socket(
                 callback=self.stream_manager.create_message_handler(),
                 streams=streams,
             )
@@ -203,7 +202,7 @@ class BinanceWebsocketClient:
             # Register the stream
             self.stream_manager.register_stream(
                 stream_name=stream_id,
-                socket_id=socket_id,
+                socket=socket,
                 callback=callback,
             )
 
@@ -214,7 +213,7 @@ class BinanceWebsocketClient:
         else:
             return stream_id
 
-    def subscribe_user_data_stream(
+    async def subscribe_user_data_stream(
         self,
         callback: Callable[[dict[str, Any]], None],
     ) -> str:
@@ -227,22 +226,22 @@ class BinanceWebsocketClient:
         Returns:
             Stream name (user-data-stream-id)
         """
-        return self.user_data_handler.subscribe(
+        return await self.user_data_handler.subscribe(
             callback=callback,
         )
 
-    def unsubscribe_stream(self, stream_name: str) -> None:
+    async def unsubscribe_stream(self, stream_name: str) -> None:
         """
         Unsubscribe from a stream.
 
         Args:
             stream_name: Name of the stream to unsubscribe from
         """
-        self.stream_manager.unregister_stream(stream_name)
+        await self.stream_manager.unregister_stream(stream_name)
 
-    def unsubscribe_all_streams(self) -> None:
+    async def unsubscribe_all_streams(self) -> None:
         """Unsubscribe from all active streams and stop the WebSocket manager."""
-        self.stream_manager.stop()
+        await self.stream_manager.stop()
 
     def list_active_streams(self) -> list[str]:
         """

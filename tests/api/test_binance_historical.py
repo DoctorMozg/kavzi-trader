@@ -138,7 +138,7 @@ def test_save_data(
 
 
 @patch("src.api.binance.historical.downloaders.klines.KlinesDownloader._download_batch")
-def test_download_klines(
+async def test_download_klines(
     mock_download_batch: MagicMock,
     historical_client: BinanceHistoricalDataClient,
     mock_candlestick_schemas: list[CandlestickSchema],
@@ -159,7 +159,7 @@ def test_download_klines(
             },
         ]
 
-        klines = historical_client.download_klines(
+        klines = await historical_client.download_klines(
             symbol="BTCUSDT",
             interval="1h",
             start_time=utc_now() - timedelta(days=1),
@@ -177,7 +177,7 @@ def test_download_klines(
 
 
 @patch("src.api.binance.historical.downloaders.trades.TradesDownloader._download_batch")
-def test_download_trades(
+async def test_download_trades(
     mock_download_batch: MagicMock,
     historical_client: BinanceHistoricalDataClient,
     mock_trade_schemas: list[TradeSchema],
@@ -205,7 +205,7 @@ def test_download_trades(
         end_time = datetime(2023, 1, 3, tzinfo=UTC)
         start_time = datetime(2023, 1, 1, tzinfo=UTC)
 
-        trades = historical_client.download_trades(
+        trades = await historical_client.download_trades(
             symbol="BTCUSDT",
             start_time=start_time,
             end_time=end_time,
@@ -227,7 +227,7 @@ def test_download_trades(
 
 
 @patch("src.api.binance.historical.client.BinanceHistoricalDataClient.download_klines")
-def test_download_multiple_symbols(
+async def test_download_multiple_symbols(
     mock_download_klines: MagicMock,
     historical_client: BinanceHistoricalDataClient,
     mock_candlestick_schemas: list[CandlestickSchema],
@@ -247,7 +247,7 @@ def test_download_multiple_symbols(
     )
 
     symbols = ["BTCUSDT", "ETHUSDT"]
-    results = historical_client.download_multiple_symbols(config, symbols)
+    results = await historical_client.download_multiple_symbols(config, symbols)
 
     # Verify the result
     assert mock_download_klines.call_count == len(symbols)
@@ -257,7 +257,7 @@ def test_download_multiple_symbols(
 @patch(
     "src.api.binance.historical.client.BinanceHistoricalDataClient.download_multiple_symbols",
 )
-def test_download_all_symbols(
+async def test_download_all_symbols(
     mock_download_multiple: MagicMock,
     historical_client: BinanceHistoricalDataClient,
 ) -> None:
@@ -308,7 +308,7 @@ def test_download_all_symbols(
     assert "ETHUSDT" in results
 
 
-def test_download_klines_batch(
+async def test_download_klines_batch(
     historical_client: BinanceHistoricalDataClient,
     mock_candlestick_schemas: list[CandlestickSchema],
 ) -> None:
@@ -317,7 +317,7 @@ def test_download_klines_batch(
     historical_client.client.get_klines.return_value = mock_candlestick_schemas  # type: ignore
 
     # Call the method
-    result = historical_client.klines_downloader._download_batch(
+    result = await historical_client.klines_downloader._download_batch(
         symbol="BTCUSDT",
         interval="1h",
         start_time=utc_now() - timedelta(hours=5),
@@ -330,7 +330,7 @@ def test_download_klines_batch(
 
 
 @patch("src.api.binance.historical.downloaders.trades.TradesDownloader._download_batch")
-def test_download_trades_batch(
+async def test_download_trades_batch(
     mock_download_batch: MagicMock,
     historical_client: BinanceHistoricalDataClient,
     mock_trade_schemas: list[TradeSchema],
@@ -340,7 +340,7 @@ def test_download_trades_batch(
     mock_download_batch.return_value = mock_trade_schemas
 
     # Call the method through the client
-    result = historical_client.trades_downloader._download_batch(
+    result = await historical_client.trades_downloader._download_batch(
         symbol="BTCUSDT",
         start_time=utc_now() - timedelta(hours=1),
         end_time=utc_now(),

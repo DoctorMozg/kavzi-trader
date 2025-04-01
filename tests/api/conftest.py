@@ -6,10 +6,11 @@ This module contains fixtures and setup for testing the API connectors.
 
 import os
 from collections.abc import Generator
-from typing import Any
+from typing import Any, AsyncGenerator
 from unittest.mock import MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 from src.api.binance.client import BinanceClient
 from src.api.binance.historical.client import BinanceHistoricalDataClient
@@ -24,8 +25,8 @@ skip_integration = pytest.mark.skipif(
 )
 
 
-@pytest.fixture()
-def binance_testnet_client() -> BinanceClient:
+@pytest_asyncio.fixture()
+async def binance_testnet_client() -> BinanceClient:
     """
     Create a Binance testnet client for testing.
 
@@ -34,8 +35,8 @@ def binance_testnet_client() -> BinanceClient:
     return BinanceClient(testnet=True)
 
 
-@pytest.fixture()
-def binance_client_with_keys() -> BinanceClient:
+@pytest_asyncio.fixture()
+async def binance_client() -> BinanceClient:
     """
     Create a Binance client with API keys for integration testing.
 
@@ -80,10 +81,10 @@ def mock_twm() -> Generator[MagicMock, None, None]:
         yield mock_twm
 
 
-@pytest.fixture()
-def historical_client(
+@pytest_asyncio.fixture()
+async def historical_client(
     mock_binance_client: MagicMock,
-) -> Generator[BinanceHistoricalDataClient, None, None]:
+) -> AsyncGenerator[BinanceHistoricalDataClient, None]:
     """Create a historical data client with mocked dependencies for testing."""
     # Use a temp directory for test outputs
     import tempfile

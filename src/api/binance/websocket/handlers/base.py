@@ -7,9 +7,10 @@ This module provides a base class for handling different types of WebSocket stre
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, Generic, TypeVar
+from typing import Any, Awaitable, Generic, TypeVar
 
 from binance.exceptions import BinanceAPIException
+from binance import ReconnectingWebsocket
 
 from src.api.binance.websocket.stream_manager import StreamManager
 from src.api.common.exceptions import APIError
@@ -37,10 +38,10 @@ class BaseStreamHandler(Generic[T], ABC):
         self.stream_manager = stream_manager
 
     @abstractmethod
-    def subscribe(
+    async def subscribe(
         self,
         symbol: str,
-        callback: Callable[[T], None],
+        callback: Callable[[T], Awaitable[None]],
         **kwargs: Any,  # noqa: ANN401
     ) -> str:
         """
@@ -55,7 +56,7 @@ class BaseStreamHandler(Generic[T], ABC):
             Stream name
         """
 
-    def unsubscribe(self, stream_name: str) -> None:
+    async def unsubscribe(self, stream_name: str) -> None:
         """
         Unsubscribe from a stream.
 
@@ -63,16 +64,16 @@ class BaseStreamHandler(Generic[T], ABC):
             stream_name: Name of the stream to unsubscribe from
         """
         try:
-            self.stream_manager.unregister_stream(stream_name)
+            await self.stream_manager.unregister_stream(stream_name)
         except Exception as err:
             logger.exception("Error unsubscribing from stream")
             raise APIError(f"Error unsubscribing from stream: {err!s}") from err
 
-    def _start_socket(
+    async def _start_socket(
         self,
-        socket_func: Callable[..., int],
+        socket_func: Callable[..., Awaitable[ReconnectingWebsocket]],
         stream_name: str,
-        callback: Callable[[T], None],
+        callback: Callable[[T], Awaitable[None]],
         symbol: str | None = None,
         interval: str | None = None,
         depth: int | None = None,
@@ -112,12 +113,12 @@ class BaseStreamHandler(Generic[T], ABC):
                 socket_args["depth"] = depth
 
             # Start the socket with appropriate arguments
-            socket_id = socket_func(**socket_args)
+            socket = await socket_func(**socket_args)
 
             # Register the stream
             self.stream_manager.register_stream(
                 stream_name=stream_name,
-                socket_id=socket_id,
+                socket=socket,
                 callback=callback,  # type: ignore
             )
 

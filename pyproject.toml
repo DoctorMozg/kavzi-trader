@@ -31,6 +31,7 @@ dependencies = [
 dev = [
     "pre-commit>=4.2.0",
     "pytest>=8.3.5",
+    "pytest-asyncio>=0.26.0",
     "types-pyyaml>=6.0.12.20250326",
 ]
 
@@ -40,6 +41,10 @@ log_cli = true
 log_cli_level = "DEBUG"
 log_cli_format = "%(asctime)s [%(levelname)s] %(filename)s:%(lineno)s %(message)s"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
+
 testpaths = [
     "pytests",
 ]

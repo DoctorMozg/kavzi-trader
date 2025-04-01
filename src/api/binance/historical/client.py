@@ -28,7 +28,7 @@ class BinanceHistoricalDataClient:
 
     This client extends the standard BinanceClient with specialized methods for
     batch downloading and processing historical data with:
-    - Parallel downloads using ThreadPoolExecutor
+    - Parallel downloads using asyncio
     - Smart batching to maximize throughput
     - Automatic rate limiting
     - CSV output format
@@ -77,7 +77,7 @@ class BinanceHistoricalDataClient:
         self.klines_downloader = KlinesDownloader(self.client)
         self.trades_downloader = TradesDownloader(self.client)
 
-    def download_klines(
+    async def download_klines(
         self,
         symbol: str,
         interval: str,
@@ -104,7 +104,7 @@ class BinanceHistoricalDataClient:
         Returns:
             List of candlestick data
         """
-        return self.klines_downloader.download(
+        return await self.klines_downloader.download(
             symbol=symbol,
             interval=interval,
             start_time=start_time,
@@ -115,7 +115,7 @@ class BinanceHistoricalDataClient:
             save_progress=save_progress,
         )
 
-    def download_trades(
+    async def download_trades(
         self,
         symbol: str,
         start_time: str | datetime,
@@ -139,7 +139,7 @@ class BinanceHistoricalDataClient:
         Returns:
             List of trade data
         """
-        return self.trades_downloader.download(
+        return await self.trades_downloader.download(
             symbol=symbol,
             start_time=start_time,
             end_time=end_time,
@@ -148,7 +148,7 @@ class BinanceHistoricalDataClient:
             save_progress=save_progress,
         )
 
-    def download_multiple_symbols(
+    async def download_multiple_symbols(
         self,
         config: DownloadBatchConfigSchema,
         symbols: list[str],
@@ -180,7 +180,7 @@ class BinanceHistoricalDataClient:
                 )
 
                 if config.interval:  # Klines
-                    data = self.download_klines(
+                    data = await self.download_klines(
                         symbol=symbol,
                         interval=config.interval,
                         start_time=config.start_time,
@@ -218,7 +218,7 @@ class BinanceHistoricalDataClient:
         )
         return results
 
-    def download_all_symbols(  # noqa: C901,PLR0912
+    async def download_all_symbols(  # noqa: C901,PLR0912
         self,
         interval: str,
         start_time: str | datetime,
@@ -247,7 +247,7 @@ class BinanceHistoricalDataClient:
         """
         # Get exchange information to find available symbols
         logger.info("Fetching exchange information...")
-        exchange_info = self.client.get_exchange_info()
+        exchange_info = await self.client.get_exchange_info()
         all_symbols = exchange_info.get("symbols", [])
         logger.info("Found %d symbols on exchange", len(all_symbols))
 
@@ -258,7 +258,7 @@ class BinanceHistoricalDataClient:
         tickers = None
         if min_volume:
             logger.info("Fetching 24h ticker data for volume filtering...")
-            tickers = self.client.get_all_tickers()
+            tickers = await self.client.get_all_tickers()
             # Create a lookup dictionary
             ticker_map = {t.symbol: t for t in tickers}
             logger.info("Retrieved ticker data for %d symbols", len(ticker_map))
@@ -323,6 +323,5 @@ class BinanceHistoricalDataClient:
             max_workers=max_workers or self.max_workers,
             output_dir=output_dir or self.output_dir,
         )
-
         # Download data for filtered symbols
-        return self.download_multiple_symbols(config, filtered_symbols)
+        return await self.download_multiple_symbols(config, filtered_symbols)
