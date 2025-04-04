@@ -9,6 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -31,9 +32,24 @@ class MarketDataModel(BaseModel):
 
     __tablename__ = "market_data"
 
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    interval: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime,
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    interval: Mapped[str] = mapped_column(
+        String(10),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
     opened: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
     high: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
     low: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
@@ -59,12 +75,6 @@ class MarketDataModel(BaseModel):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint(
-            "symbol",
-            "interval",
-            "timestamp",
-            name="uix_market_data_symbol_interval_timestamp",
-        ),
         Index(
             "ix_market_data_symbol_interval_timestamp",
             "symbol",
@@ -89,6 +99,46 @@ class MarketDataModel(BaseModel):
         if float(self.opened) == 0:
             return 0.0
         return (float(self.closed) - float(self.opened)) / float(self.opened) * 100.0
+
+
+class TradeDataModel(BaseModel):
+    """
+    SQLAlchemy model for trade_data table.
+
+    Stores historical trade data for trading pairs.
+    """
+
+    __tablename__ = "trade_data"
+
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime,
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    trade_id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    price: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(NUMERIC(24, 8), nullable=False)
+    quote_quantity: Mapped[Decimal] = mapped_column(NUMERIC(24, 8), nullable=False)
+    is_buyer_maker: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    is_best_match: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    buyer_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    seller_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Constraints
+    __table_args__ = (
+        Index(
+            "ix_trade_data_symbol_timestamp",
+            "symbol",
+            "timestamp",
+        ),
+    )
 
 
 class FeatureModel(BaseModel):

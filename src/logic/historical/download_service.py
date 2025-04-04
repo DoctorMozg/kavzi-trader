@@ -2,19 +2,22 @@
 Service for downloading historical market data.
 
 This module provides services for downloading various types of historical
-market data from different sources.
+market data from different sources and storing them in the database.
 """
 
-from datetime import datetime
-from pathlib import Path
+from typing import Any
 
 import click
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.binance.historical.batch import DownloadBatchConfigSchema
+from src.api.binance.historical.batch import (
+    DownloadBatchConfigSchema,
+    SymbolicDownloadBatchConfigSchema,
+)
 from src.api.binance.historical.client import BinanceHistoricalDataClient
 from src.api.common.models import CandlestickSchema, TradeSchema
 from src.commons.logging import get_logger
-from src.commons.time_utility import utc_now
+from src.data.storage.repos import MarketDataRepository, TradeDataRepository
 
 # Initialize logger
 logger = get_logger(name=__name__)
@@ -22,181 +25,163 @@ logger = get_logger(name=__name__)
 
 class HistoricalDownloadService:
     """
-    Service for downloading historical market data.
+    Service for downloading historical market data and storing it in the database.
     """
 
-    def __init__(self, client: BinanceHistoricalDataClient) -> None:
+    def __init__(
+        self,
+        client: BinanceHistoricalDataClient,
+        db_session: AsyncSession,
+    ) -> None:
         """
         Initialize the download service.
 
         Args:
             client: The historical data client to use for downloads
+            db_session: SQLAlchemy async session for database operations
         """
         self.client = client
+        self.market_data_repo = MarketDataRepository(db_session)
+        self.trade_data_repo = TradeDataRepository(db_session)
 
-    def download_klines(
+    async def download_klines(
         self,
-        symbol: str,
-        interval: str,
-        start_time: datetime,
-        end_time: datetime | None = None,
-        batch_size: int = 1000,
-        max_workers: int = 4,
-        output_dir: Path = Path("./data"),
-        save_progress: bool = True,
+        config: SymbolicDownloadBatchConfigSchema,
     ) -> list[CandlestickSchema]:
         """
-        Download historical klines (candlestick) data.
+        Download historical klines (candlestick) data and save to database.
 
         Args:
-            symbol: Trading pair symbol (e.g., BTCUSDT)
-            interval: Kline interval (e.g., 1m, 5m, 15m, 1h, 4h, 1d)
-            start_time: Start time for historical data
-            end_time: End time for historical data (optional)
-            batch_size: Size of each download batch
-            max_workers: Maximum number of concurrent download workers
-            output_dir: Directory to save downloaded data
-            save_progress: Whether to save each batch as it completes
+            config: Configuration for the download batch with symbol
 
         Returns:
             List of downloaded kline data
         """
         logger.info(
             "Downloading %s %s data from %s to %s",
-            symbol,
-            interval,
-            start_time,
-            end_time or "now",
+            config.symbol,
+            config.interval,
+            config.start_time,
+            config.end_time or "now",
         )
 
         try:
-            data = self.client.download_klines(
-                symbol=symbol,
-                interval=interval,
-                start_time=start_time,
-                end_time=end_time,
-                batch_size=batch_size,
-                max_workers=max_workers,
-                output_dir=output_dir,
-                save_progress=save_progress,
-            )
+            data = await self.client.download_klines(config=config)
 
             logger.info(
                 "Successfully downloaded %d records for %s %s",
                 len(data),
-                symbol,
-                interval,
+                config.symbol,
+                config.interval,
             )
+
+            # Always save data to database
+            await self.market_data_repo.save_candlesticks(
+                candlesticks=data,
+                symbol=config.symbol,
+                interval=config.interval,
+                batch_size=config.batch_size,
+            )
+
         except Exception as e:
             logger.exception("Error downloading historical klines data")
             raise click.ClickException(f"Failed to download data: {e!s}") from e
         else:
             return data
 
-    def download_trades(
+    async def download_trades(
         self,
-        symbol: str,
-        start_time: datetime,
-        end_time: datetime | None = None,
-        max_workers: int = 4,
-        output_dir: Path = Path("./data"),
-        save_progress: bool = True,
+        config: SymbolicDownloadBatchConfigSchema,
     ) -> list[TradeSchema]:
         """
-        Download historical trades data.
+        Download historical trades data and save to database.
 
         Args:
-            symbol: Trading pair symbol (e.g., BTCUSDT)
-            start_time: Start time for historical data
-            end_time: End time for historical data (optional)
-            max_workers: Maximum number of concurrent download workers
-            output_dir: Directory to save downloaded data
-            save_progress: Whether to save each batch as it completes
+            config: Configuration for the download batch with symbol
 
         Returns:
             List of downloaded trades data
         """
         logger.info(
             "Downloading %s trades data from %s to %s",
-            symbol,
-            start_time,
-            end_time or "now",
+            config.symbol,
+            config.start_time,
+            config.end_time or "now",
         )
 
         try:
-            data = self.client.download_trades(
-                symbol=symbol,
-                start_time=start_time,
-                end_time=end_time,
-                max_workers=max_workers,
-                output_dir=output_dir,
-                save_progress=save_progress,
-            )
+            data = await self.client.download_trades(config=config)
 
             logger.info(
                 "Successfully downloaded %d trades for %s",
                 len(data),
-                symbol,
+                config.symbol,
             )
+
+            # Always save trade data to database
+            await self.trade_data_repo.save_trades(
+                trades=data,
+                symbol=config.symbol,
+                batch_size=1000,
+            )
+
         except Exception as e:
             logger.exception("Error downloading trades data")
             raise click.ClickException(f"Failed to download trades: {e!s}") from e
         else:
             return data
 
-    def download_multiple_symbols(
+    async def download_multiple_symbols(
         self,
         symbols: list[str],
-        interval: str,
-        start_time: datetime,
-        end_time: datetime | None = None,
-        batch_size: int = 1000,
-        max_workers: int = 4,
-        output_dir: Path = Path("./data"),
-    ) -> dict[str, Path]:
+        base_config: DownloadBatchConfigSchema,
+    ) -> dict[str, Any]:
         """
-        Download historical klines data for multiple symbols.
+        Download historical klines data for multiple symbols and save to database.
 
         Args:
             symbols: List of trading pair symbols
-            interval: Kline interval
-            start_time: Start time for historical data
-            end_time: End time for historical data (optional)
-            batch_size: Size of each download batch
-            max_workers: Maximum number of concurrent download workers
-            output_dir: Directory to save downloaded data
+            base_config: Base configuration for the download batch (without symbol)
 
         Returns:
-            List of successfully downloaded symbols
+            Dictionary with symbol keys and success status values
         """
         logger.info(
             "Downloading data for %d symbols with interval %s from %s to %s",
             len(symbols),
-            interval,
-            start_time,
-            end_time or "now",
+            base_config.interval,
+            base_config.start_time,
+            base_config.end_time or "now",
         )
 
-        # Create download config
-        download_config = DownloadBatchConfigSchema(
-            symbol="",  # Will be set per download
-            interval=interval,
-            start_time=start_time,
-            end_time=end_time or utc_now(),
-            batch_size=batch_size,
-            max_workers=max_workers,
-            output_dir=output_dir,
-        )
+        results = {}
 
         try:
-            results = self.client.download_multiple_symbols(
-                config=download_config,
-                symbols=symbols,
-            )
+            for symbol in symbols:
+                try:
+                    logger.info("Processing symbol: %s", symbol)
+
+                    # Create a symbol-specific config using clone
+                    symbol_config = SymbolicDownloadBatchConfigSchema(
+                        symbol=symbol,
+                        interval=base_config.interval,
+                        start_time=base_config.start_time,
+                        end_time=base_config.end_time,
+                        batch_size=base_config.batch_size,
+                        max_workers=base_config.max_workers,
+                    )
+
+                    data = await self.download_klines(config=symbol_config)
+
+                    if data:
+                        results[symbol] = True
+                except Exception:
+                    logger.exception("Error processing symbol %s", symbol)
+                    results[symbol] = False
 
             logger.info(
                 "Successfully downloaded data for %d/%d symbols",
-                len(results),
+                sum(1 for success in results.values() if success),
                 len(symbols),
             )
         except Exception as e:
@@ -205,32 +190,79 @@ class HistoricalDownloadService:
         else:
             return results
 
-    def download_all_symbols(
+    async def download_trades_for_multiple_symbols(
         self,
-        interval: str,
-        start_time: datetime,
-        end_time: datetime | None = None,
-        quote_asset: str = "USDT",
-        min_volume: float | None = None,
-        batch_size: int = 1000,
-        max_workers: int = 4,
-        output_dir: Path = Path("./data"),
-    ) -> dict[str, Path]:
+        symbols: list[str],
+        base_config: DownloadBatchConfigSchema,
+    ) -> dict[str, Any]:
         """
-        Download historical klines data for all available symbols matching criteria.
+        Download historical trades data for multiple symbols and save to database.
 
         Args:
-            interval: Kline interval
-            start_time: Start time for historical data
-            end_time: End time for historical data (optional)
-            quote_asset: Filter symbols by quote asset (e.g., USDT, BTC)
-            min_volume: Minimum 24h volume in USD
-            batch_size: Size of each download batch
-            max_workers: Maximum number of concurrent download workers
-            output_dir: Directory to save downloaded data
+            symbols: List of trading pair symbols
+            base_config: Base configuration for the download batch (without symbol)
 
         Returns:
-            List of successfully downloaded symbols
+            Dictionary with symbol keys and success status values
+        """
+        logger.info(
+            "Downloading trades data for %d symbols from %s to %s",
+            len(symbols),
+            base_config.start_time,
+            base_config.end_time or "now",
+        )
+
+        results = {}
+
+        try:
+            for symbol in symbols:
+                try:
+                    logger.info("Processing symbol trades: %s", symbol)
+
+                    # Create a symbol-specific config using clone
+                    symbol_config = SymbolicDownloadBatchConfigSchema(
+                        symbol=symbol,
+                        start_time=base_config.start_time,
+                        end_time=base_config.end_time,
+                        max_workers=base_config.max_workers,
+                    )
+
+                    data = await self.download_trades(config=symbol_config)
+
+                    if data:
+                        results[symbol] = True
+                except Exception:
+                    logger.exception("Error processing symbol trades %s", symbol)
+                    results[symbol] = False
+
+            logger.info(
+                "Successfully downloaded trades data for %d/%d symbols",
+                sum(1 for success in results.values() if success),
+                len(symbols),
+            )
+        except Exception as e:
+            logger.exception("Error downloading trades data for multiple symbols")
+            raise click.ClickException(f"Failed to download trades data: {e!s}") from e
+        else:
+            return results
+
+    async def download_all_symbols(
+        self,
+        base_config: DownloadBatchConfigSchema,
+        quote_asset: str = "USDT",
+        min_volume: float | None = None,
+    ) -> dict[str, Any]:
+        """
+        Download historical klines data for all available symbols matching criteria
+        and save to database.
+
+        Args:
+            base_config: Base configuration for the download batch (without symbol)
+            quote_asset: Filter symbols by quote asset (e.g., USDT, BTC)
+            min_volume: Minimum 24h volume in USD
+
+        Returns:
+            Dictionary with symbol keys and success status values
         """
         filter_desc = f"quote_asset={quote_asset}"
         if min_volume:
@@ -240,26 +272,123 @@ class HistoricalDownloadService:
             "Downloading data for all symbols matching criteria (%s) with interval %s"
             " from %s to %s",
             filter_desc,
-            interval,
-            start_time,
-            end_time or "now",
+            base_config.interval,
+            base_config.start_time,
+            base_config.end_time or "now",
         )
 
+        results = {}
+
         try:
-            results = self.client.download_all_symbols(
-                interval=interval,
-                start_time=start_time,
-                end_time=end_time,
+            # Get filtered symbols first
+            filtered_symbols = await self.client.get_filtered_symbols(
                 quote_asset=quote_asset,
                 min_volume=min_volume,
-                batch_size=batch_size,
-                max_workers=max_workers,
-                output_dir=output_dir,
             )
 
-            logger.info("Successfully downloaded data for %d symbols", len(results))
+            logger.info("Found %d symbols matching criteria", len(filtered_symbols))
+
+            # Process each symbol
+            for symbol in filtered_symbols:
+                try:
+                    logger.info("Processing symbol: %s", symbol)
+
+                    # Create a symbol-specific config using clone
+                    symbol_config = SymbolicDownloadBatchConfigSchema(
+                        symbol=symbol,
+                        interval=base_config.interval,
+                        start_time=base_config.start_time,
+                        end_time=base_config.end_time,
+                        batch_size=base_config.batch_size,
+                        max_workers=base_config.max_workers,
+                    )
+
+                    data = await self.download_klines(config=symbol_config)
+
+                    if data:
+                        results[symbol] = True
+                except Exception:
+                    logger.exception("Error processing symbol %s", symbol)
+                    results[symbol] = False
+
+            logger.info(
+                "Successfully downloaded data for %d symbols",
+                sum(1 for success in results.values() if success),
+            )
         except Exception as e:
             logger.exception("Error downloading historical data for all symbols")
             raise click.ClickException(f"Failed to download data: {e!s}") from e
+        else:
+            return results
+
+    async def download_all_trades(
+        self,
+        base_config: DownloadBatchConfigSchema,
+        quote_asset: str = "USDT",
+        min_volume: float | None = None,
+    ) -> dict[str, Any]:
+        """
+        Download historical trades data for all available symbols matching criteria
+        and save to database.
+
+        Args:
+            base_config: Base configuration for the download batch (without symbol)
+            quote_asset: Filter symbols by quote asset (e.g., USDT, BTC)
+            min_volume: Minimum 24h volume in USD
+
+        Returns:
+            Dictionary with symbol keys and success status values
+        """
+        filter_desc = f"quote_asset={quote_asset}"
+        if min_volume:
+            filter_desc += f", min_volume={min_volume}"
+
+        logger.info(
+            "Downloading trades data for all symbols matching criteria (%s)"
+            " from %s to %s",
+            filter_desc,
+            base_config.start_time,
+            base_config.end_time or "now",
+        )
+
+        results = {}
+
+        try:
+            # Get filtered symbols first
+            filtered_symbols = await self.client.get_filtered_symbols(
+                quote_asset=quote_asset,
+                min_volume=min_volume,
+            )
+
+            logger.info("Found %d symbols matching criteria", len(filtered_symbols))
+
+            # Process each symbol
+            for symbol in filtered_symbols:
+                try:
+                    logger.info("Processing symbol trades: %s", symbol)
+
+                    # Create a symbol-specific config using clone
+                    symbol_config = SymbolicDownloadBatchConfigSchema(
+                        symbol=symbol,
+                        start_time=base_config.start_time,
+                        end_time=base_config.end_time,
+                        max_workers=base_config.max_workers,
+                    )
+
+                    data = await self.download_trades(config=symbol_config)
+
+                    if data:
+                        results[symbol] = True
+                except Exception:
+                    logger.exception("Error processing symbol trades %s", symbol)
+                    results[symbol] = False
+
+            logger.info(
+                "Successfully downloaded trades data for %d symbols",
+                sum(1 for success in results.values() if success),
+            )
+        except Exception as e:
+            logger.exception("Error downloading trades data for all symbols")
+            raise click.ClickException(f"Failed to download trades data: {e!s}") from e
         else:
             return results

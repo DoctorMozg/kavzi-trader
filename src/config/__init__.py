@@ -16,17 +16,20 @@ class DatabaseConfigNested(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     dialect: str = Field("postgresql", min_length=1)
-    driver: str = Field("psycopg2", min_length=1)
+    driver: str = Field("asyncpg", min_length=1)
     host: str = Field("localhost", min_length=1)
     port: int = Field(5432, ge=1, le=65535)
-    username: str = Field("postgres", min_length=1)
+    user: str = Field(
+        "postgres",
+        min_length=1,
+    )  # Using user instead of username for AsyncDatabase compatibility
     password: str = Field("postgres", min_length=1)
-    database: str = Field("kavzitrader", min_length=1)
-    pool_size: int = Field(10, ge=1)
-    max_overflow: int = Field(20, ge=0)
+    name: str = Field(
+        "kavzitrader",
+        min_length=1,
+    )  # Using name instead of database for AsyncDatabase compatibility
     echo: bool = Field(False)
-    echo_pool: bool = Field(False)
-    options: dict[str, Any] = Field(default_factory=dict)
+    url: str = Field("", min_length=0)  # For pre-constructed URL
 
     @field_validator("host")
     @classmethod
@@ -246,6 +249,7 @@ class AppConfig(BaseModel):
     # Core configuration sections
     system: SystemConfig
     api: ApiConfig
+    database: DatabaseConfigNested  # Add database configuration
     symbols: list[str]
     data: DataConfig
 

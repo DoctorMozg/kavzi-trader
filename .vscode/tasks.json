@@ -17,6 +17,7 @@
         "panel": "dedicated"
       },
       "options": {
+        "cwd": "${workspaceFolder}/docker",
         "statusbar": {
             "color": "#a8e6d1"
         }

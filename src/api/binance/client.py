@@ -11,7 +11,7 @@ from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from functools import wraps
-from typing import Any, Awaitable, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 from binance.async_client import AsyncClient as BinanceAPIClient
 from binance.exceptions import BinanceAPIException, BinanceRequestException
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-def handle_api_errors(func: Callable[..., T]) -> Callable[..., Awaitable[T]]:
+def handle_api_errors(func: Callable[..., T]) -> Callable[..., T]:
     """
     Decorator to handle API errors from Binance.
 
@@ -305,7 +305,11 @@ class BinanceClient:
         )
 
     @handle_api_errors
-    async def get_recent_trades(self, symbol: str, limit: int = 500) -> list[TradeSchema]:
+    async def get_recent_trades(
+        self,
+        symbol: str,
+        limit: int = 500,
+    ) -> list[TradeSchema]:
         """
         Get recent trades for a symbol.
 
@@ -775,7 +779,10 @@ class BinanceClient:
         return self._parse_order_response(response)
 
     @handle_api_errors
-    async def get_open_orders(self, symbol: str | None = None) -> list[OrderResponseSchema]:
+    async def get_open_orders(
+        self,
+        symbol: str | None = None,
+    ) -> list[OrderResponseSchema]:
         """
         Get all open orders (requires API key).
 

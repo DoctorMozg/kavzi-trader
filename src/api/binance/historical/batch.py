@@ -4,7 +4,6 @@ Batch processing utilities for historical data downloads.
 
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, Field
@@ -18,15 +17,19 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class DownloadBatchConfigSchema(BaseModel):
-    """Configuration for a download batch."""
+    """Base configuration for a download batch without symbol."""
 
-    symbol: str
     interval: str = ""  # Empty for trades
     start_time: datetime
     end_time: datetime
     batch_size: int = Field(default=1000, gt=0)
     max_workers: int = Field(default=4, gt=0)
-    output_dir: Path = Field(default=Path("./data"))
+
+
+class SymbolicDownloadBatchConfigSchema(DownloadBatchConfigSchema):
+    """Configuration for a download batch with a specific symbol."""
+
+    symbol: str  # Required for specific symbol
 
 
 class BatchProcessor:

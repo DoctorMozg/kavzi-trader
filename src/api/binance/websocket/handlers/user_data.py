@@ -5,8 +5,8 @@ This module provides a handler for user data WebSocket streams.
 """
 
 import logging
-from collections.abc import Callable
-from typing import Any, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from src.api.binance.websocket.handlers.base import BaseStreamHandler
 from src.api.binance.websocket.stream_manager import StreamManager

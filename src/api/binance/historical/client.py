@@ -8,12 +8,14 @@ for batching, parallelization, and rate limiting.
 
 import logging
 from datetime import datetime
-from pathlib import Path
 
 import dateparser
 
 from src.api.binance.client import BinanceClient
-from src.api.binance.historical.batch import DownloadBatchConfigSchema
+from src.api.binance.historical.batch import (
+    DownloadBatchConfigSchema,
+    SymbolicDownloadBatchConfigSchema,
+)
 from src.api.binance.historical.downloaders.klines import KlinesDownloader
 from src.api.binance.historical.downloaders.trades import TradesDownloader
 from src.api.common.models import CandlestickSchema, TradeSchema
@@ -31,7 +33,6 @@ class BinanceHistoricalDataClient:
     - Parallel downloads using asyncio
     - Smart batching to maximize throughput
     - Automatic rate limiting
-    - CSV output format
     - Progress tracking
     """
 
@@ -43,8 +44,6 @@ class BinanceHistoricalDataClient:
         timeout: int = 60,
         max_workers: int = 4,
         batch_size: int = 1000,
-        output_dir: Path = Path("./data"),
-        proxies: dict[str, str] | None = None,
     ) -> None:
         """
         Initialize the Binance Historical Data Client.
@@ -56,22 +55,15 @@ class BinanceHistoricalDataClient:
             timeout: Request timeout in seconds
             max_workers: Maximum number of concurrent download workers
             batch_size: Default size of each download batch
-            output_dir: Default directory to save downloaded data
-            proxies: Proxy configuration for requests
         """
         self.client = BinanceClient(
             api_key=api_key,
             api_secret=api_secret,
             testnet=testnet,
             timeout=timeout,
-            proxies=proxies,
         )
         self.max_workers = max_workers
         self.batch_size = batch_size
-        self.output_dir = output_dir
-
-        # Create output directory if it doesn't exist
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize specialized downloaders
         self.klines_downloader = KlinesDownloader(self.client)
@@ -79,91 +71,96 @@ class BinanceHistoricalDataClient:
 
     async def download_klines(
         self,
-        symbol: str,
-        interval: str,
-        start_time: str | datetime,
+        config: SymbolicDownloadBatchConfigSchema | None = None,
+        symbol: str = "",
+        interval: str = "",
+        start_time: str | datetime | None = None,
         end_time: str | datetime | None = None,
-        batch_size: int | None = None,
-        max_workers: int | None = None,
-        output_dir: Path | None = None,
-        save_progress: bool = True,
     ) -> list[CandlestickSchema]:
         """
         Download historical klines (candlestick) data.
 
         Args:
+            config: Configuration for the download batch
+                (optional, overrides other params)
             symbol: Trading pair symbol (e.g., "BTCUSDT")
             interval: Kline interval (e.g., "1m", "1h", "1d")
             start_time: Start time for the download (string or datetime)
             end_time: End time for the download (string or datetime, defaults to now)
-            batch_size: Size of each download batch (defaults to self.batch_size)
-            max_workers: Maximum number of concurrent workers
-            output_dir: Directory to save data (defaults to self.output_dir)
-            save_progress: Whether to save each batch as it completes
 
         Returns:
             List of candlestick data
         """
-        return await self.klines_downloader.download(
-            symbol=symbol,
-            interval=interval,
-            start_time=start_time,
-            end_time=end_time,
-            batch_size=batch_size or self.batch_size,
-            max_workers=max_workers or self.max_workers,
-            output_dir=output_dir or self.output_dir,
-            save_progress=save_progress,
-        )
+        if config is None:
+            # Create config from individual parameters
+            config = SymbolicDownloadBatchConfigSchema(
+                symbol=symbol,
+                interval=interval,
+                start_time=self._parse_time(start_time)
+                if start_time is not None
+                else utc_now(),
+                end_time=self._parse_time(end_time)
+                if end_time is not None
+                else utc_now(),
+                batch_size=self.batch_size,
+                max_workers=self.max_workers,
+            )
+
+        return await self.klines_downloader.download(config=config)
 
     async def download_trades(
         self,
-        symbol: str,
-        start_time: str | datetime,
+        config: SymbolicDownloadBatchConfigSchema | None = None,
+        symbol: str = "",
+        start_time: str | datetime | None = None,
         end_time: str | datetime | None = None,
-        max_workers: int | None = None,
-        output_dir: Path | None = None,
-        save_progress: bool = True,
     ) -> list[TradeSchema]:
         """
         Download historical trades data.
 
         Args:
+            config: Configuration for the download batch
+                (optional, overrides other params)
             symbol: Trading pair symbol (e.g., "BTCUSDT")
             start_time: Start time for the download (string or datetime)
             end_time: End time for the download (string or datetime, defaults to now)
-            max_workers: Maximum number of concurrent workers
-            (defaults to self.max_workers)
-            output_dir: Directory to save data (defaults to self.output_dir)
-            save_progress: Whether to save each batch as it completes
 
         Returns:
             List of trade data
         """
-        return await self.trades_downloader.download(
-            symbol=symbol,
-            start_time=start_time,
-            end_time=end_time,
-            max_workers=max_workers or self.max_workers,
-            output_dir=output_dir or self.output_dir,
-            save_progress=save_progress,
-        )
+        if config is None:
+            # Create config from individual parameters
+            config = SymbolicDownloadBatchConfigSchema(
+                symbol=symbol,
+                # interval intentionally empty for trades
+                start_time=self._parse_time(start_time)
+                if start_time is not None
+                else utc_now(),
+                end_time=self._parse_time(end_time)
+                if end_time is not None
+                else utc_now(),
+                max_workers=self.max_workers,
+                batch_size=self.batch_size,
+            )
+
+        return await self.trades_downloader.download(config=config)
 
     async def download_multiple_symbols(
         self,
         config: DownloadBatchConfigSchema,
         symbols: list[str],
-    ) -> dict[str, Path]:
+    ) -> dict[str, bool]:
         """
         Download data for multiple symbols with the same configuration.
 
         Args:
-            config: Download configuration
+            config: Base download configuration (without symbol)
             symbols: List of symbols to download
 
         Returns:
-            Dictionary of symbol to file path
+            Dictionary of symbol to success status
         """
-        results: dict[str, Path] = {}
+        results: dict[str, bool] = {}
         logger.info(
             "Starting download for %d symbols with interval %s",
             len(symbols),
@@ -179,29 +176,22 @@ class BinanceHistoricalDataClient:
                     symbol,
                 )
 
+                # Create a symbol-specific config
+                symbol_config = SymbolicDownloadBatchConfigSchema(
+                    symbol=symbol,
+                    interval=config.interval,
+                    start_time=config.start_time,
+                    end_time=config.end_time,
+                    batch_size=config.batch_size,
+                    max_workers=config.max_workers,
+                )
+
                 if config.interval:  # Klines
-                    data = await self.download_klines(
-                        symbol=symbol,
-                        interval=config.interval,
-                        start_time=config.start_time,
-                        end_time=config.end_time,
-                        batch_size=config.batch_size,
-                        max_workers=config.max_workers,
-                        output_dir=config.output_dir,
-                    )
+                    data = await self.download_klines(config=symbol_config)
 
                     # Record the result
                     if data:
-                        filepath = self.klines_downloader.data_saver.save_data(
-                            data=data,
-                            symbol=symbol,
-                            data_type="klines",
-                            interval=config.interval,
-                            start_time=config.start_time,
-                            end_time=config.end_time,
-                            output_dir=config.output_dir,
-                        )
-                        results[symbol] = filepath
+                        results[symbol] = True
                         logger.info(
                             "Downloaded %d records for %s",
                             len(data),
@@ -210,40 +200,75 @@ class BinanceHistoricalDataClient:
 
             except Exception:
                 logger.exception("Error downloading data for %s", symbol)
+                results[symbol] = False
 
         logger.info(
             "Completed download for %d/%d symbols",
-            len(results),
+            sum(1 for success in results.values() if success),
             len(symbols),
         )
         return results
 
-    async def download_all_symbols(  # noqa: C901,PLR0912
+    async def download_all_symbols(
         self,
-        interval: str,
-        start_time: str | datetime,
+        config: DownloadBatchConfigSchema | None = None,
+        interval: str = "",
+        start_time: str | datetime | None = None,
         end_time: str | datetime | None = None,
         quote_asset: str | None = None,
         min_volume: float | None = None,
-        batch_size: int | None = None,
-        max_workers: int | None = None,
-        output_dir: Path | None = None,
-    ) -> dict[str, Path]:
+    ) -> dict[str, bool]:
         """
         Download data for all available symbols matching criteria.
 
         Args:
+            config: Configuration for the download batch
+                (optional, overrides other params)
             interval: Kline interval (e.g., "1m", "1h", "1d")
             start_time: Start time for the download
             end_time: End time for the download (defaults to now)
             quote_asset: Filter symbols by quote asset (e.g., "USDT")
             min_volume: Minimum 24h volume in USD
-            batch_size: Size of each download batch
-            max_workers: Maximum number of concurrent workers
-            output_dir: Directory to save data
 
         Returns:
-            Dictionary of symbol to file path
+            Dictionary of symbol to success status
+        """
+        # Create or use config
+        if config is None:
+            # Process inputs for config
+            processed_start_time = (
+                self._parse_time(start_time) if start_time else utc_now()
+            )
+            processed_end_time = self._parse_time(end_time) if end_time else utc_now()
+
+            config = DownloadBatchConfigSchema(
+                interval=interval,
+                start_time=processed_start_time,
+                end_time=processed_end_time,
+                batch_size=self.batch_size,
+                max_workers=self.max_workers,
+            )
+
+        # Get filtered symbols
+        filtered_symbols = await self.get_filtered_symbols(quote_asset, min_volume)
+
+        # Download data for filtered symbols
+        return await self.download_multiple_symbols(config, filtered_symbols)
+
+    async def get_filtered_symbols(
+        self,
+        quote_asset: str | None = None,
+        min_volume: float | None = None,
+    ) -> list[str]:
+        """
+        Get filtered symbols based on criteria.
+
+        Args:
+            quote_asset: Filter symbols by quote asset (e.g., "USDT")
+            min_volume: Minimum 24h volume in USD
+
+        Returns:
+            List of filtered symbol strings
         """
         # Get exchange information to find available symbols
         logger.info("Fetching exchange information...")
@@ -294,34 +319,26 @@ class BinanceHistoricalDataClient:
             filter_desc,
         )
 
-        # Process start and end times for config
-        if isinstance(start_time, str):
-            processed_start_time = dateparser.parse(start_time)
-            if not processed_start_time:
-                raise ValueError(f"Could not parse start_time: {start_time}")
-        else:
-            processed_start_time = start_time
+        return filtered_symbols
 
-        # Handle end_time with proper type checking
-        if end_time is None:
-            processed_end_time = utc_now()
-        elif isinstance(end_time, str):
-            parsed_end_time = dateparser.parse(end_time)
-            if not parsed_end_time:
-                raise ValueError(f"Could not parse end_time: {end_time}")
-            processed_end_time = parsed_end_time
-        else:
-            processed_end_time = end_time
+    def _parse_time(self, time_value: str | datetime | None) -> datetime:
+        """
+        Parse a time value into a datetime object.
 
-        # Create download config
-        config = DownloadBatchConfigSchema(
-            symbol="",  # Will be set per download
-            interval=interval,
-            start_time=processed_start_time,
-            end_time=processed_end_time,
-            batch_size=batch_size or self.batch_size,
-            max_workers=max_workers or self.max_workers,
-            output_dir=output_dir or self.output_dir,
-        )
-        # Download data for filtered symbols
-        return await self.download_multiple_symbols(config, filtered_symbols)
+        Args:
+            time_value: Time value to parse, can be string or datetime
+
+        Returns:
+            Datetime object
+        """
+        if time_value is None:
+            return utc_now()
+
+        if isinstance(time_value, datetime):
+            return time_value
+
+        parsed_time = dateparser.parse(time_value)
+        if not parsed_time:
+            raise ValueError(f"Could not parse time: {time_value}")
+
+        return parsed_time

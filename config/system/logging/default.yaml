@@ -8,21 +8,21 @@ logging:
   handlers:
     console:
       class: logging.StreamHandler
-      level: INFO
+      level: DEBUG
       formatter: standard
       stream: ext://sys.stdout
     file:
       class: logging.handlers.RotatingFileHandler
-      level: INFO
+      level: DEBUG
       formatter: standard
       filename: ${system.data_dir}/logs/kavzitrader.log
       maxBytes: 10485760  # 10MB
       backupCount: 10
   loggers:
     kavzitrader:
-      level: INFO
+      level: DEBUG
       handlers: [console, file]
       propagate: false
   root:
-    level: INFO
+    level: DEBUG
     handlers: [console]

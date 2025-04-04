@@ -9,10 +9,13 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 import pytest
 
-from src.api.binance.historical.batch import BatchProcessor, DownloadBatchConfigSchema
+from src.api.binance.historical.batch import (
+    BatchProcessor,
+    DownloadBatchConfigSchema,
+    SymbolicDownloadBatchConfigSchema,
+)
 from src.api.binance.historical.client import BinanceHistoricalDataClient
 from src.api.common.models import CandlestickSchema, TradeSchema
 from src.commons.time_utility import utc_now
@@ -22,7 +25,6 @@ def test_init(historical_client: BinanceHistoricalDataClient) -> None:
     """Test client initialization."""
     assert historical_client.max_workers == 2
     assert historical_client.batch_size == 100
-    assert historical_client.output_dir.exists()
 
 
 @patch("src.api.binance.historical.batch.BatchProcessor.get_kline_batch_intervals")
@@ -111,32 +113,6 @@ def mock_trade_schemas() -> list[TradeSchema]:
     return trades
 
 
-def test_save_data(
-    historical_client: BinanceHistoricalDataClient,
-    mock_candlestick_schemas: list[CandlestickSchema],
-) -> None:
-    """Test saving data to CSV format."""
-    # Test CSV saving
-    csv_path = historical_client.klines_downloader.data_saver.save_data(
-        data=mock_candlestick_schemas,
-        symbol="BTCUSDT",
-        data_type="klines",
-        interval="1h",
-        start_time=utc_now() - timedelta(hours=5),
-        end_time=utc_now(),
-    )
-
-    assert csv_path.exists()
-    assert csv_path.suffix == ".csv"
-
-    # Verify the CSV file contains the data
-    result_df = pd.read_csv(csv_path)
-    assert len(result_df) == len(mock_candlestick_schemas)
-
-    # Clean up the test file
-    csv_path.unlink()
-
-
 @patch("src.api.binance.historical.downloaders.klines.KlinesDownloader._download_batch")
 async def test_download_klines(
     mock_download_batch: MagicMock,
@@ -160,11 +136,13 @@ async def test_download_klines(
         ]
 
         klines = await historical_client.download_klines(
-            symbol="BTCUSDT",
-            interval="1h",
-            start_time=utc_now() - timedelta(days=1),
-            end_time=utc_now(),
-            batch_size=100,
+            config=SymbolicDownloadBatchConfigSchema(
+                symbol="BTCUSDT",
+                interval="1h",
+                start_time=utc_now() - timedelta(days=1),
+                end_time=utc_now(),
+                batch_size=100,
+            ),
         )
 
         # Verify the result
@@ -237,13 +215,11 @@ async def test_download_multiple_symbols(
     mock_download_klines.return_value = mock_candlestick_schemas
 
     config = DownloadBatchConfigSchema(
-        symbol="",  # Will be set per download
         interval="1h",
         start_time=utc_now() - timedelta(days=1),
         end_time=utc_now(),
         batch_size=100,
         max_workers=2,
-        output_dir=Path("./test_output"),
     )
 
     symbols = ["BTCUSDT", "ETHUSDT"]
@@ -285,7 +261,7 @@ async def test_download_all_symbols(
     }
 
     # Test with quote asset and volume filtering
-    results = historical_client.download_all_symbols(
+    results = await historical_client.download_all_symbols(
         interval="1h",
         start_time=utc_now() - timedelta(days=1),
         end_time=utc_now(),

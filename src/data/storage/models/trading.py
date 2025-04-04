@@ -8,7 +8,7 @@ and trades.
 
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import Any, Optional, cast
 
 from sqlalchemy import (
     Boolean,
@@ -24,9 +24,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.data.storage.models.base import BaseModel
-
-if TYPE_CHECKING:
-    from src.data.storage.models.model import ModelModel
 
 
 class StrategyModel(BaseModel):
@@ -56,12 +53,6 @@ class StrategyModel(BaseModel):
         nullable=False,
         default=False,
         index=True,
-    )
-
-    # Relationships
-    model: Mapped[Optional["ModelModel"]] = relationship(
-        "ModelModel",
-        back_populates="strategies",
     )
     trading_plans: Mapped[list["TradingPlanModel"]] = relationship(
         "TradingPlanModel",

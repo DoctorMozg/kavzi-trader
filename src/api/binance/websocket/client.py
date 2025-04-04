@@ -5,7 +5,7 @@ This module provides a WebSocket client for real-time data from Binance.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from src.api.binance.schemas.data_dicts import KlineData, TickerData, TradeData
@@ -66,19 +66,19 @@ class BinanceWebsocketClient:
         self.depth_handler = DepthStreamHandler(self.stream_manager)
         self.user_data_handler = UserDataStreamHandler(self.stream_manager)
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """Start the WebSocket connection."""
-        self.stream_manager.start()
+        await self.stream_manager.start()
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         """Stop the WebSocket connection."""
-        self.stream_manager.stop()
+        await self.stream_manager.stop()
 
     async def subscribe_kline_stream(
         self,
         symbol: str,
         interval: str,
-        callback: Callable[[KlineData], None],
+        callback: Callable[[KlineData], Awaitable[None]],
     ) -> str:
         """
         Subscribe to kline/candlestick data stream.
@@ -100,7 +100,7 @@ class BinanceWebsocketClient:
     async def subscribe_ticker_stream(
         self,
         symbol: str,
-        callback: Callable[[TickerData], None],
+        callback: Callable[[TickerData], Awaitable[None]],
     ) -> str:
         """
         Subscribe to 24hr ticker updates stream.
@@ -120,7 +120,7 @@ class BinanceWebsocketClient:
     async def subscribe_trades_stream(
         self,
         symbol: str,
-        callback: Callable[[TradeData], None],
+        callback: Callable[[TradeData], Awaitable[None]],
     ) -> str:
         """
         Subscribe to trade updates stream.
@@ -140,7 +140,7 @@ class BinanceWebsocketClient:
     async def subscribe_depth_stream(
         self,
         symbol: str,
-        callback: Callable[[dict[str, Any]], None],
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
         depth: int = 20,
     ) -> str:
         """
@@ -163,7 +163,7 @@ class BinanceWebsocketClient:
     async def subscribe_multiplex_streams(
         self,
         streams: list[str],
-        callback: Callable[[dict[str, Any]], None],
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> str:
         """
         Subscribe to multiple streams at once.
@@ -215,7 +215,7 @@ class BinanceWebsocketClient:
 
     async def subscribe_user_data_stream(
         self,
-        callback: Callable[[dict[str, Any]], None],
+        callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> str:
         """
         Subscribe to user data stream for account and order updates.

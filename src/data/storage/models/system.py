@@ -5,11 +5,12 @@ This module defines SQLAlchemy models for system tables.
 These models map to the database tables for storing system logs and configuration.
 """
 
-from typing import Any, Literal, cast
+from datetime import datetime
+from typing import Any, Literal
 
-from sqlalchemy import Boolean, Index, String, Text
+from sqlalchemy import DateTime, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 from src.data.storage.models.base import BaseModel
 
@@ -30,6 +31,14 @@ class SystemLogModel(BaseModel):
     component: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     details: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    # Override BaseModel id and created_at to make them both primary keys
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        primary_key=True,
+        nullable=False,
+    )
 
     # Constraints
     __table_args__ = (
@@ -63,86 +72,3 @@ class SystemLogModel(BaseModel):
             message=message,
             details=details,
         )
-
-
-class SystemConfigModel(BaseModel):
-    """
-    SQLAlchemy model for system_config table.
-
-    Stores system configuration settings.
-    """
-
-    __tablename__ = "system_config"
-    key: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
-    value: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_editable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
-    @classmethod
-    def get_value(
-        cls,
-        session: Session,
-        key: str,
-        default: str | None = None,
-    ) -> str | None:
-        """
-        Get a configuration value.
-
-        Args:
-            session: SQLAlchemy session
-            key: Configuration key
-            default: Default value if key not found
-
-        Returns:
-            Configuration value or default
-        """
-        config = session.query(cls).filter(cls.key == key).first()
-        if config:
-            return cast(str, config.value)
-        return default
-
-    @classmethod
-    def set_value(
-        cls,
-        session: Session,
-        key: str,
-        value: str,
-        description: str | None = None,
-        is_editable: bool = True,
-    ) -> "SystemConfigModel":
-        """
-        Set a configuration value.
-
-        Args:
-            session: SQLAlchemy session
-            key: Configuration key
-            value: Configuration value
-            description: Optional description
-            is_editable: Whether the config is user-editable
-
-        Returns:
-            SystemConfigModel instance
-        """
-        config = session.query(cls).filter(cls.key == key).first()
-        if config:
-            # Update existing config
-            config.value = value
-            if description:
-                config.description = description
-            config.is_editable = is_editable
-        else:
-            # Create new config
-            config = cls(
-                key=key,
-                value=value,
-                description=description,
-                is_editable=is_editable,
-            )
-            session.add(config)
-
-        return cast("SystemConfigModel", config)

@@ -5,8 +5,8 @@ This module provides a handler for ticker WebSocket streams.
 """
 
 import logging
-from collections.abc import Callable
-from typing import Any, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from src.api.binance.schemas.data_dicts import TickerData
 from src.api.binance.websocket.handlers.base import BaseStreamHandler

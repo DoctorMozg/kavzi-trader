@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.commons.time_utility import utc_now
-from src.data.storage.database import Base
+from src.data.storage.database_async import Base
 
 
 class BaseModel(Base):

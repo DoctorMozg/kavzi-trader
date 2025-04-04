@@ -9,11 +9,15 @@ from datetime import timedelta
 
 import click
 
+from src.api.binance.historical.batch import (
+    DownloadBatchConfigSchema,
+    SymbolicDownloadBatchConfigSchema,
+)
+from src.api.binance.historical.client import BinanceHistoricalDataClient
 from src.commons.logging import get_logger
-from src.commons.path_utility import create_output_path
 from src.commons.time_utility import parse_date_range, utc_now
 from src.config import AppConfig
-from src.logic.historical.client_factory import HistoricalClientFactory
+from src.data.storage.database_async import AsyncDatabase
 from src.logic.historical.download_service import HistoricalDownloadService
 
 # Initialize logger
@@ -53,18 +57,8 @@ def historical() -> None:
     default=4,
     help="Maximum number of concurrent download workers",
 )
-@click.option(
-    "--output-dir",
-    type=click.Path(file_okay=False, dir_okay=True),
-    help="Directory to save downloaded data",
-)
-@click.option(
-    "--save-progress/--no-save-progress",
-    default=True,
-    help="Whether to save each batch as it completes",
-)
 @click.pass_context
-def fetch_historical(
+async def fetch_historical(
     ctx: click.Context,
     symbol: str,
     interval: str,
@@ -72,8 +66,6 @@ def fetch_historical(
     end_date: str | None,
     batch_size: int,
     max_workers: int,
-    output_dir: str | None,
-    save_progress: bool,
 ) -> None:
     """
     Fetch historical klines (candlestick) data from Binance.
@@ -97,42 +89,43 @@ def fetch_historical(
     api_key = app_config.api.binance.api_key
     api_secret = app_config.api.binance.api_secret
 
-    # Create output directory path
-    output_path = create_output_path(output_dir)
-
-    # Initialize client and service
-    client = HistoricalClientFactory.create_binance_client(
+    # Initialize client
+    client = BinanceHistoricalDataClient(
         api_key=api_key,
         api_secret=api_secret,
         max_workers=max_workers,
         batch_size=batch_size,
-        output_dir=output_path,
     )
 
-    service = HistoricalDownloadService(client)
+    # Get database from context
+    db: AsyncDatabase = ctx.obj["db"]
 
-    try:
-        # Download data
-        data = service.download_klines(
-            symbol=symbol,
-            interval=interval,
-            start_time=start_time,
-            end_time=end_time,
-            batch_size=batch_size,
-            max_workers=max_workers,
-            output_dir=output_path,
-            save_progress=save_progress,
-        )
+    async with db.session_scope() as db_session:
+        service = HistoricalDownloadService(client, db_session)
 
-        # Report results
-        click.echo(
-            f"Successfully downloaded {len(data)} records for {symbol} {interval}",
-        )
-        click.echo(f"Data saved to {output_path}")
+        try:
+            # Create download config
+            config = SymbolicDownloadBatchConfigSchema(
+                symbol=symbol,
+                interval=interval,
+                start_time=start_time,
+                end_time=end_time or utc_now(),  # Provide a default value if None
+                batch_size=batch_size,
+                max_workers=max_workers,
+            )
 
-    except Exception as e:
-        logger.exception("Error downloading historical data")
-        raise click.ClickException(f"Failed to download data: {e!s}") from e
+            # Download data
+            data = await service.download_klines(config=config)
+
+            # Report results
+            click.echo(
+                f"Successfully downloaded {len(data)} records for {symbol} {interval}",
+            )
+            click.echo("Data saved to database")
+
+        except Exception as e:
+            logger.exception("Error downloading historical data")
+            raise click.ClickException(f"Failed to download data: {e!s}") from e
 
 
 @historical.command("fetch-trades")
@@ -152,25 +145,13 @@ def fetch_historical(
     default=4,
     help="Maximum number of concurrent download workers",
 )
-@click.option(
-    "--output-dir",
-    type=click.Path(file_okay=False, dir_okay=True),
-    help="Directory to save downloaded data",
-)
-@click.option(
-    "--save-progress/--no-save-progress",
-    default=True,
-    help="Whether to save each batch as it completes",
-)
 @click.pass_context
-def fetch_trades(
+async def fetch_trades(
     ctx: click.Context,
     symbol: str,
     start_date: str,
     end_date: str | None,
     max_workers: int,
-    output_dir: str | None,
-    save_progress: bool,
 ) -> None:
     """
     Fetch historical trades data from Binance.
@@ -194,38 +175,39 @@ def fetch_trades(
     api_key = app_config.api.binance.api_key
     api_secret = app_config.api.binance.api_secret
 
-    # Create output directory path
-    output_path = create_output_path(output_dir)
-
-    # Initialize client and service
-    client = HistoricalClientFactory.create_binance_client(
+    # Initialize client
+    client = BinanceHistoricalDataClient(
         api_key=api_key,
         api_secret=api_secret,
         max_workers=max_workers,
         batch_size=1000,  # Default batch size
-        output_dir=output_path,
     )
 
-    service = HistoricalDownloadService(client)
+    # Get database from context
+    db: AsyncDatabase = ctx.obj["db"]
 
-    try:
-        # Download data
-        data = service.download_trades(
-            symbol=symbol,
-            start_time=start_time,
-            end_time=end_time,
-            max_workers=max_workers,
-            output_dir=output_path,
-            save_progress=save_progress,
-        )
+    async with db.session_scope() as db_session:
+        service = HistoricalDownloadService(client, db_session)
 
-        # Report results
-        click.echo(f"Successfully downloaded {len(data)} trades for {symbol}")
-        click.echo(f"Data saved to {output_path}")
+        try:
+            # Create download config
+            config = SymbolicDownloadBatchConfigSchema(
+                symbol=symbol,
+                start_time=start_time,
+                end_time=end_time or utc_now(),  # Provide a default value if None
+                max_workers=max_workers,
+            )
 
-    except Exception as e:
-        logger.exception("Error downloading trades data")
-        raise click.ClickException(f"Failed to download trades: {e!s}") from e
+            # Download data
+            data = await service.download_trades(config=config)
+
+            # Report results
+            click.echo(f"Successfully downloaded {len(data)} trades for {symbol}")
+            click.echo("Data saved to database")
+
+        except Exception as e:
+            logger.exception("Error downloading trades data")
+            raise click.ClickException(f"Failed to download trades: {e!s}") from e
 
 
 @historical.command("fetch-multiple")
@@ -260,13 +242,8 @@ def fetch_trades(
     default=4,
     help="Maximum number of concurrent download workers",
 )
-@click.option(
-    "--output-dir",
-    type=click.Path(file_okay=False, dir_okay=True),
-    help="Directory to save downloaded data",
-)
 @click.pass_context
-def fetch_multiple(
+async def fetch_multiple(
     ctx: click.Context,
     symbols: str,
     interval: str,
@@ -274,7 +251,6 @@ def fetch_multiple(
     end_date: str | None,
     batch_size: int,
     max_workers: int,
-    output_dir: str | None,
 ) -> None:
     """
     Fetch historical data for multiple symbols.
@@ -301,42 +277,47 @@ def fetch_multiple(
     api_key = app_config.api.binance.api_key
     api_secret = app_config.api.binance.api_secret
 
-    # Create output directory path
-    output_path = create_output_path(output_dir)
-
-    # Initialize client and service
-    client = HistoricalClientFactory.create_binance_client(
+    # Initialize client
+    client = BinanceHistoricalDataClient(
         api_key=api_key,
         api_secret=api_secret,
         max_workers=max_workers,
         batch_size=batch_size,
-        output_dir=output_path,
     )
 
-    service = HistoricalDownloadService(client)
+    # Get database from context
+    db: AsyncDatabase = ctx.obj["db"]
 
-    try:
-        # Download data for multiple symbols
-        results = service.download_multiple_symbols(
-            symbols=symbol_list,
-            interval=interval,
-            start_time=start_time,
-            end_time=end_time,
-            batch_size=batch_size,
-            max_workers=max_workers,
-            output_dir=output_path,
-        )
+    async with db.session_scope() as db_session:
+        service = HistoricalDownloadService(client, db_session)
 
-        # Report results
-        successful = len(results)
-        click.echo(
-            f"Successfully downloaded data for {successful}/{len(symbol_list)} symbols",
-        )
-        click.echo(f"Data saved to {output_path}")
+        try:
+            # Create download config
+            base_config = DownloadBatchConfigSchema(
+                interval=interval,
+                start_time=start_time,
+                end_time=end_time or utc_now(),  # Provide a default value if None
+                batch_size=batch_size,
+                max_workers=max_workers,
+            )
 
-    except Exception as e:
-        logger.exception("Error downloading historical data")
-        raise click.ClickException(f"Failed to download data: {e!s}") from e
+            # Download data for multiple symbols
+            results = await service.download_multiple_symbols(
+                symbols=symbol_list,
+                base_config=base_config,
+            )
+
+            # Report results
+            successful = sum(1 for success in results.values() if success)
+            click.echo(
+                "Successfully downloaded data for "
+                f"{successful}/{len(symbol_list)} symbols",
+            )
+            click.echo("Data saved to database")
+
+        except Exception as e:
+            logger.exception("Error downloading historical data")
+            raise click.ClickException(f"Failed to download data: {e!s}") from e
 
 
 @historical.command("fetch-all")
@@ -376,13 +357,8 @@ def fetch_multiple(
     default=4,
     help="Maximum number of concurrent download workers",
 )
-@click.option(
-    "--output-dir",
-    type=click.Path(file_okay=False, dir_okay=True),
-    help="Directory to save downloaded data",
-)
 @click.pass_context
-def fetch_all(
+async def fetch_all(
     ctx: click.Context,
     interval: str,
     start_date: str,
@@ -391,7 +367,6 @@ def fetch_all(
     min_volume: float | None,
     batch_size: int,
     max_workers: int,
-    output_dir: str | None,
 ) -> None:
     """
     Fetch historical data for all available symbols matching criteria.
@@ -413,61 +388,66 @@ def fetch_all(
     api_key = app_config.api.binance.api_key
     api_secret = app_config.api.binance.api_secret
 
-    # Create output directory path
-    output_path = create_output_path(output_dir)
-
-    # Initialize client and service
-    client = HistoricalClientFactory.create_binance_client(
+    # Initialize client
+    client = BinanceHistoricalDataClient(
         api_key=api_key,
         api_secret=api_secret,
         max_workers=max_workers,
         batch_size=batch_size,
-        output_dir=output_path,
     )
 
-    service = HistoricalDownloadService(client)
+    # Get database from context
+    db: AsyncDatabase = ctx.obj["db"]
 
-    # Log the operation
-    filter_desc = f"quote_asset={quote_asset}"
-    if min_volume:
-        filter_desc += f", min_volume={min_volume}"
+    async with db.session_scope() as db_session:
+        service = HistoricalDownloadService(client, db_session)
 
-    logger.info(
-        "Downloading data for all symbols matching criteria (%s) with interval %s"
-        " from %s to %s",
-        filter_desc,
-        interval,
-        start_time,
-        end_time or "now",
-    )
+        # Log the operation
+        filter_desc = f"quote_asset={quote_asset}"
+        if min_volume:
+            filter_desc += f", min_volume={min_volume}"
 
-    try:
-        # Download data for all symbols
-        results = service.download_all_symbols(
-            interval=interval,
-            start_time=start_time,
-            end_time=end_time,
-            quote_asset=quote_asset,
-            min_volume=min_volume,
-            batch_size=batch_size,
-            max_workers=max_workers,
-            output_dir=output_path,
+        logger.info(
+            "Downloading data for all symbols matching criteria (%s) with interval %s"
+            " from %s to %s",
+            filter_desc,
+            interval,
+            start_time,
+            end_time or "now",
         )
 
-        # Report results
-        click.echo(f"Successfully downloaded data for {len(results)} symbols")
-        click.echo(f"Data saved to {output_path}")
+        try:
+            # Create download config
+            base_config = DownloadBatchConfigSchema(
+                interval=interval,
+                start_time=start_time,
+                end_time=end_time or utc_now(),  # Provide a default value if None
+                batch_size=batch_size,
+                max_workers=max_workers,
+            )
 
-    except Exception as e:
-        logger.exception("Error downloading historical data")
-        raise click.ClickException(f"Failed to download data: {e!s}") from e
+            # Download data for all symbols
+            results = await service.download_all_symbols(
+                base_config=base_config,
+                quote_asset=quote_asset,
+                min_volume=min_volume,
+            )
+
+            # Report results
+            successful = sum(1 for success in results.values() if success)
+            click.echo(f"Successfully downloaded data for {successful} symbols")
+            click.echo("Data saved to database")
+
+        except Exception as e:
+            logger.exception("Error downloading historical data")
+            raise click.ClickException(f"Failed to download data: {e!s}") from e
 
 
 @historical.command("update")
 @click.option(
     "--symbol",
     help="Trading pair symbol (e.g., BTCUSDT)."
-    " If not provided, updates all symbols in the output directory.",
+    " If not provided, updates all symbols in the database.",
 )
 @click.option(
     "--interval",
@@ -492,31 +472,25 @@ def fetch_all(
     default=4,
     help="Maximum number of concurrent download workers",
 )
-@click.option(
-    "--output-dir",
-    type=click.Path(file_okay=False, dir_okay=True),
-    help="Directory to save downloaded data",
-)
 @click.pass_context
-def update_historical(
+async def update_historical(
     ctx: click.Context,
     symbol: str | None,
     interval: str,
     days_back: int,
     batch_size: int,
     max_workers: int,
-    output_dir: str | None,
 ) -> None:
     """
     Update historical data with the latest available data.
 
     This command updates existing historical data by downloading only the new data
-    since the last download. It can update a specific symbol or all symbols in the
-    output directory.
+    since the last download. It can update a specific symbol or all symbols
+    in the database.
 
     Examples:
         kavzitrader data historical update --symbol BTCUSDT --interval 1h
-        kavzitrader data historical update --interval 1h --output-dir ./data/binance
+        kavzitrader data historical update --interval 1h
     """
     # Get configuration
     app_config: AppConfig = ctx.obj["app_config"]
@@ -525,55 +499,59 @@ def update_historical(
     api_key = app_config.api.binance.api_key
     api_secret = app_config.api.binance.api_secret
 
-    # Create output directory path
-    output_path = create_output_path(output_dir)
-
-    # Initialize client and service
-    client = HistoricalClientFactory.create_binance_client(
+    # Initialize client
+    client = BinanceHistoricalDataClient(
         api_key=api_key,
         api_secret=api_secret,
         max_workers=max_workers,
         batch_size=batch_size,
-        output_dir=output_path,
     )
 
-    service = HistoricalDownloadService(client)
+    # Get database from context
+    db: AsyncDatabase = ctx.obj["db"]
 
-    # Calculate start time based on days_back
-    start_time = utc_now() - timedelta(days=days_back)
+    async with db.session_scope() as db_session:
+        service = HistoricalDownloadService(client, db_session)
 
-    if symbol:
-        # Update a specific symbol
-        logger.info(
-            "Updating %s %s data from %s to now",
-            symbol,
-            interval,
-            start_time,
-        )
+        # Calculate start time based on days_back
+        start_time = utc_now() - timedelta(days=days_back)
+        end_time = utc_now()
 
-        try:
-            # Download data
-            data = service.download_klines(
-                symbol=symbol,
-                interval=interval,
-                start_time=start_time,
-                batch_size=batch_size,
-                max_workers=max_workers,
-                output_dir=output_path,
+        if symbol:
+            # Update a specific symbol
+            logger.info(
+                "Updating %s %s data from %s to now",
+                symbol,
+                interval,
+                start_time,
             )
 
-            # Report results
-            click.echo(
-                f"Successfully updated {len(data)} records for {symbol} {interval}",
-            )
-            click.echo(f"Data saved to {output_path}")
+            try:
+                # Create download config
+                config = SymbolicDownloadBatchConfigSchema(
+                    symbol=symbol,
+                    interval=interval,
+                    start_time=start_time,
+                    end_time=end_time,
+                    batch_size=batch_size,
+                    max_workers=max_workers,
+                )
 
-        except Exception as e:
-            logger.exception("Error updating historical data")
-            raise click.ClickException(f"Failed to update data: {e!s}") from e
-    else:
-        # TODO: Implement updating all symbols in the output directory
-        # This would require scanning the directory for existing files,
-        # extracting symbols and intervals, and updating each one
-        click.echo("Updating all symbols is not yet implemented")
-        click.echo("Please specify a symbol using the --symbol option")
+                # Download data
+                data = await service.download_klines(config=config)
+
+                # Report results
+                click.echo(
+                    f"Successfully updated {len(data)} records for {symbol} {interval}",
+                )
+                click.echo("Data saved to database")
+
+            except Exception as e:
+                logger.exception("Error updating historical data")
+                raise click.ClickException(f"Failed to update data: {e!s}") from e
+        else:
+            # TODO: Implement updating all symbols in the database
+            # This would require querying the database for existing symbols
+            # and updating each one
+            click.echo("Updating all symbols is not yet implemented")
+            click.echo("Please specify a symbol using the --symbol option")

@@ -10,7 +10,7 @@ from alembic import context  # type: ignore
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import SQLAlchemy Base and models
-from src.data.storage.database import Base
+from src.data.storage.database_async import Base
 from src.data.storage.models import *
 
 # this is the Alembic Config object, which provides

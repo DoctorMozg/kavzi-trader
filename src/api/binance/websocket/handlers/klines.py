@@ -5,8 +5,8 @@ This module provides a handler for kline/candlestick WebSocket streams.
 """
 
 import logging
-from collections.abc import Callable
-from typing import Any, Awaitable, cast
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 from src.api.binance.constants import KLINE_INTERVALS
 from src.api.binance.schemas.data_dicts import KlineData

@@ -436,7 +436,7 @@ description: Testing
   # CORRECT
   def test_my_function(self, mock_client: MagicMock, sample_path: Path) -> None:
       # Test implementation
-  
+
   # WRONG
   def test_my_function(self, mock_client, sample_path):
       # Test implementation
@@ -492,7 +492,7 @@ description: Type Hints & Function Design
   # WRONG
   def get_candlesticks() -> list[dict[str, Any]]:
       # Implementation
-  
+
   # CORRECT
   def get_candlesticks() -> list[CandlestickSchema]:
       # Implementation

@@ -21,6 +21,7 @@ from src.config.hydra_util import (
     init_hydra,
     resolve_relative_paths,
 )
+from src.data.storage.database_async import AsyncDatabase
 
 # Initialize logger
 logger = get_logger(name="kavzitrader.cli")
@@ -103,12 +104,38 @@ def setup_cli_environment(
         # Convert to AppConfig for type safety
         app_config = config_to_app_config(hydra_config)
 
+        # Initialize database connection
+        try:
+            # If a database URL is already provided, use it
+            if app_config.database.url:
+                db_url = app_config.database.url
+            else:
+                # Create database URL synchronously
+                from sqlalchemy import URL
+
+                db_url = URL.create(
+                    drivername="postgresql+asyncpg",
+                    username=app_config.database.user,
+                    password=app_config.database.password,
+                    host=app_config.database.host,
+                    port=app_config.database.port,
+                    database=app_config.database.name,
+                )
+
+            # Initialize database connection
+            db = AsyncDatabase(db_url, echo=app_config.database.echo)
+            logger.info("Database connection initialized")
+        except Exception:
+            logger.exception("Failed to initialize database connection")
+            db = None
+
         # Store in context for child commands
         ctx.obj = ctx.obj or {}
         ctx.obj.update(
             {
                 "config": hydra_config,  # Original Hydra config
                 "app_config": app_config,  # Pydantic validated config
+                "db": db,  # Database connection
             },
         )
 

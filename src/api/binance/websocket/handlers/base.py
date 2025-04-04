@@ -6,11 +6,11 @@ This module provides a base class for handling different types of WebSocket stre
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import Any, Awaitable, Generic, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import Any, Generic, TypeVar
 
-from binance.exceptions import BinanceAPIException
 from binance import ReconnectingWebsocket
+from binance.exceptions import BinanceAPIException
 
 from src.api.binance.websocket.stream_manager import StreamManager
 from src.api.common.exceptions import APIError
@@ -93,7 +93,7 @@ class BaseStreamHandler(Generic[T], ABC):
             Stream name
         """
         # Ensure the WebSocket manager is running
-        self.stream_manager.start()
+        await self.stream_manager.start()
 
         # Store the callback
         self.stream_manager.add_stream_callback(stream_name, callback)  # type: ignore

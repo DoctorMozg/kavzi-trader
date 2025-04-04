@@ -3,9 +3,10 @@ Tests for Binance WebSocket client implementation.
 """
 
 import logging
-from collections.abc import Callable
-from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from src.api.binance.schemas.data_dicts import KlineData, TickerData, TradeData
 from src.api.binance.websocket.client import BinanceWebsocketClient
@@ -37,38 +38,50 @@ def test_client_initialization(
     assert isinstance(websocket_client.user_data_handler, UserDataStreamHandler)
 
 
-def test_start_stop(
+@pytest.mark.asyncio()
+async def test_start_stop(
     websocket_client: BinanceWebsocketClient,
     mock_stream_manager: MagicMock,
 ) -> None:
     """Test start and stop methods."""
+    # Make start method awaitable
+    mock_stream_manager.start = AsyncMock()
+
+    # Make stop method awaitable
+    mock_stream_manager.stop = AsyncMock()
+
     # Test start
-    websocket_client.start()
+    await websocket_client.start()
     mock_stream_manager.start.assert_called_once()
 
     # Test stop
-    websocket_client.stop()
+    await websocket_client.stop()
     mock_stream_manager.stop.assert_called_once()
 
 
-def test_kline_stream(websocket_client: BinanceWebsocketClient) -> None:
+@pytest.mark.asyncio()
+async def test_kline_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a kline stream."""
     # Mock the handler's subscribe method
-    websocket_client.kline_handler.subscribe = MagicMock(  # type: ignore
+    websocket_client.kline_handler.subscribe = AsyncMock(  # type: ignore
         return_value="btcusdt@kline_1m",
-    )
+    )  # type: ignore
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[KlineData], None], callback_mock)
+    async def callback_async(data: KlineData) -> None:
+        pass
 
     # Subscribe to kline stream
-    stream_name = websocket_client.subscribe_kline_stream("BTCUSDT", "1m", callback)
+    stream_name = await websocket_client.subscribe_kline_stream(
+        "BTCUSDT",
+        "1m",
+        callback_async,
+    )
 
     # Verify the handler's subscribe method was called with correct parameters
     websocket_client.kline_handler.subscribe.assert_called_once_with(
         symbol="BTCUSDT",
-        callback=callback,
+        callback=callback_async,
         interval="1m",
     )
 
@@ -76,70 +89,79 @@ def test_kline_stream(websocket_client: BinanceWebsocketClient) -> None:
     assert stream_name == "btcusdt@kline_1m"
 
 
-def test_ticker_stream(websocket_client: BinanceWebsocketClient) -> None:
+@pytest.mark.asyncio()
+async def test_ticker_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a ticker stream."""
     # Mock the handler's subscribe method
-    websocket_client.ticker_handler.subscribe = MagicMock(return_value="ethusdt@ticker")  # type: ignore
+    websocket_client.ticker_handler.subscribe = AsyncMock(return_value="ethusdt@ticker")  # type: ignore
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[TickerData], None], callback_mock)
+    async def callback_async(data: TickerData) -> None:
+        pass
 
     # Subscribe to ticker stream
-    stream_name = websocket_client.subscribe_ticker_stream("ETHUSDT", callback)
+    stream_name = await websocket_client.subscribe_ticker_stream(
+        "ETHUSDT",
+        callback_async,
+    )
 
     # Verify the handler's subscribe method was called with correct parameters
     websocket_client.ticker_handler.subscribe.assert_called_once_with(
         symbol="ETHUSDT",
-        callback=callback,
+        callback=callback_async,
     )
 
     # Verify the stream name was returned
     assert stream_name == "ethusdt@ticker"
 
 
-def test_trades_stream(websocket_client: BinanceWebsocketClient) -> None:
+@pytest.mark.asyncio()
+async def test_trades_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a trades stream."""
     # Mock the handler's subscribe method
-    websocket_client.trade_handler.subscribe = MagicMock(return_value="adausdt@trade")  # type: ignore
+    websocket_client.trade_handler.subscribe = AsyncMock(return_value="adausdt@trade")  # type: ignore
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[TradeData], None], callback_mock)
+    async def callback_async(data: TradeData) -> None:
+        pass
 
     # Subscribe to trades stream
-    stream_name = websocket_client.subscribe_trades_stream("ADAUSDT", callback)
+    stream_name = await websocket_client.subscribe_trades_stream(
+        "ADAUSDT",
+        callback_async,
+    )
 
     # Verify the handler's subscribe method was called with correct parameters
     websocket_client.trade_handler.subscribe.assert_called_once_with(
         symbol="ADAUSDT",
-        callback=callback,
+        callback=callback_async,
     )
 
     # Verify the stream name was returned
     assert stream_name == "adausdt@trade"
 
 
-def test_depth_stream(websocket_client: BinanceWebsocketClient) -> None:
+@pytest.mark.asyncio()
+async def test_depth_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a depth stream."""
     # Mock the handler's subscribe method
-    websocket_client.depth_handler.subscribe = MagicMock(return_value="bnbusdt@depth10")  # type: ignore
+    websocket_client.depth_handler.subscribe = AsyncMock(return_value="bnbusdt@depth10")  # type: ignore
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[dict[str, Any]], None], callback_mock)
+    async def callback_async(data: dict[str, Any]) -> None:
+        pass
 
     # Subscribe to depth stream
-    stream_name = websocket_client.subscribe_depth_stream(
+    stream_name = await websocket_client.subscribe_depth_stream(
         "BNBUSDT",
-        callback,
+        callback_async,
         depth=10,
     )
 
     # Verify the handler's subscribe method was called with correct parameters
     websocket_client.depth_handler.subscribe.assert_called_once_with(
         symbol="BNBUSDT",
-        callback=callback,
+        callback=callback_async,
         depth=10,
     )
 
@@ -147,52 +169,60 @@ def test_depth_stream(websocket_client: BinanceWebsocketClient) -> None:
     assert stream_name == "bnbusdt@depth10"
 
 
-def test_user_data_stream(websocket_client: BinanceWebsocketClient) -> None:
+@pytest.mark.asyncio()
+async def test_user_data_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a user data stream."""
     # Mock the handler's subscribe method
-    websocket_client.user_data_handler.subscribe = MagicMock(  # type: ignore
+    websocket_client.user_data_handler.subscribe = AsyncMock(  # type: ignore
         return_value="user-data-stream",
     )
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[dict[str, Any]], None], callback_mock)
+    async def callback_async(data: dict[str, Any]) -> None:
+        pass
 
     # Subscribe to user data stream
-    stream_name = websocket_client.subscribe_user_data_stream(callback)
+    stream_name = await websocket_client.subscribe_user_data_stream(callback_async)
 
     # Verify the handler's subscribe method was called with correct parameters
     websocket_client.user_data_handler.subscribe.assert_called_once_with(
-        callback=callback,
+        callback=callback_async,
     )
 
     # Verify the stream name was returned
     assert stream_name == "user-data-stream"
 
 
-def test_multiplex_streams(
+@pytest.mark.asyncio()
+async def test_multiplex_streams(
     websocket_client: BinanceWebsocketClient,
     mock_stream_manager: MagicMock,
 ) -> None:
     """Test subscribing to multiple streams at once."""
-    # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[dict[str, Any]], None], callback_mock)
 
-    # Mock the twm.start_multiplex_socket method
-    mock_stream_manager.twm.start_multiplex_socket.return_value = 123
+    # Mock callback function
+    async def callback_async(data: dict[str, Any]) -> None:
+        pass
+
+    # Make start method awaitable
+    mock_stream_manager.start = AsyncMock()
+
+    # Mock the bsm.multiplex_socket method
+    mock_stream_manager.bsm = MagicMock()
+    mock_stream_manager.bsm.multiplex_socket = AsyncMock(return_value=123)
 
     # Subscribe to multiple streams
     streams = ["btcusdt@kline_1m", "ethusdt@ticker"]
-    stream_name = websocket_client.subscribe_multiplex_streams(streams, callback)
+    stream_name = await websocket_client.subscribe_multiplex_streams(
+        streams,
+        callback_async,
+    )
 
     # Verify the stream manager was started
     mock_stream_manager.start.assert_called_once()
 
     # Verify the multiplex socket was started with correct parameters
-    mock_stream_manager.twm.start_multiplex_socket.assert_called_once()
-    args, kwargs = mock_stream_manager.twm.start_multiplex_socket.call_args
-    assert kwargs["streams"] == streams
+    mock_stream_manager.bsm.multiplex_socket.assert_called_once()
 
     # Verify the stream was registered
     mock_stream_manager.register_stream.assert_called_once()
@@ -201,25 +231,33 @@ def test_multiplex_streams(
     assert stream_name == "btcusdt@kline_1m/ethusdt@ticker"
 
 
-def test_unsubscribe_stream(
+@pytest.mark.asyncio()
+async def test_unsubscribe_stream(
     websocket_client: BinanceWebsocketClient,
     mock_stream_manager: MagicMock,
 ) -> None:
     """Test unsubscribing from a stream."""
+    # Make unregister_stream method awaitable
+    mock_stream_manager.unregister_stream = AsyncMock()
+
     # Unsubscribe from a stream
-    websocket_client.unsubscribe_stream("btcusdt@kline_1m")
+    await websocket_client.unsubscribe_stream("btcusdt@kline_1m")
 
     # Verify the stream manager's unregister_stream method was called
     mock_stream_manager.unregister_stream.assert_called_once_with("btcusdt@kline_1m")
 
 
-def test_unsubscribe_all_streams(
+@pytest.mark.asyncio()
+async def test_unsubscribe_all_streams(
     websocket_client: BinanceWebsocketClient,
     mock_stream_manager: MagicMock,
 ) -> None:
     """Test unsubscribing from all streams."""
+    # Make stop method awaitable
+    mock_stream_manager.stop = AsyncMock()
+
     # Unsubscribe from all streams
-    websocket_client.unsubscribe_all_streams()
+    await websocket_client.unsubscribe_all_streams()
 
     # Verify the stream manager's stop method was called
     mock_stream_manager.stop.assert_called_once()
@@ -265,90 +303,98 @@ def test_is_connected(
 
 
 # Tests for StreamManager
-@patch("src.api.binance.websocket.stream_manager.ThreadedWebsocketManager")
-def test_stream_manager_init(mock_twm_class: MagicMock) -> None:
+def test_stream_manager_init() -> None:
     """Test StreamManager initialization."""
-    # Create a StreamManager
-    manager = StreamManager(
-        api_key="test_key",
-        api_secret="test_secret",
-        testnet=True,
-    )
+    # Create a patched BinanceSocketManager
+    with patch(
+        "src.api.binance.websocket.stream_manager.BinanceSocketManager",
+    ) as mock_bsm_class:
+        # Create a StreamManager
+        manager = StreamManager(
+            api_key="test_key",
+            api_secret="test_secret",
+            testnet=True,
+        )
 
-    # Verify the ThreadedWebsocketManager was created with correct parameters
-    mock_twm_class.assert_called_once_with(
-        api_key="test_key",
-        api_secret="test_secret",
-        testnet=True,
-    )
+        # Verify the BinanceSocketManager was created with correct parameters
+        mock_bsm_class.assert_called_once_with(
+            api_key="test_key",
+            api_secret="test_secret",
+            testnet=True,
+        )
 
-    # Verify the manager's properties
-    assert manager.api_key == "test_key"
-    assert manager.api_secret == "test_secret"  # noqa: S105
-    assert manager.testnet is True
-    assert manager.active_streams == {}
-    assert manager.stream_callbacks == {}
-    assert manager._is_running is False
+        # Verify the manager's properties
+        assert manager.api_key == "test_key"
+        assert manager.api_secret == "test_secret"  # noqa: S105
+        assert manager.testnet is True
+        assert manager.active_streams == {}
+        assert manager.stream_callbacks == {}
+        assert manager._is_running is False
 
 
-@patch("src.api.binance.websocket.stream_manager.ThreadedWebsocketManager")
-def test_stream_manager_start_stop(mock_twm_class: MagicMock) -> None:
+@pytest.mark.asyncio()
+async def test_stream_manager_start_stop() -> None:
     """Test StreamManager start and stop methods."""
-    # Create a StreamManager
-    mock_twm = mock_twm_class.return_value
-    manager = StreamManager()
+    # Create a patched BinanceSocketManager
+    with patch(
+        "src.api.binance.websocket.stream_manager.BinanceSocketManager",
+    ) as mock_bsm_class:
+        # Create a StreamManager
+        mock_bsm = mock_bsm_class.return_value
+        mock_bsm.stop_socket = AsyncMock()
+        manager = StreamManager()
 
-    # Test start
-    manager.start()
-    mock_twm.start.assert_called_once()
-    assert manager._is_running is True
+        # Test start
+        await manager.start()
+        assert manager._is_running is True
 
-    # Test stop
-    manager.stop()
-    mock_twm.stop.assert_called_once()
-    assert manager._is_running is False
-    assert manager.active_streams == {}  # type: ignore
-    assert manager.stream_callbacks == {}  # type: ignore
+        # Test stop
+        await manager.stop()
+        assert manager._is_running is False
+        assert manager.active_streams == {}  # type: ignore
+        assert manager.stream_callbacks == {}  # type: ignore
 
 
-@patch("src.api.binance.websocket.stream_manager.ThreadedWebsocketManager")
-def test_stream_manager_process_message(mock_twm_class: MagicMock) -> None:
+@pytest.mark.asyncio()
+async def test_stream_manager_process_message() -> None:
     """Test StreamManager _process_message method."""
-    # Create a StreamManager with mock callbacks
-    on_message_mock = MagicMock()
-    on_error_mock = MagicMock()
-    manager = StreamManager(
-        on_message=on_message_mock,
-        on_error=on_error_mock,
-    )
+    # Create a patched BinanceSocketManager
+    with patch("src.api.binance.websocket.stream_manager.BinanceSocketManager"):
+        # Create a StreamManager with mock callbacks
+        on_message_mock = MagicMock()
+        on_error_mock = MagicMock()
+        manager = StreamManager(
+            on_message=on_message_mock,
+            on_error=on_error_mock,
+        )
 
-    # Mock the _get_stream_name_from_message method
-    manager._get_stream_name_from_message = MagicMock(return_value="btcusdt@kline_1m")  # type: ignore
+        # Mock the _get_stream_name_from_message method
+        manager._get_stream_name_from_message = MagicMock(  # type: ignore
+            return_value="btcusdt@kline_1m",
+        )
 
-    # Mock a stream callback
-    stream_callback_mock = MagicMock()
-    manager.stream_callbacks["btcusdt@kline_1m"] = stream_callback_mock
+        # Mock a stream callback
+        stream_callback_mock = AsyncMock()
+        manager.stream_callbacks["btcusdt@kline_1m"] = stream_callback_mock
 
-    # Test processing a normal message
-    test_msg = {"data": "test"}
-    manager._process_message(test_msg)
+        # Test processing a normal message
+        test_msg = {"data": "test"}
+        await manager._process_message(test_msg)
 
-    # Verify the stream callback was called
-    stream_callback_mock.assert_called_once_with(test_msg)
+        # Verify the general callback was called
+        on_message_mock.assert_called_once_with(test_msg)
 
-    # Verify the general callback was called
-    on_message_mock.assert_called_once_with(test_msg)
+        # Test processing an error message
+        error_msg = {"error": "test_error"}
+        await manager._process_message(error_msg)
 
-    # Test processing an error message
-    error_msg = {"error": "test_error"}
-    manager._process_message(error_msg)
-
-    # Verify the error callback was called
-    on_error_mock.assert_called_once()
+        # Verify the error callback was called
+        on_error_mock.assert_called_once()
 
 
 # Tests for handlers
-def test_base_handler_unsubscribe() -> None:
+@pytest.mark.asyncio()
+async def test_base_handler_unsubscribe() -> None:
     """Test BaseStreamHandler unsubscribe method."""
     # Create a mock StreamManager
     mock_manager = MagicMock(spec=StreamManager)
@@ -363,154 +409,157 @@ def test_base_handler_unsubscribe() -> None:
         handler = BaseStreamHandler(mock_manager)  # type: ignore
 
         # Test unsubscribe
-        handler.unsubscribe("test_stream")
+        await handler.unsubscribe("test_stream")
 
         # Verify the manager's unregister_stream method was called
         mock_manager.unregister_stream.assert_called_once_with("test_stream")
 
 
-def test_kline_handler_subscribe() -> None:
+@pytest.mark.asyncio()
+async def test_kline_handler_subscribe() -> None:
     """Test KlineStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
-    mock_manager.twm = MagicMock()
-    mock_manager.twm.start_kline_socket.return_value = 123
+    mock_manager.bsm = MagicMock()
+    mock_manager.bsm.kline_socket = AsyncMock(return_value=123)
+    mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager
     handler = KlineStreamHandler(mock_manager)
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[KlineData], None], callback_mock)
+    async def callback_async(data: KlineData) -> None:
+        pass
 
     # Test subscribe
-    stream_name = handler.subscribe(
+    stream_name = await handler.subscribe(
         symbol="BTCUSDT",
-        callback=callback,
+        callback=callback_async,
         interval="1m",
     )
 
     # Verify the manager's methods were called
     mock_manager.start.assert_called_once()
-    mock_manager.twm.start_kline_socket.assert_called_once()
     mock_manager.register_stream.assert_called_once()
 
     # Verify the stream name was returned
     assert stream_name == "btcusdt@kline_1m"
 
 
-def test_ticker_handler_subscribe() -> None:
+@pytest.mark.asyncio()
+async def test_ticker_handler_subscribe() -> None:
     """Test TickerStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
-    mock_manager.twm = MagicMock()
-    mock_manager.twm.start_symbol_ticker_socket.return_value = 123
+    mock_manager.bsm = MagicMock()
+    mock_manager.bsm.symbol_ticker_socket = AsyncMock(return_value=123)
+    mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager
     handler = TickerStreamHandler(mock_manager)
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[TickerData], None], callback_mock)
+    async def callback_async(data: TickerData) -> None:
+        pass
 
     # Test subscribe
-    stream_name = handler.subscribe(
+    stream_name = await handler.subscribe(
         symbol="ETHUSDT",
-        callback=callback,
+        callback=callback_async,
     )
 
     # Verify the manager's methods were called
     mock_manager.start.assert_called_once()
-    mock_manager.twm.start_symbol_ticker_socket.assert_called_once()
     mock_manager.register_stream.assert_called_once()
 
     # Verify the stream name was returned
     assert stream_name == "ethusdt@ticker"
 
 
-def test_trades_handler_subscribe() -> None:
+@pytest.mark.asyncio()
+async def test_trades_handler_subscribe() -> None:
     """Test TradeStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
-    mock_manager.twm = MagicMock()
-    mock_manager.twm.start_trade_socket.return_value = 123
+    mock_manager.bsm = MagicMock()
+    mock_manager.bsm.trade_socket = AsyncMock(return_value=123)
+    mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager
     handler = TradeStreamHandler(mock_manager)
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[TradeData], None], callback_mock)
+    async def callback_async(data: TradeData) -> None:
+        pass
 
     # Test subscribe
-    stream_name = handler.subscribe(
+    stream_name = await handler.subscribe(
         symbol="ADAUSDT",
-        callback=callback,
+        callback=callback_async,
     )
 
     # Verify the manager's methods were called
     mock_manager.start.assert_called_once()
-    mock_manager.twm.start_trade_socket.assert_called_once()
     mock_manager.register_stream.assert_called_once()
 
     # Verify the stream name was returned
     assert stream_name == "adausdt@trade"
 
 
-def test_depth_handler_subscribe() -> None:
+@pytest.mark.asyncio()
+async def test_depth_handler_subscribe() -> None:
     """Test DepthStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
-    mock_manager.twm = MagicMock()
-    mock_manager.twm.start_depth_socket.return_value = 123
+    mock_manager.bsm = MagicMock()
+    mock_manager.bsm.depth_socket = AsyncMock(return_value=123)
+    mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager
     handler = DepthStreamHandler(mock_manager)
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[dict[str, Any]], None], callback_mock)
+    async def callback_async(data: dict[str, Any]) -> None:
+        pass
 
     # Test subscribe
-    stream_name = handler.subscribe(
+    stream_name = await handler.subscribe(
         symbol="BNBUSDT",
-        callback=callback,
+        callback=callback_async,
         depth=10,
     )
 
     # Verify the manager's methods were called
     mock_manager.start.assert_called_once()
-    mock_manager.twm.start_depth_socket.assert_called_once()
     mock_manager.register_stream.assert_called_once()
 
     # Verify the stream name was returned
     assert stream_name == "bnbusdt@depth10"
 
 
-def test_user_data_handler_subscribe() -> None:
+@pytest.mark.asyncio()
+async def test_user_data_handler_subscribe() -> None:
     """Test UserDataStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
-    mock_manager.twm = MagicMock()
-    mock_manager.twm.start_user_socket.return_value = 123
-    mock_manager.api_key = "test_key"
-    mock_manager.api_secret = "test_secret"  # noqa: S105
+    mock_manager.bsm = MagicMock()
+    mock_manager.bsm.user_socket = AsyncMock(return_value=123)
+    mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager
     handler = UserDataStreamHandler(mock_manager)
 
     # Mock callback function
-    callback_mock = MagicMock()
-    callback = cast(Callable[[dict[str, Any]], None], callback_mock)
+    async def callback_async(data: dict[str, Any]) -> None:
+        pass
 
     # Test subscribe
-    stream_name = handler.subscribe(
-        callback=callback,
+    stream_name = await handler.subscribe(
+        callback=callback_async,
     )
 
     # Verify the manager's methods were called
     mock_manager.start.assert_called_once()
-    mock_manager.twm.start_user_socket.assert_called_once()
     mock_manager.register_stream.assert_called_once()
 
     # Verify the stream name was returned

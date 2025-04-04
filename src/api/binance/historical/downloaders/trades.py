@@ -2,13 +2,15 @@
 Trades downloader for historical data.
 """
 
+import asyncio
 import logging
-import time
 from datetime import datetime
-from pathlib import Path
 
 from src.api.binance.client import BinanceClient
-from src.api.binance.historical.batch import BatchProcessor
+from src.api.binance.historical.batch import (
+    BatchProcessor,
+    SymbolicDownloadBatchConfigSchema,
+)
 from src.api.binance.historical.downloaders.base import BaseDownloader
 from src.api.common.models import TradeSchema
 from src.commons.time_utility import MILLISECONDS_IN_SECOND
@@ -25,30 +27,20 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
 
     async def download(
         self,
-        symbol: str,
-        start_time: str | datetime,
-        end_time: str | datetime | None = None,
-        max_workers: int = 4,
-        output_dir: Path | None = None,
-        save_progress: bool = True,
+        config: SymbolicDownloadBatchConfigSchema,
     ) -> list[TradeSchema]:
         """
         Download historical trades data.
 
         Args:
-            symbol: Trading pair symbol (e.g., "BTCUSDT")
-            start_time: Start time for the download (string or datetime)
-            end_time: End time for the download (string or datetime, defaults to now)
-            max_workers: Maximum number of concurrent workers
-            output_dir: Directory to save data
-            save_progress: Whether to save each batch as it completes
+            config: Configuration for the download batch with symbol
 
         Returns:
             List of trade data
         """
         # Process input parameters
-        start_time_dt = self.parse_time(start_time)
-        end_time_dt = self.parse_time(end_time)
+        start_time_dt = config.start_time
+        end_time_dt = config.end_time
 
         # Get batch intervals
         batches = BatchProcessor.get_trade_batch_intervals(
@@ -58,7 +50,7 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
 
         logger.info(
             "Starting download of %s trades from %s to %s (%d batches)",
-            symbol,
+            config.symbol,
             start_time_dt,
             end_time_dt,
             len(batches),
@@ -67,7 +59,7 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
         # Prepare download batches
         download_batches = [
             {
-                "symbol": symbol,
+                "symbol": config.symbol,
                 "start_time": batch["start_time"],
                 "end_time": batch["end_time"],
             }
@@ -78,29 +70,16 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
         all_data = await self.execute_parallel_downloads(
             batches=download_batches,
             download_func=self._download_batch,
-            max_workers=max_workers,
-            save_progress=save_progress,
-            symbol=symbol,
+            max_workers=config.max_workers,
+            symbol=config.symbol,
             data_type="trades",
-            output_dir=output_dir,
         )
 
         logger.info(
             "Completed download of %s trades: %d records retrieved",
-            symbol,
+            config.symbol,
             len(all_data),
         )
-
-        # Save all data if requested and not already saved by batch
-        if all_data and not save_progress:
-            self.data_saver.save_data(
-                data=all_data,
-                symbol=symbol,
-                data_type="trades",
-                start_time=start_time_dt,
-                end_time=end_time_dt,
-                output_dir=output_dir,
-            )
 
         return all_data
 
@@ -182,7 +161,7 @@ class TradesDownloader(BaseDownloader[TradeSchema]):
             from_id = next_from_id
 
             # Avoid rate limiting
-            time.sleep(0.1)
+            await asyncio.sleep(0.1)
 
         # Check if we hit the max iteration limit
         if iteration_count >= max_iterations:

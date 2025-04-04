@@ -6,26 +6,33 @@ which is responsible for downloading historical market data.
 """
 
 from datetime import UTC, datetime
-from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import click
 import pytest
 
+from src.api.binance.historical.batch import (
+    DownloadBatchConfigSchema,
+    SymbolicDownloadBatchConfigSchema,
+)
 from src.logic.historical.download_service import HistoricalDownloadService
 
 
 class TestHistoricalDownloadService:
     """Tests for the HistoricalDownloadService class."""
 
-    def test_download_klines(
+    @pytest.mark.asyncio()
+    async def test_download_klines(
         self,
         mock_binance_client: MagicMock,
-        sample_output_path: Path,
     ) -> None:
         """Test downloading klines data."""
         # Setup
-        service = HistoricalDownloadService(mock_binance_client)
+        mock_db_session = MagicMock()
+        service = HistoricalDownloadService(mock_binance_client, mock_db_session)
+
+        # Setup AsyncMock for the download_klines method
+        mock_binance_client.download_klines = AsyncMock()
 
         symbol = "BTCUSDT"
         interval = "1h"
@@ -33,77 +40,72 @@ class TestHistoricalDownloadService:
         end_time = datetime(2023, 1, 2, tzinfo=UTC)
         batch_size = 1000
         max_workers = 4
-        save_progress = True
+
+        # Create config
+        config = SymbolicDownloadBatchConfigSchema(
+            symbol=symbol,
+            interval=interval,
+            start_time=start_time,
+            end_time=end_time,
+            batch_size=batch_size,
+            max_workers=max_workers,
+        )
 
         # Execute
-        result = service.download_klines(
-            symbol=symbol,
-            interval=interval,
-            start_time=start_time,
-            end_time=end_time,
-            batch_size=batch_size,
-            max_workers=max_workers,
-            output_dir=sample_output_path,
-            save_progress=save_progress,
-        )
+        result = await service.download_klines(config=config)
 
         # Assert
-        mock_binance_client.download_klines.assert_called_once_with(
-            symbol=symbol,
-            interval=interval,
-            start_time=start_time,
-            end_time=end_time,
-            batch_size=batch_size,
-            max_workers=max_workers,
-            output_dir=sample_output_path,
-            save_progress=save_progress,
-        )
+        mock_binance_client.download_klines.assert_called_once_with(config=config)
         assert result == mock_binance_client.download_klines.return_value
 
-    def test_download_trades(
+    @pytest.mark.asyncio()
+    async def test_download_trades(
         self,
         mock_binance_client: MagicMock,
-        sample_output_path: Path,
     ) -> None:
         """Test downloading trades data."""
         # Setup
-        service = HistoricalDownloadService(mock_binance_client)
+        mock_db_session = MagicMock()
+        service = HistoricalDownloadService(mock_binance_client, mock_db_session)
+
+        # Setup AsyncMock for the download_trades method
+        mock_binance_client.download_trades = AsyncMock()
 
         symbol = "BTCUSDT"
         start_time = datetime(2023, 1, 1, tzinfo=UTC)
         end_time = datetime(2023, 1, 2, tzinfo=UTC)
         max_workers = 4
-        save_progress = True
+
+        # Create config
+        config = SymbolicDownloadBatchConfigSchema(
+            symbol=symbol,
+            start_time=start_time,
+            end_time=end_time,
+            max_workers=max_workers,
+        )
 
         # Execute
-        result = service.download_trades(
-            symbol=symbol,
-            start_time=start_time,
-            end_time=end_time,
-            max_workers=max_workers,
-            output_dir=sample_output_path,
-            save_progress=save_progress,
-        )
+        result = await service.download_trades(config=config)
 
         # Assert
-        mock_binance_client.download_trades.assert_called_once_with(
-            symbol=symbol,
-            start_time=start_time,
-            end_time=end_time,
-            max_workers=max_workers,
-            output_dir=sample_output_path,
-            save_progress=save_progress,
-        )
+        mock_binance_client.download_trades.assert_called_once_with(config=config)
         assert result == mock_binance_client.download_trades.return_value
 
-    def test_download_multiple_symbols(
+    @pytest.mark.asyncio()
+    async def test_download_multiple_symbols(
         self,
         mock_binance_client: MagicMock,
-        sample_output_path: Path,
     ) -> None:
         """Test downloading data for multiple symbols."""
         # Setup
-        service = HistoricalDownloadService(mock_binance_client)
+        mock_db_session = MagicMock()
+        service = HistoricalDownloadService(mock_binance_client, mock_db_session)
+
+        # Setup AsyncMock for the download_multiple_symbols method
+        mock_binance_client.download_multiple_symbols = AsyncMock()
+
+        # Also mock download_klines to prevent internal calls
+        service.download_klines = AsyncMock()  # type: ignore
 
         symbols = ["BTCUSDT", "ETHUSDT"]
         interval = "1h"
@@ -112,46 +114,53 @@ class TestHistoricalDownloadService:
         batch_size = 1000
         max_workers = 4
 
-        # Execute
-        result = service.download_multiple_symbols(
-            symbols=symbols,
+        # Create config
+        base_config = DownloadBatchConfigSchema(
             interval=interval,
             start_time=start_time,
             end_time=end_time,
             batch_size=batch_size,
             max_workers=max_workers,
-            output_dir=sample_output_path,
+        )
+
+        # Setup expected return value
+        service.download_klines.return_value = [MagicMock()] * 100
+
+        # Execute
+        result = await service.download_multiple_symbols(
+            symbols=symbols,
+            base_config=base_config,
         )
 
         # Assert
-        # Check that the download_multiple_symbols method
-        # was called with the correct config
-        mock_binance_client.download_multiple_symbols.assert_called_once()
+        # Verify download_klines was called for each symbol
+        assert service.download_klines.call_count == 2
 
-        # Extract the config argument from the call
-        call_args = mock_binance_client.download_multiple_symbols.call_args[1]
-        assert "config" in call_args
-        assert "symbols" in call_args
-        assert call_args["symbols"] == symbols
+        # Verify the symbols matches what we provided
+        for symbol in symbols:
+            assert symbol in result
 
-        # Verify the config has the correct values
-        config = call_args["config"]
-        assert config.interval == interval
-        assert config.start_time == start_time
-        assert config.batch_size == batch_size
-        assert config.max_workers == max_workers
-        assert config.output_dir == sample_output_path
+        # The result should have True values for each symbol
+        assert all(value for value in result.values())
 
-        assert result == mock_binance_client.download_multiple_symbols.return_value
-
-    def test_download_all_symbols(
+    @pytest.mark.asyncio()
+    async def test_download_all_symbols(
         self,
         mock_binance_client: MagicMock,
-        sample_output_path: Path,
     ) -> None:
         """Test downloading data for all available symbols."""
         # Setup
-        service = HistoricalDownloadService(mock_binance_client)
+        mock_db_session = MagicMock()
+        service = HistoricalDownloadService(mock_binance_client, mock_db_session)
+
+        # Setup AsyncMock for the methods
+        mock_binance_client.get_filtered_symbols = AsyncMock(
+            return_value=["BTCUSDT", "ETHUSDT"],
+        )
+
+        # Also mock download_klines to prevent internal calls
+        service.download_klines = AsyncMock()  # type: ignore
+        service.download_klines.return_value = [MagicMock()] * 100
 
         interval = "1h"
         start_time = datetime(2023, 1, 1, tzinfo=UTC)
@@ -161,49 +170,60 @@ class TestHistoricalDownloadService:
         batch_size = 1000
         max_workers = 4
 
-        # Execute
-        result = service.download_all_symbols(
+        # Create config
+        base_config = DownloadBatchConfigSchema(
             interval=interval,
             start_time=start_time,
             end_time=end_time,
-            quote_asset=quote_asset,
-            min_volume=min_volume,
             batch_size=batch_size,
             max_workers=max_workers,
-            output_dir=sample_output_path,
+        )
+
+        # Execute
+        result = await service.download_all_symbols(
+            base_config=base_config,
+            quote_asset=quote_asset,
+            min_volume=min_volume,
         )
 
         # Assert
-        mock_binance_client.download_all_symbols.assert_called_once_with(
-            interval=interval,
-            start_time=start_time,
-            end_time=end_time,
+        # Verify get_filtered_symbols was called with correct parameters
+        mock_binance_client.get_filtered_symbols.assert_called_once_with(
             quote_asset=quote_asset,
             min_volume=min_volume,
-            batch_size=batch_size,
-            max_workers=max_workers,
-            output_dir=sample_output_path,
         )
-        assert result == mock_binance_client.download_all_symbols.return_value
 
-    def test_download_klines_error_handling(
+        # Verify download_klines was called for each symbol
+        assert service.download_klines.call_count == 2
+
+        # The result should have the symbols as keys
+        assert "BTCUSDT" in result
+        assert "ETHUSDT" in result
+
+        # The result should have True values for each symbol
+        assert all(value for value in result.values())
+
+    async def test_download_klines_error_handling(
         self,
         mock_binance_client: MagicMock,
-        sample_output_path: Path,
     ) -> None:
         """Test error handling when downloading klines data."""
         # Setup
-        service = HistoricalDownloadService(mock_binance_client)
+        mock_db_session = MagicMock()
+        service = HistoricalDownloadService(mock_binance_client, mock_db_session)
         mock_binance_client.download_klines.side_effect = Exception("Test error")
+
+        # Create config
+        config = SymbolicDownloadBatchConfigSchema(
+            symbol="BTCUSDT",
+            interval="1h",
+            start_time=datetime(2023, 1, 1, tzinfo=UTC),
+            end_time=datetime(2023, 1, 2, tzinfo=UTC),
+        )
 
         # Execute and Assert
         with pytest.raises(click.ClickException):
-            service.download_klines(
-                symbol="BTCUSDT",
-                interval="1h",
-                start_time=datetime(2023, 1, 1, tzinfo=UTC),
-                output_dir=sample_output_path,
-            )
+            await service.download_klines(config=config)
 
         # Verify the error was logged
         mock_binance_client.download_klines.assert_called_once()

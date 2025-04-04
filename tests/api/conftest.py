@@ -5,8 +5,8 @@ This module contains fixtures and setup for testing the API connectors.
 """
 
 import os
-from collections.abc import Generator
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -86,28 +86,16 @@ async def historical_client(
     mock_binance_client: MagicMock,
 ) -> AsyncGenerator[BinanceHistoricalDataClient, None]:
     """Create a historical data client with mocked dependencies for testing."""
-    # Use a temp directory for test outputs
-    import tempfile
-    from pathlib import Path
-
-    output_dir = Path(tempfile.mkdtemp())
-
     with patch(
         "src.api.binance.historical.client.BinanceClient",
         return_value=mock_binance_client,
     ):
         client = BinanceHistoricalDataClient(
             testnet=True,
-            output_dir=output_dir,
             max_workers=2,
             batch_size=100,
         )
         yield client
-
-        # Clean up temp directory after test
-        for file in output_dir.iterdir():
-            file.unlink()
-        output_dir.rmdir()
 
 
 @pytest.fixture()

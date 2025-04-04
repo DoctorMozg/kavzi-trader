@@ -4,16 +4,14 @@ Base downloader for historical data.
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Awaitable, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 import dateparser
 from pydantic import BaseModel
 
 from src.api.binance.client import BinanceClient
-from src.api.binance.historical.data_saver import DataSaver
 from src.commons.time_utility import utc_now
 
 logger = logging.getLogger(__name__)
@@ -22,7 +20,14 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class BaseDownloader(Generic[T]):
-    """Base class for historical data downloaders."""
+    """
+    Base class for historical data downloaders.
+
+    Implements common functionality for downloading historical data with support for:
+    - Parallel downloads using asyncio
+    - Batching to maximize throughput and minimize API rate limiting
+    - Progress tracking
+    """
 
     def __init__(self, client: BinanceClient) -> None:
         """
@@ -32,7 +37,6 @@ class BaseDownloader(Generic[T]):
             client: BinanceClient instance
         """
         self.client = client
-        self.data_saver: DataSaver = DataSaver()
 
     def parse_time(
         self,
@@ -67,11 +71,9 @@ class BaseDownloader(Generic[T]):
         batches: list[dict[str, Any]],
         download_func: Callable[..., Awaitable[list[T]]],
         max_workers: int,
-        save_progress: bool,
         symbol: str,
         data_type: str,
         interval: str | None = None,
-        output_dir: Path | None = None,
     ) -> list[T]:
         """
         Execute parallel downloads for batches using asyncio.
@@ -80,68 +82,52 @@ class BaseDownloader(Generic[T]):
             batches: List of batch configurations
             download_func: Async function to download a single batch
             max_workers: Maximum number of concurrent workers (semaphore limit)
-            save_progress: Whether to save each batch as it completes
             symbol: Trading pair symbol
             data_type: Type of data (klines, trades, etc.)
             interval: Kline interval if applicable
-            output_dir: Directory to save data
 
         Returns:
             List of downloaded data
         """
         all_data: list[T] = []
-        
+
         # Create a semaphore to limit concurrency
         semaphore = asyncio.Semaphore(max_workers)
-        
-        async def download_with_semaphore(batch_config: dict[str, Any], batch_index: int) -> tuple[list[T], dict[str, Any], int]:
+
+        async def download_with_semaphore(
+            batch_config: dict[str, Any],
+            batch_index: int,
+        ) -> tuple[list[T], dict[str, Any], int]:
             """Download a batch with semaphore control."""
             async with semaphore:
                 try:
                     # Call the download function with the batch parameters
                     batch_data = await download_func(**batch_config)
-                    return batch_data, batch_config, batch_index
-                except Exception as e:
+                except Exception:
                     logger.exception(
-                        "Error downloading batch %s to %s: %s",
+                        "Error downloading batch %s to %s",
                         batch_config.get("start_time"),
                         batch_config.get("end_time"),
-                        str(e),
                     )
                     return [], batch_config, batch_index
+                else:
+                    return batch_data, batch_config, batch_index
 
         # Create tasks for all batches
-        tasks = [
-            download_with_semaphore(batch, i)
-            for i, batch in enumerate(batches)
-        ]
-        
+        tasks = [download_with_semaphore(batch, i) for i, batch in enumerate(batches)]
+
         # Execute all tasks concurrently and process results as they complete
         total_batches = len(batches)
-        completed = 0
-        
-        for task in asyncio.as_completed(tasks):
-            batch_data, batch, _ = await task
-            completed += 1
-            
+
+        for completed, task in enumerate(asyncio.as_completed(tasks)):
+            batch_data, _, _ = await task
+
             if batch_data:
                 all_data.extend(batch_data)
-                
-                # Save batch data if requested
-                if save_progress:
-                    self.data_saver.save_data(
-                        data=batch_data,
-                        symbol=symbol,
-                        data_type=data_type,
-                        interval=interval,
-                        start_time=batch.get("start_time"),
-                        end_time=batch.get("end_time"),
-                        output_dir=output_dir,
-                    )
-            
+
             logger.info(
                 "Completed batch %d/%d for %s %s (%.1f%%)",
-                completed,
+                completed + 1,
                 total_batches,
                 symbol,
                 data_type + (f" {interval}" if interval else ""),

@@ -6,11 +6,10 @@ This module provides functionality for managing WebSocket connections and stream
 
 import json
 import logging
-from collections.abc import Callable
-from typing import Any, Awaitable, cast
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
-from binance import BinanceSocketManager
-from binance import ReconnectingWebsocket
+from binance import BinanceSocketManager, ReconnectingWebsocket
 
 from src.api.common.exceptions import APIError
 
@@ -65,7 +64,10 @@ class StreamManager:
         self.on_close_callback = on_close
 
         # Stream-specific callbacks
-        self.stream_callbacks: dict[str, Callable[[dict[str, Any]], None]] = {}
+        self.stream_callbacks: dict[
+            str,
+            Callable[[dict[str, Any]], Awaitable[None]],
+        ] = {}
 
         # Flag to track if the WebSocket manager is running
         self._is_running: bool = False
@@ -84,7 +86,7 @@ class StreamManager:
                 # Close all active connections
                 for stream_name in list(self.active_streams.keys()):
                     await self.unregister_stream(stream_name)
-                
+
                 self.active_streams.clear()
                 self.stream_callbacks.clear()
                 self._is_running = False
@@ -93,11 +95,10 @@ class StreamManager:
                 logger.exception("Failed to stop Binance WebSocket client")
                 raise APIError("Failed to stop WebSocket client") from e
 
-
     def add_stream_callback(
         self,
         stream_name: str,
-        callback: Callable[[dict[str, Any]], None],
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
         """
         Add a callback for a specific stream.
@@ -117,6 +118,7 @@ class StreamManager:
         Returns:
             Message handler function
         """
+
         async def handle_message(msg: dict[str, Any]) -> None:
             # Log the message for debugging
             logger.debug("Received WebSocket message: %s", json.dumps(msg)[:200])
@@ -206,7 +208,7 @@ class StreamManager:
         self,
         stream_name: str,
         socket: ReconnectingWebsocket,
-        callback: Callable[[dict[str, Any]], None],
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
         """
         Register a stream with the manager.
@@ -216,7 +218,7 @@ class StreamManager:
             socket_id: Socket ID from the BinanceSocketManager
             callback: Callback for stream messages
         """
-        self.active_streams[stream_name] = socket_id
+        self.active_streams[stream_name] = socket
         self.stream_callbacks[stream_name] = callback
 
     async def unregister_stream(self, stream_name: str) -> None:
@@ -227,10 +229,10 @@ class StreamManager:
             stream_name: Name of the stream
         """
         if stream_name in self.active_streams:
-            socket_id = self.active_streams[stream_name]
+            socket = self.active_streams[stream_name]
 
             # Close the socket connection
-            await self.bsm.stop_socket(socket_id)
+            await self.bsm.stop_socket(socket)
 
             # Remove it from managed streams
             del self.active_streams[stream_name]

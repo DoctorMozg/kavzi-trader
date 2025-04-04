@@ -4,7 +4,6 @@ Tests for async utility functions.
 
 import asyncio
 import time
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,6 +12,7 @@ from src.commons.async_utils import to_async, to_sync
 
 def test_to_async_decorator() -> None:
     """Test that the to_async decorator converts a sync function to an async one."""
+
     # Define a synchronous function
     def sync_function(x: int, y: int) -> int:
         return x + y
@@ -31,6 +31,7 @@ def test_to_async_decorator() -> None:
 
 def test_to_async_with_io_operation() -> None:
     """Test that the to_async decorator works with I/O operations."""
+
     # Define a synchronous function that simulates I/O
     def slow_io_operation(duration: float) -> float:
         time.sleep(duration)
@@ -39,9 +40,13 @@ def test_to_async_with_io_operation() -> None:
     # Apply the decorator
     async_io_operation = to_async(slow_io_operation)
 
+    # Define a wrapper coroutine to make asyncio.run happy
+    async def run_async_operation() -> float:
+        return await async_io_operation(0.1)
+
     # Test the function works correctly
     start_time = time.time()
-    result = asyncio.run(async_io_operation(0.1))
+    result: float = asyncio.run(run_async_operation())
     elapsed = time.time() - start_time
 
     assert result == 0.1
@@ -50,6 +55,7 @@ def test_to_async_with_io_operation() -> None:
 
 def test_to_sync_decorator() -> None:
     """Test that the to_sync decorator converts an async function to a sync one."""
+
     # Define an asynchronous function
     async def async_function(x: int, y: int) -> int:
         await asyncio.sleep(0.01)  # Small delay to ensure it's truly async
@@ -69,6 +75,7 @@ def test_to_sync_decorator() -> None:
 
 def test_to_sync_with_io_operation() -> None:
     """Test that the to_sync decorator works with async I/O operations."""
+
     # Define an asynchronous function that simulates I/O
     async def async_io_operation(duration: float) -> float:
         await asyncio.sleep(duration)
@@ -88,6 +95,7 @@ def test_to_sync_with_io_operation() -> None:
 
 def test_to_sync_error_handling() -> None:
     """Test that the to_sync decorator properly handles errors in the async function."""
+
     # Define an async function that raises an exception
     async def async_error() -> None:
         await asyncio.sleep(0.01)
@@ -102,7 +110,11 @@ def test_to_sync_error_handling() -> None:
 
 
 def test_to_sync_cannot_be_called_from_async_context() -> None:
-    """Test that the to_sync decorator raises an error when called from an async context."""
+    """
+    Test that the to_sync decorator raises an error
+    when called from an async context.
+    """
+
     # Define an async function
     async def async_function() -> int:
         return 42
@@ -121,6 +133,7 @@ def test_to_sync_cannot_be_called_from_async_context() -> None:
 
 def test_decorator_preserves_function_metadata() -> None:
     """Test that both decorators preserve function metadata."""
+
     # Define functions with docstrings and annotations
     def sync_func(x: int) -> str:
         """Sync function docstring."""
