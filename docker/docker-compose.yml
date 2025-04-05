@@ -31,20 +31,30 @@ services:
 
   # TimescaleDB for time-series data
   timescaledb:
-    image: timescale/timescaledb:latest-pg17
+    image: timescale/timescaledb-ha:pg17
     container_name: kavzitrader-timescaledb
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: kavzitrader
-      POSTGRES_INITDB_ARGS: "--shared-buffers=6GB"
+      # Let TimescaleDB handle extension installation automatically
+      TIMESCALEDB_TELEMETRY: 'off'
     ports:
       - "5432:5432"
     volumes:
-      - timescaledb_data:/var/lib/postgresql/data
+      - timescaledb_data:/home/postgres/pgdata/data
+      - ./postgres/postgresql.conf:/home/postgres/pgdata/config/postgresql.conf
+    command: postgres -c config_file=/home/postgres/pgdata/config/postgresql.conf
     shm_size: 6gb
     mem_limit: 8gb
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      memlock:
+        soft: -1
+        hard: -1
 
 volumes:
   redis_data:
