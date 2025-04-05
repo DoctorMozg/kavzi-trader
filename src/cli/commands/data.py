@@ -2,13 +2,14 @@
 Data management commands for the KavziTrader CLI.
 """
 
+import logging
+
 import click
 
 from src.cli.commands.historical import historical
-from src.commons.logging import get_logger
 
 # Initialize logger
-logger = get_logger(name="kavzitrader.cli.data")
+logger = logging.getLogger(__name__)
 
 
 @click.group()

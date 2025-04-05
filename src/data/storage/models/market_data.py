@@ -20,7 +20,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import NUMERIC
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.commons.time_utility import utc_now
 from src.data.storage.models.base import BaseModel
 
 

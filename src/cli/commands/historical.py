@@ -5,6 +5,7 @@ This module provides commands for downloading historical market data from Binanc
 with support for different data types, timeframes, and filtering options.
 """
 
+import logging
 from datetime import timedelta
 
 import click
@@ -15,14 +16,13 @@ from src.api.binance.historical.batch import (
 )
 from src.api.binance.historical.client import BinanceHistoricalDataClient
 from src.commons.async_utils import to_sync
-from src.commons.logging import get_logger
 from src.commons.time_utility import parse_date_range, utc_now
 from src.config import AppConfig
 from src.data.storage.database_async import AsyncDatabase
 from src.logic.historical.download_service import HistoricalDownloadService
 
 # Initialize logger
-logger = get_logger(name=__name__)
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -393,6 +393,12 @@ async def fetch_all(
     api_key = app_config.api.binance.api_key
     api_secret = app_config.api.binance.api_secret
 
+    logger.info(
+        "Initializing Binance historical data "
+        "client with max_workers=%d, batch_size=%d",
+        max_workers,
+        batch_size,
+    )
     # Initialize client
     client = BinanceHistoricalDataClient(
         api_key=api_key,
@@ -403,8 +409,10 @@ async def fetch_all(
 
     # Get database from context
     db: AsyncDatabase = ctx.obj["db"]
+    logger.info("Opening database session for historical data operations")
 
     async with db.session_scope() as db_session:
+        logger.info("Creating HistoricalDownloadService instance")
         service = HistoricalDownloadService(client, db_session)
 
         # Log the operation
@@ -423,6 +431,10 @@ async def fetch_all(
 
         try:
             # Create download config
+            logger.debug(
+                "Creating download batch configuration with interval=%s",
+                interval,
+            )
             base_config = DownloadBatchConfigSchema(
                 interval=interval,
                 start_time=start_time,
@@ -432,6 +444,7 @@ async def fetch_all(
             )
 
             # Download data for all symbols
+            logger.info("Fetching list of available symbols matching criteria")
             results = await service.download_all_symbols(
                 base_config=base_config,
                 quote_asset=quote_asset,
@@ -440,12 +453,35 @@ async def fetch_all(
 
             # Report results
             successful = sum(1 for success in results.values() if success)
-            click.echo(f"Successfully downloaded data for {successful} symbols")
+            total_symbols = len(results)
+            failed = total_symbols - successful
+
+            logger.info(
+                "Download complete: %d/%d symbols successful, %d failed",
+                successful,
+                total_symbols,
+                failed,
+            )
+
+            if failed > 0:
+                failed_symbols = [
+                    symbol for symbol, success in results.items() if not success
+                ]
+                logger.warning(
+                    "Failed to download data for %d symbols: %s",
+                    len(failed_symbols),
+                    ", ".join(failed_symbols),
+                )
+
+            click.echo(
+                "Successfully downloaded data for "
+                f"{successful}/{total_symbols} symbols",
+            )
             click.echo("Data saved to database")
 
         except Exception as e:
             logger.exception("Error downloading historical data")
-            raise click.ClickException(f"Failed to download data: {e!s}") from e
+            raise click.ClickException("Failed to download data") from e
 
 
 @historical.command("update")

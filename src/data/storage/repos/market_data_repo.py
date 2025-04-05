@@ -205,6 +205,8 @@ class MarketDataRepository(BaseRepository[MarketDataModel]):
                 (len(candlesticks) + batch_size - 1) // batch_size,
                 len(batch),
             )
+        # Flush the transaction to ensure data is committed to the database
+        await self.session.commit()
 
         return result
 

@@ -5,6 +5,7 @@ This module provides services for downloading various types of historical
 market data from different sources and storing them in the database.
 """
 
+import logging
 from typing import Any
 
 import click
@@ -16,11 +17,10 @@ from src.api.binance.historical.batch import (
 )
 from src.api.binance.historical.client import BinanceHistoricalDataClient
 from src.api.common.models import CandlestickSchema, TradeSchema
-from src.commons.logging import get_logger
 from src.data.storage.repos import MarketDataRepository, TradeDataRepository
 
 # Initialize logger
-logger = get_logger(name=__name__)
+logger = logging.getLogger(__name__)
 
 
 class HistoricalDownloadService:

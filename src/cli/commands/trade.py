@@ -2,12 +2,12 @@
 Trading commands for the KavziTrader CLI.
 """
 
+import logging
+
 import click
 
-from src.commons.logging import get_logger
-
 # Initialize logger
-logger = get_logger(name="kavzitrader.cli.trade")
+logger = logging.getLogger(__name__)
 
 
 @click.group()

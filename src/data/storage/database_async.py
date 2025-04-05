@@ -92,9 +92,8 @@ class AsyncDatabase:
             db_url: Database URL
             echo: Whether to echo SQL statements
         """
-        db_url_str = db_url.render_as_string(hide_password=True)
         logger.info(
-            f"Async database connection to {db_url_str} initializing",
+            f"Async database connection initializing",
         )
         self.engine = create_async_engine(
             db_url,
@@ -109,7 +108,7 @@ class AsyncDatabase:
             expire_on_commit=False,
         )
         logger.info(
-            f"Async database connection to {db_url_str} established",
+            f"Async database connection established",
         )
 
     async def get_session(self) -> AsyncSession:

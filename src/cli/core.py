@@ -5,58 +5,26 @@ This module contains the core functionality for the KavziTrader CLI,
 including the HydraOptionsGroup class for handling Hydra configuration overrides.
 """
 
+import logging
 import sys
 from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 
 # Add src to path to allow imports from src package
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-# Setup logging
-from src.commons.logging import get_logger
-from src.config.hydra_util import (
-    config_to_app_config,
-    get_config,
-    init_hydra,
-    resolve_relative_paths,
-)
+from src.config import AppConfig
 from src.data.storage.database_async import AsyncDatabase
 
 # Initialize logger
-logger = get_logger(name="kavzitrader.cli")
-
-# Initialize Hydra
-init_hydra()
-
-
-class HydraOptionsGroup(click.Group):
-    """Custom Group class that captures all unparsed options as Hydra overrides."""
-
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
-        """Parse arguments and capture unparsed ones for Hydra."""
-        # First, let the base class parse the standard options
-        parsed_args: list[str] = super().parse_args(ctx, args)
-
-        # Extract any remaining arguments which will be passed to Hydra
-        # Format of code: key=value
-        hydra_overrides: list[str] = [
-            arg for arg in args if "=" in arg and not arg.startswith(("-", "--"))
-        ]
-
-        # Store the overrides in the context
-        ctx.obj = ctx.obj or {}
-        ctx.obj["hydra_overrides"] = hydra_overrides
-
-        return parsed_args
+logger = logging.getLogger(__name__)
 
 
 def setup_cli_environment(
     ctx: click.Context,
     verbose: bool,
-    config: str | None,
-    config_dir: str | None,
-    config_name: str | None,
 ) -> None:
     """
     Set up the CLI environment with configuration and logging.
@@ -64,83 +32,39 @@ def setup_cli_environment(
     Args:
         ctx: Click context
         verbose: Whether to enable verbose output
-        config: Path to configuration file
-        config_dir: Path to configuration directory
-        config_name: Name of the configuration to use
     """
+    # Load environment variables
+    load_dotenv()
+
+    # Create app config from environment variables
+    app_config = AppConfig.from_env()
+
+    # Set up logging
+    log_level = "DEBUG" if verbose else app_config.system.log_level
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    logger.setLevel(log_level)
+
     if verbose:
-        # Update the log level if verbose mode is enabled
-        logger.setLevel("DEBUG")
         logger.debug("Verbose mode enabled")
 
-    # Load environment variables
-    from dotenv import load_dotenv
-
-    load_dotenv()  # take environment variables
-
-    # Get Hydra overrides from context
-    hydra_overrides = ctx.obj.get("hydra_overrides", []) if ctx.obj else []
-
-    if hydra_overrides:
-        logger.debug(f"Hydra overrides from command line: {hydra_overrides}")
-
-    # Prepare Hydra config overrides from config file if specified
-    if config:
-        logger.info(f"Using configuration file: {config}")
-        # We'll handle this custom config file differently
-        # by loading it directly instead of through Hydra
-
-    # Load the configuration
+    # Initialize database connection
     try:
-        # Get Hydra configuration
-        hydra_config = get_config(
-            config_path=config_dir,
-            config_name=config_name,
-            overrides=hydra_overrides,
-        )
-
-        # Resolve relative paths
-        hydra_config = resolve_relative_paths(hydra_config)
-        # Convert to AppConfig for type safety
-        app_config = config_to_app_config(hydra_config)
-
-        # Initialize database connection
-        try:
-            # If a database URL is already provided, use it
-            if app_config.database.url:
-                db_url = app_config.database.url
-            else:
-                # Create database URL synchronously
-                from sqlalchemy import URL
-
-                db_url = URL.create(
-                    drivername=f"{app_config.database.dialect}+{app_config.database.driver}",
-                    username=app_config.database.username,
-                    password=app_config.database.password,
-                    host=app_config.database.host,
-                    port=app_config.database.port,
-                    database=app_config.database.database,
-                )
-
-            # Initialize database connection
-            db = AsyncDatabase(db_url, echo=app_config.database.echo)
-            logger.info("Database connection initialized")
-        except Exception:
-            logger.exception("Failed to initialize database connection")
-            db = None
+        db = AsyncDatabase(app_config.database.url)
 
         # Store in context for child commands
         ctx.obj = ctx.obj or {}
         ctx.obj.update(
             {
-                "config": hydra_config,  # Original Hydra config
-                "app_config": app_config,  # Pydantic validated config
-                "db": db,  # Database connection
+                "app_config": app_config,
+                "db": db,
             },
         )
 
         logger.info("Configuration loaded successfully")
 
     except Exception:
-        logger.exception("Error loading configuration")
-        ctx.fail("Failed to load configuration")
+        logger.exception("Error initializing application")
+        ctx.fail("Failed to initialize application")

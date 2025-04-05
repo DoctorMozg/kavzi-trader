@@ -5,12 +5,11 @@ This module provides common path-related utility functions used across
 the KavziTrader platform, ensuring consistent path handling.
 """
 
+import logging
 from pathlib import Path
 
-from src.commons.logging import get_logger
-
 # Initialize logger
-logger = get_logger(name=__name__)
+logger = logging.getLogger(__name__)
 
 
 def create_output_path(

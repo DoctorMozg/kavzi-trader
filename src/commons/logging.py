@@ -8,16 +8,10 @@ import logging
 import logging.handlers
 import os
 import sys
-from pathlib import Path
-
-from src.config import AppConfig
 
 
 def setup_logging(
-    config: AppConfig | None = None,
     log_level: str = "DEBUG",
-    log_file: Path | None = None,
-    console: bool = True,
     name: str = "kavzitrader",
 ) -> logging.Logger:
     """
@@ -33,10 +27,7 @@ def setup_logging(
     Returns:
         Configured logger instance
     """
-    # Get the root logger
     logger = logging.getLogger(name)
-
-    # Clear any existing handlers to avoid duplicate logging
     if logger.handlers:
         logger.handlers.clear()
 
@@ -55,41 +46,9 @@ def setup_logging(
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s %(filename)s:%(lineno)d - %(message)s",
     )
-
-    # Add console handler if requested
-    if console:
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-
-    # Add file handler if log file is specified
-    if log_file:
-        # Ensure log directory exists
-        log_path = Path(log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_path,
-            maxBytes=10 * 1024 * 1024,  # 10 MB
-            backupCount=5,
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-
-    # If config is provided and log_file wasn't specified, check for data_dir/logs
-    elif config and not log_file:
-        log_dir = Path(config.system.data_dir) / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"{name}.log"
-
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_path,
-            maxBytes=10 * 1024 * 1024,  # 10 MB
-            backupCount=5,
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
     logger.info(f"Logging initialized with level {log_level}")
 
     # If dotenv is installed, log environment variables (except sensitive ones)
@@ -120,18 +79,3 @@ def setup_logging(
         )
 
     return logger
-
-
-def get_logger(name: str = "kavzitrader") -> logging.Logger:
-    """
-    Get a logger with the given name.
-
-    This is a convenience function to get a logger that inherits from the root logger.
-
-    Args:
-        name: Logger name
-
-    Returns:
-        Logger instance
-    """
-    return logging.getLogger(name)

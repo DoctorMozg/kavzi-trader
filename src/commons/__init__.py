@@ -6,7 +6,7 @@ KavziTrader platform.
 """
 
 from src.commons.datetime_schema import DateTimeWithTimezoneSchema, TimestampedSchema
-from src.commons.logging import get_logger, setup_logging
+from src.commons.logging import setup_logging
 from src.commons.time_utility import utc_now
 
 __all__ = [
@@ -14,5 +14,4 @@ __all__ = [
     "DateTimeWithTimezoneSchema",
     "TimestampedSchema",
     "setup_logging",
-    "get_logger",
 ]
