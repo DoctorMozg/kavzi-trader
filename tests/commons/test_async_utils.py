@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from src.commons.async_utils import to_async, to_sync
+from kavzi_trader.commons.async_utils import to_async, to_sync
 
 
 def test_to_async_decorator() -> None:

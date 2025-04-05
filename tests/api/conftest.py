@@ -12,10 +12,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from src.api.binance.client import BinanceClient
-from src.api.binance.historical.client import BinanceHistoricalDataClient
-from src.api.binance.websocket.client import BinanceWebsocketClient
-from src.commons.time_utility import utc_now
+from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.binance.historical.client import BinanceHistoricalDataClient
+from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
+from kavzi_trader.commons.time_utility import utc_now
 
 # Skip integration tests if no API keys are available
 skip_integration = pytest.mark.skipif(

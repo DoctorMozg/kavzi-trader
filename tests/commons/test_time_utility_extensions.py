@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.commons.time_utility import parse_date_range, parse_date_string
+from kavzi_trader.commons.time_utility import parse_date_range, parse_date_string
 
 
 class TestTimeUtilityExtensions:

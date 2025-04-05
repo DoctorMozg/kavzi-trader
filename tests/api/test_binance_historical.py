@@ -11,14 +11,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.api.binance.historical.batch import (
+from kavzi_trader.api.binance.historical.batch import (
     BatchProcessor,
     DownloadBatchConfigSchema,
     SymbolicDownloadBatchConfigSchema,
 )
-from src.api.binance.historical.client import BinanceHistoricalDataClient
-from src.api.common.models import CandlestickSchema, TradeSchema
-from src.commons.time_utility import utc_now
+from kavzi_trader.api.binance.historical.client import BinanceHistoricalDataClient
+from kavzi_trader.api.common.models import CandlestickSchema, TradeSchema
+from kavzi_trader.commons.time_utility import utc_now
 
 
 def test_init(historical_client: BinanceHistoricalDataClient) -> None:

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.api.binance.historical.client import BinanceHistoricalDataClient
+from kavzi_trader.api.binance.historical.client import BinanceHistoricalDataClient
 
 
 @pytest.fixture()

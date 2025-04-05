@@ -11,11 +11,11 @@ from unittest.mock import AsyncMock, MagicMock
 import click
 import pytest
 
-from src.api.binance.historical.batch import (
+from kavzi_trader.api.binance.historical.batch import (
     DownloadBatchConfigSchema,
     SymbolicDownloadBatchConfigSchema,
 )
-from src.logic.historical.download_service import HistoricalDownloadService
+from kavzi_trader.logic.historical.download_service import HistoricalDownloadService
 
 
 class TestHistoricalDownloadService:

@@ -9,10 +9,10 @@ from decimal import Decimal
 
 import pytest
 
-from src.api.binance.client import BinanceClient
-from src.api.common.exceptions import APIError
-from src.api.common.models import CandlestickSchema
-from src.commons.time_utility import utc_now
+from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.common.exceptions import APIError
+from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.commons.time_utility import utc_now
 
 
 async def test_ping(binance_testnet_client: BinanceClient) -> None:

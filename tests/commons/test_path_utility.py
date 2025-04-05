@@ -7,7 +7,7 @@ This module contains tests for the path utility functions used for handling file
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.commons.path_utility import create_output_path, ensure_directory_exists
+from kavzi_trader.commons.path_utility import create_output_path, ensure_directory_exists
 
 
 class TestPathUtility:

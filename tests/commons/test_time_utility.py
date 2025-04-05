@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.commons.time_utility import (
+from kavzi_trader.commons.time_utility import (
     MILLISECONDS_IN_SECOND,
     date_to_milliseconds,
     milliseconds_to_datetime,

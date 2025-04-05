@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.api.binance.schemas.data_dicts import KlineData, TickerData, TradeData
-from src.api.binance.websocket.client import BinanceWebsocketClient
-from src.api.binance.websocket.handlers.depth import DepthStreamHandler
-from src.api.binance.websocket.handlers.klines import KlineStreamHandler
-from src.api.binance.websocket.handlers.ticker import TickerStreamHandler
-from src.api.binance.websocket.handlers.trades import TradeStreamHandler
-from src.api.binance.websocket.handlers.user_data import UserDataStreamHandler
-from src.api.binance.websocket.stream_manager import StreamManager
+from kavzi_trader.api.binance.schemas.data_dicts import KlineData, TickerData, TradeData
+from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
+from kavzi_trader.api.binance.websocket.handlers.depth import DepthStreamHandler
+from kavzi_trader.api.binance.websocket.handlers.klines import KlineStreamHandler
+from kavzi_trader.api.binance.websocket.handlers.ticker import TickerStreamHandler
+from kavzi_trader.api.binance.websocket.handlers.trades import TradeStreamHandler
+from kavzi_trader.api.binance.websocket.handlers.user_data import UserDataStreamHandler
+from kavzi_trader.api.binance.websocket.stream_manager import StreamManager
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -404,7 +404,7 @@ async def test_base_handler_unsubscribe() -> None:
         "src.api.binance.websocket.handlers.base.BaseStreamHandler.__abstractmethods__",
         set(),
     ):
-        from src.api.binance.websocket.handlers.base import BaseStreamHandler
+        from kavzi_trader.api.binance.websocket.handlers.base import BaseStreamHandler
 
         handler = BaseStreamHandler(mock_manager)  # type: ignore
 
