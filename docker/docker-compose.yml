@@ -38,10 +38,13 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: kavzitrader
+      POSTGRES_INITDB_ARGS: "--shared-buffers=6GB"
     ports:
       - "5432:5432"
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
+    shm_size: 6gb
+    mem_limit: 8gb
 
 volumes:
   redis_data:
