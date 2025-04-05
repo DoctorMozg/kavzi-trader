@@ -14,6 +14,7 @@ from src.api.binance.historical.batch import (
     SymbolicDownloadBatchConfigSchema,
 )
 from src.api.binance.historical.client import BinanceHistoricalDataClient
+from src.commons.async_utils import to_sync
 from src.commons.logging import get_logger
 from src.commons.time_utility import parse_date_range, utc_now
 from src.config import AppConfig
@@ -58,6 +59,7 @@ def historical() -> None:
     help="Maximum number of concurrent download workers",
 )
 @click.pass_context
+@to_sync
 async def fetch_historical(
     ctx: click.Context,
     symbol: str,
@@ -146,6 +148,7 @@ async def fetch_historical(
     help="Maximum number of concurrent download workers",
 )
 @click.pass_context
+@to_sync
 async def fetch_trades(
     ctx: click.Context,
     symbol: str,
@@ -243,6 +246,7 @@ async def fetch_trades(
     help="Maximum number of concurrent download workers",
 )
 @click.pass_context
+@to_sync
 async def fetch_multiple(
     ctx: click.Context,
     symbols: str,
@@ -358,6 +362,7 @@ async def fetch_multiple(
     help="Maximum number of concurrent download workers",
 )
 @click.pass_context
+@to_sync
 async def fetch_all(
     ctx: click.Context,
     interval: str,
@@ -473,6 +478,7 @@ async def fetch_all(
     help="Maximum number of concurrent download workers",
 )
 @click.pass_context
+@to_sync
 async def update_historical(
     ctx: click.Context,
     symbol: str | None,

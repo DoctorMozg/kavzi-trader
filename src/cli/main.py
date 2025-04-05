@@ -27,7 +27,9 @@ from src.cli.core import HydraOptionsGroup, setup_cli_environment
 from src.commons.logging import setup_logging
 
 # Initialize logger
-logger = setup_logging(name="kavzitrader")
+logger = setup_logging(
+    name="kavzitrader",
+)
 
 
 @click.group(cls=HydraOptionsGroup)

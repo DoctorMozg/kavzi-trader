@@ -67,6 +67,7 @@ async def create_async_db_engine(db_url: URL, echo: bool = False) -> AsyncEngine
     Returns:
         SQLAlchemy AsyncEngine
     """
+    logger.debug(f"Creating async engine for {db_url}")
     return create_async_engine(
         db_url,
         echo=echo,
@@ -91,6 +92,10 @@ class AsyncDatabase:
             db_url: Database URL
             echo: Whether to echo SQL statements
         """
+        db_url_str = db_url.render_as_string(hide_password=True)
+        logger.info(
+            f"Async database connection to {db_url_str} initializing",
+        )
         self.engine = create_async_engine(
             db_url,
             echo=echo,
@@ -103,9 +108,8 @@ class AsyncDatabase:
             bind=self.engine,
             expire_on_commit=False,
         )
-        db_url_str = db_url.render_as_string(hide_password=True)
         logger.info(
-            f"Async database connection established to {db_url_str}",
+            f"Async database connection to {db_url_str} established",
         )
 
     async def get_session(self) -> AsyncSession:

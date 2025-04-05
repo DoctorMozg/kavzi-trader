@@ -1,0 +1,18 @@
+dialect: postgresql
+driver: asyncpg
+host: ${oc.env:DB_HOST,127.0.0.1}
+port: ${oc.env:DB_PORT,5432}
+username: ${oc.env:DB_USER,postgres}
+password: ${oc.env:DB_PASSWORD,postgres}
+database: ${oc.env:DB_NAME,kavzitrader}
+pool_size: 10
+max_overflow: 20
+echo: false  # Set to true for SQL query logging
+echo_pool: false
+options:
+  connect_timeout: 10
+  client_encoding: 'utf8'
+  application_name: 'kavzitrader'
+
+# SQLAlchemy URI will be constructed from above parameters
+# Format: {dialect}+{driver}://{username}:{password}@{host}:{port}/{database}

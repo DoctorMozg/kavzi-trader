@@ -114,12 +114,12 @@ def setup_cli_environment(
                 from sqlalchemy import URL
 
                 db_url = URL.create(
-                    drivername="postgresql+asyncpg",
-                    username=app_config.database.user,
+                    drivername=f"{app_config.database.dialect}+{app_config.database.driver}",
+                    username=app_config.database.username,
                     password=app_config.database.password,
                     host=app_config.database.host,
                     port=app_config.database.port,
-                    database=app_config.database.name,
+                    database=app_config.database.database,
                 )
 
             # Initialize database connection

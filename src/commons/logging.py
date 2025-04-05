@@ -15,8 +15,8 @@ from src.config import AppConfig
 
 def setup_logging(
     config: AppConfig | None = None,
-    log_level: str | None = None,
-    log_file: str | Path | None = None,
+    log_level: str = "DEBUG",
+    log_file: Path | None = None,
     console: bool = True,
     name: str = "kavzitrader",
 ) -> logging.Logger:
@@ -41,7 +41,6 @@ def setup_logging(
         logger.handlers.clear()
 
     # Determine log level
-    level_str = log_level or (config.system.log_level if config else "INFO")
     level_map = {
         "DEBUG": logging.DEBUG,
         "INFO": logging.INFO,
@@ -49,7 +48,7 @@ def setup_logging(
         "ERROR": logging.ERROR,
         "CRITICAL": logging.CRITICAL,
     }
-    level = level_map.get(level_str, logging.DEBUG)
+    level = level_map.get(log_level, logging.DEBUG)
     logger.setLevel(level)
 
     # Define formatter
@@ -91,7 +90,7 @@ def setup_logging(
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
-    logger.info(f"Logging initialized with level {level_str}")
+    logger.info(f"Logging initialized with level {log_level}")
 
     # If dotenv is installed, log environment variables (except sensitive ones)
     try:
@@ -104,7 +103,6 @@ def setup_logging(
         excluded_vars = {
             "BINANCE_API_KEY",
             "BINANCE_API_SECRET",
-            "DB_PASSWORD",
             "SECRET_KEY",
         }
         env_vars = {

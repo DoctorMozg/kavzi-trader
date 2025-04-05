@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = 'fa708376b6c3'
-down_revision: Union[str, None] = '21f763952ce5'
+down_revision: Union[str, None] = '8faf7fd2ac6e'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -41,7 +41,7 @@ def upgrade() -> None:
             "name": "market_data", 
             "time_column": "timestamp",
             "chunk_interval": "1 day",
-            "compress_after": "7 days",
+            "compress_after": "30 days",
             "has_retention": False
         },
         {
@@ -62,7 +62,7 @@ def upgrade() -> None:
         SELECT create_hypertable(
             '{table["name"]}', 
             '{table["time_column"]}', 
-            if_not_exists => TRUE,
+            if_not_exists => TRUE,            
             chunk_time_interval => interval '{table["chunk_interval"]}'
         );
         """))

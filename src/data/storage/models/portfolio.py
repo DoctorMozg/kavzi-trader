@@ -30,6 +30,7 @@ class PortfolioModel(BaseModel):
 
     __tablename__ = "portfolios"
 
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
@@ -113,6 +114,7 @@ class PortfolioAssetModel(BaseModel):
 
     __tablename__ = "portfolio_assets"
 
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     portfolio_id: Mapped[int] = mapped_column(
         ForeignKey("portfolios.id", ondelete="CASCADE"),
         nullable=False,

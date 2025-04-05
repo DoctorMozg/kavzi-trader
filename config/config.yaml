@@ -1,7 +1,7 @@
 # Main configuration file for KavziTrader
 defaults:
   - system/logging: default
-  - system/database: default
+  - database: default
   - _self_
 
 # System settings

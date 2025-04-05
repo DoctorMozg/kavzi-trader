@@ -11,11 +11,10 @@ from decimal import Decimal
 from sqlalchemy import (
     Boolean,
     DateTime,
-    ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
-    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import NUMERIC
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -32,6 +31,7 @@ class MarketDataModel(BaseModel):
 
     __tablename__ = "market_data"
 
+    # Keep the composite primary key
     timestamp: Mapped[datetime] = mapped_column(
         DateTime,
         primary_key=True,
@@ -50,6 +50,7 @@ class MarketDataModel(BaseModel):
         nullable=False,
         index=True,
     )
+
     opened: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
     high: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
     low: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
@@ -123,6 +124,15 @@ class TradeDataModel(BaseModel):
         index=True,
     )
     trade_id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+
+    # Additional id field for internal use
+    id: Mapped[int] = mapped_column(
+        Integer,
+        autoincrement=True,
+        nullable=False,
+        index=True,
+    )
+
     price: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(NUMERIC(24, 8), nullable=False)
     quote_quantity: Mapped[Decimal] = mapped_column(NUMERIC(24, 8), nullable=False)
@@ -150,30 +160,52 @@ class FeatureModel(BaseModel):
 
     __tablename__ = "features"
 
-    market_data_id: Mapped[int] = mapped_column(
-        ForeignKey("market_data.id", ondelete="CASCADE"),
+    # Link to market_data via timestamp, symbol, interval
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime,
+        primary_key=True,
         nullable=False,
-        index=True,
     )
-    feature_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        primary_key=True,
+        nullable=False,
+    )
+    interval: Mapped[str] = mapped_column(
+        String(10),
+        primary_key=True,
+        nullable=False,
+    )
+    feature_name: Mapped[str] = mapped_column(
+        String(100),
+        primary_key=True,
+        nullable=False,
+    )
     feature_value: Mapped[Decimal] = mapped_column(NUMERIC(24, 8), nullable=False)
 
     # Relationships
     market_data: Mapped["MarketDataModel"] = relationship(
         "MarketDataModel",
         back_populates="features",
+        primaryjoin="and_(FeatureModel.timestamp==MarketDataModel.timestamp, "
+        "FeatureModel.symbol==MarketDataModel.symbol, "
+        "FeatureModel.interval==MarketDataModel.interval)",
     )
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint(
-            "market_data_id",
-            "feature_name",
-            name="uix_feature_market_data_id_feature_name",
+        # Foreign key constraint at the table level
+        ForeignKeyConstraint(
+            ["timestamp", "symbol", "interval"],
+            ["market_data.timestamp", "market_data.symbol", "market_data.interval"],
+            ondelete="CASCADE",
+            name="fk_features_market_data",
         ),
         Index(
-            "ix_feature_market_data_id_feature_name",
-            "market_data_id",
+            "ix_feature_market_data_feature_name",
+            "timestamp",
+            "symbol",
+            "interval",
             "feature_name",
         ),
     )
@@ -181,20 +213,30 @@ class FeatureModel(BaseModel):
     @classmethod
     def create_batch(
         cls,
-        market_data_id: int,
+        timestamp: datetime,
+        symbol: str,
+        interval: str,
         features: dict[str, float],
     ) -> list["FeatureModel"]:
         """
         Create multiple feature models from a dictionary.
 
         Args:
-            market_data_id: ID of the market data record
+            timestamp: Timestamp of the market data point
+            symbol: Trading pair symbol
+            interval: Kline interval
             features: Dictionary of feature name -> value
 
         Returns:
             List of feature model instances
         """
         return [
-            cls(market_data_id=market_data_id, feature_name=name, feature_value=value)
+            cls(
+                timestamp=timestamp,
+                symbol=symbol,
+                interval=interval,
+                feature_name=name,
+                feature_value=value,
+            )
             for name, value in features.items()
         ]
