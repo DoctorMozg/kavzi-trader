@@ -20,6 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import NUMERIC
 from sqlalchemy.orm import Mapped, mapped_column
 
+from src.commons.time_utility import utc_now
 from src.data.storage.models.base import BaseModel
 
 
@@ -34,7 +35,7 @@ class MarketDataModel(BaseModel):
 
     # Keep the composite primary key
     timestamp: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         primary_key=True,
         nullable=False,
         index=True,
@@ -111,7 +112,7 @@ class TradeDataModel(BaseModel):
     __tablename__ = "trade_data"
 
     timestamp: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         primary_key=True,
         nullable=False,
         index=True,

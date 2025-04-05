@@ -32,10 +32,8 @@ class SystemLogModel(BaseModel):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     details: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
-    # Override BaseModel id and created_at to make them both primary keys
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         primary_key=True,
         nullable=False,
     )

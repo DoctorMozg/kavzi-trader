@@ -19,6 +19,14 @@ from src.data.storage.models.portfolio import PortfolioAssetModel, PortfolioMode
 # System models
 from src.data.storage.models.system import SystemLogModel
 
+# Trading models
+from src.data.storage.models.trading import (
+    PerformanceModel,
+    StrategyModel,
+    TradeModel,
+    TradingPlanModel,
+)
+
 # Export all models for easy importing
 __all__ = [
     # Base models
@@ -31,4 +39,9 @@ __all__ = [
     "PortfolioAssetModel",
     # System models
     "SystemLogModel",
+    # Trading models
+    "StrategyModel",
+    "TradingPlanModel",
+    "TradeModel",
+    "PerformanceModel",
 ]

@@ -42,11 +42,6 @@ class StrategyModel(BaseModel):
         index=True,
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    model_id: Mapped[int | None] = mapped_column(
-        ForeignKey("models.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     parameters: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean,
@@ -182,11 +177,15 @@ class TradeModel(BaseModel):
     commission: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     order_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     entry_time: Mapped[datetime | None] = mapped_column(
-        DateTime,
-        nullable=True,
+        DateTime(timezone=True),
+        nullable=False,
+        primary_key=True,
         index=True,
     )
-    exit_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    exit_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     entry_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     exit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_paper_trading: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
@@ -249,8 +248,14 @@ class PerformanceModel(BaseModel):
         nullable=True,
         index=True,
     )
-    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    start_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    end_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
     total_trades: Mapped[int] = mapped_column(Integer, nullable=False)
     winning_trades: Mapped[int] = mapped_column(Integer, nullable=False)
     losing_trades: Mapped[int] = mapped_column(Integer, nullable=False)

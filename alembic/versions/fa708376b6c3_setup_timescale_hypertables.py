@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = 'fa708376b6c3'
-down_revision: Union[str, None] = '6a43465030be'
+down_revision: Union[str, None] = '3b2fec8813bf'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -25,9 +25,8 @@ def upgrade() -> None:
     
     This migration:
     1. Ensures TimescaleDB extension is installed
-    2. Converts market_data table to a hypertable
-    3. Sets up compression policy for market_data
-    4. Converts system_logs table to a hypertable with retention policy
+    2. Converts all time-series tables to hypertables
+    3. Sets up compression and retention policies
     """
     # Create connection
     conn = op.get_bind()
@@ -37,6 +36,7 @@ def upgrade() -> None:
     
     # Define hypertable settings for each time-series table
     hypertables = [
+        # Market data tables
         {
             "name": "market_data", 
             "time_column": "timestamp",
@@ -53,6 +53,7 @@ def upgrade() -> None:
             "has_retention": False,
             "partitioning_columns": ["symbol"]
         },
+        # System tables
         {
             "name": "system_logs", 
             "time_column": "created_at",
@@ -61,8 +62,24 @@ def upgrade() -> None:
             "retention_period": "180 days",
             "has_retention": True,
             "partitioning_columns": ["id"]
+        },
+        # Trading tables
+        {
+            "name": "trades",
+            "time_column": "entry_time",
+            "chunk_interval": "1 day",
+            "compress_after": "30 days",
+            "has_retention": False,
+            "partitioning_columns": ["symbol"]
+        },
+        {
+            "name": "performance",
+            "time_column": "start_time",
+            "chunk_interval": "1 week",
+            "compress_after": "90 days",
+            "has_retention": False,
+            "partitioning_columns": ["strategy_id"]
         }
-        # Add other time-series tables here as needed
     ]
     
     # Setup each hypertable
@@ -137,7 +154,7 @@ def downgrade() -> None:
     
     # Define tables to remove TimescaleDB settings from
     tables_with_retention = ["system_logs"]
-    all_tables = ["market_data", "trade_data", "system_logs"]
+    all_tables = ["market_data", "trade_data", "system_logs", "trades", "performance"]
     
     # Remove retention policies where applicable
     for table in tables_with_retention:
