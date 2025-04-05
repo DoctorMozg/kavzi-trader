@@ -9,7 +9,6 @@ from src.data.storage.models.base import BaseModel
 
 # Market data models
 from src.data.storage.models.market_data import (
-    FeatureModel,
     MarketDataModel,
     TradeDataModel,
 )
@@ -24,10 +23,9 @@ from src.data.storage.models.system import SystemLogModel
 __all__ = [
     # Base models
     "BaseModel",
-    # Market data models
+    # Market data models (Time-series)
     "MarketDataModel",
     "TradeDataModel",
-    "FeatureModel",
     # Portfolio models
     "PortfolioModel",
     "PortfolioAssetModel",

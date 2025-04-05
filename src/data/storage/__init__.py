@@ -23,7 +23,6 @@ from src.data.storage.database_async import (
 # Re-export SQLAlchemy models
 from src.data.storage.models import (
     BaseModel,
-    FeatureModel,
     MarketDataModel,
     PortfolioAssetModel,
     PortfolioModel,
@@ -43,11 +42,8 @@ __all__ = [
     # SQLAlchemy models
     "BaseModel",
     "MarketDataModel",
-    "FeatureModel",
     "TradeDataModel",
-    "PerformanceModel",
     "PortfolioModel",
     "PortfolioAssetModel",
     "SystemLogModel",
-    "SystemConfigModel",
 ]

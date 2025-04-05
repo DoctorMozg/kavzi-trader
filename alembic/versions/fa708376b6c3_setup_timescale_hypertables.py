@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = 'fa708376b6c3'
-down_revision: Union[str, None] = '8faf7fd2ac6e'
+down_revision: Union[str, None] = '6a43465030be'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -42,7 +42,16 @@ def upgrade() -> None:
             "time_column": "timestamp",
             "chunk_interval": "1 day",
             "compress_after": "30 days",
-            "has_retention": False
+            "has_retention": False,
+            "partitioning_columns": ["symbol", "interval"]
+        },
+        {
+            "name": "trade_data", 
+            "time_column": "timestamp",
+            "chunk_interval": "1 day",
+            "compress_after": "30 days",
+            "has_retention": False,
+            "partitioning_columns": ["symbol"]
         },
         {
             "name": "system_logs", 
@@ -50,22 +59,39 @@ def upgrade() -> None:
             "chunk_interval": "1 day",
             "compress_after": "30 days",
             "retention_period": "180 days",
-            "has_retention": True
+            "has_retention": True,
+            "partitioning_columns": ["id"]
         }
         # Add other time-series tables here as needed
     ]
     
     # Setup each hypertable
     for table in hypertables:
-        # Convert to hypertable
-        conn.execute(text(f"""
+        # Get primary space partitioning column (first in the list)
+        primary_space_column = table["partitioning_columns"][0] if table["partitioning_columns"] else None
+        
+        # Convert to hypertable with first partitioning column if available
+        hypertable_sql = f"""
         SELECT create_hypertable(
             '{table["name"]}', 
-            '{table["time_column"]}', 
+            '{table["time_column"]}',
+            {f"partitioning_column => '{primary_space_column}', number_partitions => 4," if primary_space_column else ""}
             if_not_exists => TRUE,            
             chunk_time_interval => interval '{table["chunk_interval"]}'
         );
-        """))
+        """
+        conn.execute(text(hypertable_sql))
+        
+        # Add additional dimensions for any remaining partitioning columns
+        if len(table["partitioning_columns"]) > 1:
+            for column in table["partitioning_columns"][1:]:
+                conn.execute(text(f"""
+                SELECT add_dimension(
+                    '{table["name"]}', 
+                    '{column}',
+                    number_partitions => 4
+                );
+                """))
         
         # Enable compression
         conn.execute(text(f"""
@@ -111,7 +137,7 @@ def downgrade() -> None:
     
     # Define tables to remove TimescaleDB settings from
     tables_with_retention = ["system_logs"]
-    all_tables = ["market_data", "system_logs"]
+    all_tables = ["market_data", "trade_data", "system_logs"]
     
     # Remove retention policies where applicable
     for table in tables_with_retention:

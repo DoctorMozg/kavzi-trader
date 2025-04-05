@@ -1,8 +1,8 @@
 """initial
 
-Revision ID: 8faf7fd2ac6e
+Revision ID: 6a43465030be
 Revises: 
-Create Date: 2025-04-05 04:42:24.879267
+Create Date: 2025-04-05 18:03:03.980516
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '8faf7fd2ac6e'
+revision: str = '6a43465030be'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -34,9 +34,11 @@ def upgrade() -> None:
     sa.Column('trades', sa.Integer(), nullable=True),
     sa.Column('taker_buy_base_volume', sa.NUMERIC(precision=24, scale=8), nullable=True),
     sa.Column('taker_buy_quote_volume', sa.NUMERIC(precision=24, scale=8), nullable=True),
+    sa.Column('features_data', sa.JSON(), nullable=True),
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.PrimaryKeyConstraint('timestamp', 'symbol', 'interval')
+    sa.PrimaryKeyConstraint('timestamp', 'symbol', 'interval', 'id')
     )
     op.create_index(op.f('ix_market_data_interval'), 'market_data', ['interval'], unique=False)
     op.create_index(op.f('ix_market_data_symbol'), 'market_data', ['symbol'], unique=False)
@@ -72,7 +74,6 @@ def upgrade() -> None:
     op.create_table('trade_data',
     sa.Column('timestamp', sa.DateTime(), nullable=False),
     sa.Column('symbol', sa.String(length=20), nullable=False),
-    sa.Column('trade_id', sa.Integer(), nullable=False),
     sa.Column('price', sa.NUMERIC(precision=18, scale=8), nullable=False),
     sa.Column('quantity', sa.NUMERIC(precision=24, scale=8), nullable=False),
     sa.Column('quote_quantity', sa.NUMERIC(precision=24, scale=8), nullable=False),
@@ -83,29 +84,11 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.PrimaryKeyConstraint('timestamp', 'symbol', 'trade_id')
+    sa.PrimaryKeyConstraint('timestamp', 'symbol', 'id')
     )
-    op.create_index(op.f('ix_trade_data_id'), 'trade_data', ['id'], unique=False)
     op.create_index(op.f('ix_trade_data_symbol'), 'trade_data', ['symbol'], unique=False)
     op.create_index('ix_trade_data_symbol_timestamp', 'trade_data', ['symbol', 'timestamp'], unique=False)
     op.create_index(op.f('ix_trade_data_timestamp'), 'trade_data', ['timestamp'], unique=False)
-    op.create_table('features',
-    sa.Column('timestamp', sa.DateTime(), nullable=False),
-    sa.Column('symbol', sa.String(length=20), nullable=False),
-    sa.Column('interval', sa.String(length=10), nullable=False),
-    sa.Column('feature_name', sa.String(length=100), nullable=False),
-    sa.Column('feature_value', sa.NUMERIC(precision=24, scale=8), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.PrimaryKeyConstraint('timestamp', 'symbol', 'interval', 'feature_name'),
-    sa.ForeignKeyConstraint(
-        ['timestamp', 'symbol', 'interval'],
-        ['market_data.timestamp', 'market_data.symbol', 'market_data.interval'],
-        name='fk_features_market_data',
-        ondelete='CASCADE'
-    )
-    )
-    op.create_index('ix_feature_market_data_feature_name', 'features', ['timestamp', 'symbol', 'interval', 'feature_name'], unique=False)
     op.create_table('portfolio_assets',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('portfolio_id', sa.Integer(), nullable=False),
@@ -130,12 +113,9 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_portfolio_assets_portfolio_id'), table_name='portfolio_assets')
     op.drop_index('ix_portfolio_asset_portfolio_id_asset', table_name='portfolio_assets')
     op.drop_table('portfolio_assets')
-    op.drop_index('ix_feature_market_data_feature_name', table_name='features')
-    op.drop_table('features')
     op.drop_index(op.f('ix_trade_data_timestamp'), table_name='trade_data')
     op.drop_index('ix_trade_data_symbol_timestamp', table_name='trade_data')
     op.drop_index(op.f('ix_trade_data_symbol'), table_name='trade_data')
-    op.drop_index(op.f('ix_trade_data_id'), table_name='trade_data')
     op.drop_table('trade_data')
     op.drop_index(op.f('ix_system_logs_log_level'), table_name='system_logs')
     op.drop_index(op.f('ix_system_logs_component'), table_name='system_logs')

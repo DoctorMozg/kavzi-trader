@@ -8,16 +8,17 @@ These models map to the database tables for storing market data and features.
 from datetime import datetime
 from decimal import Decimal
 
+from pyparsing import Any
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
-    ForeignKeyConstraint,
     Index,
     Integer,
     String,
 )
 from sqlalchemy.dialects.postgresql import NUMERIC
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from src.data.storage.models.base import BaseModel
 
@@ -66,12 +67,10 @@ class MarketDataModel(BaseModel):
         NUMERIC(24, 8),
         nullable=True,
     )
-
-    # Relationships
-    features: Mapped[list["FeatureModel"]] = relationship(
-        "FeatureModel",
-        back_populates="market_data",
-        cascade="all, delete-orphan",
+    features_data: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
+        default=None,
     )
 
     # Constraints
@@ -123,15 +122,6 @@ class TradeDataModel(BaseModel):
         nullable=False,
         index=True,
     )
-    trade_id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
-
-    # Additional id field for internal use
-    id: Mapped[int] = mapped_column(
-        Integer,
-        autoincrement=True,
-        nullable=False,
-        index=True,
-    )
 
     price: Mapped[Decimal] = mapped_column(NUMERIC(18, 8), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(NUMERIC(24, 8), nullable=False)
@@ -149,94 +139,3 @@ class TradeDataModel(BaseModel):
             "timestamp",
         ),
     )
-
-
-class FeatureModel(BaseModel):
-    """
-    SQLAlchemy model for features table.
-
-    Stores calculated features for market data points.
-    """
-
-    __tablename__ = "features"
-
-    # Link to market_data via timestamp, symbol, interval
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime,
-        primary_key=True,
-        nullable=False,
-    )
-    symbol: Mapped[str] = mapped_column(
-        String(20),
-        primary_key=True,
-        nullable=False,
-    )
-    interval: Mapped[str] = mapped_column(
-        String(10),
-        primary_key=True,
-        nullable=False,
-    )
-    feature_name: Mapped[str] = mapped_column(
-        String(100),
-        primary_key=True,
-        nullable=False,
-    )
-    feature_value: Mapped[Decimal] = mapped_column(NUMERIC(24, 8), nullable=False)
-
-    # Relationships
-    market_data: Mapped["MarketDataModel"] = relationship(
-        "MarketDataModel",
-        back_populates="features",
-        primaryjoin="and_(FeatureModel.timestamp==MarketDataModel.timestamp, "
-        "FeatureModel.symbol==MarketDataModel.symbol, "
-        "FeatureModel.interval==MarketDataModel.interval)",
-    )
-
-    # Constraints
-    __table_args__ = (
-        # Foreign key constraint at the table level
-        ForeignKeyConstraint(
-            ["timestamp", "symbol", "interval"],
-            ["market_data.timestamp", "market_data.symbol", "market_data.interval"],
-            ondelete="CASCADE",
-            name="fk_features_market_data",
-        ),
-        Index(
-            "ix_feature_market_data_feature_name",
-            "timestamp",
-            "symbol",
-            "interval",
-            "feature_name",
-        ),
-    )
-
-    @classmethod
-    def create_batch(
-        cls,
-        timestamp: datetime,
-        symbol: str,
-        interval: str,
-        features: dict[str, float],
-    ) -> list["FeatureModel"]:
-        """
-        Create multiple feature models from a dictionary.
-
-        Args:
-            timestamp: Timestamp of the market data point
-            symbol: Trading pair symbol
-            interval: Kline interval
-            features: Dictionary of feature name -> value
-
-        Returns:
-            List of feature model instances
-        """
-        return [
-            cls(
-                timestamp=timestamp,
-                symbol=symbol,
-                interval=interval,
-                feature_name=name,
-                feature_value=value,
-            )
-            for name, value in features.items()
-        ]
