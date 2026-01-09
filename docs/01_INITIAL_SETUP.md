@@ -10,31 +10,32 @@ KavziTrader is an automated trading platform designed to leverage Large Language
 |----------|-------------|
 | [01_INITIAL_SETUP.md](01_INITIAL_SETUP.md) | This document - project overview and setup |
 | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) | System architecture and Brain-Spine paradigm |
-| [03_LLM_ARCHITECTURE.md](03_LLM_ARCHITECTURE.md) | LLM integration with PydanticAI + Jinja2 prompts |
+| [03_LLM_ARCHITECTURE.md](03_LLM_ARCHITECTURE.md) | LLM integration with tiered agents + Jinja2 prompts |
 | [04_CODING_STANDARDS.md](04_CODING_STANDARDS.md) | Coding standards and best practices |
 | [05_IMPLEMENTATION_PLAN.md](05_IMPLEMENTATION_PLAN.md) | Phased implementation roadmap |
-| [06_SPINE_IMPLEMENTATION.md](06_SPINE_IMPLEMENTATION.md) | Execution layer, events, and queues |
+| [06_SPINE_IMPLEMENTATION.md](06_SPINE_IMPLEMENTATION.md) | Execution layer, dynamic risk, position management |
+| [07_TRADING_PLAN.md](07_TRADING_PLAN.md) | Trading methodology, rules, and edge definition |
 | [EVENT_SOURCING.md](EVENT_SOURCING.md) | Event sourcing for trading operations |
 
 ## Core Components
 
 1. **LLM Integration (The Brain)**
-   - PydanticAI agent with Anthropic Claude Opus
+   - Tiered PydanticAI agents (Scout/Haiku → Analyst/Sonnet → Trader/Opus)
    - Structured decision output with validation firewall
-   - Chain-of-thought reasoning with confidence scoring
-   - Context window engineering for optimal LLM performance
+   - Confidence calibration for statistical accuracy tracking
+   - Context with order flow data (funding, OI, liquidations)
 
 2. **Binance API Integration (The Spine)**
    - Real-time WebSocket data streams
-   - Async order execution with OCO support
-   - Account state monitoring and reconciliation
-   - Historical data downloading for analysis
+   - Order flow data fetching (funding, OI, liquidations)
+   - Dynamic risk management with volatility-aware sizing
+   - Active position management (trailing, scaling, partials)
 
 3. **Trading Engine**
    - Producer-Consumer async architecture
-   - Risk validation with position limits
-   - Technical indicator calculation
-   - Event sourcing for audit trail
+   - Pre-trade filters (liquidity, news, funding, confluence)
+   - Technical indicators + order flow analysis
+   - Event sourcing for audit trail and confidence calibration
 
 4. **System Management**
    - Command-line interface for operations
@@ -55,17 +56,15 @@ KavziTrader is an automated trading platform designed to leverage Large Language
 - **python-binance**: Binance API client
 - **pydantic-ai**: LLM agent framework with type safety
 - **anthropic**: Anthropic Claude API client
+- **jinja2**: Prompt template engine
 - **Pandas/NumPy**: Data manipulation
 - **pandas-ta**: Technical analysis indicators
 - **Click**: CLI framework
 - **Pytest**: Testing framework
-- **Plotly**: Data visualization
 - **pydantic**: Data validation and settings management
-- **fastapi**: API development
 - **redis-py**: Redis client for caching and queues
 - **asyncpg/SQLAlchemy**: PostgreSQL for event store
 - **websockets**: WebSocket client for real-time data
-- **python-dotenv**: Environment variable management
 - **PyYAML**: YAML parsing
 
 ## Project Structure
@@ -110,28 +109,36 @@ system:
   results_dir: "results/"
   timezone: "UTC"
 
-# API credentials - these will be overridden by environment variables
+# API credentials
 api:
   binance:
     api_key: ${oc.env:BINANCE_API_KEY,""}
     api_secret: ${oc.env:BINANCE_API_SECRET,""}
     testnet: true
-    use_proxy: false
 
 # Trading configuration
 trading:
-  symbols:              # Trading pairs to monitor
-    - BTCUSDT
-    - ETHUSDT
-  interval: "15m"       # Candle interval for analysis
-  max_positions: 2      # Max concurrent positions
+  symbols: [BTCUSDT, ETHUSDT]
+  interval: "15m"
+  max_positions: 2
 
-# Risk management
+# Dynamic risk management
 risk:
-  max_risk_percent: 1.0          # Max % of account per trade
-  min_rr_ratio: 1.5              # Minimum risk/reward ratio
-  max_drawdown_percent: 5.0      # Max drawdown before stopping
-  max_position_size_percent: 10  # Max % of account per position
+  max_risk_percent: 1.0
+  min_rr_ratio: 1.5
+  max_drawdown_percent: 5.0
+  pause_new_entries_drawdown: 3.0
+  volatility_adjustments:
+    HIGH: 0.5
+    EXTREME: 0.25
+
+# Position management
+position_management:
+  trailing_stop_atr_multiplier: 1.5
+  break_even_trigger_atr: 1.0
+  partial_exit_at_percent: 0.5
+  partial_exit_size: 0.3
+  max_hold_time_hours: 24
 ```
 
 ### Environment Variables

@@ -204,6 +204,62 @@ kavzi_trader/
 
 ---
 
+### Phase 3.5: Pre-Trade Filters (Trading Plan)
+
+**Duration**: 1 week
+
+**Goal**: Implement algorithmic pre-filters from the Trading Plan to reduce LLM costs and enforce discipline.
+
+#### Tasks
+
+| Task | Priority | Effort | Dependencies |
+|------|----------|--------|--------------|
+| Implement liquidity awareness | High | 0.5 days | None |
+| Implement news event calendar | Medium | 1 day | External API |
+| Implement funding rate filter | High | 0.5 days | Order flow |
+| Implement correlation checker | Medium | 0.5 days | State manager |
+| Implement minimum movement filter | Medium | 0.5 days | ATR |
+| Implement algorithm confluence calculator | High | 1 day | All indicators |
+| Create PreTradeFilterChain | High | 0.5 days | All filters |
+| Write unit tests | High | 1 day | All |
+
+#### Deliverables
+
+```
+kavzi_trader/
+├── spine/
+│   └── filters/
+│       ├── __init__.py
+│       ├── liquidity.py         # Liquidity/time awareness
+│       ├── news.py              # News event filter
+│       ├── funding.py           # Funding rate filter
+│       ├── correlation.py       # Correlation filter
+│       ├── movement.py          # Minimum movement filter
+│       ├── confluence.py        # Algorithm confluence calc
+│       └── chain.py             # PreTradeFilterChain
+```
+
+#### Filter Priority Order
+
+| Order | Filter | Action |
+|-------|--------|--------|
+| 1 | Volatility | Skip if EXTREME or LOW regime |
+| 2 | News | Skip during major event window |
+| 3 | Funding | Block trades against extreme funding |
+| 4 | Movement | Skip doji/no-body candle |
+| 5 | Position | Skip if max positions reached |
+| 6 | Liquidity | Adjust size (weekend/off-hours) |
+| 7 | Correlation | Reduce size for correlated exposure |
+
+#### Success Criteria
+
+- [ ] 80%+ of candles filtered before LLM
+- [ ] Session filter blocks weekend/off-hours
+- [ ] Funding filter blocks crowded trades
+- [ ] Algorithm confluence score calculated correctly
+
+---
+
 ### Phase 4: LLM Integration Core (Tiered Agents)
 
 **Duration**: 2-3 weeks
@@ -514,16 +570,17 @@ kavzi_trader/
 | Phase 1.5: Order Flow | 1 week | 3 weeks |
 | Phase 2: State Management | 2 weeks | 5 weeks |
 | Phase 3: Dynamic Risk Management | 1.5 weeks | 6.5 weeks |
-| Phase 4: LLM Integration (Tiered) | 3 weeks | 9.5 weeks |
-| Phase 5: Position Management | 1.5 weeks | 11 weeks |
-| Phase 6: Execution Engine | 2 weeks | 13 weeks |
-| Phase 7: Event Sourcing | 2 weeks | 15 weeks |
-| Phase 8: Main Loop | 1 week | 16 weeks |
-| Phase 9: Paper Trading | 1 week | 17 weeks |
-| Phase 10: CLI Commands | 1 week | 18 weeks |
-| Phase 11: Monitoring | 1 week | 19 weeks |
+| Phase 3.5: Pre-Trade Filters | 1 week | 7.5 weeks |
+| Phase 4: LLM Integration (Tiered) | 3 weeks | 10.5 weeks |
+| Phase 5: Position Management | 1.5 weeks | 12 weeks |
+| Phase 6: Execution Engine | 2 weeks | 14 weeks |
+| Phase 7: Event Sourcing | 2 weeks | 16 weeks |
+| Phase 8: Main Loop | 1 week | 17 weeks |
+| Phase 9: Paper Trading | 1 week | 18 weeks |
+| Phase 10: CLI Commands | 1 week | 19 weeks |
+| Phase 11: Monitoring | 1 week | 20 weeks |
 
-**Total Estimated Duration**: 19 weeks (~5 months)
+**Total Estimated Duration**: 20 weeks (~5 months)
 
 ## Dependencies to Add
 
@@ -606,4 +663,5 @@ Each phase must meet:
 | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) | System design and Brain-Spine paradigm |
 | [03_LLM_ARCHITECTURE.md](03_LLM_ARCHITECTURE.md) | LLM integration with tiered agents |
 | [06_SPINE_IMPLEMENTATION.md](06_SPINE_IMPLEMENTATION.md) | Execution layer implementation details |
+| [07_TRADING_PLAN.md](07_TRADING_PLAN.md) | Trading methodology and rules |
 | [EVENT_SOURCING.md](EVENT_SOURCING.md) | Event store and audit trail |

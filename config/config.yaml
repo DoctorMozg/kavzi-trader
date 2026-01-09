@@ -30,7 +30,29 @@ trading:
 
 # Risk management
 risk:
-  max_risk_percent: 1.0          # Max % of account per trade
-  min_rr_ratio: 1.5              # Minimum risk/reward ratio
-  max_drawdown_percent: 5.0      # Max drawdown before stopping
-  max_position_size_percent: 10  # Max % of account per position
+  max_risk_percent: 1.0              # Max % of account per trade
+  min_rr_ratio: 1.5                  # Minimum risk/reward ratio
+  max_drawdown_percent: 5.0          # Max drawdown - close all positions
+  pause_new_entries_drawdown: 3.0    # Pause new trades at this drawdown
+  max_position_size_percent: 10      # Max % of account per position
+  
+  # Volatility-based position size adjustments
+  volatility_adjustments:
+    LOW: 1.0
+    NORMAL: 1.0
+    HIGH: 0.5
+    EXTREME: 0.25
+
+# Position management
+position_management:
+  trailing_stop_atr_multiplier: 1.5  # Trail at this ATR distance
+  break_even_trigger_atr: 1.0        # Move SL to BE after this ATR profit
+  partial_exit_at_percent: 0.5       # Take partial at % to TP
+  partial_exit_size: 0.3             # Exit this % of position
+  max_hold_time_hours: 24            # Max time before reassessment
+  scale_in_allowed: false            # Allow adding to positions
+
+# Order flow settings
+order_flow:
+  fetch_interval_s: 60               # How often to fetch funding/OI
+  funding_extreme_threshold: 2.0     # Z-score threshold for extreme funding
