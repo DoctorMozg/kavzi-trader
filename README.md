@@ -1,40 +1,36 @@
 # KavziTrader
 
-Neural Network-Based Crypto Trading Platform for Binance
+LLM-Based Crypto Trading Platform for Binance
 
 ## Overview
 
-KavziTrader is an advanced algorithmic trading platform designed for cryptocurrency trading on Binance. The platform leverages neural networks, specifically transformer-based models, to predict market movements and execute trades according to customizable trading plans.
+KavziTrader is an algorithmic trading platform designed for cryptocurrency trading on Binance. The platform implements a **Brain-Spine Architecture** that leverages Large Language Models (LLMs) for intelligent market analysis while maintaining deterministic, real-time execution.
+
+**Key Architectural Concepts:**
+- **The Brain**: PydanticAI agent with Claude Opus for probabilistic reasoning
+- **The Spine**: High-speed async execution layer for real-time operations
+- **Validation Firewall**: Multi-layer safety system preventing invalid trades
 
 ## Features
 
-- **Neural Network Models**: Transformer and CNN architectures for price prediction
+- **LLM Integration**: Use LLMs for market analysis and trading decisions
 - **Binance API Integration**: Real-time market data and trading execution
-- **Trading Plan System**: Declarative YAML-based trading strategy definitions
 - **Risk Management**: Comprehensive risk controls and position sizing
-- **Backtesting Engine**: Test strategies on historical data with detailed reporting
 - **Paper Trading**: Simulate trading without risking real assets
 - **Live Trading**: Execute trades on Binance with real assets
-- **Data Processing**: Feature engineering and preprocessing pipeline
 - **Visualization**: Comprehensive charts and performance metrics
 
 ## Project Structure
 
 ```
 kavzitrader/
-├── src/                    # Source code
+├── kavzi_trader/           # Source code
 │   ├── api/                # API connectors
-│   ├── models/             # Neural network models
-│   ├── data/               # Data management
-│   ├── trading/            # Trading systems
-│   ├── backtesting/        # Backtesting framework
-│   └── cli/                # Command line interfaces
+│   ├── cli/                # Command line interfaces
+│   ├── commons/            # Shared utilities
+│   └── config/             # Configuration management
 ├── config/                 # Configuration files
-├── trading_plans/          # User-defined trading plans
-├── scripts/                # Utility scripts
 ├── tests/                  # Test suite
-├── notebooks/              # Jupyter notebooks
-├── alembic/                # Database migrations
 └── docs/                   # Documentation
 ```
 
@@ -42,9 +38,8 @@ kavzitrader/
 
 ### Prerequisites
 
-- Python 3.11+
-- PostgreSQL database
-- Redis (optional, for real-time data)
+- Python 3.13+
+- Redis (for caching)
 
 ### Setup
 
@@ -54,74 +49,50 @@ kavzitrader/
    cd kavzitrader
    ```
 
-2. Create a virtual environment:
+2. Install dependencies using uv:
    ```
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-   ```
-   pip install -e .
+   uv sync
    ```
 
-4. Set up environment variables:
+3. Set up environment variables:
    ```
    cp .env.example .env
-   # Edit .env with your Binance API keys and database credentials
+   # Edit .env with your Binance API keys
    ```
 
-5. Initialize the database:
+4. Start Docker services:
    ```
-   python -m kavzitrader system setup --database
+   cd docker && docker-compose up -d
    ```
 
 ## Usage
 
-### Data Collection
+### CLI Commands
 
 ```bash
-# Fetch historical data
-kavzitrader data fetch --symbol BTCUSDT --interval 1h --days 30
+# View available commands
+uv run kavzitrader --help
 
-# Preprocess data with indicators
-kavzitrader data preprocess --symbol BTCUSDT --interval 1h --indicators "RSI,MACD,BB"
-```
+# Check system status
+uv run kavzitrader system
 
-### Model Training
-
-```bash
-# Train a model with custom hyperparameters
-kavzitrader model train --config-name transformer model.features="close,volume,rsi,macd"
-```
-
-### Backtesting
-
-```bash
-# Create a trading plan
-kavzitrader plan create --template trend_following --output btc_plan.yaml
-
-# Run a backtest
-kavzitrader backtest run --plan btc_plan.yaml backtesting.start_date=2023-01-01 backtesting.end_date=2023-06-30
-```
-
-### Trading
-
-```bash
-# Paper trading
-kavzitrader trade paper --plan btc_plan.yaml --capital 10000
-
-# Live trading (use with caution)
-kavzitrader trade live --plan btc_plan.yaml --check-balance
+# Check model/LLM status
+uv run kavzitrader model status
 ```
 
 ## Documentation
 
-For more detailed documentation, see:
+For detailed documentation, see:
 
-- [Initial Setup](docs/01_INITIAL_SETUP.md)
-- [Implementation Plan](docs/02_IMPLEMENTATION_PLAN.md)
-- [Database Schema](docs/03_DATABASE.md)
+| Document | Description |
+|----------|-------------|
+| [Initial Setup](docs/01_INITIAL_SETUP.md) | Project overview and configuration |
+| [Architecture](docs/02_ARCHITECTURE.md) | System architecture (Brain-Spine paradigm) |
+| [LLM Architecture](docs/03_LLM_ARCHITECTURE.md) | LLM integration with PydanticAI + Jinja2 |
+| [Coding Standards](docs/04_CODING_STANDARDS.md) | Code style and best practices |
+| [Implementation Plan](docs/05_IMPLEMENTATION_PLAN.md) | Phased development roadmap |
+| [Spine Implementation](docs/06_SPINE_IMPLEMENTATION.md) | Execution layer, events, and queues |
+| [Event Sourcing](docs/EVENT_SOURCING.md) | Audit trail and state management |
 
 ## Disclaimer
 

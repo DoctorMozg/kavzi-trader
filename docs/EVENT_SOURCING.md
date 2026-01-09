@@ -147,7 +147,7 @@ Command → Command Handler → Event(s) → Event Store
   "metadata": {
     "userId": "user-123",
     "timestamp": "2023-07-15T08:30:45Z",
-    "source": "trading_plan_btc_001",
+    "source": "strategy_btc_001",
     "correlationId": "corr-456"
   }
 }
@@ -171,7 +171,7 @@ Command → Command Handler → Event(s) → Event Store
   },
   "metadata": {
     "userId": "user-123",
-    "source": "trading_plan_btc_001",
+    "source": "strategy_btc_001",
     "correlationId": "corr-456",
     "exchange": "binance"
   }

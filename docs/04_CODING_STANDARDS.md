@@ -438,7 +438,7 @@ def execute_trade(order: Order) -> TradeResult:
 
 ### Pydantic Models
 
-Pydantic provides data validation and settings management through Python type annotations. It's particularly useful for configuration, API data validation, and database models.
+Pydantic provides data validation and settings management through Python type annotations. It's particularly useful for configuration and API data validation.
 
 **Note: KavziTrader exclusively uses Pydantic for all data modeling. The use of Python's dataclasses is NOT allowed in this project.**
 
@@ -456,7 +456,6 @@ Pydantic provides data validation and settings management through Python type an
 - For configuration management
 - For complex data validation
 - When working with external data sources
-- For database models (with appropriate ORM integration)
 
 #### Minimize Dictionary Usage
 
@@ -723,7 +722,7 @@ class TradingStrategyConfigSchema(BaseModel):
         return v
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for database storage."""
+        """Convert to dictionary for serialization."""
         return self.model_dump()
 
     @classmethod
@@ -733,55 +732,6 @@ class TradingStrategyConfigSchema(BaseModel):
         with open(path, "r") as f:
             data = json.load(f)
         return cls.model_validate(data)
-```
-
-#### Integration with SQLAlchemy
-
-```python
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
-
-class StrategyModel(Base):
-    """SQLAlchemy model for strategy database table."""
-
-    __tablename__ = "strategies"
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    description = Column(String, nullable=True)
-    enabled = Column(Boolean, default=True)
-    lookback_period = Column(Integer, nullable=False)
-    threshold = Column(Float, nullable=False)
-    max_position_size = Column(Float, nullable=False)
-    stop_loss_percent = Column(Float, nullable=False)
-    take_profit_percent = Column(Float, nullable=False)
-
-    def to_pydantic(self) -> TradingStrategyConfigSchema:
-        """Convert database model to Pydantic model."""
-        return TradingStrategyConfigSchema.model_validate(self)
-
-# Create a strategy
-strategy_config = TradingStrategyConfigSchema(
-    name="Momentum Strategy",
-    description="Follows market momentum with RSI indicator",
-    lookback_period=14,
-    max_position_size=1000.0,
-)
-
-# Save to database
-db_model = StrategyModel()
-# Populate the model with validated data
-for key, value in strategy_config.model_dump().items():
-    setattr(db_model, key, value)
-
-session.add(db_model)
-session.commit()
-
-# Reading from the database (always use model_validate instead of **)
-db_strategy = session.query(StrategyModel).filter_by(name="Momentum Strategy").first()
-pydantic_strategy = TradingStrategyConfigSchema.model_validate(db_strategy)
 ```
 
 #### Simple Data Models
@@ -954,23 +904,7 @@ class UserSchema(BaseModel):
     email: str
 ```
 
-2. **Database Classes**: All database-related classes should use the `Model` postfix.
-
-```python
-# ❌ WRONG
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    username = Column(String, nullable=False)
-
-# ✅ CORRECT
-class UserModel(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    username = Column(String, nullable=False)
-```
-
-3. **Service/Business Logic Classes**: Use descriptive names without specific postfixes.
+2. **Service/Business Logic Classes**: Use descriptive names without specific postfixes.
 
 ```python
 # Examples of correct service/business logic class names
@@ -998,10 +932,6 @@ src/
       user_schema.py       # Contains UserSchema
       order_schema.py      # Contains OrderSchema
       asset_schema.py      # Contains AssetSchema
-    database/
-      user_model.py        # Contains UserModel
-      order_model.py       # Contains OrderModel
-      asset_model.py       # Contains AssetModel
   services/
     auth_service.py        # Contains AuthService
     order_service.py       # Contains OrderService

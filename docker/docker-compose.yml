@@ -14,49 +14,5 @@ services:
       timeout: 5s
       retries: 5
 
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: kavzitrader-pgadmin
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@kavzitrader.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-    ports:
-      - "5050:80"
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    depends_on:
-      - timescaledb
-
-  # TimescaleDB for time-series data
-  timescaledb:
-    image: timescale/timescaledb-ha:pg17
-    container_name: kavzitrader-timescaledb
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: kavzitrader
-      # Let TimescaleDB handle extension installation automatically
-      TIMESCALEDB_TELEMETRY: 'off'
-    ports:
-      - "5432:5432"
-    volumes:
-      - timescaledb_data:/home/postgres/pgdata/data
-      - ./postgres/postgresql.conf:/home/postgres/pgdata/config/postgresql.conf
-    command: postgres -c config_file=/home/postgres/pgdata/config/postgresql.conf
-    shm_size: 6gb
-    mem_limit: 8gb
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-      memlock:
-        soft: -1
-        hard: -1
-
 volumes:
   redis_data:
-  pgadmin_data:
-  timescaledb_data:

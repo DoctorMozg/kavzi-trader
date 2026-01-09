@@ -14,7 +14,6 @@ import click
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 # Import core CLI functionality
-from kavzi_trader.cli.commands.backtest import backtest
 from kavzi_trader.cli.commands.config import config_command
 
 # Import command groups
@@ -48,7 +47,6 @@ def cli(
 # Register command groups
 cli.add_command(data)
 cli.add_command(model)
-cli.add_command(backtest)
 cli.add_command(trade)
 cli.add_command(system)
 cli.add_command(config_command)

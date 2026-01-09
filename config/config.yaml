@@ -1,7 +1,4 @@
 # Main configuration file for KavziTrader
-defaults:
-  - database: default
-  - _self_
 
 # System settings
 system:
@@ -17,3 +14,23 @@ api:
     api_secret: ${oc.env:BINANCE_API_SECRET,""}
     testnet: true
     use_proxy: false
+
+# Trading configuration
+trading:
+  # Trading pairs to monitor and trade
+  symbols:
+    - BTCUSDT
+    - ETHUSDT
+  
+  # Timeframe for analysis
+  interval: "15m"
+  
+  # Maximum concurrent positions
+  max_positions: 2
+
+# Risk management
+risk:
+  max_risk_percent: 1.0          # Max % of account per trade
+  min_rr_ratio: 1.5              # Minimum risk/reward ratio
+  max_drawdown_percent: 5.0      # Max drawdown before stopping
+  max_position_size_percent: 10  # Max % of account per position
