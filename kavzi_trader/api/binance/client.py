@@ -45,7 +45,11 @@ from kavzi_trader.api.common.models import (
     TimeInForce,
     TradeSchema,
 )
-from kavzi_trader.commons.time_utility import MILLISECONDS_IN_SECOND, utc_now, utc_timestamp
+from kavzi_trader.commons.time_utility import (
+    MILLISECONDS_IN_SECOND,
+    utc_now,
+    utc_timestamp,
+)
 
 logger = logging.getLogger(__name__)
 

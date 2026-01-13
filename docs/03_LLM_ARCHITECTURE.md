@@ -152,10 +152,10 @@ class TradeDecisionSchema(BaseModel):
     @model_validator(mode='after')
     def validate_trade_logic(self) -> "TradeDecisionSchema":
         if self.action == "BUY":
-            if not all([self.suggested_entry, self.suggested_stop_loss, 
+            if not all([self.suggested_entry, self.suggested_stop_loss,
                        self.suggested_take_profit]):
                 raise ValueError("BUY requires entry, stop_loss, take_profit")
-            if not (self.suggested_stop_loss < self.suggested_entry 
+            if not (self.suggested_stop_loss < self.suggested_entry
                    < self.suggested_take_profit):
                 raise ValueError("BUY: stop_loss < entry < take_profit")
         return self
@@ -237,20 +237,20 @@ LLMs often express arbitrary confidence that doesn't correlate with actual accur
 class ConfidenceCalibrator:
     def __init__(self, history_store: ConfidenceHistoryStore):
         self.history = history_store
-    
+
     def calibrate(self, raw_confidence: float) -> float:
         bucket = self._get_bucket(raw_confidence)
         historical_accuracy = self.history.get_accuracy(bucket)
-        
+
         if historical_accuracy is None:
             return raw_confidence * 0.7
-        
+
         return historical_accuracy
-    
+
     def record_outcome(
-        self, 
-        decision_id: str, 
-        raw_confidence: float, 
+        self,
+        decision_id: str,
+        raw_confidence: float,
         was_correct: bool
     ):
         self.history.record(decision_id, raw_confidence, was_correct)
@@ -362,7 +362,7 @@ brain/prompts/templates/
 
 ```jinja2
 <role>
-You are a fast market scanner. Your job is to quickly identify if a candle 
+You are a fast market scanner. Your job is to quickly identify if a candle
 shows any interesting pattern worth deeper analysis.
 </role>
 
@@ -438,7 +438,7 @@ def validate_price_sanity(self) -> "TradeDecisionSchema":
 def apply_confidence_calibration(self) -> "TradeDecisionSchema":
     calibrator = get_confidence_calibrator()
     self.calibrated_confidence = calibrator.calibrate(self.confidence)
-    
+
     if self.calibrated_confidence < 0.5 and self.action in ["BUY", "SELL"]:
         self.action = "WAIT"
         self.reasoning += " [AUTO-OVERRIDE: Low calibrated confidence]"
@@ -513,7 +513,7 @@ async def run_with_streaming_timeout(agent, prompt, deps, timeout_s=30):
 ```python
 @trader_agent.tool
 async def get_liquidity_depth(
-    ctx: RunContext[TradingDependencies], 
+    ctx: RunContext[TradingDependencies],
     percent_distance: float
 ) -> dict[str, float]:
     """Check bid/ask liquidity within % distance from price."""

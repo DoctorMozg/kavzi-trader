@@ -590,15 +590,15 @@ kavzi_trader/
 [project]
 dependencies = [
     # Existing dependencies...
-    
+
     # LLM Integration
     "pydantic-ai>=0.1.0",
     "anthropic>=0.40.0",
     "jinja2>=3.1.0",           # Prompt templates
-    
+
     # Technical Analysis
     "pandas-ta>=0.3.14b",
-    
+
     # Database
     "asyncpg>=0.30.0",
     "sqlalchemy>=2.0.0",

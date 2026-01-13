@@ -21,10 +21,10 @@ trading:
   symbols:
     - BTCUSDT
     - ETHUSDT
-  
+
   # Timeframe for analysis
   interval: "15m"
-  
+
   # Maximum concurrent positions
   max_positions: 2
 
@@ -35,7 +35,7 @@ risk:
   max_drawdown_percent: 5.0          # Max drawdown - close all positions
   pause_new_entries_drawdown: 3.0    # Pause new trades at this drawdown
   max_position_size_percent: 10      # Max % of account per position
-  
+
   # Volatility-based position size adjustments
   volatility_adjustments:
     LOW: 1.0

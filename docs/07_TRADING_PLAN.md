@@ -381,7 +381,7 @@ class TradeReviewSchema(BaseModel):
 
 ### Phase 1: Algorithm Filters (Week 1-2)
 - [ ] Session filter
-- [ ] Volatility regime detector  
+- [ ] Volatility regime detector
 - [ ] Funding rate filter
 - [ ] Position limit enforcement
 - [ ] Basic confluence point calculation
