@@ -4,11 +4,17 @@ Constants for Binance API.
 This module defines constants used by the Binance API connector.
 """
 
-# API URLs
+# Spot API URLs
 BINANCE_API_URL: str = "https://api.binance.com"
 BINANCE_API_TESTNET_URL: str = "https://testnet.binance.vision"
 BINANCE_WS_URL: str = "wss://stream.binance.com:9443/ws"
 BINANCE_WS_TESTNET_URL: str = "wss://testnet.binance.vision/ws"
+
+# Futures API URLs
+BINANCE_FUTURES_API_URL: str = "https://fapi.binance.com"
+BINANCE_FUTURES_TESTNET_URL: str = "https://testnet.binancefuture.com"
+BINANCE_FUTURES_WS_URL: str = "wss://fstream.binance.com/ws"
+BINANCE_FUTURES_WS_TESTNET_URL: str = "wss://stream.binancefuture.com/ws"
 
 # Kline/Candlestick intervals
 KLINE_INTERVALS: dict[str, int] = {

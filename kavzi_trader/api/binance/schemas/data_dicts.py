@@ -52,3 +52,24 @@ class TickerData(TypedDict):
     F: int  # First trade ID
     L: int  # Last trade ID
     n: int  # Total number of trades
+
+
+class MarkPriceData(TypedDict):
+    """Type definition for Futures mark price stream data."""
+
+    e: str  # Event type: "markPriceUpdate"
+    E: int  # Event time (ms)
+    s: str  # Symbol
+    p: str  # Mark price
+    i: str  # Index price
+    P: str  # Estimated settle price (only for delivery)
+    r: str  # Funding rate
+    T: int  # Next funding time (ms)
+
+
+class ForceOrderData(TypedDict):
+    """Type definition for Futures liquidation order stream data."""
+
+    e: str  # Event type: "forceOrder"
+    E: int  # Event time (ms)
+    o: dict[str, Any]  # Order data containing: s, S, o, f, q, p, ap, X, l, z, T

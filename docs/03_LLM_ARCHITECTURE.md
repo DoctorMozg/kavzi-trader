@@ -196,19 +196,37 @@ class TradingDependencies(BaseModel):
 
 ### Order Flow Schema
 
-Critical data for edge:
+Critical data for edge (implemented in `order_flow/schemas.py`):
 
 ```python
 class OrderFlowSchema(BaseModel):
-    funding_rate: float
-    funding_rate_zscore: float
-    open_interest: float
-    open_interest_change_1h: float
-    open_interest_change_24h: float
-    long_short_ratio: float
-    liquidation_levels_above: list[float]
-    liquidation_levels_below: list[float]
-    bid_ask_imbalance: float
+    symbol: str
+    timestamp: datetime
+
+    # Funding (from Binance Futures API)
+    funding_rate: Decimal
+    funding_zscore: Decimal              # Z-score from 30-period window
+    next_funding_time: datetime
+
+    # Open Interest
+    open_interest: Decimal
+    oi_change_1h_percent: Decimal
+    oi_change_24h_percent: Decimal
+
+    # Long/Short Ratio
+    long_short_ratio: Decimal
+    long_account_percent: Decimal
+    short_account_percent: Decimal
+
+    price_change_1h_percent: Decimal | None = None
+
+    # Computed signals
+    @computed_field
+    def is_crowded_long(self) -> bool:    # funding_zscore > 2.0
+    @computed_field
+    def is_crowded_short(self) -> bool:   # funding_zscore < -2.0
+    @computed_field
+    def squeeze_alert(self) -> bool:      # OI > 5% change with price < 0.5%
 ```
 
 ### How Order Flow Informs Decisions

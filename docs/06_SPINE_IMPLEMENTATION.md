@@ -169,6 +169,11 @@ class ExecutionResultMessage(BaseModel):
 
 Periodically fetches order flow data from Binance Futures API.
 
+> **Note**: The underlying API methods (`get_funding_rate()`, `get_open_interest()`,
+> `get_long_short_ratio()`) and analysis calculators (`calculate_funding_zscore()`,
+> `calculate_oi_momentum()`, `OrderFlowCalculator`) are implemented in Phase 1.5.
+> This orchestration layer uses those components.
+
 ```python
 class OrderFlowFetcher:
     def __init__(

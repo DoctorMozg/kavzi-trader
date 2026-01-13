@@ -8,9 +8,21 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from kavzi_trader.api.binance.schemas.data_dicts import KlineData, TickerData, TradeData
+from kavzi_trader.api.binance.schemas.data_dicts import (
+    ForceOrderData,
+    KlineData,
+    MarkPriceData,
+    TickerData,
+    TradeData,
+)
 from kavzi_trader.api.binance.websocket.handlers.depth import DepthStreamHandler
+from kavzi_trader.api.binance.websocket.handlers.force_order import (
+    ForceOrderStreamHandler,
+)
 from kavzi_trader.api.binance.websocket.handlers.klines import KlineStreamHandler
+from kavzi_trader.api.binance.websocket.handlers.mark_price import (
+    MarkPriceStreamHandler,
+)
 from kavzi_trader.api.binance.websocket.handlers.ticker import TickerStreamHandler
 from kavzi_trader.api.binance.websocket.handlers.trades import TradeStreamHandler
 from kavzi_trader.api.binance.websocket.handlers.user_data import UserDataStreamHandler
@@ -65,6 +77,8 @@ class BinanceWebsocketClient:
         self.trade_handler = TradeStreamHandler(self.stream_manager)
         self.depth_handler = DepthStreamHandler(self.stream_manager)
         self.user_data_handler = UserDataStreamHandler(self.stream_manager)
+        self.mark_price_handler = MarkPriceStreamHandler(self.stream_manager)
+        self.force_order_handler = ForceOrderStreamHandler(self.stream_manager)
 
     async def start(self) -> None:
         """Start the WebSocket connection."""
@@ -260,3 +274,46 @@ class BinanceWebsocketClient:
             True if connected, False otherwise
         """
         return self.stream_manager.is_connected()
+
+    async def subscribe_mark_price_stream(
+        self,
+        symbol: str,
+        callback: Callable[[MarkPriceData], Awaitable[None]],
+        update_speed: str = "1s",
+    ) -> str:
+        """
+        Subscribe to Futures mark price stream (includes funding rate).
+
+        Args:
+            symbol: Trading pair symbol (e.g., "BTCUSDT")
+            callback: Callback for mark price data
+            update_speed: Update speed ("1s" or "3s")
+
+        Returns:
+            Stream name
+        """
+        return await self.mark_price_handler.subscribe(
+            symbol=symbol,
+            callback=callback,
+            update_speed=update_speed,
+        )
+
+    async def subscribe_force_order_stream(
+        self,
+        symbol: str,
+        callback: Callable[[ForceOrderData], Awaitable[None]],
+    ) -> str:
+        """
+        Subscribe to Futures liquidation order stream.
+
+        Args:
+            symbol: Trading pair symbol (e.g., "BTCUSDT")
+            callback: Callback for liquidation data
+
+        Returns:
+            Stream name
+        """
+        return await self.force_order_handler.subscribe(
+            symbol=symbol,
+            callback=callback,
+        )

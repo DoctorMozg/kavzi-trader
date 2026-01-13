@@ -20,96 +20,156 @@ This document outlines the phased implementation roadmap for KavziTrader. The pl
 | Time utilities | ✅ Done | `commons/time_utility.py` |
 | Configuration system | ✅ Done | `config/` |
 
+### Phase 1: Technical Analysis Foundation ✅
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Base converter | ✅ Done | `indicators/base.py` |
+| EMA/SMA calculators | ✅ Done | `indicators/trend.py` |
+| RSI/MACD calculators | ✅ Done | `indicators/momentum.py` |
+| ATR/Bollinger Bands | ✅ Done | `indicators/volatility.py` |
+| OBV/Volume ratios | ✅ Done | `indicators/volume.py` |
+| Config schemas | ✅ Done | `indicators/config.py` |
+| Result schemas | ✅ Done | `indicators/schemas.py` |
+| Calculator orchestrator | ✅ Done | `indicators/calculator.py` |
+| Unit tests (48 tests) | ✅ Done | `tests/indicators/` |
+
+### Phase 1.5: Order Flow Data Integration ✅
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Futures API constants | ✅ Done | `api/binance/constants.py` |
+| Futures REST methods | ✅ Done | `api/binance/client.py` |
+| Mark price WS handler | ✅ Done | `api/binance/websocket/handlers/mark_price.py` |
+| Force order WS handler | ✅ Done | `api/binance/websocket/handlers/force_order.py` |
+| Order flow schemas | ✅ Done | `order_flow/schemas.py` |
+| Funding Z-score calculator | ✅ Done | `order_flow/funding.py` |
+| OI momentum calculator | ✅ Done | `order_flow/open_interest.py` |
+| OrderFlowCalculator | ✅ Done | `order_flow/calculator.py` |
+| Unit tests (16 tests) | ✅ Done | `tests/order_flow/` |
+
 ## Implementation Phases
 
-### Phase 1: Technical Analysis Foundation
+### Phase 1: Technical Analysis Foundation ✅ COMPLETED
 
 **Duration**: 1-2 weeks
 
 **Goal**: Build the indicator calculation layer that pre-computes all technical analysis for LLM consumption.
 
-#### Tasks
-
-| Task | Priority | Effort | Dependencies |
-|------|----------|--------|--------------|
-| Create `indicators/` module | High | 2 days | None |
-| Implement RSI calculator | High | 0.5 days | indicators module |
-| Implement EMA calculator (20, 50, 200) | High | 0.5 days | indicators module |
-| Implement MACD calculator | High | 0.5 days | EMA |
-| Implement Bollinger Bands | Medium | 0.5 days | EMA |
-| Implement ATR calculator | Medium | 0.5 days | indicators module |
-| Implement Volume analysis | Medium | 0.5 days | indicators module |
-| Create TechnicalIndicatorsSchema | High | 0.5 days | All calculators |
-| Write unit tests | High | 1 day | All calculators |
-
-#### Deliverables
+#### Implemented Structure
 
 ```
 kavzi_trader/
 ├── indicators/
-│   ├── __init__.py
-│   ├── base.py              # Base indicator interface
-│   ├── trend.py             # EMA, SMA
-│   ├── momentum.py          # RSI, MACD, Stochastic
-│   ├── volatility.py        # ATR, Bollinger Bands
-│   ├── volume.py            # OBV, Volume ratios
-│   └── schemas.py           # TechnicalIndicatorsSchema
+│   ├── __init__.py           # Public exports
+│   ├── base.py               # candles_to_dataframe converter
+│   ├── config.py             # EMAPeriodsSchema, MACDParamsSchema, etc.
+│   ├── trend.py              # calculate_ema(), calculate_sma()
+│   ├── momentum.py           # calculate_rsi(), calculate_macd()
+│   ├── volatility.py         # calculate_atr(), calculate_bollinger_bands()
+│   ├── volume.py             # calculate_obv(), calculate_volume_analysis()
+│   ├── schemas.py            # TechnicalIndicatorsSchema, result schemas
+│   └── calculator.py         # TechnicalIndicatorCalculator orchestrator
+tests/
+├── indicators/
+│   ├── conftest.py           # Sample candle fixtures
+│   ├── test_base.py          # DataFrame conversion tests
+│   ├── test_trend.py         # EMA/SMA tests
+│   ├── test_momentum.py      # RSI/MACD tests
+│   ├── test_volatility.py    # ATR/Bollinger tests
+│   ├── test_volume.py        # OBV/Volume tests
+│   └── test_calculator.py    # Orchestrator tests
 ```
+
+#### Indicators Implemented
+
+| Indicator | Function | Description |
+|-----------|----------|-------------|
+| EMA (20, 50, 200) | `calculate_ema()` | Exponential Moving Average for trend detection |
+| SMA (20) | `calculate_sma()` | Simple Moving Average |
+| RSI (14) | `calculate_rsi()` | Relative Strength Index for overbought/oversold |
+| MACD (12, 26, 9) | `calculate_macd()` | Momentum with signal line and histogram |
+| Bollinger Bands | `calculate_bollinger_bands()` | Volatility bands with %B and width |
+| ATR (14) | `calculate_atr()` | Average True Range for volatility |
+| OBV | `calculate_obv()` | On-Balance Volume for pressure |
+| Volume Ratios | `calculate_volume_analysis()` | Current vs average volume |
 
 #### Success Criteria
 
-- [ ] All indicators calculate correctly against known test data
-- [ ] Indicators integrate with existing kline data
-- [ ] TechnicalIndicatorsSchema fully populated from raw candles
+- [x] All indicators calculate correctly against known test data (48 tests passing)
+- [x] Indicators integrate with existing CandlestickSchema data
+- [x] TechnicalIndicatorsSchema fully populated from raw candles
+- [x] Educational docstrings for non-traders
+- [x] Configurable via Pydantic schemas (no bare tuples)
 
 ---
 
-### Phase 1.5: Order Flow Data Integration
+### Phase 1.5: Order Flow Data Integration ✅ COMPLETED
 
 **Duration**: 1 week
 
-**Goal**: Add order flow data fetching and processing for trading edge.
+**Goal**: Add order flow data fetching and processing for trading edge (using Futures data as signals for Spot trading).
 
-#### Tasks
-
-| Task | Priority | Effort | Dependencies |
-|------|----------|--------|--------------|
-| Create `order_flow/` module | High | 1 day | None |
-| Implement funding rate fetcher | High | 0.5 days | Binance client |
-| Implement open interest fetcher | High | 0.5 days | Binance client |
-| Implement long/short ratio fetcher | Medium | 0.5 days | Binance client |
-| Calculate funding rate Z-score | High | 0.5 days | Funding fetcher |
-| Calculate OI change metrics | High | 0.5 days | OI fetcher |
-| Estimate liquidation levels | Medium | 1 day | OI data |
-| Create OrderFlowSchema | High | 0.5 days | All fetchers |
-| Write unit tests | High | 0.5 days | All |
-
-#### Deliverables
+#### Implemented Structure
 
 ```
 kavzi_trader/
 ├── api/
 │   └── binance/
-│       └── order_flow/
-│           ├── __init__.py
-│           ├── funding.py       # Funding rate fetcher
-│           ├── open_interest.py # OI fetcher
-│           ├── ratios.py        # Long/short ratio
-│           └── liquidations.py  # Liquidation level estimator
-├── indicators/
-│   └── order_flow/
-│       ├── __init__.py
-│       ├── funding_zscore.py    # Funding analysis
-│       ├── oi_momentum.py       # OI change analysis
-│       └── schemas.py           # OrderFlowSchema
+│       ├── constants.py              # Added Futures API URLs
+│       ├── client.py                 # Added Futures REST methods
+│       ├── schemas/
+│       │   └── data_dicts.py         # Added MarkPriceData, ForceOrderData
+│       └── websocket/
+│           ├── client.py             # Added subscribe_mark_price_stream(), etc.
+│           └── handlers/
+│               ├── mark_price.py     # Funding rate via WebSocket
+│               └── force_order.py    # Liquidation events via WebSocket
+├── order_flow/
+│   ├── __init__.py                   # Public exports
+│   ├── schemas.py                    # OrderFlowSchema, FundingRateSchema, etc.
+│   ├── funding.py                    # calculate_funding_zscore()
+│   ├── open_interest.py              # calculate_oi_momentum()
+│   └── calculator.py                 # OrderFlowCalculator orchestrator
+tests/
+├── order_flow/
+│   ├── conftest.py                   # Sample fixtures
+│   ├── test_funding.py               # Funding Z-score tests
+│   ├── test_open_interest.py         # OI momentum tests
+│   └── test_calculator.py            # Orchestrator tests
 ```
+
+#### Order Flow Data Implemented
+
+| Data | Source | Method |
+|------|--------|--------|
+| Funding Rate | REST/WS | `get_funding_rate()`, `subscribe_mark_price_stream()` |
+| Open Interest | REST | `get_open_interest()`, `get_open_interest_history()` |
+| Long/Short Ratio | REST | `get_long_short_ratio()` |
+| Liquidations | WS | `subscribe_force_order_stream()` |
+
+#### Analysis Functions
+
+| Function | Description |
+|----------|-------------|
+| `calculate_funding_zscore()` | Z-score from historical funding rates (30-period window) |
+| `calculate_oi_momentum()` | OI % change at 1h and 24h windows |
+| `OrderFlowCalculator.calculate()` | Orchestrates all order flow analysis |
+
+#### Key Schema: OrderFlowSchema
+
+Computed fields for trading signals:
+- `is_crowded_long`: funding_zscore > 2.0
+- `is_crowded_short`: funding_zscore < -2.0
+- `squeeze_alert`: OI change > 5% with price change < 0.5%
 
 #### Success Criteria
 
-- [ ] Funding rate fetched and Z-score calculated correctly
-- [ ] OI changes tracked at 1h and 24h windows
-- [ ] Liquidation levels estimated from OI distribution
-- [ ] OrderFlowSchema integrated into context builder
+- [x] Funding rate fetched and Z-score calculated correctly
+- [x] OI changes tracked at 1h and 24h windows
+- [x] OrderFlowSchema fully populated from combined data sources
+- [x] Unit tests cover all calculators (16 tests passing)
+- [x] WebSocket handlers for real-time funding rate updates
 
 ---
 

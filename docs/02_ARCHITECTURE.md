@@ -336,34 +336,42 @@ On restart, the system:
 
 ```
 kavzi_trader/
-├── api/                    # Exchange connectivity (SPINE)
+├── api/                    # Exchange connectivity (SPINE) ✅
 │   ├── binance/
-│   │   ├── client.py       # REST API client
-│   │   ├── websocket/      # WebSocket handlers
-│   │   ├── historical/     # Historical data downloads
-│   │   └── order_flow/     # Funding, OI, liquidations
+│   │   ├── client.py       # REST API client (Spot + Futures methods)
+│   │   ├── websocket/      # WebSocket handlers (incl. mark_price, force_order)
+│   │   └── historical/     # Historical data downloads
 │   └── common/             # Shared API interfaces
-├── brain/                  # LLM integration (BRAIN)
+├── order_flow/             # Order flow analysis ✅
+│   ├── schemas.py          # OrderFlowSchema, FundingRateSchema, etc.
+│   ├── funding.py          # Funding rate Z-score calculator
+│   ├── open_interest.py    # OI momentum calculator
+│   └── calculator.py       # OrderFlowCalculator orchestrator
+├── brain/                  # LLM integration (BRAIN) (planned)
 │   ├── agent/              # Tiered PydanticAI agents
 │   ├── context/            # Context window builders
 │   ├── prompts/            # System prompts
 │   ├── calibration/        # Confidence calibration
 │   └── schemas/            # Decision schemas
-├── spine/                  # Execution layer (SPINE)
+├── spine/                  # Execution layer (SPINE) (planned)
 │   ├── execution/          # Order execution engine
 │   ├── risk/               # Dynamic risk validation
 │   ├── position/           # Active position management
 │   └── state/              # State persistence
-├── indicators/             # Technical analysis
-│   ├── trend/              # EMA, SMA
-│   ├── momentum/           # RSI, MACD
-│   ├── volatility/         # ATR, Bollinger
-│   └── order_flow/         # Funding, OI analysis
-├── strategy/               # Strategy framework
-├── events/                 # Event sourcing
-├── cli/                    # Command-line interface
-├── commons/                # Shared utilities
-└── config/                 # Configuration
+├── indicators/             # Technical analysis ✅
+│   ├── base.py             # DataFrame converter
+│   ├── config.py           # Indicator config schemas
+│   ├── trend.py            # EMA, SMA calculators
+│   ├── momentum.py         # RSI, MACD calculators
+│   ├── volatility.py       # ATR, Bollinger Bands
+│   ├── volume.py           # OBV, volume ratios
+│   ├── schemas.py          # Result schemas
+│   └── calculator.py       # Orchestrator
+├── strategy/               # Strategy framework (planned)
+├── events/                 # Event sourcing (planned)
+├── cli/                    # Command-line interface ✅
+├── commons/                # Shared utilities ✅
+└── config/                 # Configuration ✅
 ```
 
 ## Next Steps

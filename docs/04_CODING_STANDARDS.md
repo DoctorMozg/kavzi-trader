@@ -611,6 +611,42 @@ The `model_validate` approach:
 - Properly converts types
 - Works with both dictionaries and objects (with from_attributes=True)
 
+#### Avoid Bare Tuples for Structured Data
+
+Never use bare tuples like `tuple[int, int, int]` for structured data. Tuples lack self-documentation and are prone to ordering mistakes. Always use Pydantic models with named fields:
+
+```python
+# ❌ WRONG - Using bare tuple (what do these numbers mean?)
+def calculate_macd(
+    prices: list[float],
+    params: tuple[int, int, int] = (12, 26, 9),
+) -> float:
+    fast, slow, signal = params  # Easy to mix up order
+    ...
+
+# ✅ CORRECT - Using Pydantic model with named fields
+class MACDParamsSchema(BaseModel):
+    fast_period: int = 12
+    slow_period: int = 26
+    signal_period: int = 9
+
+    model_config = ConfigDict(frozen=True)
+
+def calculate_macd(
+    prices: list[float],
+    params: MACDParamsSchema = MACDParamsSchema(),
+) -> float:
+    # Self-documenting: params.fast_period, params.slow_period, params.signal_period
+    ...
+```
+
+Benefits of named fields:
+- Self-documenting code
+- IDE autocomplete for field names
+- Impossible to mix up parameter order
+- Validation built-in
+- Easy to extend with additional parameters
+
 #### FastAPI Integration
 
 When working with FastAPI, follow these best practices:
