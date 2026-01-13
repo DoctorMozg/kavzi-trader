@@ -52,3 +52,22 @@ alwaysApply: true
       model_config = ConfigDict(frozen=True)
   ```
 - Consider using `frozen=True` for immutability where appropriate
+
+## Avoid Bare Tuples
+- Never use bare tuples like `tuple[int, int, int]` for structured data
+- Always use Pydantic models with named fields for clarity:
+  ```python
+  # WRONG: Using bare tuple
+  def calculate(macd_params: tuple[int, int, int] = (12, 26, 9)):
+      fast, slow, signal = macd_params
+
+  # CORRECT: Using Pydantic model with named fields
+  class MACDParamsSchema(BaseModel):
+      fast_period: int = 12
+      slow_period: int = 26
+      signal_period: int = 9
+
+  def calculate(macd_params: MACDParamsSchema = MACDParamsSchema()):
+      # Access via macd_params.fast_period, etc.
+  ```
+- Named fields are self-documenting and prevent ordering mistakes
