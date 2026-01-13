@@ -62,6 +62,18 @@ This document outlines the phased implementation roadmap for KavziTrader. The pl
 | Reconciliation service | ✅ Done | `spine/state/reconciliation.py` |
 | Unit tests (60 tests) | ✅ Done | `tests/spine/state/` |
 
+### Phase 3: Dynamic Risk Management ✅
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Risk config schema | ✅ Done | `spine/risk/config.py` |
+| Volatility regime detector | ✅ Done | `spine/risk/volatility.py` |
+| Result schemas | ✅ Done | `spine/risk/schemas.py` |
+| ATR-based position sizer | ✅ Done | `spine/risk/position_sizer.py` |
+| Exposure limiter | ✅ Done | `spine/risk/exposure.py` |
+| DynamicRiskValidator | ✅ Done | `spine/risk/validator.py` |
+| Unit tests (33 tests) | ✅ Done | `tests/spine/risk/` |
+
 ## Implementation Phases
 
 ### Phase 1: Technical Analysis Foundation ✅ COMPLETED
@@ -249,55 +261,62 @@ tests/
 
 ---
 
-### Phase 3: Dynamic Risk Management
+### Phase 3: Dynamic Risk Management ✅ COMPLETED
 
 **Duration**: 1.5 weeks
 
 **Goal**: Build volatility-aware risk validation layer with dynamic position sizing.
 
-#### Tasks
-
-| Task | Priority | Effort | Dependencies |
-|------|----------|--------|--------------|
-| Define risk configuration schema | High | 0.5 days | None |
-| Implement volatility regime detector | High | 1 day | ATR indicator |
-| Implement ATR-based position sizer | High | 1 day | Volatility detector |
-| Implement dynamic exposure limits | High | 0.5 days | StateManager |
-| Implement drawdown tracker | High | 1 day | StateManager |
-| Create DynamicRiskValidator class | High | 1 day | All above |
-| Write unit tests | High | 1 day | All |
-
-#### Deliverables
+#### Implemented Structure
 
 ```
 kavzi_trader/
 ├── spine/
 │   └── risk/
-│       ├── __init__.py
+│       ├── __init__.py           # Public exports
 │       ├── config.py             # RiskConfigSchema
-│       ├── volatility.py         # Volatility regime detector
-│       ├── position_sizer.py     # ATR-based sizing
-│       ├── validator.py          # DynamicRiskValidator
-│       └── tracker.py            # Drawdown, exposure tracking
+│       ├── schemas.py            # VolatilityRegime enum, result schemas
+│       ├── volatility.py         # VolatilityRegimeDetector
+│       ├── position_sizer.py     # ATR-based PositionSizer
+│       ├── exposure.py           # ExposureLimiter
+│       └── validator.py          # DynamicRiskValidator orchestrator
+tests/
+├── spine/
+│   └── risk/
+│       ├── conftest.py           # Shared fixtures
+│       ├── test_volatility.py    # Volatility regime tests
+│       ├── test_position_sizer.py
+│       ├── test_exposure.py
+│       └── test_validator.py     # Validator orchestrator tests
 ```
+
+#### Key Components
+
+| Component | Description |
+|-----------|-------------|
+| `RiskConfigSchema` | Configurable thresholds for risk %, drawdown limits, ATR limits |
+| `VolatilityRegimeDetector` | Classifies LOW/NORMAL/HIGH/EXTREME from ATR Z-score |
+| `PositionSizer` | Calculates position size based on ATR and regime multipliers |
+| `ExposureLimiter` | Enforces max positions (2) and prevents duplicate symbols |
+| `DynamicRiskValidator` | Orchestrates all checks: drawdown, exposure, volatility, SL/TP |
 
 #### Risk Adjustment Rules
 
 | Condition | Position Size Adjustment |
 |-----------|-------------------------|
-| Volatility = LOW | 100% of calculated size |
+| Volatility = LOW | 0% (blocked - no movement) |
 | Volatility = NORMAL | 100% of calculated size |
 | Volatility = HIGH | 50% of calculated size |
-| Volatility = EXTREME | 25% of calculated size |
+| Volatility = EXTREME | 0% (blocked - too risky) |
 | Drawdown > 3% | No new positions |
 | Drawdown > 5% | Close all positions |
 
 #### Success Criteria
 
-- [ ] Position sizing adjusts based on ATR
-- [ ] Volatility regime correctly identified
-- [ ] Drawdown tracking prevents overtrading
-- [ ] Exposure limits enforced per regime
+- [x] Position sizing adjusts based on ATR (33 tests passing)
+- [x] Volatility regime correctly identified via Z-score
+- [x] Drawdown tracking prevents overtrading
+- [x] Exposure limits enforced (max 2 positions, no duplicates)
 
 ---
 

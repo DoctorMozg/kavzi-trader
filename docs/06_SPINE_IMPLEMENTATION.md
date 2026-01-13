@@ -317,87 +317,64 @@ class VolatilityRegimeDetector:
         return thresholds[regime]
 ```
 
-### 4. Dynamic Risk Validator
+### 4. Dynamic Risk Validator ✅ IMPLEMENTED
 
-Volatility-aware risk validation before order execution.
+Volatility-aware risk validation before order execution. Located in `spine/risk/`.
+
+**Implemented Components:**
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `RiskConfigSchema` | `config.py` | Configurable thresholds |
+| `VolatilityRegimeDetector` | `volatility.py` | ATR Z-score regime classification |
+| `PositionSizer` | `position_sizer.py` | ATR-based position sizing |
+| `ExposureLimiter` | `exposure.py` | Max positions enforcement |
+| `DynamicRiskValidator` | `validator.py` | Orchestrates all validations |
 
 ```python
 class DynamicRiskValidator:
-    def __init__(
+    def __init__(self, config: RiskConfigSchema | None = None) -> None:
+        self._config = config or RiskConfigSchema()
+        self._volatility_detector = VolatilityRegimeDetector(self._config)
+        self._position_sizer = PositionSizer(self._config)
+        self._exposure_limiter = ExposureLimiter(self._config)
+
+    async def validate_trade(
         self,
-        config: RiskConfigSchema,
+        symbol: str,
+        side: Literal["LONG", "SHORT"],
+        entry_price: Decimal,
+        stop_loss: Decimal,
+        take_profit: Decimal,
+        current_atr: Decimal,
+        atr_history: list[Decimal],
         state_manager: StateManager,
-        volatility_detector: VolatilityRegimeDetector
-    ):
-        self.config = config
-        self.state = state_manager
-        self.volatility = volatility_detector
-
-    async def validate(
-        self,
-        decision: DecisionMessage
-    ) -> ValidationResult:
-        errors: list[str] = []
-        adjustments: dict[str, Any] = {}
-
-        errors.extend(await self._check_position_limits(decision))
-        errors.extend(await self._check_exposure(decision))
-        errors.extend(await self._check_drawdown(decision))
-        errors.extend(self._check_price_sanity(decision))
-        errors.extend(self._check_staleness(decision))
-
-        size_multiplier = self._get_volatility_size_multiplier(
-            decision.volatility_regime
-        )
-        adjustments["size_multiplier"] = size_multiplier
-
-        if decision.calibrated_confidence < 0.5:
-            errors.append("Calibrated confidence below minimum threshold")
-        elif decision.calibrated_confidence < 0.7:
-            adjustments["size_multiplier"] *= 0.5
-
-        return ValidationResult(
-            is_valid=len(errors) == 0,
-            errors=errors,
-            adjustments=adjustments,
-            decision_id=decision.decision_id
-        )
-
-    def _get_volatility_size_multiplier(
-        self,
-        regime: Literal["LOW", "NORMAL", "HIGH", "EXTREME"]
-    ) -> float:
-        multipliers = {
-            "LOW": 1.0,
-            "NORMAL": 1.0,
-            "HIGH": 0.5,
-            "EXTREME": 0.25
-        }
-        return multipliers[regime]
-
-    async def _check_drawdown(self, decision: DecisionMessage) -> list[str]:
-        current_drawdown = await self.state.get_current_drawdown()
-
-        if current_drawdown > self.config.max_drawdown_percent:
-            return [f"Max drawdown exceeded: {current_drawdown:.1f}% > {self.config.max_drawdown_percent}%"]
-
-        if current_drawdown > self.config.pause_new_entries_drawdown:
-            if decision.action in ["BUY", "SELL"]:
-                return [f"New entries paused at {current_drawdown:.1f}% drawdown"]
-
-        return []
-
-    def _check_staleness(self, decision: DecisionMessage) -> list[str]:
-        age_ms = int(time.time() * 1000) - decision.created_at_ms
-        max_age_ms = self.volatility.get_staleness_threshold_ms(
-            decision.volatility_regime
-        )
-
-        if age_ms > max_age_ms:
-            return [f"Decision stale: {age_ms}ms old (max {max_age_ms}ms for {decision.volatility_regime} volatility)"]
-
-        return []
+    ) -> RiskValidationResultSchema:
+        # Validates: drawdown, exposure, volatility regime, SL/TP, R:R ratio
+        # Returns recommended position size with adjustments
+        ...
 ```
+
+**Volatility Regime Classification:**
+
+| ATR Z-Score | Regime | Size Multiplier | Tradeable |
+|-------------|--------|-----------------|-----------|
+| < -1.0 | LOW | 0% | No |
+| -1.0 to 1.0 | NORMAL | 100% | Yes |
+| 1.0 to 2.0 | HIGH | 50% | Yes |
+| > 2.0 | EXTREME | 0% | No |
+
+**Validation Checks:**
+
+| Check | Threshold | Action |
+|-------|-----------|--------|
+| Drawdown | > 5% | Reject + close all flag |
+| Drawdown | > 3% | Reject (no new positions) |
+| Max positions | >= 2 | Reject |
+| Stop loss | < 0.5 ATR | Reject (too tight) |
+| Stop loss | > 3.0 ATR | Reject (too wide) |
+| R:R ratio | < 1.5 | Reject |
+| Volatility | LOW/EXTREME | Reject |
 
 ### 5. Position Manager
 
@@ -893,30 +870,42 @@ class TradingConfigSchema(BaseModel):
     max_positions: int = 2
 ```
 
-### Dynamic Risk Configuration
+### Dynamic Risk Configuration ✅ IMPLEMENTED
+
+Located in `spine/risk/config.py`:
 
 ```python
 class RiskConfigSchema(BaseModel):
-    max_risk_percent: float = 1.0
-    min_rr_ratio: float = 1.5
-    max_drawdown_percent: float = 5.0
-    pause_new_entries_drawdown: float = 3.0
-    max_position_size_percent: float = 10.0
+    # Core risk settings
+    risk_per_trade_percent: Decimal = Decimal("1.0")
+    max_positions: int = 2
+    min_rr_ratio: Decimal = Decimal("1.5")
 
-    volatility_adjustments: dict[str, float] = {
-        "LOW": 1.0,
-        "NORMAL": 1.0,
-        "HIGH": 0.5,
-        "EXTREME": 0.25
-    }
+    # Drawdown thresholds
+    drawdown_pause_percent: Decimal = Decimal("3.0")
+    drawdown_close_all_percent: Decimal = Decimal("5.0")
 
-    staleness_thresholds_ms: dict[str, int] = {
-        "LOW": 60_000,
-        "NORMAL": 30_000,
-        "HIGH": 15_000,
-        "EXTREME": 5_000
-    }
+    # ATR limits for stop loss
+    min_sl_atr: Decimal = Decimal("0.5")
+    max_sl_atr: Decimal = Decimal("3.0")
+
+    # Volatility regime thresholds (ATR Z-score)
+    volatility_low_threshold: Decimal = Decimal("-1.0")
+    volatility_high_threshold: Decimal = Decimal("1.0")
+    volatility_extreme_threshold: Decimal = Decimal("2.0")
+
+    # ATR history for Z-score calculation
+    atr_zscore_period: int = 30
 ```
+
+Size multipliers by volatility regime (defined in `schemas.py`):
+
+| Regime | Z-Score Range | Size Multiplier |
+|--------|---------------|-----------------|
+| LOW | < -1.0 | 0% |
+| NORMAL | -1.0 to 1.0 | 100% |
+| HIGH | 1.0 to 2.0 | 50% |
+| EXTREME | > 2.0 | 0% |
 
 ### Position Management Configuration
 
