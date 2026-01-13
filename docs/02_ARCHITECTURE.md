@@ -353,11 +353,11 @@ kavzi_trader/
 │   ├── prompts/            # System prompts
 │   ├── calibration/        # Confidence calibration
 │   └── schemas/            # Decision schemas
-├── spine/                  # Execution layer (SPINE) (planned)
-│   ├── execution/          # Order execution engine
-│   ├── risk/               # Dynamic risk validation
-│   ├── position/           # Active position management
-│   └── state/              # State persistence
+├── spine/                  # Execution layer (SPINE)
+│   ├── execution/          # Order execution engine (planned)
+│   ├── risk/               # Dynamic risk validation (planned)
+│   ├── position/           # Active position management (planned)
+│   └── state/              # State persistence ✅
 ├── indicators/             # Technical analysis ✅
 │   ├── base.py             # DataFrame converter
 │   ├── config.py           # Indicator config schemas
