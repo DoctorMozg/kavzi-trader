@@ -27,7 +27,9 @@ def test_init(historical_client: BinanceHistoricalDataClient) -> None:
     assert historical_client.batch_size == 100
 
 
-@patch("src.api.binance.historical.batch.BatchProcessor.get_kline_batch_intervals")
+@patch(
+    "kavzi_trader.api.binance.historical.batch.BatchProcessor.get_kline_batch_intervals",
+)
 def test_get_batch_intervals(
     mock_get_intervals: MagicMock,
     historical_client: BinanceHistoricalDataClient,
@@ -113,7 +115,10 @@ def mock_trade_schemas() -> list[TradeSchema]:
     return trades
 
 
-@patch("src.api.binance.historical.downloaders.klines.KlinesDownloader._download_batch")
+@patch(
+    "kavzi_trader.api.binance.historical.downloaders.klines."
+    "KlinesDownloader._download_batch",
+)
 async def test_download_klines(
     mock_download_batch: MagicMock,
     historical_client: BinanceHistoricalDataClient,
@@ -125,7 +130,8 @@ async def test_download_klines(
 
     # Mock the batch intervals to return a predictable number of batches
     with patch(
-        "src.api.binance.historical.batch.BatchProcessor.get_kline_batch_intervals",
+        "kavzi_trader.api.binance.historical.batch.BatchProcessor."
+        "get_kline_batch_intervals",
     ) as mock_get_intervals:
         mock_get_intervals.return_value = [
             {"start_time": 1609459200000, "end_time": 1609459200000 + 3600000},
@@ -154,7 +160,10 @@ async def test_download_klines(
         assert mock_download_batch.call_count == 2
 
 
-@patch("src.api.binance.historical.downloaders.trades.TradesDownloader._download_batch")
+@patch(
+    "kavzi_trader.api.binance.historical.downloaders.trades."
+    "TradesDownloader._download_batch",
+)
 async def test_download_trades(
     mock_download_batch: MagicMock,
     historical_client: BinanceHistoricalDataClient,
@@ -166,7 +175,8 @@ async def test_download_trades(
 
     # Mock the batch intervals to return a predictable number of batches
     with patch(
-        "src.api.binance.historical.batch.BatchProcessor.get_trade_batch_intervals",
+        "kavzi_trader.api.binance.historical.batch.BatchProcessor."
+        "get_trade_batch_intervals",
     ) as mock_get_intervals:
         mock_get_intervals.return_value = [
             {
@@ -204,7 +214,10 @@ async def test_download_trades(
             assert trade in trades
 
 
-@patch("src.api.binance.historical.client.BinanceHistoricalDataClient.download_klines")
+@patch(
+    "kavzi_trader.api.binance.historical.client."
+    "BinanceHistoricalDataClient.download_klines",
+)
 async def test_download_multiple_symbols(
     mock_download_klines: MagicMock,
     historical_client: BinanceHistoricalDataClient,
@@ -231,7 +244,8 @@ async def test_download_multiple_symbols(
 
 
 @patch(
-    "src.api.binance.historical.client.BinanceHistoricalDataClient.download_multiple_symbols",
+    "kavzi_trader.api.binance.historical.client."
+    "BinanceHistoricalDataClient.download_multiple_symbols",
 )
 async def test_download_all_symbols(
     mock_download_multiple: MagicMock,
@@ -305,7 +319,10 @@ async def test_download_klines_batch(
     assert len(result) == len(mock_candlestick_schemas)
 
 
-@patch("src.api.binance.historical.downloaders.trades.TradesDownloader._download_batch")
+@patch(
+    "kavzi_trader.api.binance.historical.downloaders.trades."
+    "TradesDownloader._download_batch",
+)
 async def test_download_trades_batch(
     mock_download_batch: MagicMock,
     historical_client: BinanceHistoricalDataClient,

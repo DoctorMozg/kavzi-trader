@@ -64,7 +64,9 @@ def mock_binance_client() -> MagicMock:
 @pytest.fixture()
 def mock_stream_manager() -> Generator[MagicMock, None, None]:
     """Create a mock StreamManager for testing."""
-    with patch("src.api.binance.websocket.stream_manager.StreamManager") as mock_class:
+    with patch(
+        "kavzi_trader.api.binance.websocket.stream_manager.StreamManager",
+    ) as mock_class:
         mock_manager = mock_class.return_value
         mock_manager._lock = MagicMock()  # Mock the lock for testing
         mock_manager.twm = MagicMock()  # Mock the ThreadedWebsocketManager
@@ -75,7 +77,7 @@ def mock_stream_manager() -> Generator[MagicMock, None, None]:
 def mock_twm() -> Generator[MagicMock, None, None]:
     """Create a mock of ThreadedWebsocketManager."""
     with patch(
-        "src.api.binance.websocket.stream_manager.ThreadedWebsocketManager",
+        "kavzi_trader.api.binance.websocket.stream_manager.ThreadedWebsocketManager",
     ) as mock_twm_class:
         mock_twm = mock_twm_class.return_value
         yield mock_twm
@@ -87,7 +89,7 @@ async def historical_client(
 ) -> AsyncGenerator[BinanceHistoricalDataClient, None]:
     """Create a historical data client with mocked dependencies for testing."""
     with patch(
-        "src.api.binance.historical.client.BinanceClient",
+        "kavzi_trader.api.binance.historical.client.BinanceClient",
         return_value=mock_binance_client,
     ):
         client = BinanceHistoricalDataClient(
@@ -102,7 +104,7 @@ async def historical_client(
 def websocket_client(mock_stream_manager: MagicMock) -> BinanceWebsocketClient:
     """Create a websocket client with mocked dependencies for testing."""
     with patch(
-        "src.api.binance.websocket.client.StreamManager",
+        "kavzi_trader.api.binance.websocket.client.StreamManager",
         return_value=mock_stream_manager,
     ):
         return BinanceWebsocketClient(testnet=True)

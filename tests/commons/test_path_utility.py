@@ -43,7 +43,7 @@ class TestPathUtility:
         # Assert
         assert result == Path("./custom_default")
 
-    @patch("src.commons.path_utility.Path.mkdir")
+    @patch("kavzi_trader.commons.path_utility.Path.mkdir")
     def test_ensure_directory_exists(self, mock_mkdir: MagicMock) -> None:
         """Test ensuring a directory exists."""
         # Setup

@@ -16,7 +16,7 @@ from kavzi_trader.commons.time_utility import parse_date_range, parse_date_strin
 class TestTimeUtilityExtensions:
     """Tests for the time utility extensions."""
 
-    @patch("src.commons.time_utility.dateparser.parse")
+    @patch("kavzi_trader.commons.time_utility.dateparser.parse")
     def test_parse_date_string(self, mock_parse: MagicMock) -> None:
         """Test parsing a date string."""
         # Setup
@@ -30,7 +30,7 @@ class TestTimeUtilityExtensions:
         mock_parse.assert_called_once()
         assert result == datetime(2023, 1, 1, tzinfo=UTC)
 
-    @patch("src.commons.time_utility.dateparser.parse")
+    @patch("kavzi_trader.commons.time_utility.dateparser.parse")
     def test_parse_date_string_error(self, mock_parse: MagicMock) -> None:
         """Test error handling when parsing an invalid date string."""
         # Setup
@@ -43,7 +43,7 @@ class TestTimeUtilityExtensions:
 
         assert "Could not parse date" in str(excinfo.value)
 
-    @patch("src.commons.time_utility.parse_date_string")
+    @patch("kavzi_trader.commons.time_utility.parse_date_string")
     def test_parse_date_range(self, mock_parse_date_string: MagicMock) -> None:
         """Test parsing a date range."""
         # Setup
@@ -63,7 +63,7 @@ class TestTimeUtilityExtensions:
         assert start_time == datetime(2023, 1, 1, tzinfo=UTC)
         assert end_time == datetime(2023, 1, 31, tzinfo=UTC)
 
-    @patch("src.commons.time_utility.parse_date_string")
+    @patch("kavzi_trader.commons.time_utility.parse_date_string")
     def test_parse_date_range_no_end_date(
         self,
         mock_parse_date_string: MagicMock,

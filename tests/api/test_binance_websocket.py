@@ -307,7 +307,7 @@ def test_stream_manager_init() -> None:
     """Test StreamManager initialization."""
     # Create a patched BinanceSocketManager
     with patch(
-        "src.api.binance.websocket.stream_manager.BinanceSocketManager",
+        "kavzi_trader.api.binance.websocket.stream_manager.BinanceSocketManager",
     ) as mock_bsm_class:
         # Create a StreamManager
         manager = StreamManager(
@@ -337,7 +337,7 @@ async def test_stream_manager_start_stop() -> None:
     """Test StreamManager start and stop methods."""
     # Create a patched BinanceSocketManager
     with patch(
-        "src.api.binance.websocket.stream_manager.BinanceSocketManager",
+        "kavzi_trader.api.binance.websocket.stream_manager.BinanceSocketManager",
     ) as mock_bsm_class:
         # Create a StreamManager
         mock_bsm = mock_bsm_class.return_value
@@ -359,7 +359,9 @@ async def test_stream_manager_start_stop() -> None:
 async def test_stream_manager_process_message() -> None:
     """Test StreamManager _process_message method."""
     # Create a patched BinanceSocketManager
-    with patch("src.api.binance.websocket.stream_manager.BinanceSocketManager"):
+    with patch(
+        "kavzi_trader.api.binance.websocket.stream_manager.BinanceSocketManager",
+    ):
         # Create a StreamManager with mock callbacks
         on_message_mock = MagicMock()
         on_error_mock = MagicMock()
@@ -401,7 +403,7 @@ async def test_base_handler_unsubscribe() -> None:
 
     # Create a handler with the mock manager
     with patch(
-        "src.api.binance.websocket.handlers.base.BaseStreamHandler.__abstractmethods__",
+        "kavzi_trader.api.binance.websocket.handlers.base.BaseStreamHandler.__abstractmethods__",
         set(),
     ):
         from kavzi_trader.api.binance.websocket.handlers.base import BaseStreamHandler
