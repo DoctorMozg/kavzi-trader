@@ -5,14 +5,20 @@ This module provides functions to set up logging across the application.
 """
 
 import logging
-import logging.handlers
 import os
 import sys
+from pathlib import Path
+
+from kavzi_trader.commons.time_utility import timestamp_path
+from kavzi_trader.monitoring.structured_logger import JsonLogFormatter
 
 
 def setup_logging(
     log_level: str = "DEBUG",
     name: str = "kavzitrader",
+    log_dir: Path | None = None,
+    log_format: str = "text",
+    console: bool = True,
 ) -> logging.Logger:
     """
     Set up logging for the application.
@@ -42,14 +48,25 @@ def setup_logging(
     level = level_map.get(log_level, logging.DEBUG)
     logger.setLevel(level)
 
-    # Define formatter
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s %(filename)s:%(lineno)d - %(message)s",
     )
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-    logger.info(f"Logging initialized with level {log_level}")
+    if console:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+    if log_dir is not None:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = timestamp_path("kavzitrader_log", log_dir, extension="jsonl")
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        if log_format == "json":
+            file_handler.setFormatter(JsonLogFormatter())
+        else:
+            file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    logger.info("Logging initialized with level %s", log_level)
 
     # If dotenv is installed, log environment variables (except sensitive ones)
     try:
@@ -71,7 +88,7 @@ def setup_logging(
         }
 
         if env_vars:
-            logger.debug(f"Relevant environment variables: {env_vars}")
+            logger.debug("Relevant environment variables: %s", env_vars)
 
     except ImportError:
         logger.debug(

@@ -1,14 +1,13 @@
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.events.store import RedisEventStore
-
 from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
+from kavzi_trader.events.store import RedisEventStore
 
 
 def test_context_builder_scout(candle, indicators, volatility_regime) -> None:

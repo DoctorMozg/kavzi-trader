@@ -30,6 +30,10 @@ class RedisEventStore:
             maxlen=self._config.stream_max_length,
             approximate=True,
         )
+        logger.info(
+            "Event stored",
+            extra={"event": event.model_dump(mode="json")},
+        )
         logger.debug("Appended event %s to %s", event_id, stream)
         return str(event_id)
 

@@ -15,8 +15,8 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (

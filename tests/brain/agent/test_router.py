@@ -1,10 +1,8 @@
 from decimal import Decimal
 
-from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.events.store import RedisEventStore
-
 import pytest
 
+from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.brain.agent.router import AgentRouter
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema, KeyLevelsSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
@@ -14,6 +12,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+from kavzi_trader.events.store import RedisEventStore
 
 
 class DummyScout:

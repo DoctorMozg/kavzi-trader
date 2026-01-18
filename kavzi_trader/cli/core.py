@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from kavzi_trader.commons.logging import setup_logging
 from kavzi_trader.config import AppConfig
 
 logger = logging.getLogger(__name__)
@@ -24,12 +25,14 @@ def setup_cli_environment(
 
     app_config = AppConfig.from_env()
 
-    log_level = "DEBUG" if verbose else app_config.system.log_level
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    log_level = "DEBUG" if verbose else app_config.monitoring.log_level
+    setup_logging(
+        log_level=log_level,
+        log_dir=app_config.system.results_dir / "logs",
+        log_format=app_config.monitoring.log_format,
+        console=True,
+        name="kavzitrader",
     )
-    logger.setLevel(log_level)
 
     if verbose:
         logger.debug("Verbose mode enabled")
