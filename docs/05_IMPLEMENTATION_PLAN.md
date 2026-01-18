@@ -393,11 +393,13 @@ tests/
 
 ---
 
-### Phase 4: LLM Integration Core (Tiered Agents)
+### Phase 4: LLM Integration Core (Tiered Agents) ✅ COMPLETED
 
 **Duration**: 2-3 weeks
 
 **Goal**: Implement the tiered PydanticAI agents (Scout → Analyst → Trader) with confidence calibration.
+
+**Status**: Core implementation complete; performance validation pending.
 
 #### Tasks
 
@@ -436,8 +438,8 @@ kavzi_trader/
 │   ├── context/
 │   │   ├── __init__.py
 │   │   ├── builder.py        # ContextBuilder
-│   │   ├── order_flow.py     # Order flow context
-│   │   └── formatter.py      # Markdown/JSON formatters
+│   │   ├── formatters.py     # JSON formatters
+│   │   └── market_snapshot.py
 │   ├── calibration/
 │   │   ├── __init__.py
 │   │   ├── calibrator.py     # ConfidenceCalibrator

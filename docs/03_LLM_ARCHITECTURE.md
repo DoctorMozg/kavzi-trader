@@ -376,6 +376,37 @@ brain/prompts/templates/
         └── make_decision.j2
 ```
 
+### Implemented Prompt Layout
+
+The system/user prompts are stored under `kavzi_trader/brain/prompts/templates/`:
+
+```
+brain/prompts/templates/
+├── system/
+│   ├── base/
+│   │   ├── role.j2
+│   │   ├── risk_rules.j2
+│   │   └── output_format.j2
+│   └── agents/
+│       ├── scout.j2
+│       ├── analyst.j2
+│       └── trader.j2
+└── user/
+    ├── context/
+    │   ├── market_snapshot.j2
+    │   ├── order_flow.j2
+    │   ├── algorithm_confluence.j2
+    │   └── account_state.j2
+    └── requests/
+        ├── scout_scan.j2
+        ├── analyze_setup.j2
+        └── make_decision.j2
+```
+
+System prompts are rendered from the `system/` templates and passed separately
+from user prompts, which are rendered from the `user/` templates with current
+market context.
+
 ### Scout System Prompt
 
 ```jinja2

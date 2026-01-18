@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Mapping
 from typing import Any, cast
 
 from redis.asyncio import Redis  # type: ignore[import-untyped]
@@ -30,7 +31,7 @@ class RedisStateClient:
 
     async def close(self) -> None:
         if self._client:
-            await self._client.aclose()
+            await self._client.close()
             self._client = None
             logger.info("Disconnected from Redis")
 
@@ -41,7 +42,12 @@ class RedisStateClient:
         return self._client
 
     async def hset(self, key: str, mapping: dict[str, Any]) -> None:
-        await self.client.hset(key, mapping=mapping)
+        normalized = {field: str(value) for field, value in mapping.items()}
+        payload = cast(
+            Mapping[str | bytes, bytes | float | int | str],
+            normalized,
+        )
+        await self.client.hset(key, mapping=payload)
 
     async def hget(self, key: str, field: str) -> str | None:
         result = await self.client.hget(key, field)
