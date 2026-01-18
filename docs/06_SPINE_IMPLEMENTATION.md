@@ -376,6 +376,35 @@ class DynamicRiskValidator:
 | R:R ratio | < 1.5 | Reject |
 | Volatility | LOW/EXTREME | Reject |
 
+### 4.5 Pre-Trade Filters ✅ IMPLEMENTED
+
+Algorithmic pre-filters that run before LLM decisions. Located in `spine/filters/`.
+
+**Implemented Components:**
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `FilterConfigSchema` | `config.py` | Filter tuning and thresholds |
+| `LiquidityFilter` | `liquidity.py` | Session-based size adjustment |
+| `NewsEventFilter` | `news.py` | Block around event windows |
+| `FundingRateFilter` | `funding.py` | Block crowded funding |
+| `CorrelationFilter` | `correlation.py` | Reduce correlated exposure |
+| `MinimumMovementFilter` | `movement.py` | Skip low-body candles |
+| `ConfluenceCalculator` | `confluence.py` | Rule-based scoring |
+| `PreTradeFilterChain` | `chain.py` | Ordered filter orchestration |
+
+**Filter Order:**
+
+| Order | Filter | Action |
+|-------|--------|--------|
+| 1 | Volatility | Skip if EXTREME or LOW regime |
+| 2 | News | Skip during major event window |
+| 3 | Funding | Block trades against extreme funding |
+| 4 | Movement | Skip doji/no-body candle |
+| 5 | Position | Skip if max positions reached |
+| 6 | Liquidity | Adjust size (weekend/off-hours) |
+| 7 | Correlation | Reduce size for correlated exposure |
+
 ### 5. Position Manager
 
 Active position management with trailing stops, partial exits, and scaling.

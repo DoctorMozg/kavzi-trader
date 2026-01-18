@@ -185,6 +185,7 @@ tests/
 #### Key Schema: OrderFlowSchema
 
 Computed fields for trading signals:
+
 - `is_crowded_long`: funding_zscore > 2.0
 - `is_crowded_short`: funding_zscore < -2.0
 - `squeeze_alert`: OI change > 5% with price change < 0.5%
@@ -320,7 +321,7 @@ tests/
 
 ---
 
-### Phase 3.5: Pre-Trade Filters (Trading Plan)
+### Phase 3.5: Pre-Trade Filters (Trading Plan) ✅ COMPLETED
 
 **Duration**: 1 week
 
@@ -346,13 +347,29 @@ kavzi_trader/
 ├── spine/
 │   └── filters/
 │       ├── __init__.py
+│       ├── config.py            # FilterConfigSchema
 │       ├── liquidity.py         # Liquidity/time awareness
+│       ├── liquidity_period.py  # LiquidityPeriod enum
+│       ├── liquidity_session_schema.py
 │       ├── news.py              # News event filter
+│       ├── news_event_schema.py
 │       ├── funding.py           # Funding rate filter
 │       ├── correlation.py       # Correlation filter
 │       ├── movement.py          # Minimum movement filter
 │       ├── confluence.py        # Algorithm confluence calc
+│       ├── schemas.py           # Filter result schemas
 │       └── chain.py             # PreTradeFilterChain
+tests/
+├── spine/
+│   └── filters/
+│       ├── conftest.py
+│       ├── test_chain.py
+│       ├── test_confluence.py
+│       ├── test_correlation.py
+│       ├── test_funding.py
+│       ├── test_liquidity.py
+│       ├── test_movement.py
+│       └── test_news.py
 ```
 
 #### Filter Priority Order
@@ -369,10 +386,10 @@ kavzi_trader/
 
 #### Success Criteria
 
-- [ ] 80%+ of candles filtered before LLM
-- [ ] Session filter blocks weekend/off-hours
-- [ ] Funding filter blocks crowded trades
-- [ ] Algorithm confluence score calculated correctly
+- [x] 80%+ of candles filtered before LLM
+- [x] Session filter blocks weekend/off-hours
+- [x] Funding filter blocks crowded trades
+- [x] Algorithm confluence score calculated correctly
 
 ---
 
@@ -749,6 +766,7 @@ dependencies = [
 ### Phase Completion Criteria
 
 Each phase must meet:
+
 - [ ] All unit tests passing (>90% coverage)
 - [ ] Integration tests with mocked exchange
 - [ ] Documentation updated
