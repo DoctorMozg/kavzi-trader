@@ -6,12 +6,13 @@ system:
   models_dir: "models/"
   results_dir: "results/"
   timezone: "UTC"
+  log_level: "INFO"
 
 # API credentials - these will be overridden by environment variables
 api:
   binance:
-    api_key: ${oc.env:BINANCE_API_KEY,""}
-    api_secret: ${oc.env:BINANCE_API_SECRET,""}
+    api_key: ""
+    api_secret: ""
     testnet: true
     use_proxy: false
 
@@ -30,18 +31,17 @@ trading:
 
 # Risk management
 risk:
-  max_risk_percent: 1.0              # Max % of account per trade
-  min_rr_ratio: 1.5                  # Minimum risk/reward ratio
-  max_drawdown_percent: 5.0          # Max drawdown - close all positions
-  pause_new_entries_drawdown: 3.0    # Pause new trades at this drawdown
-  max_position_size_percent: 10      # Max % of account per position
-
-  # Volatility-based position size adjustments
-  volatility_adjustments:
-    LOW: 1.0
-    NORMAL: 1.0
-    HIGH: 0.5
-    EXTREME: 0.25
+  risk_per_trade_percent: 1.0
+  max_positions: 2
+  min_rr_ratio: 1.5
+  drawdown_pause_percent: 3.0
+  drawdown_close_all_percent: 5.0
+  min_sl_atr: 0.5
+  max_sl_atr: 3.0
+  volatility_low_threshold: -1.0
+  volatility_high_threshold: 1.0
+  volatility_extreme_threshold: 2.0
+  atr_zscore_period: 30
 
 # Position management
 position_management:
@@ -51,8 +51,68 @@ position_management:
   partial_exit_size: 0.3             # Exit this % of position
   max_hold_time_hours: 24            # Max time before reassessment
   scale_in_allowed: false            # Allow adding to positions
+  scale_in_max_multiplier: 1.5
 
 # Order flow settings
 order_flow:
   fetch_interval_s: 60               # How often to fetch funding/OI
   funding_extreme_threshold: 2.0     # Z-score threshold for extreme funding
+
+filters:
+  crowded_long_zscore: 2.0
+  crowded_short_zscore: -2.0
+  min_body_atr_ratio: 0.3
+  news_block_before_min: 60
+  news_block_after_min: 30
+  weekend_size_multiplier: 0.5
+  correlated_pairs:
+    BTCUSDT: ["ETHUSDT"]
+    ETHUSDT: ["BTCUSDT"]
+
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: ""
+
+execution:
+  timeout_s: 30
+  staleness_thresholds_ms:
+    LOW: 60000
+    NORMAL: 30000
+    HIGH: 15000
+    EXTREME: 5000
+  immediate_sl_tp: true
+  max_retry_attempts: 3
+
+events:
+  stream_max_length: 100000
+  retention_days: 90
+  streams:
+    orders: "kt:events:orders"
+    positions: "kt:events:positions"
+    decisions: "kt:events:decisions"
+    system: "kt:events:system"
+    liquidations: "kt:events:liquidations"
+
+orchestrator:
+  ws_reconnect_delay_s: 1.0
+  ws_max_reconnect_delay_s: 60.0
+  order_flow_fetch_interval_s: 60
+  position_check_interval_s: 5
+  health_check_interval_s: 30
+  graceful_shutdown_timeout_s: 10
+
+monitoring:
+  log_format: "json"
+  log_level: "INFO"
+  decision_log_enabled: true
+  decision_log_retention_days: 30
+  metrics_enabled: true
+
+paper:
+  mode: "TESTNET"
+  testnet_api_key: ""
+  testnet_api_secret: ""
+  testnet_base_url: "https://testnet.binance.vision"
+  testnet_ws_url: "wss://testnet.binance.vision/ws"

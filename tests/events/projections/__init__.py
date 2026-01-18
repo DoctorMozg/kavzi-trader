@@ -1,0 +1,1 @@
+"""Event projections tests package."""

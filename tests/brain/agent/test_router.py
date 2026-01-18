@@ -1,5 +1,8 @@
 from decimal import Decimal
 
+from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.events.store import RedisEventStore
+
 import pytest
 
 from kavzi_trader.brain.agent.router import AgentRouter
@@ -93,6 +96,8 @@ async def test_router_stops_on_scout_skip(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=positions,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     scout, analyst, trader = await router.run(scout_deps, analyst_deps, trader_deps)
     assert scout.verdict == "SKIP", "Expected scout to skip."
@@ -140,6 +145,8 @@ async def test_router_stops_on_invalid_setup(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=positions,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     scout, analyst, trader = await router.run(scout_deps, analyst_deps, trader_deps)
     assert scout.verdict == "INTERESTING", "Expected scout interest."
@@ -187,6 +194,8 @@ async def test_router_runs_trader_on_valid_setup(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=positions,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     scout, analyst, trader = await router.run(scout_deps, analyst_deps, trader_deps)
     assert trader is not None, "Expected trader result."

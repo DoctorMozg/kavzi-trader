@@ -1,5 +1,8 @@
 from decimal import Decimal
 
+from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.events.store import RedisEventStore
+
 from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
@@ -64,6 +67,8 @@ def test_context_builder_trader(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=positions,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)

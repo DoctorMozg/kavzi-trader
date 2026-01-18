@@ -13,7 +13,7 @@ The Spine is KavziTrader's deterministic execution layer. It handles all real-ti
 | REST Client | `python-binance` (AsyncClient) | Binance REST API |
 | Message Queue | `redis-py` (async) | Inter-component messaging |
 | State Persistence | `redis-py` (async) | Fast state read/write |
-| Event Store | `asyncpg` + `SQLAlchemy` | PostgreSQL event persistence |
+| Event Store | Redis Streams | Append-only event persistence |
 | Data Validation | `pydantic` v2 | Schema validation |
 | Serialization | `json` (stdlib) | JSON encode/decode |
 | Logging | `commons.logging` | Application logging (existing) |

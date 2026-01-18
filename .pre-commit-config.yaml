@@ -26,7 +26,7 @@ repos:
       - id: mypy
         args: [ --config-file, mypy.ini ]
         types: [python]
-        additional_dependencies: [types-PyYAML, pydantic, types-requests, types-dateparser, types-redis]
+        additional_dependencies: [types-PyYAML, pydantic, types-requests, types-dateparser, types-redis, types-aiofiles]
 
   - repo: https://github.com/MarcoGorelli/absolufy-imports
     rev: v0.3.1

@@ -21,11 +21,12 @@ These events form a complete, chronological log of all trading actions and outco
 
 ### Event Store
 
-Events are persisted to an event store (specialized database) that optimizes for append-only operations. For KavziTrader, we'll use:
+Events are persisted to an event store that optimizes for append-only operations. For
+KavziTrader, we use **Redis Streams**:
 
-- TimeseriesDB with specialized indexes for event streams
-- Events organized by aggregate type (Order, Position, Account) and ID
-- JSON or MessagePack for event data serialization
+- Redis Streams for append-only event writes
+- Streams organized by aggregate type (orders, positions, decisions, system)
+- JSON serialization for event data
 
 ### Projections
 
@@ -45,10 +46,10 @@ Projections transform the event stream into the current state or derived views:
    - Generate appropriate events
    - Persist events to the event store
 
-2. **Event Store**:
-   - Append-only store for events
-   - Version control for aggregates
-   - Support for event streams and subscriptions
+2. **Event Store (Redis Streams)**:
+   - Append-only store using Redis Streams
+   - Stream keys per aggregate type
+   - Supports stream range queries
 
 3. **Projection Engine**:
    - Process events to build current state
@@ -106,9 +107,9 @@ Command → Command Handler → Event(s) → Event Store
 
 ### Phase 2: Event Store Implementation
 
-- Set up specialized database tables for efficient event storage
-- Implement event persistence with optimistic concurrency control
-- Create query interfaces for event retrieval and streaming
+- Create Redis Streams per aggregate type
+- Implement event persistence with stream length limits
+- Create query interfaces for event retrieval and filtering
 
 ### Phase 3: Projection Framework
 
