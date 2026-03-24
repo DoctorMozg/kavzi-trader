@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 from datetime import UTC, datetime
@@ -14,6 +16,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
@@ -40,6 +43,7 @@ class ReasoningLoop:
         redis_client: RedisStateClient,
         queue_key: str = "kt:decisions:pending",
         interval_s: int = 5,
+        report_populator: TradeReportPopulator | None = None,
     ) -> None:
         self._symbols = symbols
         self._router = router
@@ -47,6 +51,7 @@ class ReasoningLoop:
         self._redis_client = redis_client
         self._queue_key = queue_key
         self._interval_s = interval_s
+        self._report_populator = report_populator
 
     async def run(self) -> None:
         while True:
@@ -67,6 +72,7 @@ class ReasoningLoop:
             analyst_deps=analyst_deps,
             trader_deps=trader_deps,
         )
+        await self._report_decisions(symbol, scout, analyst, trader)
         if not self._should_enqueue(scout, analyst, trader):
             return
         if trader is None:
@@ -76,6 +82,35 @@ class ReasoningLoop:
             self._queue_key,
             decision.model_dump_json(),
         )
+
+    async def _report_decisions(
+        self,
+        symbol: str,
+        scout: ScoutDecisionSchema,
+        analyst: AnalystDecisionSchema | None,
+        trader: TradeDecisionSchema | None,
+    ) -> None:
+        if self._report_populator is None:
+            return
+        await self._report_populator.record_action(
+            action_type="scout_scan",
+            symbol=symbol,
+            summary="Verdict: %s — %s" % (scout.verdict, scout.reason),
+        )
+        if analyst is not None:
+            await self._report_populator.record_action(
+                action_type="analyst_review",
+                symbol=symbol,
+                summary="Valid: %s, Direction: %s"
+                % (analyst.setup_valid, analyst.direction),
+            )
+        if trader is not None:
+            await self._report_populator.record_action(
+                action_type="trader_decision",
+                symbol=symbol,
+                summary="Action: %s, Confidence: %.0f%%"
+                % (trader.action, trader.confidence * 100),
+            )
 
     def _should_enqueue(
         self,

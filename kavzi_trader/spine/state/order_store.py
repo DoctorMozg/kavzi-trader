@@ -1,5 +1,7 @@
 import logging
 
+from pydantic import ValidationError
+
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import OpenOrderSchema
 
@@ -15,11 +17,19 @@ class OrderStore:
     def _order_key(self, order_id: str) -> str:
         return f"{ORDER_KEY_PREFIX}:{order_id}"
 
+    def _parse_order(self, key: str, data: dict[str, str]) -> OpenOrderSchema | None:
+        try:
+            return OpenOrderSchema.model_validate_json(data["data"])
+        except (ValidationError, KeyError):
+            logger.exception("Corrupt order data in Redis key %s", key)
+            return None
+
     async def get(self, order_id: str) -> OpenOrderSchema | None:
-        data = await self._redis.hgetall(self._order_key(order_id))
+        key = self._order_key(order_id)
+        data = await self._redis.hgetall(key)
         if not data:
             return None
-        return OpenOrderSchema.model_validate_json(data["data"])
+        return self._parse_order(key, data)
 
     async def get_by_symbol(self, symbol: str) -> list[OpenOrderSchema]:
         orders = await self.get_all()
@@ -35,7 +45,9 @@ class OrderStore:
         for key in keys:
             data = await self._redis.hgetall(key)
             if data:
-                orders.append(OpenOrderSchema.model_validate_json(data["data"]))
+                order = self._parse_order(key, data)
+                if order is not None:
+                    orders.append(order)
         return orders
 
     async def save(self, order: OpenOrderSchema) -> None:

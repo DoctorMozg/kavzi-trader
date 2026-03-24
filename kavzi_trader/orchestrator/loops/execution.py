@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import logging
+from decimal import Decimal
 
+from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.execution.engine import ExecutionEngine
+from kavzi_trader.spine.execution.execution_result_schema import ExecutionResultSchema
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 
 logger = logging.getLogger(__name__)
@@ -16,10 +21,12 @@ class ExecutionLoop:
         redis_client: RedisStateClient,
         engine: ExecutionEngine,
         queue_key: str = "kt:decisions:pending",
+        report_populator: TradeReportPopulator | None = None,
     ) -> None:
         self._redis_client = redis_client
         self._engine = engine
         self._queue_key = queue_key
+        self._report_populator = report_populator
 
     async def run(self) -> None:
         while True:
@@ -35,7 +42,29 @@ class ExecutionLoop:
                 except Exception:
                     logger.exception("Failed to parse decision payload")
                     continue
-                await self._engine.execute(decision)
+                result = await self._engine.execute(decision)
+                await self._report_execution(decision, result)
             except Exception:
                 logger.exception("ExecutionLoop encountered an error, continuing")
                 await asyncio.sleep(0.1)
+
+    async def _report_execution(
+        self,
+        decision: DecisionMessageSchema,
+        result: ExecutionResultSchema,
+    ) -> None:
+        if self._report_populator is None:
+            return
+        await self._report_populator.record_trade(
+            symbol=decision.symbol,
+            side=decision.action,
+            status=result.status,
+            confidence=decision.calibrated_confidence,
+            entry_price=decision.entry_price,
+            quantity=Decimal(str(result.executed_qty))
+            if result.executed_qty
+            else decision.quantity,
+            stop_loss=decision.stop_loss,
+            take_profit=decision.take_profit,
+            reasoning=result.error_message or "",
+        )

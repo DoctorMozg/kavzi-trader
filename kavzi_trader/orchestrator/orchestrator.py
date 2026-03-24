@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 
@@ -8,6 +10,7 @@ from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.state.manager import StateManager
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,7 @@ class TradingOrchestrator:
         execution_loop: ExecutionLoop,
         position_loop: PositionManagementLoop,
         health_checker: HealthChecker,
+        report_populator: TradeReportPopulator | None = None,
     ) -> None:
         self._config = config
         self._state_manager = state_manager
@@ -35,6 +39,7 @@ class TradingOrchestrator:
         self._execution_loop = execution_loop
         self._position_loop = position_loop
         self._health_checker = health_checker
+        self._report_populator = report_populator
         self._tasks: list[asyncio.Task[None]] = []
 
     async def start(self) -> None:
@@ -48,6 +53,10 @@ class TradingOrchestrator:
             asyncio.create_task(self._position_loop.run()),
             asyncio.create_task(self._health_loop()),
         ]
+        if self._report_populator is not None:
+            self._tasks.append(
+                asyncio.create_task(self._report_loop()),
+            )
         await asyncio.gather(*self._tasks)
 
     async def shutdown(self) -> None:
@@ -64,3 +73,23 @@ class TradingOrchestrator:
                     logger.warning("Health check failed")
             except Exception:
                 logger.exception("Health check loop encountered an error")
+
+    async def _report_loop(self) -> None:
+        """Periodically refreshes balance data in the report."""
+        while True:
+            try:
+                await asyncio.sleep(5)
+                if self._report_populator is None:
+                    continue
+                account = await self._state_manager.get_account_state()
+                positions = await self._state_manager.get_all_positions()
+                if account is not None:
+                    await self._report_populator.update_balance(
+                        current_balance_usdt=account.total_balance_usdt,
+                        unrealized_pnl_usdt=account.unrealized_pnl,
+                        active_positions_count=len(positions),
+                    )
+            except Exception:
+                logger.exception(
+                    "Report loop encountered an error, continuing",
+                )

@@ -193,7 +193,7 @@ class ExecutionEngine:
                 symbol=decision.symbol,
                 side=side,
                 order_type=OrderType.MARKET,
-                quantity=decision.quantity,
+                quantity=position.quantity,
             )
         except Exception as exc:
             logger.exception("Failed to close position for %s", decision.symbol)
@@ -264,25 +264,49 @@ class ExecutionEngine:
         take_side = stop_side
 
         stop_price = self._stop_price_for_side(position.side, position.stop_loss)
-        stop_response = await self._exchange.create_order(
-            symbol=position.symbol,
-            side=stop_side,
-            order_type=OrderType.STOP_LOSS_LIMIT,
-            quantity=position.quantity,
-            price=stop_price,
-            stop_price=position.stop_loss,
-        )
-        await self._save_linked_order(stop_response, position.id)
+        try:
+            stop_response = await self._exchange.create_order(
+                symbol=position.symbol,
+                side=stop_side,
+                order_type=OrderType.STOP_LOSS_LIMIT,
+                quantity=position.quantity,
+                price=stop_price,
+                stop_price=position.stop_loss,
+            )
+            await self._save_linked_order(stop_response, position.id)
+        except Exception:
+            logger.exception(
+                "Failed to place stop-loss for position %s, closing position",
+                position.id,
+            )
+            await self._emergency_close(position)
+            return
 
-        take_response = await self._exchange.create_order(
-            symbol=position.symbol,
-            side=take_side,
-            order_type=OrderType.TAKE_PROFIT_LIMIT,
-            quantity=position.quantity,
-            price=position.take_profit,
-            stop_price=position.take_profit,
-        )
-        await self._save_linked_order(take_response, position.id)
+        try:
+            take_response = await self._exchange.create_order(
+                symbol=position.symbol,
+                side=take_side,
+                order_type=OrderType.TAKE_PROFIT_LIMIT,
+                quantity=position.quantity,
+                price=position.take_profit,
+                stop_price=position.take_profit,
+            )
+            await self._save_linked_order(take_response, position.id)
+        except Exception:
+            logger.exception(
+                "Failed to place take-profit for position %s; stop-loss is active",
+                position.id,
+            )
+            await self._record_event(
+                aggregate_id=position.id,
+                aggregate_type="position",
+                event_type="protective_order_failed",
+                data={
+                    "symbol": position.symbol,
+                    "failed_order": "take_profit",
+                    "stop_loss_active": True,
+                },
+            )
 
     async def _save_linked_order(
         self,
@@ -324,6 +348,35 @@ class ExecutionEngine:
             timestamp=utc_now(),
         )
         await self._event_store.append(event)
+
+    async def _emergency_close(self, position: PositionSchema) -> None:
+        """Close position on exchange when protective orders cannot be placed."""
+        close_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        try:
+            await self._exchange.create_order(
+                symbol=position.symbol,
+                side=close_side,
+                order_type=OrderType.MARKET,
+                quantity=position.quantity,
+            )
+            await self._state_manager.remove_position(position.id)
+            logger.warning(
+                "Emergency-closed position %s for %s",
+                position.id,
+                position.symbol,
+            )
+        except Exception:
+            logger.exception(
+                "CRITICAL: Emergency close FAILED for position %s — "
+                "manual intervention required",
+                position.id,
+            )
+        await self._record_event(
+            aggregate_id=position.id,
+            aggregate_type="position",
+            event_type="emergency_close",
+            data={"symbol": position.symbol, "reason": "protective_order_failure"},
+        )
 
     def _position_side(
         self,

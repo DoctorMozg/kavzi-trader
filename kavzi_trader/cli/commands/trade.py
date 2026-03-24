@@ -39,6 +39,7 @@ from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
 from kavzi_trader.orchestrator.orchestrator import TradingOrchestrator
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
+from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
 from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.execution.monitor import OrderMonitor
@@ -292,6 +293,23 @@ async def _start_orchestrator(app_config: AppConfig) -> None:
         scaling=ScaleInChecker(),
     )
 
+    report_populator: TradeReportPopulator | None = None
+    if app_config.reporting.enabled:
+        await state_manager.connect()
+        account = await state_manager.get_account_state()
+        initial_balance = (
+            account.total_balance_usdt
+            if account is not None
+            else Decimal("1000")
+        )
+        report_populator = TradeReportPopulator(
+            report_dir=app_config.reporting.report_dir,
+            initial_balance_usdt=initial_balance,
+            max_action_entries=app_config.reporting.max_action_entries,
+            max_trade_entries=app_config.reporting.max_trade_entries,
+            refresh_interval_s=app_config.reporting.refresh_interval_s,
+        )
+
     orchestrator = TradingOrchestrator(
         config=OrchestratorConfigSchema(),
         state_manager=state_manager,
@@ -303,15 +321,22 @@ async def _start_orchestrator(app_config: AppConfig) -> None:
             deps_provider=deps_provider,
             redis_client=redis_client,
             interval_s=5,
+            report_populator=report_populator,
         ),
-        execution_loop=ExecutionLoop(redis_client=redis_client, engine=engine),
+        execution_loop=ExecutionLoop(
+            redis_client=redis_client,
+            engine=engine,
+            report_populator=report_populator,
+        ),
         position_loop=PositionManagementLoop(
             manager=position_manager,
             state_manager=state_manager,
             atr_provider=_NoopAtrProvider(),
             interval_s=5,
+            report_populator=report_populator,
         ),
         health_checker=HealthChecker(),
+        report_populator=report_populator,
     )
     await orchestrator.start()
 

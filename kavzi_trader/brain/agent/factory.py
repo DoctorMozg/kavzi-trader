@@ -5,7 +5,6 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from kavzi_trader.brain.agent.tools import get_liquidity_depth, get_recent_liquidations
 from kavzi_trader.brain.config import BrainConfigSchema
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
@@ -99,5 +98,4 @@ class AgentFactory:
             deps_type=TradingDependenciesSchema,
             instructions=system_prompt,
             retries=self._config.trader.retries,
-            tools=[get_liquidity_depth, get_recent_liquidations],
         )

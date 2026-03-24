@@ -1,117 +1,339 @@
-# Main configuration file for KavziTrader
+# =============================================================================
+# KavziTrader — Main Configuration
+# =============================================================================
+# Brain-Spine crypto trading platform for Binance.
+# Environment variables override values here (e.g. KT_OPENROUTER_API_KEY).
 
-# System settings
+# -----------------------------------------------------------------------------
+# System — directory paths and global defaults
+# -----------------------------------------------------------------------------
 system:
-  data_dir: "data/"
-  models_dir: "models/"
-  results_dir: "results/"
-  timezone: "UTC"
-  log_level: "INFO"
+  data_dir: "data/"            # Market data storage (candles, order book snapshots)
+  models_dir: "models/"        # Serialised ML / calibration artefacts
+  results_dir: "results/"      # Back-test and analysis output
+  timezone: "UTC"              # All internal timestamps use this timezone
 
-# API credentials - these will be overridden by environment variables
+# -----------------------------------------------------------------------------
+# API — Binance credentials (override via BINANCE_API_KEY / BINANCE_API_SECRET)
+# -----------------------------------------------------------------------------
 api:
   binance:
     api_key: ""
     api_secret: ""
-    testnet: true
-    use_proxy: false
+    testnet: true              # true = route orders to Binance Testnet, not live
+    use_proxy: false           # true = route traffic through a configured HTTP proxy
 
-# Brain (LLM) configuration - OpenRouter
-# See docs/RESEARCH_TRADE_MODELS.md for model selection rationale
+# -----------------------------------------------------------------------------
+# Brain — LLM tier configuration via OpenRouter
+# See docs/RESEARCH_TRADE_MODELS.md for model selection rationale.
+#
+# Pipeline: Candle → Scout (filter) → Analyst (validate) → Trader (decision)
+# 90%+ of candles are filtered at the cheap Scout tier.
+# -----------------------------------------------------------------------------
 brain:
-  openrouter_api_key: ""  # Override via KT_OPENROUTER_API_KEY env var
+  openrouter_api_key: ""       # Override via KT_OPENROUTER_API_KEY env var
   openrouter_base_url: "https://openrouter.ai/api/v1"
+
   scout:
-    # Tier 1: Pre-filter — cheap & fast ($0.065/$0.26, 1M ctx)
+    # Tier 1 — Pre-filter: cheap & fast ($0.065/$0.26 per M tokens, 1M ctx)
     # Alternatives: deepseek/deepseek-v3.2, openai/gpt-4.1-nano
     model_id: "qwen/qwen3.5-flash-02-23"
-    retries: 1
-    temperature: 0.0
+    retries: 1                 # Max retry attempts on transient API errors
+    temperature: 0.0           # 0.0 = deterministic output (recommended for trading)
+
   analyst:
-    # Tier 2: Financial reasoning — 88.23% accuracy ($1.25/$10.00)
+    # Tier 2 — Financial reasoning: 88.23% accuracy ($1.25/$10.00 per M tokens)
     # Alternatives: anthropic/claude-opus-4.6 (87.82%), anthropic/claude-sonnet-4.5 (83.61%)
     model_id: "openai/gpt-5"
     retries: 2
     temperature: 0.0
+
   trader:
-    # Tier 3: Final decision — 87.82% financial accuracy, most token-efficient ($5.00/$25.00)
-    # Alternatives: openai/gpt-5 (88.23%), openai/gpt-4.1 (best tool calling value)
+    # Tier 3 — Final decision: 87.82% accuracy, most token-efficient ($5.00/$25.00 per M tokens)
+    # Alternatives: openai/gpt-5 (88.23%), openai/gpt-4.1 (best tool-calling value)
     model_id: "anthropic/claude-opus-4.6"
     retries: 2
     temperature: 0.0
 
-# Trading configuration
+# -----------------------------------------------------------------------------
+# Trading — symbols, timeframe, portfolio limits
+# -----------------------------------------------------------------------------
 trading:
-  # Trading pairs to monitor and trade
+  # Binance Futures symbols to monitor and trade
   symbols:
     - BTCUSDT
     - ETHUSDT
 
-  # Timeframe for analysis
+  # Candlestick interval for analysis
+  # Valid: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 1d
   interval: "15m"
 
-  # Maximum concurrent positions
+  # Max concurrent positions is configured in risk.max_positions
+
+# -----------------------------------------------------------------------------
+# Risk — per-trade sizing, drawdown limits, volatility regime detection
+# -----------------------------------------------------------------------------
+risk:
+  # Percentage of total account balance risked on a single trade.
+  # risk_amount = account_balance * (risk_per_trade_percent / 100)
+  # Then position size = risk_amount / stop_loss_distance.
+  #   0.5  = conservative (small positions)
+  #   1.0  = moderate (default)
+  #   2.0  = aggressive (larger positions, higher drawdown risk)
+  risk_per_trade_percent: 1.0
+
+  # Maximum concurrent open positions (rejects new trades when reached).
+  #   1 = single-position mode (simplest)
+  #   2 = default (one per symbol)
+  #   3+ = multi-pair portfolio
   max_positions: 2
 
-# Risk management
-risk:
-  risk_per_trade_percent: 1.0
-  max_positions: 2
+  # Minimum risk:reward ratio required to accept a trade.
+  # Calculated as: (distance to TP) / (distance to SL) >= min_rr_ratio
+  #   1.0 = breakeven expectancy (not recommended)
+  #   1.5 = default — need $1.50 reward for every $1 risked
+  #   2.0 = conservative (fewer but higher-quality setups)
+  #   3.0 = very selective
   min_rr_ratio: 1.5
+
+  # Account drawdown (%) at which NEW trades are paused (existing positions stay open).
+  # Calculated from peak account balance.
+  #   2.0  = tight (pauses early)
+  #   3.0  = default
+  #   5.0  = permissive
   drawdown_pause_percent: 3.0
+
+  # Account drawdown (%) at which ALL positions are emergency-closed.
+  # Circuit breaker — must be greater than drawdown_pause_percent.
+  #   5.0  = default
+  #   10.0 = permissive (dangerous for small accounts)
   drawdown_close_all_percent: 5.0
+
+  # Minimum stop-loss distance in ATR multiples.
+  # Rejects trades where SL is too tight (likely to be stopped out by noise).
+  #   0.3 = very tight (high noise risk)
+  #   0.5 = default
+  #   1.0 = wide minimum
   min_sl_atr: 0.5
+
+  # Maximum stop-loss distance in ATR multiples.
+  # Rejects trades where SL is too wide (excessive per-trade risk).
+  #   2.0 = tight cap
+  #   3.0 = default
+  #   5.0 = permissive (large swings tolerated)
   max_sl_atr: 3.0
+
+  # Volatility regime detection via ATR Z-score.
+  # Z-score = (current_ATR - mean_ATR) / stdev_ATR over atr_zscore_period candles.
+  # Regimes: LOW → NORMAL → HIGH → EXTREME
+  #
+  # LOW regime (z < low_threshold): insufficient price movement, trading blocked.
+  #  -1.5 = strict (blocks more often)
+  #  -1.0 = default
+  #  -0.5 = permissive
   volatility_low_threshold: -1.0
+
+  # HIGH regime (z >= high_threshold): elevated volatility, position size halved (50%).
+  #   0.5 = sensitive (triggers size reduction sooner)
+  #   1.0 = default
+  #   1.5 = permissive
   volatility_high_threshold: 1.0
+
+  # EXTREME regime (z >= extreme_threshold): market spike/crash, trading blocked.
+  #   1.5 = sensitive
+  #   2.0 = default
+  #   3.0 = permissive (allows trading in very volatile conditions)
   volatility_extreme_threshold: 2.0
+
+  # Number of historical ATR values for Z-score mean/stdev calculation.
+  #   14 = responsive (reacts quickly to regime changes)
+  #   30 = default (balanced smoothing)
+  #   50 = stable (slow to change regime, fewer false signals)
   atr_zscore_period: 30
 
-# Position management
+# -----------------------------------------------------------------------------
+# Position Management — trailing stops, break-even, partial exits, scaling
+# These checks run every position_check_interval_s seconds.
+# -----------------------------------------------------------------------------
 position_management:
-  trailing_stop_atr_multiplier: 1.5  # Trail at this ATR distance
-  break_even_trigger_atr: 1.0        # Move SL to BE after this ATR profit
-  partial_exit_at_percent: 0.5       # Take partial at % to TP
-  partial_exit_size: 0.3             # Exit this % of position
-  max_hold_time_hours: 24            # Max time before reassessment
-  scale_in_allowed: false            # Allow adding to positions
+  # Trailing stop distance in ATR multiples.
+  # Once trade is 2+ ATR in profit, SL trails at this distance below price (LONG)
+  # or above price (SHORT).
+  #   1.0 = tight trail (locks profit fast, more likely to be stopped)
+  #   1.5 = default
+  #   2.0 = wide trail (gives more room, but gives back more profit on reversal)
+  trailing_stop_atr_multiplier: 1.5
+
+  # Profit threshold (in ATR multiples) to move SL to entry price (break-even).
+  # Eliminates downside risk after initial favorable move.
+  #   0.5 = aggressive (move to BE very early)
+  #   1.0 = default (1 ATR of profit before BE)
+  #   2.0 = patient (waits for larger move)
+  break_even_trigger_atr: 1.0
+
+  # Progress toward take-profit (0.0–1.0) at which to take partial profit.
+  # 0.5 means "when price reaches 50% of the way from entry to TP".
+  #   0.3 = early partial (locks profit sooner)
+  #   0.5 = default (halfway to TP)
+  #   0.75 = late partial (lets more of the move play out)
+  partial_exit_at_percent: 0.5
+
+  # Fraction of position size (0.0–1.0) to close on partial exit.
+  #   0.25 = exit quarter of position
+  #   0.3  = default (exit 30%)
+  #   0.5  = exit half of position
+  partial_exit_size: 0.3
+
+  # Maximum hours a position can stay open before force-close.
+  # Prevents capital from being tied up in stale, non-moving trades.
+  #   12 = aggressive (half-day max)
+  #   24 = default (one day)
+  #   48 = patient (two days)
+  max_hold_time_hours: 24
+
+  # Whether to allow adding to winning positions (scale-in).
+  # When true, adds to position if profitable but retraced within 0.5 ATR of entry.
+  scale_in_allowed: false
+
+  # Maximum total position size as multiplier of original size when scaling in.
+  # Only applies when scale_in_allowed is true.
+  # Additional quantity = original_quantity * (multiplier - 1.0)
+  #   1.25 = add 25% more
+  #   1.5  = default (add 50% more, total becomes 1.5x original)
+  #   2.0  = double the position
   scale_in_max_multiplier: 1.5
 
-# Order flow settings
+# -----------------------------------------------------------------------------
+# Order Flow — funding rate and open interest monitoring
+# Fetch interval is configured in orchestrator.order_flow_fetch_interval_s
+# -----------------------------------------------------------------------------
 order_flow:
-  fetch_interval_s: 60               # How often to fetch funding/OI
-  funding_extreme_threshold: 2.0     # Z-score threshold for extreme funding
+  # Z-score threshold for flagging extreme funding rate conditions.
+  # Extreme funding often precedes mean-reversion moves.
+  #   1.5 = sensitive
+  #   2.0 = default
+  #   3.0 = only flag severe extremes
+  funding_extreme_threshold: 2.0
 
+# -----------------------------------------------------------------------------
+# Filters — pre-trade validation gates (all must pass before execution)
+# -----------------------------------------------------------------------------
 filters:
+  # Funding rate Z-score above which LONG trades are rejected as "crowded".
+  # High positive funding = longs paying shorts = overcrowded long side.
+  #   1.5 = strict (blocks longs earlier)
+  #   2.0 = default
+  #   3.0 = permissive
   crowded_long_zscore: 2.0
+
+  # Funding rate Z-score below which SHORT trades are rejected as "crowded".
+  # Large negative funding = shorts paying longs = overcrowded short side.
+  #  -1.5 = permissive
+  #  -2.0 = default
+  #  -3.0 = strict (blocks shorts only at extreme negative funding)
   crowded_short_zscore: -2.0
+
+  # Minimum candle body size as a ratio of current ATR.
+  # Filters out small/doji candles without meaningful directional movement.
+  # body_ratio = abs(close - open) / ATR
+  #   0.2 = permissive (accepts smaller candles)
+  #   0.3 = default
+  #   0.5 = strict (requires strong directional candle)
   min_body_atr_ratio: 0.3
+
+  # Minutes BEFORE a scheduled economic event to block new trades.
+  # Prevents entries during pre-event uncertainty and widening spreads.
+  #   30  = short blackout
+  #   60  = default (1 hour before event)
+  #   120 = conservative (2 hours before)
   news_block_before_min: 60
+
+  # Minutes AFTER a scheduled economic event to block new trades.
+  # Prevents entries during post-event volatility spike and whipsaw.
+  #   15 = short cooldown
+  #   30 = default
+  #   60 = conservative
   news_block_after_min: 30
+
+  # Position size multiplier for weekend trading (Saturday, Sunday before 20:00 UTC).
+  # Crypto markets have lower liquidity on weekends — wider spreads, more slippage.
+  #   0.25 = very conservative (quarter size)
+  #   0.5  = default (half size)
+  #   1.0  = no weekend reduction (not recommended)
   weekend_size_multiplier: 0.5
+
+  # Map of correlated pairs. If a correlated symbol already has an open position,
+  # the new position's size is reduced to limit portfolio correlation risk.
   correlated_pairs:
     BTCUSDT: ["ETHUSDT"]
     ETHUSDT: ["BTCUSDT"]
 
+# -----------------------------------------------------------------------------
+# Redis — event store and state management backend
+# Start with: cd docker && docker-compose up -d
+# -----------------------------------------------------------------------------
 redis:
   host: "localhost"
-  port: 6379
-  db: 0
-  password: ""
+  port: 6379                   # Default Redis port
+  db: 0                        # Redis database index (0–15)
+  password: ""                 # Leave empty for no auth; set for production
 
+# -----------------------------------------------------------------------------
+# Execution — order placement, staleness detection, retry logic
+# -----------------------------------------------------------------------------
 execution:
+  # Maximum seconds to wait for an order to be filled on Binance.
+  # If not filled within this window, order is considered failed.
+  #   10 = fast timeout (may miss fills in illiquid conditions)
+  #   30 = default
+  #   60 = patient (useful for large orders)
   timeout_s: 30
+
+  # Decision staleness thresholds per volatility regime (milliseconds).
+  # If a trade decision is older than this threshold when it reaches the execution
+  # engine, it is marked EXPIRED and discarded (market has moved since the decision).
+  # Lower = stricter freshness requirement.
+  #
+  #   LOW     regime: market is slow, decisions stay valid longer  → 60000ms (60s)
+  #   NORMAL  regime: default market conditions                    → 30000ms (30s)
+  #   HIGH    regime: fast-moving market, decisions stale quicker  → 15000ms (15s)
+  #   EXTREME regime: spiking market, only very fresh decisions    →  5000ms  (5s)
   staleness_thresholds_ms:
     LOW: 60000
     NORMAL: 30000
     HIGH: 15000
     EXTREME: 5000
+
+  # Whether to place SL and TP orders immediately after entry fill.
+  # true  = place SL/TP right away (recommended — protects against sudden moves)
+  # false = defer SL/TP placement (e.g. for manual management)
   immediate_sl_tp: true
+
+  # Maximum retry attempts for failed order submissions (e.g. network errors).
+  #   1 = no retries (fail fast)
+  #   3 = default
+  #   5 = aggressive retrying
   max_retry_attempts: 3
 
+# -----------------------------------------------------------------------------
+# Events — Redis Streams event sourcing (immutable audit trail)
+# -----------------------------------------------------------------------------
 events:
+  # Maximum entries per Redis Stream before oldest entries are trimmed.
+  # Uses approximate trimming (MAXLEN ~) for performance.
+  #   10000   = small footprint (~few MB)
+  #   100000  = default (~tens of MB, covers days of trading)
+  #   1000000 = large history (hundreds of MB)
   stream_max_length: 100000
+
+  # Days to retain events before periodic pruning removes them.
+  #   30  = one month
+  #   90  = default (one quarter)
+  #   365 = one year (large storage)
   retention_days: 90
+
+  # Redis Stream key names for each event aggregate type.
+  # Change these only if you need to avoid key collisions in a shared Redis instance.
   streams:
     orders: "kt:events:orders"
     positions: "kt:events:positions"
@@ -119,24 +341,114 @@ events:
     system: "kt:events:system"
     liquidations: "kt:events:liquidations"
 
+# -----------------------------------------------------------------------------
+# Orchestrator — async loop intervals and WebSocket reconnection
+# Manages 5 concurrent loops: DataIngest, OrderFlow, Reasoning, Execution,
+# PositionManagement.
+# -----------------------------------------------------------------------------
 orchestrator:
+  # Initial delay (seconds) before first WebSocket reconnection attempt.
+  # Backs off exponentially on repeated failures up to ws_max_reconnect_delay_s.
+  #   0.5 = fast first retry
+  #   1.0 = default
+  #   5.0 = cautious
   ws_reconnect_delay_s: 1.0
+
+  # Maximum delay cap (seconds) for exponential WebSocket reconnection backoff.
+  # Prevents backoff from growing indefinitely.
+  #   30  = aggressive cap (reconnects sooner)
+  #   60  = default
+  #   120 = patient
   ws_max_reconnect_delay_s: 60.0
+
+  # How often (seconds) the OrderFlowLoop fetches funding rate / open interest.
+  #   30  = frequent polling
+  #   60  = default
+  #   120 = infrequent (lower API load)
   order_flow_fetch_interval_s: 60
+
+  # How often (seconds) PositionManagementLoop evaluates open positions
+  # for trailing stop, break-even, partial exit, time exit, and scale-in actions.
+  #   1  = real-time (high CPU)
+  #   5  = default (responsive enough for 15m candles)
+  #   15 = relaxed
   position_check_interval_s: 5
+
+  # How often (seconds) the orchestrator runs a health check on all loops.
+  # Logs warnings if any loop becomes unresponsive.
+  #   10 = frequent monitoring
+  #   30 = default
+  #   60 = infrequent
   health_check_interval_s: 30
+
+  # Timeout (seconds) for graceful shutdown — waits for loops to finish
+  # before force-cancelling remaining tasks.
+  #   5  = fast shutdown
+  #   10 = default
+  #   30 = patient (useful if orders are in-flight)
   graceful_shutdown_timeout_s: 10
 
+# -----------------------------------------------------------------------------
+# Monitoring — logging format, decision audit trail, metrics
+# -----------------------------------------------------------------------------
 monitoring:
+  # Log output format.
+  #   "json" = structured JSON lines (recommended for production / log aggregation)
+  #   "text" = human-readable text (useful for local development)
   log_format: "json"
+
+  # Application log level (can be overridden with --verbose CLI flag → DEBUG).
+  # DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_level: "INFO"
+
+  # Whether to log every trader decision to the decision audit trail.
   decision_log_enabled: true
+
+  # Days to retain decision logs before cleanup.
+  #   7   = one week
+  #   30  = default (one month)
+  #   90  = one quarter
   decision_log_retention_days: 30
+
+  # Whether system metrics collection is enabled (for future Prometheus / etc.).
   metrics_enabled: true
 
+# -----------------------------------------------------------------------------
+# Reporting — live HTML session reports
+# -----------------------------------------------------------------------------
+reporting:
+  # Whether to generate live HTML reports during trading sessions.
+  enabled: true
+
+  # Directory where session report HTML files are written.
+  # A new timestamped file is created for each session/run.
+  report_dir: "results/reports"
+
+  # How often (seconds) the HTML page auto-refreshes in the browser.
+  #   3  = default (responsive during active trading)
+  #   10 = relaxed (lower browser resource usage)
+  refresh_interval_s: 3
+
+  # Maximum number of entries to keep in the activity log.
+  max_action_entries: 500
+
+  # Maximum number of entries to keep in the trade actions table.
+  max_trade_entries: 200
+
+# -----------------------------------------------------------------------------
+# Paper Trading — Binance Testnet configuration
+# -----------------------------------------------------------------------------
 paper:
+  # Trading mode — controls where orders are routed.
+  #   "TESTNET"  = execute against Binance Testnet (no real money; default)
+  #   "LIVE"     = execute against live Binance Futures (real money!)
+  #   "DISABLED" = disable all execution (analysis-only / dry-run mode)
   mode: "TESTNET"
+
+  # Binance Testnet API credentials (override via env vars for security)
   testnet_api_key: ""
   testnet_api_secret: ""
+
+  # Testnet endpoint URLs
   testnet_base_url: "https://testnet.binance.vision"
   testnet_ws_url: "wss://testnet.binance.vision/ws"

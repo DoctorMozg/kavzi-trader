@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 from decimal import Decimal
 from typing import Protocol
 
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
 from kavzi_trader.spine.position.position_action_type import PositionActionType
@@ -26,11 +29,13 @@ class PositionManagementLoop:
         state_manager: StateManager,
         atr_provider: AtrProvider,
         interval_s: int,
+        report_populator: TradeReportPopulator | None = None,
     ) -> None:
         self._manager = manager
         self._state_manager = state_manager
         self._atr_provider = atr_provider
         self._interval_s = interval_s
+        self._report_populator = report_populator
 
     async def run(self) -> None:
         while True:
@@ -64,6 +69,12 @@ class PositionManagementLoop:
     ) -> None:
         if action.action == PositionActionType.NO_ACTION:
             return
+        if self._report_populator is not None:
+            await self._report_populator.record_action(
+                action_type=action.action.value.lower(),
+                symbol=position.symbol,
+                summary=action.reason,
+            )
         if action.action == PositionActionType.FULL_EXIT:
             await self._state_manager.remove_position(position.id)
             return

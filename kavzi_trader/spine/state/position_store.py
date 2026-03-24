@@ -1,5 +1,7 @@
 import logging
 
+from pydantic import ValidationError
+
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import PositionSchema
 
@@ -15,11 +17,19 @@ class PositionStore:
     def _position_key(self, position_id: str) -> str:
         return f"{POSITION_KEY_PREFIX}:{position_id}"
 
+    def _parse_position(self, key: str, data: dict[str, str]) -> PositionSchema | None:
+        try:
+            return PositionSchema.model_validate_json(data["data"])
+        except (ValidationError, KeyError):
+            logger.exception("Corrupt position data in Redis key %s", key)
+            return None
+
     async def get(self, position_id: str) -> PositionSchema | None:
-        data = await self._redis.hgetall(self._position_key(position_id))
+        key = self._position_key(position_id)
+        data = await self._redis.hgetall(key)
         if not data:
             return None
-        return PositionSchema.model_validate_json(data["data"])
+        return self._parse_position(key, data)
 
     async def get_by_symbol(self, symbol: str) -> PositionSchema | None:
         positions = await self.get_all()
@@ -34,7 +44,9 @@ class PositionStore:
         for key in keys:
             data = await self._redis.hgetall(key)
             if data:
-                positions.append(PositionSchema.model_validate_json(data["data"]))
+                position = self._parse_position(key, data)
+                if position is not None:
+                    positions.append(position)
         return positions
 
     async def save(self, position: PositionSchema) -> None:

@@ -4,7 +4,7 @@ from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.order_store import OrderStore
 from kavzi_trader.spine.state.position_store import PositionStore
 from kavzi_trader.spine.state.reconciliation import ReconciliationService
-from kavzi_trader.spine.state.redis_client import RedisStateClient
+from kavzi_trader.spine.state.redis_client import RedisStateClient, RedisStateError
 from kavzi_trader.spine.state.schemas import (
     AccountStateSchema,
     OpenOrderSchema,
@@ -25,5 +25,6 @@ __all__ = [
     "ReconciliationService",
     "RedisConfigSchema",
     "RedisStateClient",
+    "RedisStateError",
     "StateManager",
 ]

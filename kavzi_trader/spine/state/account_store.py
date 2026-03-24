@@ -1,6 +1,8 @@
 import logging
 from decimal import Decimal
 
+from pydantic import ValidationError
+
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import AccountStateSchema
@@ -18,7 +20,11 @@ class AccountStore:
         data = await self._redis.get(ACCOUNT_KEY)
         if not data:
             return None
-        return AccountStateSchema.model_validate_json(data)
+        try:
+            return AccountStateSchema.model_validate_json(data)
+        except ValidationError:
+            logger.exception("Corrupt account state in Redis")
+            return None
 
     async def save(self, account: AccountStateSchema) -> None:
         await self._redis.set(ACCOUNT_KEY, account.model_dump_json())
