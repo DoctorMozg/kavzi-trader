@@ -43,7 +43,7 @@ asyncio_default_fixture_loop_scope = "function"
 asyncio_default_test_loop_scope = "function"
 
 testpaths = [
-    "pytests",
+    "tests",
 ]
 
 
@@ -52,8 +52,8 @@ testpaths = [
 line-length = 88
 indent-width = 4
 
-# Assume Python 3.11
-target-version = "py311"
+# Assume Python 3.13
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["ALL"]

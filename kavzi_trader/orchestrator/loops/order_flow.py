@@ -1,5 +1,8 @@
 import asyncio
+import logging
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class OrderFlowFetcher(Protocol):
@@ -15,5 +18,8 @@ class OrderFlowLoop:
 
     async def run(self) -> None:
         while True:
-            await self._fetcher.fetch()
+            try:
+                await self._fetcher.fetch()
+            except Exception:
+                logger.exception("OrderFlowLoop encountered an error, continuing")
             await asyncio.sleep(self._interval_s)

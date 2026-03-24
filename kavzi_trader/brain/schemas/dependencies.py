@@ -1,11 +1,11 @@
+from __future__ import annotations
+
 from decimal import Decimal
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
@@ -13,6 +13,21 @@ from kavzi_trader.spine.filters.algorithm_confluence_schema import (
 )
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.schemas import AccountStateSchema, PositionSchema
+
+if TYPE_CHECKING:
+    from kavzi_trader.api.binance.client import BinanceClient
+    from kavzi_trader.events.store import RedisEventStore
+
+
+def rebuild_deferred_models() -> None:
+    """Call after all modules are loaded to resolve forward references."""
+    from kavzi_trader.api.binance.client import BinanceClient as _BinanceClient  # noqa: F811
+    from kavzi_trader.events.store import RedisEventStore as _RedisEventStore  # noqa: F811
+
+    TradingDependenciesSchema.model_rebuild(_types_namespace={
+        "BinanceClient": _BinanceClient,
+        "RedisEventStore": _RedisEventStore,
+    })
 
 
 class ScoutDependenciesSchema(BaseModel):

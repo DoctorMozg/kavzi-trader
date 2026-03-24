@@ -33,6 +33,8 @@ def _get_oi_at_offset(
     oi_history: list[OpenInterestSchema],
     offset: int,
 ) -> Decimal:
+    if not oi_history:
+        return Decimal("0")
     if len(oi_history) <= offset:
         return oi_history[0].open_interest
     return oi_history[-(offset + 1)].open_interest

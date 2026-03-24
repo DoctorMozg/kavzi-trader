@@ -34,7 +34,12 @@ class PositionManagementLoop:
 
     async def run(self) -> None:
         while True:
-            await self._manage_positions()
+            try:
+                await self._manage_positions()
+            except Exception:
+                logger.exception(
+                    "PositionManagementLoop encountered an error, continuing",
+                )
             await asyncio.sleep(self._interval_s)
 
     async def _manage_positions(self) -> None:

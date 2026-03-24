@@ -42,6 +42,7 @@ def calculate_obv(close: pd.Series, volume: pd.Series) -> Decimal | None:
 
 
 def calculate_volume_ratios(
+    close: pd.Series,
     volume: pd.Series,
     period: int = 20,
 ) -> VolumeAnalysisSchema | None:
@@ -84,10 +85,7 @@ def calculate_volume_ratios(
         current_volume=Decimal(str(round(current, 2))),
         average_volume=Decimal(str(round(average, 2))),
         volume_ratio=Decimal(str(round(ratio, 4))),
-        obv=calculate_obv(
-            pd.Series(volume.index.map(lambda x: x)),
-            volume,
-        ),
+        obv=calculate_obv(close, volume),
     )
 
 

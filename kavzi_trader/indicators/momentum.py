@@ -39,6 +39,11 @@ def calculate_rsi(series: pd.Series, period: int = 14) -> Decimal | None:
     avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
+    last_avg_loss = avg_loss.iloc[-1]
+    last_avg_gain = avg_gain.iloc[-1]
+    if last_avg_loss == 0 or pd.isna(last_avg_loss):
+        return Decimal("100") if last_avg_gain > 0 else Decimal("0")
+
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
 

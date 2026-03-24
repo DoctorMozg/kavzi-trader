@@ -110,13 +110,15 @@ def calculate_bollinger_bands(
     current_lower = lower.iloc[-1]
     current_close = series.iloc[-1]
 
+    if pd.isna(current_middle) or pd.isna(current_upper) or pd.isna(current_lower):
+        return None
+
     band_width = (
         (current_upper - current_lower) / current_middle if current_middle else 0
     )
+    band_range = current_upper - current_lower
     percent_b = (
-        (current_close - current_lower) / (current_upper - current_lower)
-        if (current_upper - current_lower) > 0
-        else 0.5
+        (current_close - current_lower) / band_range if band_range > 0 else 0.5
     )
 
     return BollingerBandsSchema(

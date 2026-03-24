@@ -122,5 +122,5 @@ async def test_engine_executes_filled_order(
     assert result.order_id == str(filled_order_response.order_id)
     assert result.executed_qty == float(filled_order_response.executed_qty)
     assert filled_order_response.status == OrderStatus.FILLED
-    state_manager.save_order.assert_called_once()
+    assert state_manager.save_order.call_count == 3  # entry + stop-loss + take-profit
     state_manager.update_position.assert_called_once()

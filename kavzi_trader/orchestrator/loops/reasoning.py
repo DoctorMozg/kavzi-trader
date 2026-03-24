@@ -50,8 +50,11 @@ class ReasoningLoop:
 
     async def run(self) -> None:
         while True:
-            for symbol in self._symbols:
-                await self._handle_symbol(symbol)
+            try:
+                for symbol in self._symbols:
+                    await self._handle_symbol(symbol)
+            except Exception:
+                logger.exception("ReasoningLoop encountered an error, continuing")
             await asyncio.sleep(self._interval_s)
 
     async def _handle_symbol(self, symbol: str) -> None:

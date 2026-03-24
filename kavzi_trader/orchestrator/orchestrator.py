@@ -58,6 +58,9 @@ class TradingOrchestrator:
 
     async def _health_loop(self) -> None:
         while True:
-            await asyncio.sleep(self._config.health_check_interval_s)
-            if not self._health_checker.is_healthy():
-                logger.warning("Health check failed")
+            try:
+                await asyncio.sleep(self._config.health_check_interval_s)
+                if not self._health_checker.is_healthy():
+                    logger.warning("Health check failed")
+            except Exception:
+                logger.exception("Health check loop encountered an error")

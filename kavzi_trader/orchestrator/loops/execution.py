@@ -23,13 +23,19 @@ class ExecutionLoop:
 
     async def run(self) -> None:
         while True:
-            item = await self._redis_client.client.brpop(self._queue_key, timeout=1)
-            if not item:
-                await asyncio.sleep(0.1)
-                continue
             try:
-                decision = DecisionMessageSchema.model_validate_json(item[1])
+                item = await self._redis_client.client.brpop(
+                    self._queue_key, timeout=1,
+                )
+                if not item:
+                    await asyncio.sleep(0.1)
+                    continue
+                try:
+                    decision = DecisionMessageSchema.model_validate_json(item[1])
+                except Exception:
+                    logger.exception("Failed to parse decision payload")
+                    continue
+                await self._engine.execute(decision)
             except Exception:
-                logger.exception("Failed to parse decision payload")
-                continue
-            await self._engine.execute(decision)
+                logger.exception("ExecutionLoop encountered an error, continuing")
+                await asyncio.sleep(0.1)

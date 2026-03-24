@@ -176,7 +176,18 @@ class ExecutionEngine:
         self,
         decision: DecisionMessageSchema,
     ) -> ExecutionResultSchema:
-        side = OrderSide.SELL if decision.action == "BUY" else OrderSide.BUY
+        position = await self._state_manager.get_position(decision.symbol)
+        if position is None:
+            logger.error("No open position found for %s", decision.symbol)
+            return ExecutionResultSchema(
+                decision_id=decision.decision_id,
+                order_id=None,
+                status="REJECTED",
+                executed_qty=0.0,
+                executed_price=None,
+                error_message=f"No open position for {decision.symbol}",
+            )
+        side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
         try:
             order_response = await self._exchange.create_order(
                 symbol=decision.symbol,
@@ -253,7 +264,7 @@ class ExecutionEngine:
         take_side = stop_side
 
         stop_price = self._stop_price_for_side(position.side, position.stop_loss)
-        await self._exchange.create_order(
+        stop_response = await self._exchange.create_order(
             symbol=position.symbol,
             side=stop_side,
             order_type=OrderType.STOP_LOSS_LIMIT,
@@ -261,8 +272,9 @@ class ExecutionEngine:
             price=stop_price,
             stop_price=position.stop_loss,
         )
+        await self._save_linked_order(stop_response, position.id)
 
-        await self._exchange.create_order(
+        take_response = await self._exchange.create_order(
             symbol=position.symbol,
             side=take_side,
             order_type=OrderType.TAKE_PROFIT_LIMIT,
@@ -270,6 +282,27 @@ class ExecutionEngine:
             price=position.take_profit,
             stop_price=position.take_profit,
         )
+        await self._save_linked_order(take_response, position.id)
+
+    async def _save_linked_order(
+        self,
+        order: OrderResponseSchema,
+        position_id: str,
+    ) -> None:
+        created_at = order.time or utc_now()
+        open_order = OpenOrderSchema(
+            order_id=str(order.order_id),
+            symbol=order.symbol,
+            side=order.side,
+            order_type=order.type,
+            price=order.price,
+            quantity=order.orig_qty,
+            executed_qty=order.executed_qty,
+            status=order.status,
+            linked_position_id=position_id,
+            created_at=created_at,
+        )
+        await self._state_manager.save_order(open_order)
 
     async def _record_event(
         self,
