@@ -27,4 +27,4 @@ class AnalystAgent:
         context = self._context_builder.build_analyst_context(deps)
         user_prompt = self._prompt_loader.render_user_prompt("analyze_setup", context)
         result = await self._agent.run(user_prompt, deps=deps)
-        return cast(AnalystDecisionSchema, result.data)
+        return cast(AnalystDecisionSchema, result.output)

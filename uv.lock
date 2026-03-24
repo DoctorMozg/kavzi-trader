@@ -1025,10 +1025,10 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
-    { name = "anthropic" },
     { name = "click" },
     { name = "jinja2" },
     { name = "numpy" },
+    { name = "openai" },
     { name = "pandas" },
     { name = "plotly" },
     { name = "pydantic" },
@@ -1054,10 +1054,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiofiles", specifier = ">=25.1.0" },
-    { name = "anthropic", specifier = ">=0.40.0" },
     { name = "click", specifier = ">=8.3.1" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "numpy", specifier = ">=2.4.1" },
+    { name = "openai", specifier = ">=1.50.0" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "plotly", specifier = ">=6.5.1" },
     { name = "pydantic", specifier = ">=2.12.5" },

@@ -42,10 +42,13 @@ cd docker && docker-compose up -d
 ### Brain-Spine Paradigm
 
 **Brain (LLM Layer)** — `kavzi_trader/brain/`
-- Tiered PydanticAI agents with cost optimization: Scout (Haiku, ~500ms) → Analyst (Sonnet, ~2s) → Trader (Opus, ~5s)
+- Tiered PydanticAI agents routed via OpenRouter: Scout (Haiku, ~500ms) → Analyst (Sonnet, ~2s) → Trader (Opus, ~5s)
 - 90%+ filter rate at the cheap Scout tier before escalating
+- `brain/config.py`: LLM configuration (model IDs, retries, API key)
+- `brain/agent/factory.py`: Creates PydanticAI agents pointed at OpenRouter
 - Jinja2-templated prompts in `brain/prompts/`, Pydantic output schemas in `brain/schemas/`
 - Confidence calibration tracking in `brain/calibration/`
+- Env var: `KT_OPENROUTER_API_KEY` for API access
 
 **Spine (Execution Layer)** — `kavzi_trader/spine/`
 - `execution/`: Order execution engine with staleness validation

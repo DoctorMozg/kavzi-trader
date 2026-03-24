@@ -27,4 +27,4 @@ class ScoutAgent:
         context = self._context_builder.build_scout_context(deps)
         user_prompt = self._prompt_loader.render_user_prompt("scout_scan", context)
         result = await self._agent.run(user_prompt, deps=deps)
-        return cast(ScoutDecisionSchema, result.data)
+        return cast(ScoutDecisionSchema, result.output)

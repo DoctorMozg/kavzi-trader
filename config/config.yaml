@@ -16,6 +16,30 @@ api:
     testnet: true
     use_proxy: false
 
+# Brain (LLM) configuration - OpenRouter
+# See docs/RESEARCH_TRADE_MODELS.md for model selection rationale
+brain:
+  openrouter_api_key: ""  # Override via KT_OPENROUTER_API_KEY env var
+  openrouter_base_url: "https://openrouter.ai/api/v1"
+  scout:
+    # Tier 1: Pre-filter — cheap & fast ($0.065/$0.26, 1M ctx)
+    # Alternatives: deepseek/deepseek-v3.2, openai/gpt-4.1-nano
+    model_id: "qwen/qwen3.5-flash-02-23"
+    retries: 1
+    temperature: 0.0
+  analyst:
+    # Tier 2: Financial reasoning — 88.23% accuracy ($1.25/$10.00)
+    # Alternatives: anthropic/claude-opus-4.6 (87.82%), anthropic/claude-sonnet-4.5 (83.61%)
+    model_id: "openai/gpt-5"
+    retries: 2
+    temperature: 0.0
+  trader:
+    # Tier 3: Final decision — 87.82% financial accuracy, most token-efficient ($5.00/$25.00)
+    # Alternatives: openai/gpt-5 (88.23%), openai/gpt-4.1 (best tool calling value)
+    model_id: "anthropic/claude-opus-4.6"
+    retries: 2
+    temperature: 0.0
+
 # Trading configuration
 trading:
   # Trading pairs to monitor and trade

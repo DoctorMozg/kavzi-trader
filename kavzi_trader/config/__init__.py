@@ -9,6 +9,7 @@ from typing import Annotated, cast
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from kavzi_trader.brain.config import BrainConfigSchema
 from kavzi_trader.events.config import EventStoreConfigSchema
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
 from kavzi_trader.paper.config import PaperTradingConfigSchema
@@ -86,6 +87,7 @@ class AppConfig(BaseModel):
 
     system: Annotated[SystemConfigSchema, Field(...)]
     api: Annotated[ApiConfigSchema, Field(...)]
+    brain: Annotated[BrainConfigSchema, Field(default_factory=BrainConfigSchema)]
     trading: Annotated[TradingConfigSchema, Field(...)]
     risk: Annotated[RiskConfigSchema, Field(...)]
     position_management: Annotated[PositionManagementConfigSchema, Field(...)]
@@ -124,3 +126,8 @@ class AppConfig(BaseModel):
             binance["api_secret"] = env_api_secret
         if env_testnet is not None:
             binance["testnet"] = env_testnet.lower() == "true"
+
+        brain = cast(dict[str, object], data.setdefault("brain", {}))
+        env_openrouter_key = os.getenv("KT_OPENROUTER_API_KEY")
+        if env_openrouter_key is not None:
+            brain["openrouter_api_key"] = env_openrouter_key

@@ -11,7 +11,13 @@ import click
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.brain.agent.analyst import AnalystAgent
+from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.agent.router import AgentRouter
+from kavzi_trader.brain.agent.scout import ScoutAgent
+from kavzi_trader.brain.agent.trader import TraderAgent
+from kavzi_trader.brain.context.builder import ContextBuilder
+from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema, KeyLevelsSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
@@ -257,7 +263,26 @@ async def _start_orchestrator(app_config: AppConfig) -> None:
         event_store=None,
     )
 
-    router = AgentRouter(_NoopScout(), _NoopAnalyst(), _NoopTrader())
+    if app_config.brain.openrouter_api_key:
+        prompt_loader = PromptLoader()
+        context_builder = ContextBuilder()
+        factory = AgentFactory(app_config.brain, prompt_loader)
+        scout = ScoutAgent(
+            factory.create_scout_agent(), prompt_loader, context_builder
+        )
+        analyst = AnalystAgent(
+            factory.create_analyst_agent(), prompt_loader, context_builder
+        )
+        trader = TraderAgent(
+            factory.create_trader_agent(), prompt_loader, context_builder
+        )
+    else:
+        logger.warning("KT_OPENROUTER_API_KEY not set; using noop agents")
+        scout = _NoopScout()  # type: ignore[assignment]
+        analyst = _NoopAnalyst()  # type: ignore[assignment]
+        trader = _NoopTrader()  # type: ignore[assignment]
+
+    router = AgentRouter(scout, analyst, trader)
     deps_provider = _NoopDepsProvider(_build_noop_dependencies())
     position_manager = PositionManager(
         break_even=BreakEvenMover(),

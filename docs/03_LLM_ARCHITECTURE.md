@@ -2,7 +2,7 @@
 
 ## Overview
 
-KavziTrader uses Large Language Models as a "System 2" reasoning engine for trading decisions. This document details the LLM integration architecture using **PydanticAI** framework with **Anthropic Claude** models.
+KavziTrader uses Large Language Models as a "System 2" reasoning engine for trading decisions. This document details the LLM integration architecture using **PydanticAI** framework routed through **OpenRouter** as the LLM gateway.
 
 ## Design Philosophy
 
@@ -84,28 +84,38 @@ PydanticAI treats LLM interaction as a typed software engineering problem:
 ### Agent Definitions
 
 ```python
+from openai import AsyncOpenAI
 from pydantic_ai import Agent
-from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+# All agents share a single OpenRouter client
+provider = OpenAIProvider(
+    openai_client=AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    ),
+)
 
 scout_agent = Agent(
-    AnthropicModel('claude-3-haiku-20240307'),
+    OpenAIChatModel('qwen/qwen3.5-flash-02-23', provider=provider),
     deps_type=ScoutDependencies,
-    result_type=ScoutDecisionSchema,
-    retries=1
+    output_type=ScoutDecisionSchema,
+    retries=1,
 )
 
 analyst_agent = Agent(
-    AnthropicModel('claude-3-5-sonnet-20241022'),
+    OpenAIChatModel('openai/gpt-5', provider=provider),
     deps_type=AnalystDependencies,
-    result_type=AnalystDecisionSchema,
-    retries=2
+    output_type=AnalystDecisionSchema,
+    retries=2,
 )
 
 trader_agent = Agent(
-    AnthropicModel('claude-3-opus-20240229'),
+    OpenAIChatModel('anthropic/claude-opus-4.6', provider=provider),
     deps_type=TradingDependencies,
-    result_type=TradeDecisionSchema,
-    retries=2
+    output_type=TradeDecisionSchema,
+    retries=2,
 )
 ```
 

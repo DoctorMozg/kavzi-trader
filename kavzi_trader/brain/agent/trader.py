@@ -27,4 +27,4 @@ class TraderAgent:
         context = self._context_builder.build_trader_context(deps)
         user_prompt = self._prompt_loader.render_user_prompt("make_decision", context)
         result = await self._agent.run(user_prompt, deps=deps)
-        return cast(TradeDecisionSchema, result.data)
+        return cast(TradeDecisionSchema, result.output)
