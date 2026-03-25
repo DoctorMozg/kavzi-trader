@@ -22,20 +22,26 @@ class RedisEventStore:
         self._config = config
 
     async def append(self, event: EventSchema) -> str:
-        stream = self._stream_for_event(event)
-        fields = serialize_event(event)
-        event_id = await self._redis.client.xadd(
-            stream,
-            fields,
-            maxlen=self._config.stream_max_length,
-            approximate=True,
-        )
-        logger.info(
-            "Event stored",
-            extra={"event": event.model_dump(mode="json")},
-        )
-        logger.debug("Appended event %s to %s", event_id, stream)
-        return str(event_id)
+        try:
+            stream = self._stream_for_event(event)
+            fields = serialize_event(event)
+            event_id = await self._redis.client.xadd(
+                stream,
+                fields,
+                maxlen=self._config.stream_max_length,
+                approximate=True,
+            )
+            logger.info(
+                "Event stored",
+                extra={"event": event.model_dump(mode="json")},
+            )
+            logger.debug("Appended event %s to %s", event_id, stream)
+            return str(event_id)
+        except Exception:
+            logger.exception(
+                "Failed to append event %s to store", event.event_id,
+            )
+            return ""
 
     async def read(
         self,

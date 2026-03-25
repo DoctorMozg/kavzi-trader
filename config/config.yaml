@@ -66,7 +66,11 @@ trading:
 
   # Candlestick interval for analysis
   # Valid: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 1d
-  interval: "15m"
+  interval: "1m"
+
+  # How many candles to backfill into the in-memory cache at startup.
+  # This improves indicator warmup without increasing Brain prompt size.
+  history_candles: 1000
 
   # Max concurrent positions is configured in risk.max_positions
 
@@ -367,10 +371,17 @@ orchestrator:
   #   120 = infrequent (lower API load)
   order_flow_fetch_interval_s: 60
 
+  # How often (seconds) the ReasoningLoop scans symbols and asks the Brain
+  # for new trade decisions.
+  #   5  = very aggressive
+  #   30 = default for 1m candles
+  #   60 = conservative
+  reasoning_interval_s: 30
+
   # How often (seconds) PositionManagementLoop evaluates open positions
   # for trailing stop, break-even, partial exit, time exit, and scale-in actions.
   #   1  = real-time (high CPU)
-  #   5  = default (responsive enough for 15m candles)
+  #   5  = default
   #   15 = relaxed
   position_check_interval_s: 5
 

@@ -45,7 +45,15 @@ class OrderMonitor:
 
     async def _poll_status(self, symbol: str, order_id: int) -> OrderResponseSchema:
         while True:
-            order = await self._exchange.get_order(symbol=symbol, order_id=order_id)
-            if order.status in {OrderStatus.FILLED, OrderStatus.CANCELED}:
-                return order
+            try:
+                order = await self._exchange.get_order(
+                    symbol=symbol, order_id=order_id,
+                )
+                if order.status in {OrderStatus.FILLED, OrderStatus.CANCELED}:
+                    return order
+            except Exception:
+                logger.exception(
+                    "Failed to poll order %s for %s, retrying",
+                    order_id, symbol,
+                )
             await asyncio.sleep(1)

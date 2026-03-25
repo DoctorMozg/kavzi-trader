@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Annotated, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from kavzi_trader.brain.config import BrainConfigSchema
 from kavzi_trader.events.config import EventStoreConfigSchema
@@ -50,13 +50,27 @@ class SystemConfigSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+VALID_INTERVALS = frozenset(
+    {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"},
+)
+
+
 class TradingConfigSchema(BaseModel):
     """Trading universe configuration."""
 
     symbols: Annotated[list[str], Field(default_factory=list)]
-    interval: Annotated[str, Field(default="15m")]
+    interval: Annotated[str, Field(default="1m")]
+    history_candles: Annotated[int, Field(default=1000, ge=1)]
 
     model_config = ConfigDict(frozen=True)
+
+    @field_validator("interval")
+    @classmethod
+    def _interval_valid(cls, v: str) -> str:
+        if v not in VALID_INTERVALS:
+            msg = "trading.interval must be one of %s" % VALID_INTERVALS
+            raise ValueError(msg)
+        return v
 
 
 class OrderFlowConfigSchema(BaseModel):
@@ -114,6 +128,32 @@ class AppConfig(BaseModel):
     paper: Annotated[PaperTradingConfigSchema, Field(...)]
 
     model_config = ConfigDict(frozen=True)
+
+    def validate_for_trading(self) -> None:
+        """Raise if config is insufficient for live trading."""
+        errors: list[str] = []
+        if not self.api.binance.api_key:
+            errors.append(
+                "KT_BINANCE_API_KEY (or api.binance.api_key) is required",
+            )
+        if not self.api.binance.api_secret:
+            errors.append(
+                "KT_BINANCE_API_SECRET (or api.binance.api_secret)"
+                " is required",
+            )
+        if not self.brain.openrouter_api_key:
+            errors.append(
+                "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key)"
+                " is required",
+            )
+        if not self.trading.symbols:
+            errors.append(
+                "trading.symbols must contain at least one symbol",
+            )
+        if errors:
+            raise ValueError(
+                "Configuration errors:\n  - " + "\n  - ".join(errors),
+            )
 
     @classmethod
     def from_file(cls, path: Path) -> "AppConfig":

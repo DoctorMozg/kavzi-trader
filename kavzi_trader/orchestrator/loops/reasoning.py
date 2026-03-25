@@ -59,12 +59,23 @@ class ReasoningLoop:
             len(self._symbols),
             self._interval_s,
         )
+        cycle = 0
         while True:
-            try:
-                for symbol in self._symbols:
+            cycle += 1
+            logger.debug("ReasoningLoop cycle %d starting", cycle)
+            for symbol in self._symbols:
+                try:
                     await self._handle_symbol(symbol)
-            except Exception:
-                logger.exception("ReasoningLoop encountered an error, continuing")
+                except Exception:
+                    logger.exception(
+                        "ReasoningLoop failed for %s, continuing",
+                        symbol,
+                        extra={"symbol": symbol},
+                    )
+            logger.debug(
+                "ReasoningLoop cycle %d complete, sleeping %ds",
+                cycle, self._interval_s,
+            )
             await asyncio.sleep(self._interval_s)
 
     async def _handle_symbol(self, symbol: str) -> None:
@@ -77,7 +88,12 @@ class ReasoningLoop:
             analyst_deps=analyst_deps,
             trader_deps=trader_deps,
         )
-        await self._report_decisions(symbol, scout, analyst, trader)
+        try:
+            await self._report_decisions(symbol, scout, analyst, trader)
+        except Exception:
+            logger.exception(
+                "Failed to report decisions for %s", symbol,
+            )
         if not self._should_enqueue(scout, analyst, trader):
             logger.debug(
                 "No trade enqueued for %s: scout=%s analyst=%s trader=%s",
@@ -90,10 +106,17 @@ class ReasoningLoop:
         if trader is None:
             return
         decision = self._build_decision_message(trader, trader_deps)
-        await self._redis_client.client.lpush(
-            self._queue_key,
-            decision.model_dump_json(),
-        )
+        try:
+            await self._redis_client.client.lpush(
+                self._queue_key,
+                decision.model_dump_json(),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to enqueue decision for %s", symbol,
+                extra={"symbol": symbol},
+            )
+            return
         logger.info(
             "Enqueuing decision for %s: action=%s confidence=%.2f "
             "decision_id=%s",

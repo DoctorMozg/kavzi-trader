@@ -1,6 +1,7 @@
 from decimal import Decimal
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class RiskConfigSchema(BaseModel):
@@ -21,3 +22,23 @@ class RiskConfigSchema(BaseModel):
     atr_zscore_period: int = 30
 
     model_config = ConfigDict(frozen=True)
+
+    @model_validator(mode="after")
+    def _validate_thresholds(self) -> Self:
+        if self.drawdown_pause_percent >= self.drawdown_close_all_percent:
+            msg = "drawdown_pause_percent must be < drawdown_close_all_percent"
+            raise ValueError(msg)
+        if self.min_sl_atr >= self.max_sl_atr:
+            msg = "min_sl_atr must be < max_sl_atr"
+            raise ValueError(msg)
+        if not (
+            self.volatility_low_threshold
+            < self.volatility_high_threshold
+            < self.volatility_extreme_threshold
+        ):
+            msg = (
+                "volatility thresholds must be ordered:"
+                " low < high < extreme"
+            )
+            raise ValueError(msg)
+        return self

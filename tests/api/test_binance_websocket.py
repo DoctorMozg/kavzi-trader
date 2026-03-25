@@ -304,94 +304,91 @@ def test_is_connected(
 
 # Tests for StreamManager
 def test_stream_manager_init() -> None:
-    """Test StreamManager initialization."""
-    # Create a patched BinanceSocketManager
-    with patch(
-        "kavzi_trader.api.binance.websocket.stream_manager.BinanceSocketManager",
-    ) as mock_bsm_class:
-        # Create a StreamManager
-        manager = StreamManager(
-            api_key="test_key",
-            api_secret="test_secret",
-            testnet=True,
-        )
+    """Test StreamManager initialization (lazy — bsm created in start)."""
+    manager = StreamManager(
+        api_key="test_key",
+        api_secret="test_secret",
+        testnet=True,
+    )
 
-        # Verify the BinanceSocketManager was created with correct parameters
-        mock_bsm_class.assert_called_once_with(
-            api_key="test_key",
-            api_secret="test_secret",
-            testnet=True,
-        )
-
-        # Verify the manager's properties
-        assert manager.api_key == "test_key"
-        assert manager.api_secret == "test_secret"  # noqa: S105
-        assert manager.testnet is True
-        assert manager.active_streams == {}
-        assert manager.stream_callbacks == {}
-        assert manager._is_running is False
+    # Verify the manager's properties
+    assert manager.api_key == "test_key"
+    assert manager.api_secret == "test_secret"  # noqa: S105
+    assert manager.testnet is True
+    assert manager.active_streams == {}
+    assert manager.stream_callbacks == {}
+    assert manager._is_running is False
+    # bsm is not yet created — accessing it should raise
+    with pytest.raises(RuntimeError):
+        _ = manager.bsm
 
 
 @pytest.mark.asyncio()
 async def test_stream_manager_start_stop() -> None:
     """Test StreamManager start and stop methods."""
-    # Create a patched BinanceSocketManager
-    with patch(
-        "kavzi_trader.api.binance.websocket.stream_manager.BinanceSocketManager",
-    ) as mock_bsm_class:
-        # Create a StreamManager
+    with (
+        patch(
+            "kavzi_trader.api.binance.websocket.stream_manager.AsyncClient.create",
+            new_callable=AsyncMock,
+        ) as mock_create,
+        patch(
+            "kavzi_trader.api.binance.websocket.stream_manager.BinanceSocketManager",
+        ) as mock_bsm_class,
+    ):
+        mock_client = AsyncMock()
+        mock_create.return_value = mock_client
         mock_bsm = mock_bsm_class.return_value
         mock_bsm.stop_socket = AsyncMock()
+
         manager = StreamManager()
 
         # Test start
         await manager.start()
         assert manager._is_running is True
+        mock_create.assert_called_once()
+        mock_bsm_class.assert_called_once_with(mock_client)
 
         # Test stop
         await manager.stop()
         assert manager._is_running is False
         assert manager.active_streams == {}  # type: ignore
         assert manager.stream_callbacks == {}  # type: ignore
+        mock_client.close_connection.assert_called_once()
 
 
 @pytest.mark.asyncio()
 async def test_stream_manager_process_message() -> None:
     """Test StreamManager _process_message method."""
-    # Create a patched BinanceSocketManager
-    with patch(
-        "kavzi_trader.api.binance.websocket.stream_manager.BinanceSocketManager",
-    ):
-        # Create a StreamManager with mock callbacks
-        on_message_mock = MagicMock()
-        on_error_mock = MagicMock()
-        manager = StreamManager(
-            on_message=on_message_mock,
-            on_error=on_error_mock,
-        )
+    # Create a StreamManager with mock callbacks (bsm not needed here)
+    on_message_mock = MagicMock()
+    on_error_mock = MagicMock()
+    manager = StreamManager(
+        on_message=on_message_mock,
+        on_error=on_error_mock,
+    )
 
-        # Mock the _get_stream_name_from_message method
-        manager._get_stream_name_from_message = MagicMock(  # type: ignore
-            return_value="btcusdt@kline_1m",
-        )
+    # Mock the _get_stream_name_from_message method
+    manager._get_stream_name_from_message = MagicMock(  # type: ignore
+        return_value="btcusdt@kline_1m",
+    )
 
-        # Mock a stream callback
-        stream_callback_mock = AsyncMock()
-        manager.stream_callbacks["btcusdt@kline_1m"] = stream_callback_mock
+    # Mock a stream callback
+    stream_callback_mock = AsyncMock()
+    manager.stream_callbacks["btcusdt@kline_1m"] = stream_callback_mock
 
-        # Test processing a normal message
-        test_msg = {"data": "test"}
-        await manager._process_message(test_msg)
+    # Test processing a normal message
+    test_msg = {"data": "test"}
+    await manager._process_message(test_msg)
 
-        # Verify the general callback was called
-        on_message_mock.assert_called_once_with(test_msg)
+    # Verify the general callback was called
+    on_message_mock.assert_called_once_with(test_msg)
 
-        # Test processing an error message
-        error_msg = {"error": "test_error"}
-        await manager._process_message(error_msg)
+    # Test processing an error message
+    error_msg = {"error": "test_error"}
+    await manager._process_message(error_msg)
 
-        # Verify the error callback was called
-        on_error_mock.assert_called_once()
+    # Verify the error callback was called
+    on_error_mock.assert_called_once()
 
 
 # Tests for handlers

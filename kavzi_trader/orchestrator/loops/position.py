@@ -57,27 +57,43 @@ class PositionManagementLoop:
                 "Position management cycle: %d open positions", len(positions),
             )
         for position in positions:
-            current_price = await self._state_manager.get_current_price(
+            try:
+                await self._manage_single_position(position)
+            except Exception:
+                logger.exception(
+                    "Failed to manage position %s for %s, continuing",
+                    position.id,
+                    position.symbol,
+                    extra={
+                        "position_id": position.id,
+                        "symbol": position.symbol,
+                    },
+                )
+
+    async def _manage_single_position(
+        self, position: PositionSchema,
+    ) -> None:
+        current_price = await self._state_manager.get_current_price(
+            position.symbol,
+        )
+        current_atr = await self._atr_provider.get_atr(position.symbol)
+        if current_price == 0:
+            logger.warning(
+                "Current price is 0 for %s, position management unreliable",
                 position.symbol,
             )
-            current_atr = await self._atr_provider.get_atr(position.symbol)
-            if current_price == 0:
-                logger.warning(
-                    "Current price is 0 for %s, position management unreliable",
-                    position.symbol,
-                )
-            if current_atr == 0:
-                logger.warning(
-                    "ATR is 0 for %s, trailing stop/break-even cannot function",
-                    position.symbol,
-                )
-            actions = await self._manager.evaluate_position(
-                position=position,
-                current_price=current_price,
-                current_atr=current_atr,
+        if current_atr == 0:
+            logger.warning(
+                "ATR is 0 for %s, trailing stop/break-even cannot function",
+                position.symbol,
             )
-            for action in actions:
-                await self._apply_action(position, action)
+        actions = await self._manager.evaluate_position(
+            position=position,
+            current_price=current_price,
+            current_atr=current_atr,
+        )
+        for action in actions:
+            await self._apply_action(position, action)
 
     async def _apply_action(
         self,
@@ -97,14 +113,9 @@ class PositionManagementLoop:
                 "action": action.action.value,
             },
         )
-        if self._report_populator is not None:
-            await self._report_populator.record_action(
-                action_type=action.action.value.lower(),
-                symbol=position.symbol,
-                summary=action.reason,
-            )
         if action.action == PositionActionType.FULL_EXIT:
             await self._state_manager.remove_position(position.id)
+            await self._safe_report_action(position, action)
             return
 
         updated = position
@@ -132,3 +143,24 @@ class PositionManagementLoop:
                 },
             )
         await self._state_manager.update_position(updated)
+        await self._safe_report_action(position, action)
+
+    async def _safe_report_action(
+        self,
+        position: PositionSchema,
+        action: PositionActionSchema,
+    ) -> None:
+        if self._report_populator is None:
+            return
+        try:
+            await self._report_populator.record_action(
+                action_type=action.action.value.lower(),
+                symbol=position.symbol,
+                summary=action.reason,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to report action %s for %s",
+                action.action.value,
+                position.symbol,
+            )

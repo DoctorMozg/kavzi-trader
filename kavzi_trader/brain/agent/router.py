@@ -58,7 +58,18 @@ class AgentRouter:
         logger.info("Agent pipeline started for %s", symbol)
 
         t0 = time.monotonic()
-        scout_result = await self._scout.run(scout_deps)
+        try:
+            scout_result = await self._scout.run(scout_deps)
+        except Exception:
+            logger.exception("Scout agent failed for %s", symbol)
+            return (
+                ScoutDecisionSchema(
+                    verdict="SKIP", reason="agent_error",
+                    pattern_detected=None,
+                ),
+                None,
+                None,
+            )
         scout_ms = (time.monotonic() - t0) * 1000
         logger.info(
             "Scout verdict=%s reason=%s pattern=%s elapsed_ms=%.1f",
@@ -81,7 +92,11 @@ class AgentRouter:
             return scout_result, None, None
 
         t0 = time.monotonic()
-        analyst_result = await self._analyst.run(analyst_deps)
+        try:
+            analyst_result = await self._analyst.run(analyst_deps)
+        except Exception:
+            logger.exception("Analyst agent failed for %s", symbol)
+            return scout_result, None, None
         analyst_ms = (time.monotonic() - t0) * 1000
         logger.info(
             "Analyst setup_valid=%s direction=%s confluence=%d elapsed_ms=%.1f",
@@ -104,7 +119,11 @@ class AgentRouter:
             return scout_result, analyst_result, None
 
         t0 = time.monotonic()
-        trader_result = await self._trader.run(trader_deps)
+        try:
+            trader_result = await self._trader.run(trader_deps)
+        except Exception:
+            logger.exception("Trader agent failed for %s", symbol)
+            return scout_result, analyst_result, None
         trader_ms = (time.monotonic() - t0) * 1000
         logger.info(
             "Trader action=%s confidence=%.2f entry=%s SL=%s TP=%s elapsed_ms=%.1f",

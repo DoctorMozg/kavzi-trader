@@ -207,13 +207,12 @@ class BinanceWebsocketClient:
         await self.stream_manager.start()
 
         try:
-            # Start the multiplex socket
-            socket = await self.stream_manager.bsm.multiplex_socket(
-                callback=self.stream_manager.create_message_handler(),
+            # Get a ReconnectingWebsocket for the multiplex stream
+            socket = self.stream_manager.bsm.multiplex_socket(
                 streams=streams,
             )
 
-            # Register the stream
+            # Register → connects, starts recv loop, tracks callback
             self.stream_manager.register_stream(
                 stream_name=stream_id,
                 socket=socket,

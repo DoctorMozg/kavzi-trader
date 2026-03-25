@@ -147,10 +147,19 @@ class DynamicRiskValidator:
         self,
         state_manager: StateManager,
     ) -> DrawdownCheckResult:
+        try:
+            drawdown = await state_manager.get_current_drawdown()
+        except Exception:
+            logger.exception(
+                "Failed to check drawdown, rejecting trade as safety measure",
+            )
+            return DrawdownCheckResult(
+                rejections=["Drawdown check failed — state unavailable"],
+                should_close_all=False,
+            )
+
         rejections: list[str] = []
         should_close_all = False
-
-        drawdown = await state_manager.get_current_drawdown()
         close_threshold = self._config.drawdown_close_all_percent
         pause_threshold = self._config.drawdown_pause_percent
 
@@ -173,7 +182,14 @@ class DynamicRiskValidator:
         symbol: str,
         state_manager: StateManager,
     ) -> str | None:
-        positions = await state_manager.get_all_positions()
+        try:
+            positions = await state_manager.get_all_positions()
+        except Exception:
+            logger.exception(
+                "Failed to check exposure for %s, rejecting as safety measure",
+                symbol,
+            )
+            return "Exposure check failed — state unavailable"
         exposure_check = self._exposure_limiter.check_exposure(symbol, positions)
 
         if not exposure_check.is_allowed:

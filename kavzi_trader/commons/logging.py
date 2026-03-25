@@ -15,7 +15,7 @@ from kavzi_trader.monitoring.structured_logger import JsonLogFormatter
 
 def setup_logging(
     log_level: str = "DEBUG",
-    name: str = "kavzitrader",
+    name: str = "kavzi_trader",
     log_dir: Path | None = None,
     log_format: str = "text",
     console: bool = True,

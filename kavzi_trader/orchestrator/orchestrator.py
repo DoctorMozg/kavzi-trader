@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
 from kavzi_trader.orchestrator.health import HealthChecker
@@ -40,7 +41,8 @@ class TradingOrchestrator:
         self._position_loop = position_loop
         self._health_checker = health_checker
         self._report_populator = report_populator
-        self._tasks: list[asyncio.Task[None]] = []
+        self._tasks: set[asyncio.Task[None]] = set()
+        self._loop_factories: dict[str, Any] = {}
 
     async def start(self) -> None:
         logger.info("Orchestrator starting — connecting to state store")
@@ -48,28 +50,64 @@ class TradingOrchestrator:
         logger.info("State store connected, beginning reconciliation")
         await self._state_manager.reconcile_with_exchange()
         logger.info("Reconciliation complete, launching async loops")
-        self._tasks = [
-            asyncio.create_task(self._ingest_loop.run()),
-            asyncio.create_task(self._order_flow_loop.run()),
-            asyncio.create_task(self._reasoning_loop.run()),
-            asyncio.create_task(self._execution_loop.run()),
-            asyncio.create_task(self._position_loop.run()),
-            asyncio.create_task(self._health_loop()),
-        ]
+        self._loop_factories = {
+            "ingest": self._ingest_loop.run,
+            "order_flow": self._order_flow_loop.run,
+            "reasoning": self._reasoning_loop.run,
+            "execution": self._execution_loop.run,
+            "position": self._position_loop.run,
+            "health": self._health_loop,
+        }
         if self._report_populator is not None:
-            self._tasks.append(
-                asyncio.create_task(self._report_loop()),
-            )
+            self._loop_factories["report"] = self._report_loop
+        for name, factory in self._loop_factories.items():
+            task = asyncio.create_task(factory(), name=name)
+            self._tasks.add(task)
         logger.info(
             "All %d loops launched, orchestrator running", len(self._tasks),
         )
-        await asyncio.gather(*self._tasks)
+        await self._supervise_tasks()
+
+    async def _supervise_tasks(self) -> None:
+        """Monitor tasks and restart any that crash unexpectedly."""
+        while self._tasks:
+            done, _ = await asyncio.wait(
+                self._tasks, return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in done:
+                self._tasks.discard(task)
+                name = task.get_name()
+                if task.cancelled():
+                    logger.warning("Task %s was cancelled", name)
+                    continue
+                exc = task.exception()
+                if exc is not None:
+                    logger.exception(
+                        "Task %s crashed, restarting",
+                        name,
+                        exc_info=exc,
+                    )
+                    factory = self._loop_factories.get(name)
+                    if factory is not None:
+                        new_task = asyncio.create_task(factory(), name=name)
+                        self._tasks.add(new_task)
+                        logger.info("Task %s restarted", name)
+                else:
+                    logger.warning(
+                        "Task %s exited cleanly (unexpected), restarting",
+                        name,
+                    )
+                    factory = self._loop_factories.get(name)
+                    if factory is not None:
+                        new_task = asyncio.create_task(factory(), name=name)
+                        self._tasks.add(new_task)
 
     async def shutdown(self) -> None:
         logger.info("Orchestrator shutting down — cancelling %d tasks", len(self._tasks))
         for task in self._tasks:
             task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
         await self._state_manager.close()
         logger.info("Orchestrator shutdown complete")
 

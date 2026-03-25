@@ -67,7 +67,13 @@ class ExecutionLoop:
                         "status": result.status,
                     },
                 )
-                await self._report_execution(decision, result)
+                try:
+                    await self._report_execution(decision, result)
+                except Exception:
+                    logger.exception(
+                        "Failed to report execution for %s",
+                        decision.symbol,
+                    )
             except Exception:
                 logger.exception("ExecutionLoop encountered an error, continuing")
                 await asyncio.sleep(0.1)

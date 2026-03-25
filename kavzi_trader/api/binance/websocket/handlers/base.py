@@ -71,7 +71,7 @@ class BaseStreamHandler(Generic[T], ABC):
 
     async def _start_socket(
         self,
-        socket_func: Callable[..., Awaitable[ReconnectingWebsocket]],
+        socket_func: Callable[..., ReconnectingWebsocket],
         stream_name: str,
         callback: Callable[[T], Awaitable[None]],
         symbol: str | None = None,
@@ -100,11 +100,8 @@ class BaseStreamHandler(Generic[T], ABC):
 
         try:
             # Prepare arguments for the socket function
-            socket_args: dict[str, Any] = {
-                "callback": self.stream_manager.create_message_handler(),
-            }
-
-            # Add optional parameters if provided
+            # (library methods accept symbol/interval/depth, NOT callback)
+            socket_args: dict[str, Any] = {}
             if symbol:
                 socket_args["symbol"] = symbol
             if interval:
@@ -112,10 +109,10 @@ class BaseStreamHandler(Generic[T], ABC):
             if depth:
                 socket_args["depth"] = depth
 
-            # Start the socket with appropriate arguments
-            socket = await socket_func(**socket_args)
+            # Get a ReconnectingWebsocket from the library
+            socket = socket_func(**socket_args)
 
-            # Register the stream
+            # Register → connects, starts recv loop, tracks callback
             self.stream_manager.register_stream(
                 stream_name=stream_name,
                 socket=socket,

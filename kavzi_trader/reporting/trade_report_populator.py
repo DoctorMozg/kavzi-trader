@@ -77,25 +77,30 @@ class TradeReportPopulator:
         details: str | None = None,
     ) -> None:
         """Add an entry to the general action log and re-render."""
-        entry = ReportActionEntrySchema(
-            timestamp=utc_now(),
-            action_type=action_type,
-            symbol=symbol,
-            summary=summary,
-            details=details,
-        )
-        async with self._lock:
-            actions = [*self._state.actions, entry]
-            if len(actions) > self._max_action_entries:
-                actions = actions[-self._max_action_entries :]
-            self._state = self._state.model_copy(
-                update={
-                    "actions": actions,
-                    "last_updated_at": utc_now(),
-                    "version": self._state.version + 1,
-                },
+        try:
+            entry = ReportActionEntrySchema(
+                timestamp=utc_now(),
+                action_type=action_type,
+                symbol=symbol,
+                summary=summary,
+                details=details,
             )
-            await self._render()
+            async with self._lock:
+                actions = [*self._state.actions, entry]
+                if len(actions) > self._max_action_entries:
+                    actions = actions[-self._max_action_entries :]
+                self._state = self._state.model_copy(
+                    update={
+                        "actions": actions,
+                        "last_updated_at": utc_now(),
+                        "version": self._state.version + 1,
+                    },
+                )
+                await self._render()
+        except Exception:
+            logger.exception(
+                "Failed to record action %s for %s", action_type, symbol,
+            )
 
     async def record_trade(
         self,
@@ -110,30 +115,35 @@ class TradeReportPopulator:
         reasoning: str = "",
     ) -> None:
         """Add an entry to the buy/sell trade log and re-render."""
-        entry = ReportTradeEntrySchema(
-            timestamp=utc_now(),
-            symbol=symbol,
-            side=side,
-            entry_price=entry_price,
-            quantity=quantity,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
-            status=status,
-            confidence=confidence,
-            reasoning=reasoning,
-        )
-        async with self._lock:
-            trades = [*self._state.trades, entry]
-            if len(trades) > self._max_trade_entries:
-                trades = trades[-self._max_trade_entries :]
-            self._state = self._state.model_copy(
-                update={
-                    "trades": trades,
-                    "last_updated_at": utc_now(),
-                    "version": self._state.version + 1,
-                },
+        try:
+            entry = ReportTradeEntrySchema(
+                timestamp=utc_now(),
+                symbol=symbol,
+                side=side,
+                entry_price=entry_price,
+                quantity=quantity,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                status=status,
+                confidence=confidence,
+                reasoning=reasoning,
             )
-            await self._render()
+            async with self._lock:
+                trades = [*self._state.trades, entry]
+                if len(trades) > self._max_trade_entries:
+                    trades = trades[-self._max_trade_entries :]
+                self._state = self._state.model_copy(
+                    update={
+                        "trades": trades,
+                        "last_updated_at": utc_now(),
+                        "version": self._state.version + 1,
+                    },
+                )
+                await self._render()
+        except Exception:
+            logger.exception(
+                "Failed to record trade %s for %s", side, symbol,
+            )
 
     async def update_balance(
         self,
@@ -142,28 +152,36 @@ class TradeReportPopulator:
         active_positions_count: int = 0,
     ) -> None:
         """Update balance/revenue header and re-render."""
-        revenue = current_balance_usdt - self._state.initial_balance_usdt
-        async with self._lock:
-            self._state = self._state.model_copy(
-                update={
-                    "current_balance_usdt": current_balance_usdt,
-                    "session_revenue_usdt": revenue,
-                    "unrealized_pnl_usdt": unrealized_pnl_usdt,
-                    "active_positions_count": active_positions_count,
-                    "last_updated_at": utc_now(),
-                    "version": self._state.version + 1,
-                },
-            )
-            await self._render()
+        try:
+            revenue = current_balance_usdt - self._state.initial_balance_usdt
+            async with self._lock:
+                self._state = self._state.model_copy(
+                    update={
+                        "current_balance_usdt": current_balance_usdt,
+                        "session_revenue_usdt": revenue,
+                        "unrealized_pnl_usdt": unrealized_pnl_usdt,
+                        "active_positions_count": active_positions_count,
+                        "last_updated_at": utc_now(),
+                        "version": self._state.version + 1,
+                    },
+                )
+                await self._render()
+        except Exception:
+            logger.exception("Failed to update balance in report")
 
     async def _render(self) -> None:
         """Render current state to HTML and write atomically."""
-        template = self._env.get_template("trade_report.html.j2")
-        html = template.render(
-            state=self._state,
-            refresh_interval_s=self._refresh_interval_s,
-        )
-        tmp_path = self._report_path.with_suffix(".html.tmp")
-        async with aiofiles.open(tmp_path, "w", encoding="utf-8") as fh:
-            await fh.write(html)
-        tmp_path.rename(self._report_path)
+        try:
+            template = self._env.get_template("trade_report.html.j2")
+            html = template.render(
+                state=self._state,
+                refresh_interval_s=self._refresh_interval_s,
+            )
+            tmp_path = self._report_path.with_suffix(".html.tmp")
+            async with aiofiles.open(tmp_path, "w", encoding="utf-8") as fh:
+                await fh.write(html)
+            tmp_path.rename(self._report_path)
+        except Exception:
+            logger.exception(
+                "Failed to render report to %s", self._report_path,
+            )

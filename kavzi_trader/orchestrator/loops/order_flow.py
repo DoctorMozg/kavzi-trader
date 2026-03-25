@@ -24,6 +24,10 @@ class OrderFlowLoop:
             try:
                 logger.debug("OrderFlowLoop fetching order flow data")
                 await self._fetcher.fetch()
+                logger.debug(
+                    "OrderFlowLoop fetch complete, sleeping %ds",
+                    self._interval_s,
+                )
             except Exception:
                 logger.exception("OrderFlowLoop encountered an error, continuing")
             await asyncio.sleep(self._interval_s)

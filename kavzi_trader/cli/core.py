@@ -31,7 +31,7 @@ def setup_cli_environment(
         log_dir=app_config.system.results_dir / "logs",
         log_format=app_config.monitoring.log_format,
         console=True,
-        name="kavzitrader",
+        name="kavzi_trader",
     )
 
     if verbose:

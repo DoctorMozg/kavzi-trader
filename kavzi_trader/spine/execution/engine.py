@@ -137,6 +137,12 @@ class ExecutionEngine:
                 event_type="order_created",
                 data={"symbol": decision.symbol, "action": decision.action},
             )
+        except Exception:
+            logger.exception(
+                "Failed to record order_created event for %s",
+                decision.decision_id,
+            )
+        try:
             order_response = await self._exchange.create_order(
                 symbol=order_request.symbol,
                 side=order_request.side,
@@ -148,12 +154,18 @@ class ExecutionEngine:
             )
         except Exception as exc:
             logger.exception("Failed to submit order for %s", decision.symbol)
-            await self._record_event(
-                aggregate_id=decision.decision_id,
-                aggregate_type="decision",
-                event_type="order_rejected",
-                data={"symbol": decision.symbol, "reason": str(exc)},
-            )
+            try:
+                await self._record_event(
+                    aggregate_id=decision.decision_id,
+                    aggregate_type="decision",
+                    event_type="order_rejected",
+                    data={"symbol": decision.symbol, "reason": str(exc)},
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to record order_rejected event for %s",
+                    decision.decision_id,
+                )
             return ExecutionResultSchema(
                 decision_id=decision.decision_id,
                 order_id=None,
@@ -163,7 +175,14 @@ class ExecutionEngine:
                 error_message=str(exc),
             )
 
-        await self._save_open_order(order_response)
+        try:
+            await self._save_open_order(order_response)
+        except Exception:
+            logger.exception(
+                "Failed to save open order for %s, order placed but not tracked",
+                decision.symbol,
+                extra={"decision_id": decision.decision_id},
+            )
         logger.info(
             "Order submitted for %s: order_id=%s status=%s",
             decision.symbol, order_response.order_id,
@@ -304,12 +323,18 @@ class ExecutionEngine:
                 "position_id": position.id,
             },
         )
-        await self._record_event(
-            aggregate_id=position.id,
-            aggregate_type="position",
-            event_type="position_opened",
-            data={"symbol": position.symbol, "side": position.side},
-        )
+        try:
+            await self._record_event(
+                aggregate_id=position.id,
+                aggregate_type="position",
+                event_type="position_opened",
+                data={"symbol": position.symbol, "side": position.side},
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record position_opened event for %s",
+                position.id,
+            )
         if decision.action in {"BUY", "SELL"}:
             await self._place_protective_orders(position)
 
@@ -361,16 +386,22 @@ class ExecutionEngine:
                 "Failed to place take-profit for position %s; stop-loss is active",
                 position.id,
             )
-            await self._record_event(
-                aggregate_id=position.id,
-                aggregate_type="position",
-                event_type="protective_order_failed",
-                data={
-                    "symbol": position.symbol,
-                    "failed_order": "take_profit",
-                    "stop_loss_active": True,
-                },
-            )
+            try:
+                await self._record_event(
+                    aggregate_id=position.id,
+                    aggregate_type="position",
+                    event_type="protective_order_failed",
+                    data={
+                        "symbol": position.symbol,
+                        "failed_order": "take_profit",
+                        "stop_loss_active": True,
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to record protective_order_failed event for %s",
+                    position.id,
+                )
 
     async def _save_linked_order(
         self,
@@ -435,12 +466,18 @@ class ExecutionEngine:
                 "manual intervention required",
                 position.id,
             )
-        await self._record_event(
-            aggregate_id=position.id,
-            aggregate_type="position",
-            event_type="emergency_close",
-            data={"symbol": position.symbol, "reason": "protective_order_failure"},
-        )
+        try:
+            await self._record_event(
+                aggregate_id=position.id,
+                aggregate_type="position",
+                event_type="emergency_close",
+                data={"symbol": position.symbol, "reason": "protective_order_failure"},
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record emergency_close event for %s",
+                position.id,
+            )
 
     def _position_side(
         self,
