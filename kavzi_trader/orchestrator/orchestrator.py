@@ -43,8 +43,11 @@ class TradingOrchestrator:
         self._tasks: list[asyncio.Task[None]] = []
 
     async def start(self) -> None:
+        logger.info("Orchestrator starting — connecting to state store")
         await self._state_manager.connect()
+        logger.info("State store connected, beginning reconciliation")
         await self._state_manager.reconcile_with_exchange()
+        logger.info("Reconciliation complete, launching async loops")
         self._tasks = [
             asyncio.create_task(self._ingest_loop.run()),
             asyncio.create_task(self._order_flow_loop.run()),
@@ -57,13 +60,18 @@ class TradingOrchestrator:
             self._tasks.append(
                 asyncio.create_task(self._report_loop()),
             )
+        logger.info(
+            "All %d loops launched, orchestrator running", len(self._tasks),
+        )
         await asyncio.gather(*self._tasks)
 
     async def shutdown(self) -> None:
+        logger.info("Orchestrator shutting down — cancelling %d tasks", len(self._tasks))
         for task in self._tasks:
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         await self._state_manager.close()
+        logger.info("Orchestrator shutdown complete")
 
     async def _health_loop(self) -> None:
         while True:

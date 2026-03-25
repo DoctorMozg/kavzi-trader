@@ -1,6 +1,10 @@
+import logging
+
 from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.schemas import ExposureCheckSchema
 from kavzi_trader.spine.state.schemas import PositionSchema
+
+logger = logging.getLogger(__name__)
 
 
 class ExposureLimiter:
@@ -14,6 +18,11 @@ class ExposureLimiter:
     ) -> ExposureCheckSchema:
         position_count = len(current_positions)
         max_positions = self._config.max_positions
+
+        logger.debug(
+            "Exposure check: symbol=%s positions=%d/%d",
+            symbol, position_count, max_positions,
+        )
 
         if position_count >= max_positions:
             return ExposureCheckSchema(

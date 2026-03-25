@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from typing import Literal
 
@@ -13,6 +14,8 @@ from kavzi_trader.spine.risk.schemas import (
 )
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
+
+logger = logging.getLogger(__name__)
 
 
 class DrawdownCheckResult(BaseModel):
@@ -41,26 +44,54 @@ class DynamicRiskValidator:
         rejection_reasons: list[str] = []
         warnings: list[str] = []
 
+        logger.info(
+            "Risk validation started: symbol=%s side=%s entry=%s SL=%s"
+            " TP=%s ATR=%s",
+            symbol, side, entry_price, stop_loss, take_profit, current_atr,
+            extra={"symbol": symbol, "side": side},
+        )
+
+        if current_atr <= 0:
+            logger.warning(
+                "ATR is %s for %s, SL validation will be skipped",
+                current_atr, symbol,
+            )
+
         regime = self._volatility_detector.detect_regime(current_atr, atr_history)
 
         drawdown_result = await self._check_drawdown(state_manager)
         rejection_reasons.extend(drawdown_result.rejections)
         should_close_all = drawdown_result.should_close_all
+        logger.debug(
+            "Drawdown check: rejections=%d should_close_all=%s",
+            len(drawdown_result.rejections), should_close_all,
+        )
+        if should_close_all:
+            logger.warning(
+                "Emergency drawdown for %s — should_close_all=True", symbol,
+            )
 
         exposure_result = await self._check_exposure(symbol, state_manager)
         if exposure_result:
             rejection_reasons.append(exposure_result)
+        logger.debug("Exposure check: result=%s", exposure_result)
 
         regime_result = self._check_volatility_regime(regime)
         if regime_result:
             rejection_reasons.append(regime_result)
+        logger.debug(
+            "Regime check: regime=%s result=%s",
+            regime.regime.value, regime_result,
+        )
 
         sl_result = self._check_stop_loss(entry_price, stop_loss, current_atr, side)
         rejection_reasons.extend(sl_result)
+        logger.debug("SL check: rejections=%s", sl_result)
 
         rr_result = self._check_risk_reward(entry_price, stop_loss, take_profit, side)
         if rr_result:
             rejection_reasons.append(rr_result)
+        logger.debug("R:R check: result=%s", rr_result)
 
         recommended_size = Decimal("0")
         if not rejection_reasons:
@@ -78,10 +109,30 @@ class DynamicRiskValidator:
                     entry_price=entry_price,
                 )
                 recommended_size = size_result.adjusted_size
+                logger.debug(
+                    "Position sizing: balance=%s base=%s adjusted=%s"
+                    " multiplier=%s",
+                    account.total_balance_usdt, size_result.base_size,
+                    size_result.adjusted_size, size_result.size_multiplier,
+                )
+            else:
+                logger.warning(
+                    "Account state unavailable, cannot size position"
+                    " for %s",
+                    symbol,
+                )
 
         if regime.regime == VolatilityRegime.HIGH:
             warnings.append("HIGH volatility regime - position size reduced by 50%")
 
+        logger.info(
+            "Risk validation result: symbol=%s valid=%s rejections=%d"
+            " size=%s regime=%s",
+            symbol, len(rejection_reasons) == 0,
+            len(rejection_reasons), recommended_size,
+            regime.regime.value,
+            extra={"symbol": symbol},
+        )
         return RiskValidationResultSchema(
             is_valid=len(rejection_reasons) == 0,
             rejection_reasons=rejection_reasons,

@@ -399,7 +399,7 @@ monitoring:
 
   # Application log level (can be overridden with --verbose CLI flag → DEBUG).
   # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  log_level: "INFO"
+  log_level: "DEBUG"
 
   # Whether to log every trader decision to the decision audit trail.
   decision_log_enabled: true

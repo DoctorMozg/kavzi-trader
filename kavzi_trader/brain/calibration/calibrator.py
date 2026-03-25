@@ -31,8 +31,18 @@ class ConfidenceCalibrator:
         bucket = self._bucket(raw_confidence)
         accuracy = await self._history.get_accuracy(bucket)
         if accuracy is None:
-            return self._default_for(bucket)
-        return accuracy
+            logger.warning(
+                "No history for bucket %s, using default accuracy",
+                bucket,
+            )
+            calibrated = self._default_for(bucket)
+        else:
+            calibrated = accuracy
+        logger.debug(
+            "Calibration: raw=%.3f bucket=%s calibrated=%.3f",
+            raw_confidence, bucket, calibrated,
+        )
+        return calibrated
 
     async def record_outcome(
         self,
@@ -41,6 +51,10 @@ class ConfidenceCalibrator:
         was_correct: bool,
     ) -> None:
         bucket = self._bucket(raw_confidence)
+        logger.debug(
+            "Recording outcome: decision_id=%s bucket=%s correct=%s",
+            decision_id, bucket, was_correct,
+        )
         try:
             await self._history.record(bucket, was_correct)
         except Exception:

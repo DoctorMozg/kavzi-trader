@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from statistics import mean, stdev
 
@@ -7,6 +8,8 @@ from kavzi_trader.spine.risk.schemas import (
     VolatilityRegime,
     VolatilityRegimeSchema,
 )
+
+logger = logging.getLogger(__name__)
 
 MIN_HISTORY_LENGTH = 2
 
@@ -20,9 +23,19 @@ class VolatilityRegimeDetector:
         current_atr: Decimal,
         atr_history: list[Decimal],
     ) -> VolatilityRegimeSchema:
+        if len(atr_history) < MIN_HISTORY_LENGTH:
+            logger.warning(
+                "ATR history has %d entries (need %d),"
+                " zscore defaults to 0, regime may be unreliable",
+                len(atr_history), MIN_HISTORY_LENGTH,
+            )
         zscore = self._calculate_zscore(current_atr, atr_history)
         regime = self._classify_regime(zscore)
         multiplier = REGIME_SIZE_MULTIPLIERS[regime]
+        logger.debug(
+            "Volatility regime: regime=%s zscore=%s multiplier=%s",
+            regime.value, zscore, multiplier,
+        )
 
         return VolatilityRegimeSchema(
             regime=regime,

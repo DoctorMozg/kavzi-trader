@@ -29,6 +29,9 @@ class ExecutionLoop:
         self._report_populator = report_populator
 
     async def run(self) -> None:
+        logger.info(
+            "ExecutionLoop started, listening on queue %s", self._queue_key,
+        )
         while True:
             try:
                 item = await self._redis_client.client.brpop(
@@ -42,7 +45,28 @@ class ExecutionLoop:
                 except Exception:
                     logger.exception("Failed to parse decision payload")
                     continue
+                logger.info(
+                    "Decision dequeued: id=%s symbol=%s action=%s",
+                    decision.decision_id,
+                    decision.symbol,
+                    decision.action,
+                    extra={
+                        "decision_id": decision.decision_id,
+                        "symbol": decision.symbol,
+                    },
+                )
                 result = await self._engine.execute(decision)
+                logger.info(
+                    "Execution result: id=%s status=%s qty=%s price=%s",
+                    decision.decision_id,
+                    result.status,
+                    result.executed_qty,
+                    result.executed_price,
+                    extra={
+                        "decision_id": decision.decision_id,
+                        "status": result.status,
+                    },
+                )
                 await self._report_execution(decision, result)
             except Exception:
                 logger.exception("ExecutionLoop encountered an error, continuing")

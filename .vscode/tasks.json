@@ -48,5 +48,24 @@
       "problemMatcher": [],
       "detail": "Run pre-commit hooks"
     },
+    {
+      "label": "Run KavziTrader",
+      "type": "shell",
+      "command": "uv run python -m kavzi_trader.cli.main trade start",
+      "icon": {
+        "id": "rocket"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "options": {
+        "statusbar": {
+            "color": "#f5a623"
+        }
+      },
+      "problemMatcher": [],
+      "detail": "Start the trading orchestrator with config/config.yaml"
+    }
   ]
 }

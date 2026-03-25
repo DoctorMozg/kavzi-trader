@@ -32,8 +32,11 @@ class ReconciliationService:
         orders_removed = 0
 
         try:
+            logger.debug("Reconciling account balance")
             await self._reconcile_account()
+            logger.debug("Reconciling open orders")
             orders_synced, orders_removed = await self._reconcile_orders(discrepancies)
+            logger.debug("Verifying protective orders")
             positions_synced = await self._verify_protective_orders(discrepancies)
         except Exception:
             logger.exception("Reconciliation failed")
@@ -147,12 +150,18 @@ class ReconciliationService:
             )
 
             if not has_sl:
-                discrepancies.append(
-                    f"Position {position.id} missing stop-loss order",
+                msg = f"Position {position.id} missing stop-loss order"
+                discrepancies.append(msg)
+                logger.warning(
+                    "Protective orders missing: %s has no stop-loss",
+                    position.id,
                 )
             if not has_tp:
-                discrepancies.append(
-                    f"Position {position.id} missing take-profit order",
+                msg_tp = f"Position {position.id} missing take-profit order"
+                discrepancies.append(msg_tp)
+                logger.warning(
+                    "Protective orders missing: %s has no take-profit",
+                    position.id,
                 )
 
             if has_sl and has_tp:

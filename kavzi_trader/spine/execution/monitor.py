@@ -19,11 +19,21 @@ class OrderMonitor:
         symbol: str,
         order_id: int,
     ) -> OrderResponseSchema | None:
+        logger.debug(
+            "Monitoring order %s for %s, timeout=%ds",
+            order_id, symbol, self._timeout_s,
+        )
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 self._poll_status(symbol, order_id),
                 timeout=self._timeout_s,
             )
+            logger.info(
+                "Order %s for %s completed: status=%s",
+                order_id, symbol, result.status.value,
+                extra={"symbol": symbol},
+            )
+            return result
         except TimeoutError:
             logger.warning(
                 "Order %s for %s not completed within %ds",

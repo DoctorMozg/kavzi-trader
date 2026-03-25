@@ -1,3 +1,5 @@
+import logging
+import time
 from typing import Protocol
 
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
@@ -8,6 +10,10 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+
+logger = logging.getLogger(__name__)
+
+SLOW_AGENT_THRESHOLD_S = 10.0
 
 
 class ScoutRunner(Protocol):
@@ -47,11 +53,77 @@ class AgentRouter:
         AnalystDecisionSchema | None,
         TradeDecisionSchema | None,
     ]:
+        symbol = scout_deps.symbol
+        total_start = time.monotonic()
+        logger.info("Agent pipeline started for %s", symbol)
+
+        t0 = time.monotonic()
         scout_result = await self._scout.run(scout_deps)
+        scout_ms = (time.monotonic() - t0) * 1000
+        logger.info(
+            "Scout verdict=%s reason=%s pattern=%s elapsed_ms=%.1f",
+            scout_result.verdict,
+            scout_result.reason,
+            scout_result.pattern_detected,
+            scout_ms,
+            extra={"symbol": symbol, "elapsed_ms": round(scout_ms, 1)},
+        )
+        if scout_ms / 1000 > SLOW_AGENT_THRESHOLD_S:
+            logger.warning(
+                "Scout agent slow for %s: %.1fs", symbol, scout_ms / 1000,
+            )
         if scout_result.verdict != "INTERESTING":
+            total_ms = (time.monotonic() - total_start) * 1000
+            logger.info(
+                "Pipeline stopped at Scout for %s in %.1fms",
+                symbol, total_ms,
+            )
             return scout_result, None, None
+
+        t0 = time.monotonic()
         analyst_result = await self._analyst.run(analyst_deps)
+        analyst_ms = (time.monotonic() - t0) * 1000
+        logger.info(
+            "Analyst setup_valid=%s direction=%s confluence=%d elapsed_ms=%.1f",
+            analyst_result.setup_valid,
+            analyst_result.direction,
+            analyst_result.confluence_score,
+            analyst_ms,
+            extra={"symbol": symbol, "elapsed_ms": round(analyst_ms, 1)},
+        )
+        if analyst_ms / 1000 > SLOW_AGENT_THRESHOLD_S:
+            logger.warning(
+                "Analyst agent slow for %s: %.1fs", symbol, analyst_ms / 1000,
+            )
         if not analyst_result.setup_valid:
+            total_ms = (time.monotonic() - total_start) * 1000
+            logger.info(
+                "Pipeline stopped at Analyst for %s in %.1fms",
+                symbol, total_ms,
+            )
             return scout_result, analyst_result, None
+
+        t0 = time.monotonic()
         trader_result = await self._trader.run(trader_deps)
+        trader_ms = (time.monotonic() - t0) * 1000
+        logger.info(
+            "Trader action=%s confidence=%.2f entry=%s SL=%s TP=%s elapsed_ms=%.1f",
+            trader_result.action,
+            trader_result.confidence,
+            trader_result.suggested_entry,
+            trader_result.suggested_stop_loss,
+            trader_result.suggested_take_profit,
+            trader_ms,
+            extra={"symbol": symbol, "elapsed_ms": round(trader_ms, 1)},
+        )
+        if trader_ms / 1000 > SLOW_AGENT_THRESHOLD_S:
+            logger.warning(
+                "Trader agent slow for %s: %.1fs", symbol, trader_ms / 1000,
+            )
+
+        total_ms = (time.monotonic() - total_start) * 1000
+        logger.info(
+            "Agent pipeline completed for %s in %.1fms — reached tier trader",
+            symbol, total_ms,
+        )
         return scout_result, analyst_result, trader_result

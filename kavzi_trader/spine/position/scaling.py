@@ -1,8 +1,11 @@
+import logging
 from decimal import Decimal
 
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
 from kavzi_trader.spine.position.position_action_type import PositionActionType
 from kavzi_trader.spine.state.schemas import PositionSchema
+
+logger = logging.getLogger(__name__)
 
 
 class ScaleInChecker:
@@ -38,6 +41,10 @@ class ScaleInChecker:
         if scale_in_quantity <= 0:
             return None
 
+        logger.debug(
+            "Scale-in triggered for %s: profit_atr=%s scale_qty=%s",
+            position.symbol, profit_atr, scale_in_quantity,
+        )
         return PositionActionSchema(
             action=PositionActionType.SCALE_IN,
             scale_in_quantity=scale_in_quantity,

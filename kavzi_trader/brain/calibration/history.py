@@ -1,4 +1,8 @@
+import logging
+
 from redis.asyncio import Redis  # type: ignore[import-untyped]
+
+logger = logging.getLogger(__name__)
 
 
 class ConfidenceHistoryStore:
@@ -15,6 +19,9 @@ class ConfidenceHistoryStore:
         await self._redis.hincrby(key, "total", 1)
         if was_correct:
             await self._redis.hincrby(key, "correct", 1)
+        logger.debug(
+            "Recorded outcome: bucket=%s correct=%s", bucket, was_correct,
+        )
 
     async def get_accuracy(self, bucket: str) -> float | None:
         key = f"{self._key_prefix}:{bucket}"
@@ -27,4 +34,9 @@ class ConfidenceHistoryStore:
         if total == 0:
             return None
         correct = int(correct_value or 0)
-        return correct / total
+        accuracy = correct / total
+        logger.debug(
+            "Accuracy for bucket %s: %d/%d = %.3f",
+            bucket, correct, total, accuracy,
+        )
+        return accuracy

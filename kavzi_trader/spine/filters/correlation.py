@@ -1,8 +1,11 @@
+import logging
 from decimal import Decimal
 
 from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
 from kavzi_trader.spine.state.schemas import PositionSchema
+
+logger = logging.getLogger(__name__)
 
 
 class CorrelationFilter:
@@ -26,6 +29,12 @@ class CorrelationFilter:
 
         for position in positions:
             if position.symbol in correlated:
+                logger.debug(
+                    "Correlation filter: %s has correlated position %s,"
+                    " multiplier=%s",
+                    symbol, position.symbol,
+                    self._config.max_correlated_exposure,
+                )
                 return FilterResultSchema(
                     name="correlation",
                     is_allowed=True,

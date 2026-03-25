@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from kavzi_trader.spine.risk.config import RiskConfigSchema
@@ -5,6 +6,8 @@ from kavzi_trader.spine.risk.schemas import (
     PositionSizeResultSchema,
     VolatilityRegimeSchema,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PositionSizer:
@@ -20,6 +23,10 @@ class PositionSizer:
         entry_price: Decimal,
     ) -> PositionSizeResultSchema:
         if atr <= 0 or entry_price <= 0:
+            logger.warning(
+                "Position sizer: atr=%s entry_price=%s, returning zero size",
+                atr, entry_price,
+            )
             return PositionSizeResultSchema(
                 base_size=Decimal("0"),
                 adjusted_size=Decimal("0"),
@@ -36,6 +43,13 @@ class PositionSizer:
         adjusted_size = base_size * size_multiplier
 
         adjusted_size = Decimal(str(round(float(adjusted_size), 8)))
+
+        logger.debug(
+            "Position sizer: balance=%s atr=%s sl_mult=%s regime=%s"
+            " base=%s adjusted=%s risk=%s",
+            account_balance, atr, stop_loss_atr_multiplier,
+            regime.regime.value, base_size, adjusted_size, risk_amount,
+        )
 
         return PositionSizeResultSchema(
             base_size=Decimal(str(round(float(base_size), 8))),

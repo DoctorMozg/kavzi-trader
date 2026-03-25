@@ -42,9 +42,11 @@ class StateManager:
         return self._account_store
 
     async def connect(self) -> None:
+        logger.info("Connecting to Redis state store")
         await self._redis_client.connect()
 
     async def close(self) -> None:
+        logger.info("Closing Redis state store connection")
         await self._redis_client.close()
 
     async def get_position(self, symbol: str) -> PositionSchema | None:
@@ -81,6 +83,7 @@ class StateManager:
         return ticker.last_price
 
     async def reconcile_with_exchange(self) -> ReconciliationResultSchema:
+        logger.info("Starting reconciliation with exchange")
         from kavzi_trader.spine.state.reconciliation import ReconciliationService
 
         service = ReconciliationService(

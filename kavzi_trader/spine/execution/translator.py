@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from kavzi_trader.api.common.models import (
@@ -7,6 +8,8 @@ from kavzi_trader.api.common.models import (
 )
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.execution.order_request_schema import OrderRequestSchema
+
+logger = logging.getLogger(__name__)
 
 
 class DecisionTranslator:
@@ -20,6 +23,14 @@ class DecisionTranslator:
         side = OrderSide.BUY if decision.action == "BUY" else OrderSide.SELL
         quantity = (
             quantity_override if quantity_override is not None else decision.quantity
+        )
+        if quantity_override is not None and quantity_override == 0:
+            logger.warning(
+                "Quantity override is zero for %s", decision.symbol,
+            )
+        logger.debug(
+            "Translating decision: %s %s qty=%s price=%s",
+            side.value, decision.symbol, quantity, decision.entry_price,
         )
 
         return OrderRequestSchema(

@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from typing import Literal
 
@@ -7,6 +8,8 @@ from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ConfluenceCalculator:
@@ -35,6 +38,20 @@ class ConfluenceCalculator:
                 funding_favorable,
                 oi_supports_direction,
             ],
+        )
+
+        if score == 0:
+            logger.warning(
+                "Confluence score is 0 for %s — all signals returned False,"
+                " indicators may be missing",
+                side,
+            )
+        logger.debug(
+            "Confluence: ema=%s rsi=%s vol=%s boll=%s fund=%s oi=%s"
+            " score=%d",
+            ema_alignment, rsi_favorable, volume_above_average,
+            price_at_bollinger, funding_favorable,
+            oi_supports_direction, int(score),
         )
 
         return AlgorithmConfluenceSchema(

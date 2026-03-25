@@ -54,6 +54,11 @@ class ReasoningLoop:
         self._report_populator = report_populator
 
     async def run(self) -> None:
+        logger.info(
+            "ReasoningLoop started with %d symbols, interval=%ds",
+            len(self._symbols),
+            self._interval_s,
+        )
         while True:
             try:
                 for symbol in self._symbols:
@@ -74,6 +79,13 @@ class ReasoningLoop:
         )
         await self._report_decisions(symbol, scout, analyst, trader)
         if not self._should_enqueue(scout, analyst, trader):
+            logger.debug(
+                "No trade enqueued for %s: scout=%s analyst=%s trader=%s",
+                symbol,
+                scout.verdict,
+                analyst.setup_valid if analyst else "N/A",
+                trader.action if trader else "N/A",
+            )
             return
         if trader is None:
             return
@@ -81,6 +93,19 @@ class ReasoningLoop:
         await self._redis_client.client.lpush(
             self._queue_key,
             decision.model_dump_json(),
+        )
+        logger.info(
+            "Enqueuing decision for %s: action=%s confidence=%.2f "
+            "decision_id=%s",
+            symbol,
+            trader.action,
+            trader.confidence,
+            decision.decision_id,
+            extra={
+                "symbol": symbol,
+                "decision_id": decision.decision_id,
+                "action": trader.action,
+            },
         )
 
     async def _report_decisions(

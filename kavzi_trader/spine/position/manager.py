@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from kavzi_trader.spine.position.break_even import BreakEvenMover
@@ -7,6 +8,8 @@ from kavzi_trader.spine.position.scaling import ScaleInChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.position.trailing import TrailingStopChecker
 from kavzi_trader.spine.state.schemas import PositionSchema
+
+logger = logging.getLogger(__name__)
 
 
 class PositionManager:
@@ -32,6 +35,17 @@ class PositionManager:
         current_price: Decimal,
         current_atr: Decimal,
     ) -> list[PositionActionSchema]:
+        logger.debug(
+            "Evaluating position %s %s: price=%s atr=%s",
+            position.id, position.symbol, current_price, current_atr,
+        )
+        if current_atr <= 0:
+            logger.warning(
+                "ATR is %s for %s, trailing stop and break-even"
+                " cannot function",
+                current_atr, position.symbol,
+            )
+
         time_exit_action = self._time_exit.evaluate(position)
         if time_exit_action:
             return [time_exit_action]
@@ -58,4 +72,8 @@ class PositionManager:
         if scale_in_action:
             actions.append(scale_in_action)
 
+        logger.debug(
+            "Position %s evaluation: %d actions",
+            position.id, len(actions),
+        )
         return actions

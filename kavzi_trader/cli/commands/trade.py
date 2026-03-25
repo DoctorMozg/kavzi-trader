@@ -24,6 +24,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     ScoutDependenciesSchema,
     TradingDependenciesSchema,
+    rebuild_deferred_models,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.config import AppConfig
@@ -168,6 +169,7 @@ def _build_exchange(app_config: AppConfig) -> BinanceClient:
 
 
 def _build_noop_dependencies() -> TradingDependenciesSchema:
+    rebuild_deferred_models()
     now = datetime(2026, 1, 1, tzinfo=UTC)
     exchange = BinanceClient(api_key="", api_secret="", testnet=True)
     event_store = RedisEventStore(

@@ -71,7 +71,7 @@ class MonitoringConfigSchema(BaseModel):
     """Monitoring and logging configuration."""
 
     log_format: Annotated[str, Field(default="json")]
-    log_level: Annotated[str, Field(default="INFO")]
+    log_level: Annotated[str, Field(default="DEBUG")]
     decision_log_enabled: Annotated[bool, Field(default=True)]
     decision_log_retention_days: Annotated[int, Field(default=30, ge=1)]
     metrics_enabled: Annotated[bool, Field(default=True)]

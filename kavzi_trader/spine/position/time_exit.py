@@ -1,9 +1,12 @@
+import logging
 from datetime import datetime
 
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
 from kavzi_trader.spine.position.position_action_type import PositionActionType
 from kavzi_trader.spine.state.schemas import PositionSchema
+
+logger = logging.getLogger(__name__)
 
 
 class TimeExitChecker:
@@ -18,6 +21,10 @@ class TimeExitChecker:
         if elapsed.total_seconds() < max_seconds:
             return None
 
+        logger.debug(
+            "Time exit triggered for %s: elapsed=%ds max=%ds",
+            position.symbol, int(elapsed.total_seconds()), max_seconds,
+        )
         return PositionActionSchema(
             action=PositionActionType.FULL_EXIT,
             reason="time_exit",

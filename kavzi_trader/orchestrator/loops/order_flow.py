@@ -17,8 +17,12 @@ class OrderFlowLoop:
         self._interval_s = interval_s
 
     async def run(self) -> None:
+        logger.info(
+            "OrderFlowLoop started, interval=%ds", self._interval_s,
+        )
         while True:
             try:
+                logger.debug("OrderFlowLoop fetching order flow data")
                 await self._fetcher.fetch()
             except Exception:
                 logger.exception("OrderFlowLoop encountered an error, continuing")

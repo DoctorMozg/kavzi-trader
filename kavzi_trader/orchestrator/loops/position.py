@@ -38,6 +38,9 @@ class PositionManagementLoop:
         self._report_populator = report_populator
 
     async def run(self) -> None:
+        logger.info(
+            "PositionManagementLoop started, interval=%ds", self._interval_s,
+        )
         while True:
             try:
                 await self._manage_positions()
@@ -49,11 +52,25 @@ class PositionManagementLoop:
 
     async def _manage_positions(self) -> None:
         positions = await self._state_manager.get_all_positions()
+        if positions:
+            logger.debug(
+                "Position management cycle: %d open positions", len(positions),
+            )
         for position in positions:
             current_price = await self._state_manager.get_current_price(
                 position.symbol,
             )
             current_atr = await self._atr_provider.get_atr(position.symbol)
+            if current_price == 0:
+                logger.warning(
+                    "Current price is 0 for %s, position management unreliable",
+                    position.symbol,
+                )
+            if current_atr == 0:
+                logger.warning(
+                    "ATR is 0 for %s, trailing stop/break-even cannot function",
+                    position.symbol,
+                )
             actions = await self._manager.evaluate_position(
                 position=position,
                 current_price=current_price,
@@ -69,6 +86,17 @@ class PositionManagementLoop:
     ) -> None:
         if action.action == PositionActionType.NO_ACTION:
             return
+        logger.info(
+            "Position action: %s on %s — %s",
+            action.action.value,
+            position.symbol,
+            action.reason,
+            extra={
+                "symbol": position.symbol,
+                "position_id": position.id,
+                "action": action.action.value,
+            },
+        )
         if self._report_populator is not None:
             await self._report_populator.record_action(
                 action_type=action.action.value.lower(),

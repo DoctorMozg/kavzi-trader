@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
@@ -7,6 +8,8 @@ from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
 from kavzi_trader.spine.filters.liquidity_period import LiquidityPeriod
 from kavzi_trader.spine.filters.liquidity_session_schema import LiquiditySessionSchema
+
+logger = logging.getLogger(__name__)
 
 SATURDAY = 5
 SUNDAY = 6
@@ -63,6 +66,10 @@ class LiquidityFilter:
             self._config.liquidity_multipliers,
         )
 
+        logger.debug(
+            "Liquidity filter: day=%d hour=%d period=%s multiplier=%s",
+            weekday, hour, period.value, multiplier,
+        )
         return FilterResultSchema(
             name="liquidity",
             is_allowed=True,

@@ -1,7 +1,7 @@
 import logging
 
 from openai import AsyncOpenAI
-from pydantic_ai import Agent
+from pydantic_ai import Agent, PromptedOutput
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -54,7 +54,7 @@ class AgentFactory:
         )
         return Agent(
             model,
-            output_type=ScoutDecisionSchema,
+            output_type=PromptedOutput(ScoutDecisionSchema),
             deps_type=ScoutDependenciesSchema,
             instructions=system_prompt,
             retries=self._config.scout.retries,
