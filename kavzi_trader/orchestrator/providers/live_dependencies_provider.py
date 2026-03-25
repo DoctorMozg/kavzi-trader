@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Literal
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     ScoutDependenciesSchema,
@@ -40,6 +41,23 @@ class LiveDependenciesProvider:
         self._event_store = event_store
         self._timeframe = timeframe
 
+    def _recent_candles(
+        self,
+        symbol: str,
+        candles: list[CandlestickSchema],
+        dependency_name: str,
+    ) -> list[CandlestickSchema]:
+        recent = candles[-RECENT_CANDLES_COUNT:]
+        logger.debug(
+            "%s dependencies for %s: cache_candles=%d recent_candles=%d timeframe=%s",
+            dependency_name,
+            symbol,
+            len(candles),
+            len(recent),
+            self._timeframe,
+        )
+        return recent
+
     async def get_scout(self, symbol: str) -> ScoutDependenciesSchema:
         candles = self._cache.get_candles(symbol)
         indicators = self._cache.get_indicators(symbol)
@@ -54,7 +72,7 @@ class LiveDependenciesProvider:
             current_atr, atr_history,
         )
 
-        recent = candles[-RECENT_CANDLES_COUNT:]
+        recent = self._recent_candles(symbol, candles, "Scout")
         return ScoutDependenciesSchema(
             symbol=symbol,
             current_price=price,
@@ -95,7 +113,7 @@ class LiveDependenciesProvider:
             side, last_candle, indicators, order_flow,
         )
 
-        recent = candles[-RECENT_CANDLES_COUNT:]
+        recent = self._recent_candles(symbol, candles, "Analyst")
         return AnalystDependenciesSchema(
             symbol=symbol,
             current_price=price,
@@ -145,7 +163,7 @@ class LiveDependenciesProvider:
 
         open_positions = await self._state_manager.get_all_positions()
 
-        recent = candles[-RECENT_CANDLES_COUNT:]
+        recent = self._recent_candles(symbol, candles, "Trader")
         return TradingDependenciesSchema(
             symbol=symbol,
             current_price=price,

@@ -66,7 +66,10 @@ class ContextBuilder(BaseModel):
         )
         context = {"market_snapshot_json": dump_json(snapshot)}
         logger.debug(
-            "Built scout context for %s: %d keys", deps.symbol, len(context),
+            "Built scout context for %s: context_keys=%d recent_candles=%d",
+            deps.symbol,
+            len(context),
+            len(deps.recent_candles),
         )
         return context
 

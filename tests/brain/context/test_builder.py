@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
@@ -22,6 +23,25 @@ def test_context_builder_scout(candle, indicators, volatility_regime) -> None:
     builder = ContextBuilder()
     context = builder.build_scout_context(deps)
     assert "market_snapshot_json" in context, "Expected market snapshot JSON."
+
+
+def test_context_builder_scout_logs_recent_candle_count(
+    caplog, candle, indicators, volatility_regime
+) -> None:
+    deps = ScoutDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal("105"),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        volatility_regime=volatility_regime,
+    )
+    builder = ContextBuilder()
+
+    with caplog.at_level(logging.DEBUG):
+        builder.build_scout_context(deps)
+
+    assert "Built scout context for BTCUSDT: context_keys=1 recent_candles=1" in caplog.text
 
 
 def test_context_builder_analyst(
