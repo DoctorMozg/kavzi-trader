@@ -417,10 +417,11 @@ orchestrator:
   ws_max_reconnect_delay_s: 60.0
 
   # How often (seconds) the OrderFlowLoop fetches funding rate / open interest.
-  #   30  = frequent polling
-  #   60  = default
-  #   120 = infrequent (lower API load)
-  order_flow_fetch_interval_s: 60
+  # Underlying data refreshes every 15 min (OI/L-S ratio) or 8h (funding).
+  #   60  = aggressive polling
+  #   300 = default (well under 15m refresh rate, 5x fewer API calls)
+  #   600 = conservative
+  order_flow_fetch_interval_s: 300
 
   # How often (seconds) the ReasoningLoop scans symbols and asks the Brain
   # for new trade decisions.

@@ -9,3 +9,9 @@ INDICATORS:
 - Volume ratio: {{ market_snapshot.indicators.volume.volume_ratio if market_snapshot.indicators.volume else "null" }}
 - MACD: line={{ market_snapshot.indicators.macd.macd_line if market_snapshot.indicators.macd else "null" }}, signal={{ market_snapshot.indicators.macd.signal_line if market_snapshot.indicators.macd else "null" }}, histogram={{ market_snapshot.indicators.macd.histogram if market_snapshot.indicators.macd else "null" }}
 - Bollinger: upper={{ market_snapshot.indicators.bollinger.upper if market_snapshot.indicators.bollinger else "null" }}, lower={{ market_snapshot.indicators.bollinger.lower if market_snapshot.indicators.bollinger else "null" }}, %B={{ market_snapshot.indicators.bollinger.percent_b if market_snapshot.indicators.bollinger else "null" }}, width={{ market_snapshot.indicators.bollinger.width if market_snapshot.indicators.bollinger else "null" }}
+{% if price_change_window_percent is defined %}
+
+TREND CONTEXT:
+- Price change (last {{ candle_window_size }} candles): {{ price_change_window_percent }}%
+- EMA alignment: {{ ema_alignment }}
+{% endif %}
