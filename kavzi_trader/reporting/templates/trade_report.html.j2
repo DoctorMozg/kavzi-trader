@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,230 +10,178 @@
           integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YcnS/zVQz2+F3ty3gOeOFVa0l5BuerEBp3F"
           crossorigin="anonymous">
     <style>
-        body {
-            background-color: #1a1a2e;
-            color: #e0e0e0;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-        }
-        .card {
-            background-color: #16213e;
-            border: 1px solid #0f3460;
-        }
-        .card-header {
-            background-color: #0f3460;
-            border-bottom: 1px solid #0f3460;
-            font-weight: 600;
-        }
-        .table {
-            color: #e0e0e0;
-        }
-        .table-dark {
-            --bs-table-bg: #0f3460;
-            --bs-table-border-color: #1a1a2e;
-        }
-        .table-striped > tbody > tr:nth-of-type(odd) > * {
-            --bs-table-bg-type: rgba(15, 52, 96, 0.3);
-            color: #e0e0e0;
-        }
-        .table-striped > tbody > tr:nth-of-type(even) > * {
-            color: #e0e0e0;
-        }
-        .list-group-item {
-            background-color: #16213e;
-            border-color: #0f3460;
-            color: #e0e0e0;
-        }
-        .text-muted {
-            color: #8899aa !important;
-        }
-        .revenue-positive { color: #00e676; font-weight: bold; }
-        .revenue-negative { color: #ff5252; font-weight: bold; }
-        .revenue-zero { color: #8899aa; }
-        .badge-scout { background-color: #5c6bc0; }
-        .badge-analyst { background-color: #26a69a; }
-        .badge-trader { background-color: #ff7043; }
-        .badge-execution { background-color: #ab47bc; }
-        .badge-position { background-color: #42a5f5; }
-        .scrollable {
-            max-height: 600px;
-            overflow-y: auto;
-        }
+        .revenue-positive { color: #22c55e; font-weight: bold; }
+        .revenue-negative { color: #ef4444; font-weight: bold; }
+        .revenue-zero { opacity: 0.6; }
+        .badge-scout { background-color: #6b7280; }
+        .badge-analyst { background-color: #6d9e97; }
+        .badge-trader { background-color: #c2795a; }
+        .badge-execution { background-color: #9678a5; }
+        .badge-position { background-color: #7a9bb5; }
         .stat-value {
             font-size: 1.5rem;
             font-weight: 700;
+            font-variant-numeric: tabular-nums;
         }
         .stat-label {
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
-        h4 { color: #e0e0e0; }
-        h5 { color: #e0e0e0; }
     </style>
 </head>
 <body>
     <div class="container-fluid mt-3 mb-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4 class="mb-0">KavziTrader Session Report</h4>
-            <span class="text-muted">
+            <span class="text-body-secondary">
                 Started: {{ state.session_started_at }}
                 &middot; Updated: {{ state.last_updated_at }}
                 &middot; v{{ state.version }}
             </span>
         </div>
 
-        <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <div class="card text-center">
-                    <div class="card-body py-3">
-                        <div class="stat-label text-muted">Current Balance</div>
-                        <div class="stat-value">${{ "%.2f" | format(state.current_balance_usdt | float) }}</div>
-                    </div>
+        <div class="d-flex gap-4 align-items-end mb-4 pb-3 border-bottom">
+            <div>
+                <div class="stat-label text-body-secondary">Current Balance</div>
+                <div class="stat-value">${{ "%.2f" | format(state.current_balance_usdt | float) }}</div>
+            </div>
+            <div class="vr"></div>
+            <div>
+                <div class="stat-label text-body-secondary">Session Revenue</div>
+                {% set rev = state.session_revenue_usdt | float %}
+                <div class="stat-value {% if rev > 0 %}revenue-positive{% elif rev < 0 %}revenue-negative{% else %}revenue-zero{% endif %}">
+                    {% if rev >= 0 %}+{% endif %}${{ "%.2f" | format(rev) }}
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card text-center">
-                    <div class="card-body py-3">
-                        <div class="stat-label text-muted">Session Revenue</div>
-                        {% set rev = state.session_revenue_usdt | float %}
-                        <div class="stat-value {% if rev > 0 %}revenue-positive{% elif rev < 0 %}revenue-negative{% else %}revenue-zero{% endif %}">
-                            {% if rev >= 0 %}+{% endif %}${{ "%.2f" | format(rev) }}
-                        </div>
-                    </div>
+            <div class="vr"></div>
+            <div>
+                <div class="stat-label text-body-secondary">Unrealized PnL</div>
+                {% set pnl = state.unrealized_pnl_usdt | float %}
+                <div class="stat-value {% if pnl > 0 %}revenue-positive{% elif pnl < 0 %}revenue-negative{% else %}revenue-zero{% endif %}">
+                    {% if pnl >= 0 %}+{% endif %}${{ "%.2f" | format(pnl) }}
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card text-center">
-                    <div class="card-body py-3">
-                        <div class="stat-label text-muted">Unrealized PnL</div>
-                        {% set pnl = state.unrealized_pnl_usdt | float %}
-                        <div class="stat-value {% if pnl > 0 %}revenue-positive{% elif pnl < 0 %}revenue-negative{% else %}revenue-zero{% endif %}">
-                            {% if pnl >= 0 %}+{% endif %}${{ "%.2f" | format(pnl) }}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card text-center">
-                    <div class="card-body py-3">
-                        <div class="stat-label text-muted">Active Positions</div>
-                        <div class="stat-value">{{ state.active_positions_count }}</div>
-                    </div>
-                </div>
+            <div class="vr"></div>
+            <div>
+                <div class="stat-label text-body-secondary">Active Positions</div>
+                <div class="stat-value">{{ state.active_positions_count }}</div>
             </div>
         </div>
 
         <div class="row g-3">
-            <div class="col-md-6">
+            <div class="col-lg-7">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header fw-semibold">
                         Trade Actions
-                        <span class="badge bg-secondary ms-1">{{ state.trades | length }}</span>
+                        <span class="badge text-bg-secondary ms-1">{{ state.trades | length }}</span>
                     </div>
                     <div class="card-body p-0">
-                        <div class="scrollable">
-                            <table class="table table-sm table-striped mb-0">
-                                <thead class="table-dark sticky-top">
-                                    <tr>
-                                        <th>Time</th>
-                                        <th>Symbol</th>
-                                        <th>Side</th>
-                                        <th>Price</th>
-                                        <th>Qty</th>
-                                        <th>SL</th>
-                                        <th>TP</th>
-                                        <th>Status</th>
-                                        <th>Conf</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for trade in state.trades | reverse %}
-                                    <tr>
-                                        <td><small>{{ trade.timestamp.strftime('%H:%M:%S') if trade.timestamp is not string else trade.timestamp }}</small></td>
-                                        <td><strong>{{ trade.symbol }}</strong></td>
-                                        <td>
-                                            {% if trade.side == "LONG" %}
-                                            <span class="badge bg-success">LONG</span>
-                                            {% elif trade.side == "SHORT" %}
-                                            <span class="badge bg-danger">SHORT</span>
-                                            {% else %}
-                                            <span class="badge bg-warning text-dark">CLOSE</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>{{ trade.entry_price if trade.entry_price is not none else '-' }}</td>
-                                        <td>{{ trade.quantity if trade.quantity is not none else '-' }}</td>
-                                        <td>{{ trade.stop_loss if trade.stop_loss is not none else '-' }}</td>
-                                        <td>{{ trade.take_profit if trade.take_profit is not none else '-' }}</td>
-                                        <td>
-                                            {% if trade.status == "FILLED" %}
-                                            <span class="badge bg-success">{{ trade.status }}</span>
-                                            {% elif trade.status == "REJECTED" %}
-                                            <span class="badge bg-danger">{{ trade.status }}</span>
-                                            {% elif trade.status == "EXPIRED" %}
-                                            <span class="badge bg-secondary">{{ trade.status }}</span>
-                                            {% else %}
-                                            <span class="badge bg-info">{{ trade.status }}</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>{{ "%.0f" | format(trade.confidence * 100) }}%</td>
-                                    </tr>
-                                    {% if trade.reasoning %}
-                                    <tr>
-                                        <td colspan="9"><small class="text-muted">{{ trade.reasoning }}</small></td>
-                                    </tr>
-                                    {% endif %}
-                                    {% endfor %}
-                                    {% if not state.trades %}
-                                    <tr>
-                                        <td colspan="9" class="text-center text-muted py-3">No trades yet</td>
-                                    </tr>
-                                    {% endif %}
-                                </tbody>
-                            </table>
-                        </div>
+                        <table class="table table-sm table-striped mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Symbol</th>
+                                    <th>Side</th>
+                                    <th>Price</th>
+                                    <th>Qty</th>
+                                    <th>SL</th>
+                                    <th>TP</th>
+                                    <th>Status</th>
+                                    <th>Conf</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for trade in state.trades | reverse %}
+                                <tr>
+                                    <td><small>{{ trade.timestamp.strftime('%H:%M:%S') if trade.timestamp is not string else trade.timestamp }}</small></td>
+                                    <td><strong>{{ trade.symbol }}</strong></td>
+                                    <td>
+                                        {% if trade.side == "LONG" %}
+                                        <span class="badge bg-success">LONG</span>
+                                        {% elif trade.side == "SHORT" %}
+                                        <span class="badge bg-danger">SHORT</span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark">CLOSE</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ trade.entry_price if trade.entry_price is not none else '-' }}</td>
+                                    <td>{{ trade.quantity if trade.quantity is not none else '-' }}</td>
+                                    <td>{{ trade.stop_loss if trade.stop_loss is not none else '-' }}</td>
+                                    <td>{{ trade.take_profit if trade.take_profit is not none else '-' }}</td>
+                                    <td>
+                                        {% if trade.status == "FILLED" %}
+                                        <span class="badge bg-success">{{ trade.status }}</span>
+                                        {% elif trade.status == "REJECTED" %}
+                                        <span class="badge bg-danger">{{ trade.status }}</span>
+                                        {% elif trade.status == "EXPIRED" %}
+                                        <span class="badge bg-secondary">{{ trade.status }}</span>
+                                        {% else %}
+                                        <span class="badge bg-info">{{ trade.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ "%.0f" | format(trade.confidence * 100) }}%</td>
+                                </tr>
+                                {% if trade.reasoning %}
+                                <tr>
+                                    <td colspan="9"><small class="text-body-secondary">{{ trade.reasoning }}</small></td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                                {% if not state.trades %}
+                                <tr>
+                                    <td colspan="9" class="text-center text-body-secondary py-3">No trades yet</td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
 
-            <div class="col-md-6">
+            <div class="col-lg-5">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header fw-semibold">
                         Activity Log
-                        <span class="badge bg-secondary ms-1">{{ state.actions | length }}</span>
+                        <span class="badge text-bg-secondary ms-1">{{ state.actions | length }}</span>
                     </div>
                     <div class="card-body p-0">
-                        <div class="scrollable">
-                            <ul class="list-group list-group-flush">
+                        <table class="table table-sm table-striped mb-0">
+                            <tbody>
                                 {% for action in state.actions | reverse %}
-                                <li class="list-group-item py-2">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <div>
-                                            {% if "scout" in action.action_type %}
-                                            <span class="badge badge-scout">{{ action.action_type }}</span>
-                                            {% elif "analyst" in action.action_type %}
-                                            <span class="badge badge-analyst">{{ action.action_type }}</span>
-                                            {% elif "trader" in action.action_type %}
-                                            <span class="badge badge-trader">{{ action.action_type }}</span>
-                                            {% elif action.action_type in ("order_created", "order_rejected", "order_filled") %}
-                                            <span class="badge badge-execution">{{ action.action_type }}</span>
-                                            {% else %}
-                                            <span class="badge badge-position">{{ action.action_type }}</span>
-                                            {% endif %}
-                                            <strong class="ms-1">{{ action.symbol }}</strong>
-                                            <span class="ms-1">{{ action.summary }}</span>
-                                            {% if action.details %}
-                                            <br><small class="text-muted">{{ action.details }}</small>
-                                            {% endif %}
-                                        </div>
-                                        <small class="text-muted text-nowrap ms-2">{{ action.timestamp.strftime('%H:%M:%S') if action.timestamp is not string else action.timestamp }}</small>
-                                    </div>
-                                </li>
+                                <tr>
+                                    <td class="text-nowrap" style="width: 1%">
+                                        <small class="text-body-secondary">{{ action.timestamp.strftime('%H:%M:%S') if action.timestamp is not string else action.timestamp }}</small>
+                                    </td>
+                                    <td class="text-nowrap" style="width: 1%">
+                                        {% if "scout" in action.action_type %}
+                                        <span class="badge badge-scout">{{ action.action_type }}</span>
+                                        {% elif "analyst" in action.action_type %}
+                                        <span class="badge badge-analyst">{{ action.action_type }}</span>
+                                        {% elif "trader" in action.action_type %}
+                                        <span class="badge badge-trader">{{ action.action_type }}</span>
+                                        {% elif action.action_type in ("order_created", "order_rejected", "order_filled") %}
+                                        <span class="badge badge-execution">{{ action.action_type }}</span>
+                                        {% else %}
+                                        <span class="badge badge-position">{{ action.action_type }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-nowrap" style="width: 1%"><strong>{{ action.symbol }}</strong></td>
+                                    <td>
+                                        {{ action.summary }}
+                                        {% if action.details %}
+                                        <br><small class="text-body-secondary">{{ action.details }}</small>
+                                        {% endif %}
+                                    </td>
+                                </tr>
                                 {% endfor %}
                                 {% if not state.actions %}
-                                <li class="list-group-item text-center text-muted py-3">No activity yet</li>
+                                <tr>
+                                    <td colspan="4" class="text-center text-body-secondary py-3">No activity yet</td>
+                                </tr>
                                 {% endif %}
-                            </ul>
-                        </div>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
