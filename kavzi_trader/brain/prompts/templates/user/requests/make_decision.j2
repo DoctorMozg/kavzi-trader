@@ -1,5 +1,21 @@
-You are making a final trade decision.
+Make a final trade decision for {{ market_snapshot.timeframe }} {{ market_snapshot.symbol }} at price {{ market_snapshot.current_price }}.
+
+{% include "user/context/analyst_result.j2" %}
+
+MARKET DATA:
 {% include "user/context/market_snapshot.j2" %}
+
+ORDER FLOW:
 {% include "user/context/order_flow.j2" %}
+
+ALGORITHM CONFLUENCE ({{ algorithm_confluence.score }}/6):
 {% include "user/context/algorithm_confluence.j2" %}
+
+ACCOUNT STATE:
 {% include "user/context/account_state.j2" %}
+Current drawdown: {{ account_state.current_drawdown_percent }}%
+Available margin: {{ account_state.available_balance_usdt }} USDT of {{ account_state.total_balance_usdt }} USDT
+
+ATR(14) for position sizing: {{ market_snapshot.indicators.atr_14 if market_snapshot.indicators.atr_14 is not none else "unavailable" }}
+
+Now follow your decision framework: assess direction, calculate entry/SL/TP using ATR, set confidence, and configure position management.

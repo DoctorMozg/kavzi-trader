@@ -107,4 +107,4 @@ Do **not** add `Co-Authored-By` trailers to commit messages.
 - **Absolute imports only** (enforced by absolufy-imports hook).
 - **Line length**: 88 chars. 4-space indentation. Ruff for lint + format.
 - **No bare tuples** for structured data — use Pydantic models with named fields instead.
-- **Pre-commit**: Always run `uv run pre-commit run --all-files` after making changes to verify linting/formatting. Use it instead of running ruff/mypy individually.
+- **After every change**: Always run `uv run pre-commit run --all-files` and `uv run pytest` after making changes. Pre-commit covers ruff lint/format, mypy, trailing whitespace, and absolufy-imports — use it instead of running ruff/mypy individually. Do not consider a change complete until both pre-commit and tests pass.

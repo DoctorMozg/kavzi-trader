@@ -1,0 +1,19 @@
+CONFLUENCE SCORING RUBRIC (0-10 scale):
+The algorithm pre-computes 6 binary signals (0-6 points):
+  1. ema_alignment: EMA20/50/200 aligned with trade direction
+  2. rsi_favorable: RSI in favorable zone for the direction
+  3. volume_above_average: Volume ratio > 1.0
+  4. price_at_bollinger: Price at the relevant Bollinger Band
+  5. funding_favorable: Funding rate supports direction
+  6. oi_supports_direction: Open interest trend confirms direction
+
+You add 0-4 discretionary points:
+  - Order flow alignment (0-2): +1 if funding rate supports direction, +1 if OI trend confirms direction (beyond the binary signal — consider magnitude and context)
+  - Price structure (0-2): +1 if price is at a key support/resistance level, +1 if candle pattern confirms direction
+
+Final confluence_score = algorithm score (0-6) + your discretionary points (0-4). Max 10.
+
+TRADING THRESHOLDS:
+- Minimum confluence_score to trade: 7. Below 7, mark setup_valid=false or output WAIT.
+- Minimum risk/reward ratio: 1.5:1. Prefer 2:1 or 3:1 when key levels support it.
+- If volatility_regime is LOW or EXTREME: do NOT trade regardless of confluence.

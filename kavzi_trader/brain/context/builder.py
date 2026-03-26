@@ -1,10 +1,12 @@
 import logging
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.brain.context.formatters import dump_json, dump_optional_json
 from kavzi_trader.brain.context.market_snapshot import MarketSnapshotSchema
+from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     ScoutDependenciesSchema,
@@ -54,7 +56,10 @@ class ContextBuilder(BaseModel):
                 MIN_CANDLES_EXPECTED,
             )
 
-    def build_scout_context(self, deps: ScoutDependenciesSchema) -> dict[str, str]:
+    def build_scout_context(
+        self,
+        deps: ScoutDependenciesSchema,
+    ) -> dict[str, Any]:
         self._warn_if_broken_data(deps.symbol, deps)
         snapshot = MarketSnapshotSchema(
             symbol=deps.symbol,
@@ -64,7 +69,10 @@ class ContextBuilder(BaseModel):
             indicators=deps.indicators,
             volatility_regime=deps.volatility_regime,
         )
-        context = {"market_snapshot_json": dump_json(snapshot)}
+        context: dict[str, Any] = {
+            "market_snapshot": snapshot.model_dump(),
+            "market_snapshot_json": dump_json(snapshot),
+        }
         logger.debug(
             "Built scout context for %s: context_keys=%d recent_candles=%d",
             deps.symbol,
@@ -76,7 +84,7 @@ class ContextBuilder(BaseModel):
     def build_analyst_context(
         self,
         deps: AnalystDependenciesSchema,
-    ) -> dict[str, str | None]:
+    ) -> dict[str, Any]:
         self._warn_if_broken_data(deps.symbol, deps)
         snapshot = MarketSnapshotSchema(
             symbol=deps.symbol,
@@ -86,9 +94,11 @@ class ContextBuilder(BaseModel):
             indicators=deps.indicators,
             volatility_regime=deps.volatility_regime,
         )
-        context: dict[str, str | None] = {
+        context: dict[str, Any] = {
+            "market_snapshot": snapshot.model_dump(),
             "market_snapshot_json": dump_json(snapshot),
             "order_flow_json": dump_optional_json(deps.order_flow),
+            "algorithm_confluence": deps.algorithm_confluence.model_dump(),
             "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
         }
         logger.debug(
@@ -99,7 +109,8 @@ class ContextBuilder(BaseModel):
     def build_trader_context(
         self,
         deps: TradingDependenciesSchema,
-    ) -> dict[str, str | None]:
+        analyst_result: AnalystDecisionSchema | None = None,
+    ) -> dict[str, Any]:
         self._warn_if_broken_data(deps.symbol, deps)
         snapshot = MarketSnapshotSchema(
             symbol=deps.symbol,
@@ -109,11 +120,15 @@ class ContextBuilder(BaseModel):
             indicators=deps.indicators,
             volatility_regime=deps.volatility_regime,
         )
-        context: dict[str, str | None] = {
+        context: dict[str, Any] = {
+            "market_snapshot": snapshot.model_dump(),
             "market_snapshot_json": dump_json(snapshot),
             "order_flow_json": dump_optional_json(deps.order_flow),
+            "algorithm_confluence": deps.algorithm_confluence.model_dump(),
             "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
+            "account_state": deps.account_state.model_dump(),
             "account_state_json": dump_json(deps.account_state),
+            "analyst_result_json": dump_optional_json(analyst_result),
         }
         logger.debug(
             "Built trader context for %s: %d keys", deps.symbol, len(context),

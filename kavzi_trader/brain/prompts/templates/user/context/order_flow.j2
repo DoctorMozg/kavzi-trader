@@ -1,6 +1,6 @@
-Order flow:
 {% if order_flow_json %}
+Order flow (funding rate, OI, long/short ratio, positioning signals):
 {{ order_flow_json }}
 {% else %}
-null
+Order flow data unavailable. Treat order flow signals as neutral.
 {% endif %}

@@ -25,7 +25,11 @@ class AnalystRunner(Protocol):
 
 
 class TraderRunner(Protocol):
-    async def run(self, deps: TradingDependenciesSchema) -> TradeDecisionSchema: ...
+    async def run(
+        self,
+        deps: TradingDependenciesSchema,
+        analyst_result: AnalystDecisionSchema | None = None,
+    ) -> TradeDecisionSchema: ...
 
 
 class AgentRouter:
@@ -99,10 +103,12 @@ class AgentRouter:
             return scout_result, None, None
         analyst_ms = (time.monotonic() - t0) * 1000
         logger.info(
-            "Analyst setup_valid=%s direction=%s confluence=%d elapsed_ms=%.1f",
+            "Analyst setup_valid=%s direction=%s confluence=%d "
+            "reasoning=%s elapsed_ms=%.1f",
             analyst_result.setup_valid,
             analyst_result.direction,
             analyst_result.confluence_score,
+            analyst_result.reasoning,
             analyst_ms,
             extra={"symbol": symbol, "elapsed_ms": round(analyst_ms, 1)},
         )
@@ -120,18 +126,22 @@ class AgentRouter:
 
         t0 = time.monotonic()
         try:
-            trader_result = await self._trader.run(trader_deps)
+            trader_result = await self._trader.run(
+                trader_deps, analyst_result=analyst_result,
+            )
         except Exception:
             logger.exception("Trader agent failed for %s", symbol)
             return scout_result, analyst_result, None
         trader_ms = (time.monotonic() - t0) * 1000
         logger.info(
-            "Trader action=%s confidence=%.2f entry=%s SL=%s TP=%s elapsed_ms=%.1f",
+            "Trader action=%s confidence=%.2f entry=%s SL=%s TP=%s "
+            "reasoning=%s elapsed_ms=%.1f",
             trader_result.action,
             trader_result.confidence,
             trader_result.suggested_entry,
             trader_result.suggested_stop_loss,
             trader_result.suggested_take_profit,
+            trader_result.reasoning,
             trader_ms,
             extra={"symbol": symbol, "elapsed_ms": round(trader_ms, 1)},
         )

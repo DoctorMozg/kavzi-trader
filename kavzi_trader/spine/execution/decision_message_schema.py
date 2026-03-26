@@ -23,6 +23,7 @@ class DecisionMessageSchema(BaseModel):
     position_management: Annotated[PositionManagementConfigSchema, Field(...)]
     created_at_ms: Annotated[int, Field(..., ge=0)]
     expires_at_ms: Annotated[int, Field(..., ge=0)]
+    reasoning: Annotated[str, Field(default="")]
     current_atr: Annotated[Decimal, Field(...)]
     atr_history: Annotated[list[Decimal], Field(default_factory=list)]
 

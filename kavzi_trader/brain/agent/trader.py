@@ -6,6 +6,7 @@ from pydantic_ai import Agent
 
 from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.prompts.loader import PromptLoader
+from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
 
@@ -27,9 +28,15 @@ class TraderAgent:
         self._prompt_loader = prompt_loader
         self._context_builder = context_builder
 
-    async def run(self, deps: TradingDependenciesSchema) -> TradeDecisionSchema:
+    async def run(
+        self,
+        deps: TradingDependenciesSchema,
+        analyst_result: AnalystDecisionSchema | None = None,
+    ) -> TradeDecisionSchema:
         logger.debug("Trader building context for %s", deps.symbol)
-        context = self._context_builder.build_trader_context(deps)
+        context = self._context_builder.build_trader_context(
+            deps, analyst_result=analyst_result,
+        )
         user_prompt = self._prompt_loader.render_user_prompt("make_decision", context)
         t0 = time.monotonic()
         result = await self._agent.run(user_prompt, deps=deps)

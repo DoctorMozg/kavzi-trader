@@ -177,6 +177,11 @@
                                         </td>
                                         <td>{{ "%.0f" | format(trade.confidence * 100) }}%</td>
                                     </tr>
+                                    {% if trade.reasoning %}
+                                    <tr>
+                                        <td colspan="9"><small class="text-muted">{{ trade.reasoning }}</small></td>
+                                    </tr>
+                                    {% endif %}
                                     {% endfor %}
                                     {% if not state.trades %}
                                     <tr>
