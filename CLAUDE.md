@@ -78,6 +78,22 @@ Candle Close → Scout (INTERESTING/SKIP) → Analyst (setup validation) → Tra
   → Event store (Redis Streams) → Position management loops
 ```
 
+## Commit Messages
+
+All commit messages must follow this format:
+
+```
+[<PART>] <Short message (max 10 words)>
+```
+
+Where `<PART>` is a uppercase tag indicating the area of the codebase affected, e.g.: `AI`, `SPINE`, `EVENTS`, `TESTS`, `INDICATORS`, `API`, `CLI`, `CONFIG`, `RISK`, `ORDERS`, `DOCS`, `INFRA`, `REFACTOR`.
+
+Examples:
+- `[AI] Add confidence calibration to Scout agent`
+- `[TESTS] Cover RSI edge cases for flat markets`
+- `[SPINE] Fix trailing stop activation threshold`
+- `[EVENTS] Switch Redis stream serialization to msgpack`
+
 ## Coding Conventions
 
 - **Pydantic only** — no dataclasses. All models use `Schema` postfix (e.g., `TradeOrderSchema`). Use `Annotated[T, Field(...)]` syntax. Instantiate with `model_validate()`, never `**unpacking`. Use `ConfigDict(frozen=True)` for immutability.
