@@ -43,7 +43,7 @@ brain:
   scout:
     # Tier 1 — Pre-filter: cheap & fast ($0.065/$0.26 per M tokens, 1M ctx)
     # Alternatives: deepseek/deepseek-v3.2, openai/gpt-4.1-nano
-    model_id: "qwen/qwen3.5-flash-02-23"
+    model_id: "deepseek/deepseek-v3.2"
     retries: 1                 # Max retry attempts on transient API errors
     temperature: 0.0           # 0.0 = deterministic output (recommended for trading)
 

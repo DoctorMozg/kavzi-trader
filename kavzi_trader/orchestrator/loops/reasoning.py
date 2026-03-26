@@ -5,17 +5,17 @@ import logging
 import time
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, Protocol, cast
+from typing import Literal, cast
 from uuid import uuid4
 
-from kavzi_trader.brain.agent.router import AgentRouter
+from kavzi_trader.brain.agent.router import (
+    AgentRouter,
+    DependenciesProvider,
+    PipelineResult,
+)
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
-from kavzi_trader.brain.schemas.dependencies import (
-    AnalystDependenciesSchema,
-    ScoutDependenciesSchema,
-    TradingDependenciesSchema,
-)
+from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
@@ -23,14 +23,6 @@ from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
 logger = logging.getLogger(__name__)
-
-
-class DependenciesProvider(Protocol):
-    async def get_scout(self, symbol: str) -> ScoutDependenciesSchema: ...
-
-    async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema: ...
-
-    async def get_trader(self, symbol: str) -> TradingDependenciesSchema: ...
 
 
 class ReasoningLoop:
@@ -65,23 +57,10 @@ class ReasoningLoop:
             cycle += 1
             cycle_start = time.monotonic()
             logger.debug("ReasoningLoop cycle %d starting", cycle)
-            for symbol in self._symbols:
-                sym_start = time.monotonic()
-                try:
-                    await self._handle_symbol(symbol)
-                except Exception:
-                    logger.exception(
-                        "ReasoningLoop failed for %s, continuing",
-                        symbol,
-                        extra={"symbol": symbol},
-                    )
-                sym_ms = (time.monotonic() - sym_start) * 1000
-                logger.info(
-                    "ReasoningLoop symbol=%s elapsed_ms=%.1f",
-                    symbol,
-                    sym_ms,
-                    extra={"symbol": symbol, "elapsed_ms": round(sym_ms, 1)},
-                )
+            self._deps_provider.clear_cycle_cache()
+            await asyncio.gather(
+                *(self._handle_symbol_timed(symbol) for symbol in self._symbols),
+            )
             cycle_ms = (time.monotonic() - cycle_start) * 1000
             logger.info(
                 "ReasoningLoop cycle %d complete in %.1fms, sleeping %ds",
@@ -92,40 +71,65 @@ class ReasoningLoop:
             )
             await asyncio.sleep(self._interval_s)
 
+    async def _handle_symbol_timed(self, symbol: str) -> None:
+        sym_start = time.monotonic()
+        try:
+            await self._handle_symbol(symbol)
+        except Exception:
+            logger.exception(
+                "ReasoningLoop failed for %s, continuing",
+                symbol,
+                extra={"symbol": symbol},
+            )
+        sym_ms = (time.monotonic() - sym_start) * 1000
+        logger.info(
+            "ReasoningLoop symbol=%s elapsed_ms=%.1f",
+            symbol,
+            sym_ms,
+            extra={"symbol": symbol, "elapsed_ms": round(sym_ms, 1)},
+        )
+
     async def _handle_symbol(self, symbol: str) -> None:
         snapshot_at_ms = int(datetime.now(UTC).timestamp() * 1000)
-        scout_deps = await self._deps_provider.get_scout(symbol)
-        analyst_deps = await self._deps_provider.get_analyst(symbol)
-        trader_deps = await self._deps_provider.get_trader(symbol)
-
-        scout, analyst, trader = await self._router.run(
-            scout_deps=scout_deps,
-            analyst_deps=analyst_deps,
-            trader_deps=trader_deps,
-        )
+        result = await self._router.run(symbol, self._deps_provider)
         try:
-            await self._report_decisions(symbol, scout, analyst, trader)
+            await self._report_decisions(
+                symbol,
+                result.scout,
+                result.analyst,
+                result.trader,
+            )
         except Exception:
             logger.exception(
                 "Failed to report decisions for %s",
                 symbol,
             )
-        if not self._should_enqueue(scout, analyst, trader):
-            logger.debug(
-                "No trade enqueued for %s: scout=%s analyst=%s trader=%s",
-                symbol,
-                scout.verdict,
-                analyst.setup_valid if analyst else "N/A",
-                trader.action if trader else "N/A",
-            )
+        if not self._should_enqueue(result):
             return
-        if trader is None:
+        await self._enqueue_decision(result, snapshot_at_ms)
+
+    def _should_enqueue(self, result: PipelineResult) -> bool:
+        if result.scout.verdict != "INTERESTING":
+            return False
+        if result.analyst is None or not result.analyst.setup_valid:
+            return False
+        if result.trader is None:
+            return False
+        return result.trader.action in {"BUY", "SELL", "CLOSE"}
+
+    async def _enqueue_decision(
+        self,
+        result: PipelineResult,
+        snapshot_at_ms: int,
+    ) -> None:
+        if result.trader is None or result.trader_deps is None:
             return
         decision = self._build_decision_message(
-            trader,
-            trader_deps,
+            result.trader,
+            result.trader_deps,
             snapshot_at_ms,
         )
+        symbol = result.trader_deps.symbol
         try:
             await self._redis_client.client.lpush(
                 self._queue_key,
@@ -141,13 +145,13 @@ class ReasoningLoop:
         logger.info(
             "Enqueuing decision for %s: action=%s confidence=%.2f decision_id=%s",
             symbol,
-            trader.action,
-            trader.confidence,
+            decision.action,
+            decision.raw_confidence,
             decision.decision_id,
             extra={
                 "symbol": symbol,
                 "decision_id": decision.decision_id,
-                "action": trader.action,
+                "action": decision.action,
             },
         )
 
@@ -186,20 +190,6 @@ class ReasoningLoop:
                 ),
                 details=trader.reasoning,
             )
-
-    def _should_enqueue(
-        self,
-        scout: ScoutDecisionSchema,
-        analyst: AnalystDecisionSchema | None,
-        trader: TradeDecisionSchema | None,
-    ) -> bool:
-        if scout.verdict != "INTERESTING":
-            return False
-        if analyst is None or not analyst.setup_valid:
-            return False
-        if trader is None:
-            return False
-        return trader.action in {"BUY", "SELL", "CLOSE"}
 
     def _build_decision_message(
         self,

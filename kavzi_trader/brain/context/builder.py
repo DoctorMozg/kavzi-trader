@@ -4,7 +4,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from kavzi_trader.brain.context.formatters import dump_json, dump_optional_json
+from kavzi_trader.brain.context.formatters import (
+    dump_json,
+    dump_optional_json,
+    format_candles_table,
+)
 from kavzi_trader.brain.context.market_snapshot import MarketSnapshotSchema
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
@@ -71,21 +75,18 @@ class ContextBuilder(BaseModel):
         )
         context: dict[str, Any] = {
             "market_snapshot": snapshot.model_dump(),
-            "market_snapshot_json": dump_json(snapshot),
         }
         logger.debug(
-            "Built scout context for %s: context_keys=%d recent_candles=%d",
+            "Built scout context for %s: context_keys=%d",
             deps.symbol,
             len(context),
-            len(deps.recent_candles),
         )
         return context
 
-    def build_analyst_context(
+    def _build_market_context(
         self,
-        deps: AnalystDependenciesSchema,
+        deps: AnalystDependenciesSchema | TradingDependenciesSchema,
     ) -> dict[str, Any]:
-        self._warn_if_broken_data(deps.symbol, deps)
         snapshot = MarketSnapshotSchema(
             symbol=deps.symbol,
             current_price=deps.current_price,
@@ -94,13 +95,25 @@ class ContextBuilder(BaseModel):
             indicators=deps.indicators,
             volatility_regime=deps.volatility_regime,
         )
-        context: dict[str, Any] = {
+        return {
             "market_snapshot": snapshot.model_dump(),
-            "market_snapshot_json": dump_json(snapshot),
-            "order_flow_json": dump_optional_json(deps.order_flow),
-            "algorithm_confluence": deps.algorithm_confluence.model_dump(),
-            "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
+            "candles_table": format_candles_table(deps.recent_candles),
+            "indicators_json": dump_json(deps.indicators),
         }
+
+    def build_analyst_context(
+        self,
+        deps: AnalystDependenciesSchema,
+    ) -> dict[str, Any]:
+        self._warn_if_broken_data(deps.symbol, deps)
+        context = self._build_market_context(deps)
+        context.update(
+            {
+                "order_flow_json": dump_optional_json(deps.order_flow),
+                "algorithm_confluence": deps.algorithm_confluence.model_dump(),
+                "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
+            }
+        )
         logger.debug(
             "Built analyst context for %s: %d keys",
             deps.symbol,
@@ -114,24 +127,17 @@ class ContextBuilder(BaseModel):
         analyst_result: AnalystDecisionSchema | None = None,
     ) -> dict[str, Any]:
         self._warn_if_broken_data(deps.symbol, deps)
-        snapshot = MarketSnapshotSchema(
-            symbol=deps.symbol,
-            current_price=deps.current_price,
-            timeframe=deps.timeframe,
-            recent_candles=deps.recent_candles,
-            indicators=deps.indicators,
-            volatility_regime=deps.volatility_regime,
+        context = self._build_market_context(deps)
+        context.update(
+            {
+                "order_flow_json": dump_optional_json(deps.order_flow),
+                "algorithm_confluence": deps.algorithm_confluence.model_dump(),
+                "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
+                "account_state": deps.account_state.model_dump(),
+                "account_state_json": dump_json(deps.account_state),
+                "analyst_result_json": dump_optional_json(analyst_result),
+            }
         )
-        context: dict[str, Any] = {
-            "market_snapshot": snapshot.model_dump(),
-            "market_snapshot_json": dump_json(snapshot),
-            "order_flow_json": dump_optional_json(deps.order_flow),
-            "algorithm_confluence": deps.algorithm_confluence.model_dump(),
-            "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
-            "account_state": deps.account_state.model_dump(),
-            "account_state_json": dump_json(deps.account_state),
-            "analyst_result_json": dump_optional_json(analyst_result),
-        }
         logger.debug(
             "Built trader context for %s: %d keys",
             deps.symbol,

@@ -1,6 +1,6 @@
 import logging
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
@@ -12,17 +12,18 @@ from kavzi_trader.brain.schemas.dependencies import (
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
+from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
+from kavzi_trader.spine.state.schemas import AccountStateSchema, PositionSchema
 
 logger = logging.getLogger(__name__)
 
-RECENT_CANDLES_COUNT = 50
+SCOUT_CANDLES_COUNT = 50
+ANALYSIS_CANDLES_COUNT = 20
 
 
 class LiveDependenciesProvider:
-    """Builds live dependency schemas from the shared market data cache."""
-
     def __init__(
         self,
         cache: MarketDataCache,
@@ -40,147 +41,139 @@ class LiveDependenciesProvider:
         self._exchange = exchange
         self._event_store = event_store
         self._timeframe = timeframe
+        self._cycle_cache: dict[str, Any] = {}
+
+    def clear_cycle_cache(self) -> None:
+        self._cycle_cache.clear()
 
     def _recent_candles(
         self,
         symbol: str,
-        candles: list[CandlestickSchema],
-        dependency_name: str,
+        count: int = SCOUT_CANDLES_COUNT,
     ) -> list[CandlestickSchema]:
-        recent = candles[-RECENT_CANDLES_COUNT:]
-        logger.debug(
-            "%s dependencies for %s: cache_candles=%d recent_candles=%d timeframe=%s",
-            dependency_name,
-            symbol,
-            len(candles),
-            len(recent),
-            self._timeframe,
-        )
-        return recent
+        candles = self._cache.get_candles(symbol)
+        return candles[-count:]
+
+    def _detect_side(self, symbol: str) -> Literal["LONG", "SHORT"]:
+        indicators = self._cache.get_indicators(symbol)
+        if indicators is None:
+            return "LONG"
+        if indicators.ema_20 is not None and indicators.ema_50 is not None:
+            return "LONG" if indicators.ema_20 > indicators.ema_50 else "SHORT"
+        return "LONG"
+
+    def _get_regime(self, symbol: str) -> VolatilityRegime:
+        key = f"regime:{symbol}"
+        if key in self._cycle_cache:
+            cached: VolatilityRegime = self._cycle_cache[key]
+            return cached
+        indicators = self._cache.get_indicators(symbol)
+        atr_history = self._cache.get_atr_history(symbol)
+        current_atr = (indicators.atr_14 if indicators else None) or Decimal(0)
+        result = self._volatility.detect_regime(current_atr, atr_history)
+        self._cycle_cache[key] = result.regime
+        return result.regime
 
     async def get_scout(self, symbol: str) -> ScoutDependenciesSchema:
-        candles = self._cache.get_candles(symbol)
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:
             msg = f"Indicators not yet available for {symbol}"
             raise RuntimeError(msg)
 
-        price = self._cache.get_current_price(symbol)
-        atr_history = self._cache.get_atr_history(symbol)
-        current_atr = indicators.atr_14 or Decimal(0)
-        regime_result = self._volatility.detect_regime(
-            current_atr,
-            atr_history,
-        )
-
-        recent = self._recent_candles(symbol, candles, "Scout")
         return ScoutDependenciesSchema(
             symbol=symbol,
-            current_price=price,
+            current_price=self._cache.get_current_price(symbol),
             timeframe=self._timeframe,
-            recent_candles=recent,
+            recent_candles=self._recent_candles(symbol),
             indicators=indicators,
-            volatility_regime=regime_result.regime,
+            volatility_regime=self._get_regime(symbol),
         )
 
     async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema:
-        candles = self._cache.get_candles(symbol)
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:
             msg = f"Indicators not yet available for {symbol}"
             raise RuntimeError(msg)
 
-        price = self._cache.get_current_price(symbol)
-        atr_history = self._cache.get_atr_history(symbol)
-        current_atr = indicators.atr_14 or Decimal(0)
-        regime_result = self._volatility.detect_regime(
-            current_atr,
-            atr_history,
-        )
-
-        order_flow = self._cache.get_order_flow(symbol)
-
-        side: Literal["LONG", "SHORT"] = "LONG"
-        if indicators.ema_20 is not None and indicators.ema_50 is not None:
-            side = "LONG" if indicators.ema_20 > indicators.ema_50 else "SHORT"
-
-        last_candle = candles[-1] if candles else None
-        if last_candle is None:
+        candles = self._cache.get_candles(symbol)
+        if not candles:
             msg = f"No candles available for {symbol}"
             raise RuntimeError(msg)
 
+        order_flow = self._cache.get_order_flow(symbol)
         confluence = self._confluence.evaluate(
-            side,
-            last_candle,
+            self._detect_side(symbol),
+            candles[-1],
             indicators,
             order_flow,
         )
 
-        recent = self._recent_candles(symbol, candles, "Analyst")
         return AnalystDependenciesSchema(
             symbol=symbol,
-            current_price=price,
+            current_price=self._cache.get_current_price(symbol),
             timeframe=self._timeframe,
-            recent_candles=recent,
+            recent_candles=candles[-ANALYSIS_CANDLES_COUNT:],
             indicators=indicators,
             order_flow=order_flow,
             algorithm_confluence=confluence,
-            volatility_regime=regime_result.regime,
+            volatility_regime=self._get_regime(symbol),
         )
 
     async def get_trader(self, symbol: str) -> TradingDependenciesSchema:
-        candles = self._cache.get_candles(symbol)
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:
             msg = f"Indicators not yet available for {symbol}"
             raise RuntimeError(msg)
 
-        price = self._cache.get_current_price(symbol)
-        atr_history = self._cache.get_atr_history(symbol)
-        current_atr = indicators.atr_14 or Decimal(0)
-        regime_result = self._volatility.detect_regime(
-            current_atr,
-            atr_history,
-        )
-
-        order_flow = self._cache.get_order_flow(symbol)
-
-        side: Literal["LONG", "SHORT"] = "LONG"
-        if indicators.ema_20 is not None and indicators.ema_50 is not None:
-            side = "LONG" if indicators.ema_20 > indicators.ema_50 else "SHORT"
-
-        last_candle = candles[-1] if candles else None
-        if last_candle is None:
+        candles = self._cache.get_candles(symbol)
+        if not candles:
             msg = f"No candles available for {symbol}"
             raise RuntimeError(msg)
 
+        order_flow = self._cache.get_order_flow(symbol)
         confluence = self._confluence.evaluate(
-            side,
-            last_candle,
+            self._detect_side(symbol),
+            candles[-1],
             indicators,
             order_flow,
         )
 
-        account_state = await self._state_manager.get_account_state()
-        if account_state is None:
-            msg = "Account state not available"
-            raise RuntimeError(msg)
+        account_state = await self._get_cached_account_state()
+        open_positions = await self._get_cached_positions()
 
-        open_positions = await self._state_manager.get_all_positions()
-
-        recent = self._recent_candles(symbol, candles, "Trader")
         return TradingDependenciesSchema(
             symbol=symbol,
-            current_price=price,
+            current_price=self._cache.get_current_price(symbol),
             timeframe=self._timeframe,
-            recent_candles=recent,
+            recent_candles=candles[-ANALYSIS_CANDLES_COUNT:],
             indicators=indicators,
             order_flow=order_flow,
             algorithm_confluence=confluence,
-            volatility_regime=regime_result.regime,
+            volatility_regime=self._get_regime(symbol),
             account_state=account_state,
             open_positions=open_positions,
             exchange_client=self._exchange,
             event_store=self._event_store,
-            atr_history=atr_history,
+            atr_history=self._cache.get_atr_history(symbol),
         )
+
+    async def _get_cached_account_state(self) -> AccountStateSchema:
+        key = "account_state"
+        if key in self._cycle_cache:
+            cached: AccountStateSchema = self._cycle_cache[key]
+            return cached
+        state = await self._state_manager.get_account_state()
+        if state is None:
+            msg = "Account state not available"
+            raise RuntimeError(msg)
+        self._cycle_cache[key] = state
+        return state
+
+    async def _get_cached_positions(self) -> list[PositionSchema]:
+        key = "open_positions"
+        if key in self._cycle_cache:
+            cached: list[PositionSchema] = self._cycle_cache[key]
+            return cached
+        positions = await self._state_manager.get_all_positions()
+        self._cycle_cache[key] = positions
+        return positions

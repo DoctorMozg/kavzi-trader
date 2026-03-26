@@ -1,12 +1,11 @@
 Evaluate this {{ market_snapshot.timeframe }} candle for {{ market_snapshot.symbol }} at price {{ market_snapshot.current_price }}.
 Volatility regime: {{ market_snapshot.volatility_regime }}
 
-KEY INDICATORS:
+INDICATORS:
 - RSI(14): {{ market_snapshot.indicators.rsi_14 if market_snapshot.indicators.rsi_14 is not none else "null" }}
 - EMA20: {{ market_snapshot.indicators.ema_20 if market_snapshot.indicators.ema_20 is not none else "null" }}, EMA50: {{ market_snapshot.indicators.ema_50 if market_snapshot.indicators.ema_50 is not none else "null" }}, EMA200: {{ market_snapshot.indicators.ema_200 if market_snapshot.indicators.ema_200 is not none else "null" }}
+- SMA20: {{ market_snapshot.indicators.sma_20 if market_snapshot.indicators.sma_20 is not none else "null" }}
+- ATR(14): {{ market_snapshot.indicators.atr_14 if market_snapshot.indicators.atr_14 is not none else "null" }}
 - Volume ratio: {{ market_snapshot.indicators.volume.volume_ratio if market_snapshot.indicators.volume else "null" }}
-- MACD histogram: {{ market_snapshot.indicators.macd.histogram if market_snapshot.indicators.macd else "null" }}
-- Bollinger %B: {{ market_snapshot.indicators.bollinger.percent_b if market_snapshot.indicators.bollinger else "null" }}
-
-FULL DATA:
-{% include "user/context/market_snapshot.j2" %}
+- MACD: line={{ market_snapshot.indicators.macd.macd_line if market_snapshot.indicators.macd else "null" }}, signal={{ market_snapshot.indicators.macd.signal_line if market_snapshot.indicators.macd else "null" }}, histogram={{ market_snapshot.indicators.macd.histogram if market_snapshot.indicators.macd else "null" }}
+- Bollinger: upper={{ market_snapshot.indicators.bollinger.upper if market_snapshot.indicators.bollinger else "null" }}, lower={{ market_snapshot.indicators.bollinger.lower if market_snapshot.indicators.bollinger else "null" }}, %B={{ market_snapshot.indicators.bollinger.percent_b if market_snapshot.indicators.bollinger else "null" }}, width={{ market_snapshot.indicators.bollinger.width if market_snapshot.indicators.bollinger else "null" }}

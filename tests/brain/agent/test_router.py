@@ -55,8 +55,37 @@ class DummyTrader:
         )
 
 
-@pytest.mark.asyncio
-async def test_router_stops_on_scout_skip(
+class FakeDepsProvider:
+    def __init__(
+        self,
+        scout_deps: ScoutDependenciesSchema,
+        analyst_deps: AnalystDependenciesSchema,
+        trader_deps: TradingDependenciesSchema,
+    ) -> None:
+        self._scout_deps = scout_deps
+        self._analyst_deps = analyst_deps
+        self._trader_deps = trader_deps
+        self.scout_calls = 0
+        self.analyst_calls = 0
+        self.trader_calls = 0
+
+    async def get_scout(self, symbol: str) -> ScoutDependenciesSchema:
+        self.scout_calls += 1
+        return self._scout_deps
+
+    async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema:
+        self.analyst_calls += 1
+        return self._analyst_deps
+
+    async def get_trader(self, symbol: str) -> TradingDependenciesSchema:
+        self.trader_calls += 1
+        return self._trader_deps
+
+    def clear_cycle_cache(self) -> None:
+        pass
+
+
+def _make_provider(
     candle,
     indicators,
     volatility_regime,
@@ -64,8 +93,7 @@ async def test_router_stops_on_scout_skip(
     algorithm_confluence,
     account_state,
     positions,
-) -> None:
-    router = AgentRouter(DummyScout("SKIP"), DummyAnalyst(True), DummyTrader())
+) -> FakeDepsProvider:
     scout_deps = ScoutDependenciesSchema(
         symbol="BTCUSDT",
         current_price=Decimal(105),
@@ -98,10 +126,36 @@ async def test_router_stops_on_scout_skip(
         exchange_client=BinanceClient.__new__(BinanceClient),
         event_store=RedisEventStore.__new__(RedisEventStore),
     )
-    scout, analyst, trader = await router.run(scout_deps, analyst_deps, trader_deps)
-    assert scout.verdict == "SKIP", "Expected scout to skip."
-    assert analyst is None, "Expected analyst to be skipped."
-    assert trader is None, "Expected trader to be skipped."
+    return FakeDepsProvider(scout_deps, analyst_deps, trader_deps)
+
+
+@pytest.mark.asyncio
+async def test_router_stops_on_scout_skip(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    router = AgentRouter(DummyScout("SKIP"), DummyAnalyst(True), DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+    assert result.scout.verdict == "SKIP"
+    assert result.analyst is None
+    assert result.trader is None
+    assert provider.scout_calls == 1
+    assert provider.analyst_calls == 0, "Analyst deps should not be built on SKIP"
+    assert provider.trader_calls == 0, "Trader deps should not be built on SKIP"
 
 
 @pytest.mark.asyncio
@@ -115,42 +169,23 @@ async def test_router_stops_on_invalid_setup(
     positions,
 ) -> None:
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(False), DummyTrader())
-    scout_deps = ScoutDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(105),
-        timeframe="15m",
-        recent_candles=[candle],
-        indicators=indicators,
-        volatility_regime=volatility_regime,
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
     )
-    analyst_deps = AnalystDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(105),
-        timeframe="15m",
-        recent_candles=[candle],
-        indicators=indicators,
-        order_flow=order_flow,
-        algorithm_confluence=algorithm_confluence,
-        volatility_regime=volatility_regime,
+    result = await router.run("BTCUSDT", provider)
+    assert result.scout.verdict == "INTERESTING"
+    assert result.analyst is not None
+    assert result.trader is None
+    assert provider.analyst_calls == 1
+    assert provider.trader_calls == 0, (
+        "Trader deps should not be built on invalid setup"
     )
-    trader_deps = TradingDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(105),
-        timeframe="15m",
-        recent_candles=[candle],
-        indicators=indicators,
-        order_flow=order_flow,
-        algorithm_confluence=algorithm_confluence,
-        volatility_regime=volatility_regime,
-        account_state=account_state,
-        open_positions=positions,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
-    )
-    scout, analyst, trader = await router.run(scout_deps, analyst_deps, trader_deps)
-    assert scout.verdict == "INTERESTING", "Expected scout interest."
-    assert analyst is not None, "Expected analyst result."
-    assert trader is None, "Expected trader to be skipped."
 
 
 @pytest.mark.asyncio
@@ -164,37 +199,18 @@ async def test_router_runs_trader_on_valid_setup(
     positions,
 ) -> None:
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    scout_deps = ScoutDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(105),
-        timeframe="15m",
-        recent_candles=[candle],
-        indicators=indicators,
-        volatility_regime=volatility_regime,
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
     )
-    analyst_deps = AnalystDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(105),
-        timeframe="15m",
-        recent_candles=[candle],
-        indicators=indicators,
-        order_flow=order_flow,
-        algorithm_confluence=algorithm_confluence,
-        volatility_regime=volatility_regime,
-    )
-    trader_deps = TradingDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(105),
-        timeframe="15m",
-        recent_candles=[candle],
-        indicators=indicators,
-        order_flow=order_flow,
-        algorithm_confluence=algorithm_confluence,
-        volatility_regime=volatility_regime,
-        account_state=account_state,
-        open_positions=positions,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
-    )
-    _scout, _analyst, trader = await router.run(scout_deps, analyst_deps, trader_deps)
-    assert trader is not None, "Expected trader result."
+    result = await router.run("BTCUSDT", provider)
+    assert result.trader is not None
+    assert result.trader_deps is not None
+    assert provider.scout_calls == 1
+    assert provider.analyst_calls == 1
+    assert provider.trader_calls == 1

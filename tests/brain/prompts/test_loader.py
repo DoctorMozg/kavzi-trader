@@ -22,16 +22,17 @@ def test_prompt_loader_renders_user_prompt() -> None:
                 "ema_20": None,
                 "ema_50": None,
                 "ema_200": None,
+                "sma_20": None,
+                "atr_14": None,
                 "volume": None,
                 "macd": None,
                 "bollinger": None,
             },
         },
-        "market_snapshot_json": '{"symbol":"BTCUSDT"}',
     }
     rendered = loader.render_user_prompt("scout_scan", context)
-    assert "Market snapshot" in rendered, "Expected market snapshot context."
     assert "BTCUSDT" in rendered, "Expected symbol in rendered prompt."
+    assert "INDICATORS:" in rendered, "Expected indicators section."
 
 
 def test_prompt_loader_renders_analyst_system_prompt() -> None:

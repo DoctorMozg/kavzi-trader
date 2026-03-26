@@ -21,7 +21,7 @@ class KeyLevelsSchema(BaseModel):
     Collection of key price levels highlighted by the Analyst agent.
     """
 
-    levels: Annotated[list[KeyLevelSchema], Field(default_factory=list, max_length=20)]
+    levels: Annotated[list[KeyLevelSchema], Field(default_factory=list, max_length=6)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -38,6 +38,6 @@ class AnalystDecisionSchema(BaseModel):
     direction: Annotated[Literal["LONG", "SHORT", "NEUTRAL"], Field(...)]
     confluence_score: Annotated[int, Field(..., ge=0, le=10)]
     key_levels: Annotated[KeyLevelsSchema, Field(...)]
-    reasoning: Annotated[str, Field(..., max_length=1200)]
+    reasoning: Annotated[str, Field(..., max_length=600)]
 
     model_config = ConfigDict(frozen=True)

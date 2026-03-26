@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 
 SLOW_AGENT_THRESHOLD_S = 10.0
 
+_SKIP_ERROR = ScoutDecisionSchema(
+    verdict="SKIP",
+    reason="agent_error",
+    pattern_detected=None,
+)
+
 
 class ScoutRunner(Protocol):
     async def run(self, deps: ScoutDependenciesSchema) -> ScoutDecisionSchema: ...
@@ -32,11 +38,33 @@ class TraderRunner(Protocol):
     ) -> TradeDecisionSchema: ...
 
 
-class AgentRouter:
-    """
-    Routes decisions through Scout -> Analyst -> Trader.
-    """
+class DependenciesProvider(Protocol):
+    async def get_scout(self, symbol: str) -> ScoutDependenciesSchema: ...
 
+    async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema: ...
+
+    async def get_trader(self, symbol: str) -> TradingDependenciesSchema: ...
+
+    def clear_cycle_cache(self) -> None: ...
+
+
+class PipelineResult:
+    __slots__ = ("analyst", "scout", "trader", "trader_deps")
+
+    def __init__(
+        self,
+        scout: ScoutDecisionSchema,
+        analyst: AnalystDecisionSchema | None = None,
+        trader: TradeDecisionSchema | None = None,
+        trader_deps: TradingDependenciesSchema | None = None,
+    ) -> None:
+        self.scout = scout
+        self.analyst = analyst
+        self.trader = trader
+        self.trader_deps = trader_deps
+
+
+class AgentRouter:
     def __init__(
         self,
         scout: ScoutRunner,
@@ -49,116 +77,33 @@ class AgentRouter:
 
     async def run(
         self,
-        scout_deps: ScoutDependenciesSchema,
-        analyst_deps: AnalystDependenciesSchema,
-        trader_deps: TradingDependenciesSchema,
-    ) -> tuple[
-        ScoutDecisionSchema,
-        AnalystDecisionSchema | None,
-        TradeDecisionSchema | None,
-    ]:
-        symbol = scout_deps.symbol
+        symbol: str,
+        deps_provider: DependenciesProvider,
+    ) -> PipelineResult:
         total_start = time.monotonic()
         logger.info("Agent pipeline started for %s", symbol)
 
-        t0 = time.monotonic()
-        try:
-            scout_result = await self._scout.run(scout_deps)
-        except Exception:
-            logger.exception("Scout agent failed for %s", symbol)
-            return (
-                ScoutDecisionSchema(
-                    verdict="SKIP",
-                    reason="agent_error",
-                    pattern_detected=None,
-                ),
-                None,
-                None,
-            )
-        scout_ms = (time.monotonic() - t0) * 1000
-        logger.info(
-            "Scout verdict=%s reason=%s pattern=%s elapsed_ms=%.1f",
-            scout_result.verdict,
-            scout_result.reason,
-            scout_result.pattern_detected,
-            scout_ms,
-            extra={"symbol": symbol, "elapsed_ms": round(scout_ms, 1)},
-        )
-        if scout_ms / 1000 > SLOW_AGENT_THRESHOLD_S:
-            logger.warning(
-                "Scout agent slow for %s: %.1fs",
-                symbol,
-                scout_ms / 1000,
-            )
+        scout_result = await self._run_scout(symbol, deps_provider)
+        if scout_result is None:
+            return PipelineResult(scout=_SKIP_ERROR)
         if scout_result.verdict != "INTERESTING":
-            total_ms = (time.monotonic() - total_start) * 1000
-            logger.info(
-                "Pipeline stopped at Scout for %s in %.1fms",
-                symbol,
-                total_ms,
-            )
-            return scout_result, None, None
+            self._log_stop("Scout", symbol, total_start)
+            return PipelineResult(scout=scout_result)
 
-        t0 = time.monotonic()
-        try:
-            analyst_result = await self._analyst.run(analyst_deps)
-        except Exception:
-            logger.exception("Analyst agent failed for %s", symbol)
-            return scout_result, None, None
-        analyst_ms = (time.monotonic() - t0) * 1000
-        logger.info(
-            "Analyst setup_valid=%s direction=%s confluence=%d "
-            "reasoning=%s elapsed_ms=%.1f",
-            analyst_result.setup_valid,
-            analyst_result.direction,
-            analyst_result.confluence_score,
-            analyst_result.reasoning,
-            analyst_ms,
-            extra={"symbol": symbol, "elapsed_ms": round(analyst_ms, 1)},
-        )
-        if analyst_ms / 1000 > SLOW_AGENT_THRESHOLD_S:
-            logger.warning(
-                "Analyst agent slow for %s: %.1fs",
-                symbol,
-                analyst_ms / 1000,
-            )
+        analyst_result = await self._run_analyst(symbol, deps_provider)
+        if analyst_result is None:
+            return PipelineResult(scout=scout_result)
         if not analyst_result.setup_valid:
-            total_ms = (time.monotonic() - total_start) * 1000
-            logger.info(
-                "Pipeline stopped at Analyst for %s in %.1fms",
-                symbol,
-                total_ms,
-            )
-            return scout_result, analyst_result, None
+            self._log_stop("Analyst", symbol, total_start)
+            return PipelineResult(scout=scout_result, analyst=analyst_result)
 
-        t0 = time.monotonic()
-        try:
-            trader_result = await self._trader.run(
-                trader_deps,
-                analyst_result=analyst_result,
-            )
-        except Exception:
-            logger.exception("Trader agent failed for %s", symbol)
-            return scout_result, analyst_result, None
-        trader_ms = (time.monotonic() - t0) * 1000
-        logger.info(
-            "Trader action=%s confidence=%.2f entry=%s SL=%s TP=%s "
-            "reasoning=%s elapsed_ms=%.1f",
-            trader_result.action,
-            trader_result.confidence,
-            trader_result.suggested_entry,
-            trader_result.suggested_stop_loss,
-            trader_result.suggested_take_profit,
-            trader_result.reasoning,
-            trader_ms,
-            extra={"symbol": symbol, "elapsed_ms": round(trader_ms, 1)},
+        trader_result, trader_deps = await self._run_trader(
+            symbol,
+            deps_provider,
+            analyst_result,
         )
-        if trader_ms / 1000 > SLOW_AGENT_THRESHOLD_S:
-            logger.warning(
-                "Trader agent slow for %s: %.1fs",
-                symbol,
-                trader_ms / 1000,
-            )
+        if trader_result is None:
+            return PipelineResult(scout=scout_result, analyst=analyst_result)
 
         total_ms = (time.monotonic() - total_start) * 1000
         logger.info(
@@ -166,4 +111,108 @@ class AgentRouter:
             symbol,
             total_ms,
         )
-        return scout_result, analyst_result, trader_result
+        return PipelineResult(
+            scout=scout_result,
+            analyst=analyst_result,
+            trader=trader_result,
+            trader_deps=trader_deps,
+        )
+
+    async def _run_scout(
+        self,
+        symbol: str,
+        deps_provider: DependenciesProvider,
+    ) -> ScoutDecisionSchema | None:
+        deps = await deps_provider.get_scout(symbol)
+        t0 = time.monotonic()
+        try:
+            result = await self._scout.run(deps)
+        except Exception:
+            logger.exception("Scout agent failed for %s", symbol)
+            return None
+        ms = (time.monotonic() - t0) * 1000
+        logger.info(
+            "Scout verdict=%s reason=%s pattern=%s elapsed_ms=%.1f",
+            result.verdict,
+            result.reason,
+            result.pattern_detected,
+            ms,
+            extra={"symbol": symbol, "elapsed_ms": round(ms, 1)},
+        )
+        self._warn_slow("Scout", symbol, ms)
+        return result
+
+    async def _run_analyst(
+        self,
+        symbol: str,
+        deps_provider: DependenciesProvider,
+    ) -> AnalystDecisionSchema | None:
+        deps = await deps_provider.get_analyst(symbol)
+        t0 = time.monotonic()
+        try:
+            result = await self._analyst.run(deps)
+        except Exception:
+            logger.exception("Analyst agent failed for %s", symbol)
+            return None
+        ms = (time.monotonic() - t0) * 1000
+        logger.info(
+            "Analyst setup_valid=%s direction=%s confluence=%d "
+            "reasoning=%s elapsed_ms=%.1f",
+            result.setup_valid,
+            result.direction,
+            result.confluence_score,
+            result.reasoning,
+            ms,
+            extra={"symbol": symbol, "elapsed_ms": round(ms, 1)},
+        )
+        self._warn_slow("Analyst", symbol, ms)
+        return result
+
+    async def _run_trader(
+        self,
+        symbol: str,
+        deps_provider: DependenciesProvider,
+        analyst_result: AnalystDecisionSchema,
+    ) -> tuple[TradeDecisionSchema | None, TradingDependenciesSchema | None]:
+        deps = await deps_provider.get_trader(symbol)
+        t0 = time.monotonic()
+        try:
+            result = await self._trader.run(deps, analyst_result=analyst_result)
+        except Exception:
+            logger.exception("Trader agent failed for %s", symbol)
+            return None, None
+        ms = (time.monotonic() - t0) * 1000
+        logger.info(
+            "Trader action=%s confidence=%.2f entry=%s SL=%s TP=%s "
+            "reasoning=%s elapsed_ms=%.1f",
+            result.action,
+            result.confidence,
+            result.suggested_entry,
+            result.suggested_stop_loss,
+            result.suggested_take_profit,
+            result.reasoning,
+            ms,
+            extra={"symbol": symbol, "elapsed_ms": round(ms, 1)},
+        )
+        self._warn_slow("Trader", symbol, ms)
+        return result, deps
+
+    @staticmethod
+    def _warn_slow(agent: str, symbol: str, ms: float) -> None:
+        if ms / 1000 > SLOW_AGENT_THRESHOLD_S:
+            logger.warning(
+                "%s agent slow for %s: %.1fs",
+                agent,
+                symbol,
+                ms / 1000,
+            )
+
+    @staticmethod
+    def _log_stop(agent: str, symbol: str, start: float) -> None:
+        total_ms = (time.monotonic() - start) * 1000
+        logger.info(
+            "Pipeline stopped at %s for %s in %.1fms",
+            agent,
+            symbol,
+            total_ms,
+        )

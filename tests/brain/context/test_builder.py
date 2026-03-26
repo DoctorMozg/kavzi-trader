@@ -26,8 +26,8 @@ def test_context_builder_scout(candle, indicators, volatility_regime) -> None:
     )
     builder = ContextBuilder()
     context = builder.build_scout_context(deps)
-    assert "market_snapshot_json" in context, "Expected market snapshot JSON."
     assert "market_snapshot" in context, "Expected structured market snapshot dict."
+    assert "market_snapshot_json" not in context, "Scout should not include full JSON."
     assert context["market_snapshot"]["symbol"] == "BTCUSDT"
 
 
@@ -50,10 +50,7 @@ def test_context_builder_scout_logs_recent_candle_count(
     with caplog.at_level(logging.DEBUG):
         builder.build_scout_context(deps)
 
-    assert (
-        "Built scout context for BTCUSDT: context_keys=2 recent_candles=1"
-        in caplog.text
-    )
+    assert "Built scout context for BTCUSDT: context_keys=1" in caplog.text
 
 
 def test_context_builder_analyst(

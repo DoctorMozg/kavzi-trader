@@ -7,6 +7,7 @@ import pytest
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.brain.agent.router import PipelineResult
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema, KeyLevelsSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
@@ -54,6 +55,9 @@ class DummyDepsProvider:
 
     async def get_trader(self, symbol: str) -> TradingDependenciesSchema:
         return self._deps
+
+    def clear_cycle_cache(self) -> None:
+        pass
 
 
 def _build_deps() -> TradingDependenciesSchema:
@@ -138,20 +142,20 @@ async def test_reasoning_loop_enqueues_decision() -> None:
     provider = DummyDepsProvider(deps)
     router = AsyncMock()
     router.run = AsyncMock(
-        return_value=(
-            ScoutDecisionSchema(
+        return_value=PipelineResult(
+            scout=ScoutDecisionSchema(
                 verdict="INTERESTING",
                 reason="ok",
                 pattern_detected=None,
             ),
-            AnalystDecisionSchema(
+            analyst=AnalystDecisionSchema(
                 setup_valid=True,
                 direction="LONG",
                 confluence_score=7,
                 key_levels=KeyLevelsSchema(levels=[]),
                 reasoning="ok",
             ),
-            TradeDecisionSchema(
+            trader=TradeDecisionSchema(
                 action="BUY",
                 confidence=0.8,
                 reasoning="go",
@@ -161,6 +165,7 @@ async def test_reasoning_loop_enqueues_decision() -> None:
                 position_management=None,
                 calibrated_confidence=0.7,
             ),
+            trader_deps=deps,
         ),
     )
     redis_client = AsyncMock()
@@ -175,7 +180,10 @@ async def test_reasoning_loop_enqueues_decision() -> None:
     )
 
     task = asyncio.create_task(loop.run())
-    await asyncio.sleep(0)
+    for _ in range(20):
+        await asyncio.sleep(0)
+        if redis_client.client.lpush.call_count > 0:
+            break
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
 
