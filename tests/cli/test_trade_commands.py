@@ -80,7 +80,7 @@ async def test_start_orchestrator_uses_configured_runtime_values(
 
     monkeypatch.setattr(trade_module, "rebuild_deferred_models", lambda: None)
     monkeypatch.setattr(
-        trade_module, "_build_state_manager", lambda _: AsyncMock(),
+        trade_module, "_build_state_manager", lambda *_args, **_kw: AsyncMock(),
     )
     monkeypatch.setattr(trade_module, "_build_exchange", lambda _: object())
     monkeypatch.setattr(trade_module, "RedisStateClient", lambda *_: redis_client)

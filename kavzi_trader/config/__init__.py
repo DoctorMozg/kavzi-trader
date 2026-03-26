@@ -155,6 +155,24 @@ class AppConfig(BaseModel):
                 "Configuration errors:\n  - " + "\n  - ".join(errors),
             )
 
+    def validate_for_paper_trading(self) -> None:
+        """Raise if config is insufficient for paper trading."""
+        errors: list[str] = []
+        if not self.brain.openrouter_api_key:
+            errors.append(
+                "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key)"
+                " is required",
+            )
+        if not self.trading.symbols:
+            errors.append(
+                "trading.symbols must contain at least one symbol",
+            )
+        if errors:
+            raise ValueError(
+                "Paper trading configuration errors:\n  - "
+                + "\n  - ".join(errors),
+            )
+
     @classmethod
     def from_file(cls, path: Path) -> "AppConfig":
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}

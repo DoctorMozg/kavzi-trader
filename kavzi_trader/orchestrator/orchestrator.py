@@ -31,6 +31,7 @@ class TradingOrchestrator:
         position_loop: PositionManagementLoop,
         health_checker: HealthChecker,
         report_populator: TradeReportPopulator | None = None,
+        is_paper: bool = False,
     ) -> None:
         self._config = config
         self._state_manager = state_manager
@@ -41,15 +42,22 @@ class TradingOrchestrator:
         self._position_loop = position_loop
         self._health_checker = health_checker
         self._report_populator = report_populator
+        self._is_paper = is_paper
         self._tasks: set[asyncio.Task[None]] = set()
         self._loop_factories: dict[str, Any] = {}
 
     async def start(self) -> None:
         logger.info("Orchestrator starting — connecting to state store")
         await self._state_manager.connect()
-        logger.info("State store connected, beginning reconciliation")
-        await self._state_manager.reconcile_with_exchange()
-        logger.info("Reconciliation complete, launching async loops")
+        if self._is_paper:
+            logger.info(
+                "Paper mode: skipping exchange reconciliation",
+            )
+        else:
+            logger.info("State store connected, beginning reconciliation")
+            await self._state_manager.reconcile_with_exchange()
+            logger.info("Reconciliation complete")
+        logger.info("Launching async loops")
         self._loop_factories = {
             "ingest": self._ingest_loop.run,
             "order_flow": self._order_flow_loop.run,

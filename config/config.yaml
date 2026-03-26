@@ -447,14 +447,27 @@ reporting:
   max_trade_entries: 200
 
 # -----------------------------------------------------------------------------
-# Paper Trading — Binance Testnet configuration
+# Paper Trading — local simulation and Binance Testnet configuration
 # -----------------------------------------------------------------------------
 paper:
   # Trading mode — controls where orders are routed.
+  #   "PAPER"    = simulated execution with in-memory balance (no exchange needed)
   #   "TESTNET"  = execute against Binance Testnet (no real money; default)
   #   "LIVE"     = execute against live Binance Futures (real money!)
   #   "DISABLED" = disable all execution (analysis-only / dry-run mode)
   mode: "TESTNET"
+
+  # Paper trading initial USDT balance (used with --paper CLI flag).
+  #   5000   = small account
+  #   10000  = default
+  #   100000 = large paper account
+  initial_balance_usdt: 10000
+
+  # Simulated commission rate per trade (0.001 = 0.1%, Binance standard).
+  #   0.0    = no commission (optimistic)
+  #   0.001  = default (0.1% — Binance spot/futures taker fee)
+  #   0.002  = conservative (accounts for slippage)
+  commission_rate: 0.001
 
   # Binance Testnet API credentials (override via env vars for security)
   testnet_api_key: ""

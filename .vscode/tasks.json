@@ -66,6 +66,25 @@
       },
       "problemMatcher": [],
       "detail": "Start the trading orchestrator with config/config.yaml"
+    },
+    {
+      "label": "Run KavziTrader (Paper)",
+      "type": "shell",
+      "command": "uv run python -m kavzi_trader.cli.main trade start --paper",
+      "icon": {
+        "id": "beaker"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "options": {
+        "statusbar": {
+            "color": "#4ecdc4"
+        }
+      },
+      "problemMatcher": [],
+      "detail": "Start the trading orchestrator in paper mode with simulated orders"
     }
   ]
 }

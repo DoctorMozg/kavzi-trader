@@ -38,6 +38,7 @@ from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
 from kavzi_trader.orchestrator.providers.live_stream_manager import LiveStreamManager
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
+from kavzi_trader.paper.exchange import PaperExchangeClient
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.execution.monitor import OrderMonitor
@@ -63,10 +64,14 @@ def trade() -> None:
     """Trading commands."""
 
 
-def _build_state_manager(app_config: AppConfig) -> StateManager:
+def _build_state_manager(
+    app_config: AppConfig,
+    exchange_client: BinanceClient | None = None,
+) -> StateManager:
+    client = exchange_client or _build_exchange(app_config)
     return StateManager(
         redis_config=app_config.redis,
-        exchange_client=_build_exchange(app_config),
+        exchange_client=client,
     )
 
 
@@ -78,23 +83,71 @@ def _build_exchange(app_config: AppConfig) -> BinanceClient:
     )
 
 
-async def _start_orchestrator(app_config: AppConfig) -> None:
-    logger.info(
-        "Starting orchestrator for symbols=%s interval=%s testnet=%s",
-        app_config.trading.symbols,
-        app_config.trading.interval,
-        app_config.api.binance.testnet,
-    )
-    app_config.validate_for_trading()
+async def _start_orchestrator(
+    app_config: AppConfig,
+    paper: bool = False,
+    paper_balance: float | None = None,
+) -> None:
+    is_paper = paper
+    if is_paper:
+        logger.info(
+            "Starting orchestrator in PAPER mode for symbols=%s"
+            " interval=%s",
+            app_config.trading.symbols,
+            app_config.trading.interval,
+        )
+        app_config.validate_for_paper_trading()
+    else:
+        logger.info(
+            "Starting orchestrator for symbols=%s interval=%s"
+            " testnet=%s",
+            app_config.trading.symbols,
+            app_config.trading.interval,
+            app_config.api.binance.testnet,
+        )
+        app_config.validate_for_trading()
     rebuild_deferred_models()
 
+    # --- Exchange client ---
+    exchange: BinanceClient
+    if is_paper:
+        balance = (
+            Decimal(str(paper_balance))
+            if paper_balance is not None
+            else app_config.paper.initial_balance_usdt
+        )
+        exchange = PaperExchangeClient(
+            initial_balance_usdt=balance,
+            commission_rate=app_config.paper.commission_rate,
+        )
+        logger.info("Paper exchange created: balance=%s USDT", balance)
+    else:
+        exchange = _build_exchange(app_config)
+
     logger.info("Building state manager and exchange client")
-    state_manager = _build_state_manager(app_config)
-    exchange = _build_exchange(app_config)
+    state_manager = _build_state_manager(app_config, exchange)
 
     logger.info("Connecting to Redis")
     redis_client = RedisStateClient(app_config.redis)
     await redis_client.connect()
+
+    # --- Seed paper balance in Redis ---
+    if is_paper and isinstance(exchange, PaperExchangeClient):
+        await state_manager.connect()
+        paper_initial = (
+            Decimal(str(paper_balance))
+            if paper_balance is not None
+            else app_config.paper.initial_balance_usdt
+        )
+        await state_manager.account.update_balance(
+            total_balance=paper_initial,
+            available_balance=paper_initial,
+            locked_balance=Decimal("0"),
+        )
+        exchange.set_account_store(state_manager.account)
+        logger.info(
+            "Paper balance seeded in Redis: %s USDT", paper_initial,
+        )
 
     event_store = RedisEventStore(redis_client, app_config.events)
 
@@ -114,9 +167,15 @@ async def _start_orchestrator(app_config: AppConfig) -> None:
     # --- Real providers ---
     logger.info("Creating WebSocket client and stream manager")
     ws_client = BinanceWebsocketClient(
-        api_key=app_config.api.binance.api_key,
-        api_secret=app_config.api.binance.api_secret,
-        testnet=app_config.api.binance.testnet,
+        api_key=app_config.api.binance.api_key
+        if not is_paper
+        else None,
+        api_secret=app_config.api.binance.api_secret
+        if not is_paper
+        else None,
+        testnet=app_config.api.binance.testnet
+        if not is_paper
+        else False,
     )
     stream_manager = LiveStreamManager(
         ws_client=ws_client,
@@ -242,20 +301,60 @@ async def _start_orchestrator(app_config: AppConfig) -> None:
         ),
         health_checker=HealthChecker(),
         report_populator=report_populator,
+        is_paper=is_paper,
     )
     await orchestrator.start()
 
 
 @trade.command()
 @click.option("--dry-run", is_flag=True)
+@click.option(
+    "--paper",
+    is_flag=True,
+    help="Paper trading mode with simulated orders and live market data.",
+)
+@click.option(
+    "--paper-balance",
+    type=float,
+    default=None,
+    help="Initial paper balance in USDT (default: from config or 10000).",
+)
 @click.pass_context
-def start(ctx: click.Context, dry_run: bool) -> None:
+def start(
+    ctx: click.Context,
+    dry_run: bool,
+    paper: bool,
+    paper_balance: float | None,
+) -> None:
     """Start the trading orchestrator."""
     app_config = ctx.obj["app_config"]
     if dry_run:
         click.echo("Dry run: orchestrator not started")
         return
-    asyncio.run(_start_orchestrator(app_config))
+    if paper:
+        balance_display = (
+            paper_balance
+            if paper_balance is not None
+            else app_config.paper.initial_balance_usdt
+        )
+        click.echo("=" * 60)
+        click.echo("  PAPER TRADING MODE")
+        click.echo("  Initial balance: %s USDT" % balance_display)
+        click.echo(
+            "  Commission rate: %s"
+            % app_config.paper.commission_rate,
+        )
+        click.echo(
+            "  Orders are simulated. Market data is LIVE.",
+        )
+        click.echo("=" * 60)
+    asyncio.run(
+        _start_orchestrator(
+            app_config,
+            paper=paper,
+            paper_balance=paper_balance,
+        ),
+    )
 
 
 @trade.command()

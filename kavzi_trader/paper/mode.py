@@ -6,4 +6,5 @@ class TradingMode(str, Enum):
 
     LIVE = "LIVE"
     TESTNET = "TESTNET"
+    PAPER = "PAPER"
     DISABLED = "DISABLED"
