@@ -37,6 +37,7 @@ class ExecutionEngine:
         translator: DecisionTranslator,
         monitor: OrderMonitor,
         event_store: RedisEventStore | None = None,
+        leverage: int = 3,
     ) -> None:
         self._exchange = exchange
         self._state_manager = state_manager
@@ -45,6 +46,7 @@ class ExecutionEngine:
         self._translator = translator
         self._monitor = monitor
         self._event_store = event_store
+        self._leverage = leverage
 
     async def execute(self, decision: DecisionMessageSchema) -> ExecutionResultSchema:
         logger.info(
@@ -79,7 +81,7 @@ class ExecutionEngine:
         if decision.action == "CLOSE":
             return await self._close_position(decision)
 
-        side: Literal["LONG", "SHORT"] = "LONG" if decision.action == "BUY" else "SHORT"
+        side: Literal["LONG", "SHORT"] = decision.action  # type: ignore[assignment]
         validation = await self._risk_validator.validate_trade(
             symbol=decision.symbol,
             side=side,
@@ -89,6 +91,7 @@ class ExecutionEngine:
             current_atr=decision.current_atr,
             atr_history=decision.atr_history,
             state_manager=self._state_manager,
+            leverage=self._leverage,
         )
 
         if not validation.is_valid:
@@ -266,6 +269,7 @@ class ExecutionEngine:
                 side=side,
                 order_type=OrderType.MARKET,
                 quantity=position.quantity,
+                reduce_only=True,
             )
         except Exception as exc:
             logger.exception("Failed to close position for %s", decision.symbol)
@@ -308,16 +312,30 @@ class ExecutionEngine:
         order: OrderResponseSchema,
     ) -> None:
         now = utc_now()
+        leverage = self._leverage
+        initial_margin = (
+            (order.price * order.executed_qty) / Decimal(leverage)
+            if leverage > 0
+            else Decimal(0)
+        )
+        position_side = self._position_side(decision.action)
+        if position_side == "LONG":
+            liq_price = order.price * (Decimal(1) - Decimal(1) / Decimal(leverage))
+        else:
+            liq_price = order.price * (Decimal(1) + Decimal(1) / Decimal(leverage))
         position = PositionSchema(
             id=decision.decision_id,
             symbol=decision.symbol,
-            side=self._position_side(decision.action),
+            side=position_side,
             quantity=order.executed_qty,
             entry_price=order.price,
             stop_loss=decision.stop_loss,
             take_profit=decision.take_profit,
             current_stop_loss=decision.stop_loss,
             management_config=decision.position_management,
+            leverage=leverage,
+            liquidation_price=liq_price,
+            initial_margin=initial_margin,
             opened_at=now,
             updated_at=now,
         )
@@ -348,26 +366,25 @@ class ExecutionEngine:
                 "Failed to record position_opened event for %s",
                 position.id,
             )
-        if decision.action in {"BUY", "SELL"}:
+        if decision.action in {"LONG", "SHORT"}:
             await self._place_protective_orders(position)
 
     async def _place_protective_orders(self, position: PositionSchema) -> None:
         stop_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
         take_side = stop_side
 
-        stop_price = self._stop_price_for_side(position.side, position.stop_loss)
         try:
             stop_response = await self._exchange.create_order(
                 symbol=position.symbol,
                 side=stop_side,
-                order_type=OrderType.STOP_LOSS_LIMIT,
+                order_type=OrderType.STOP_MARKET,
                 quantity=position.quantity,
-                price=stop_price,
                 stop_price=position.stop_loss,
+                reduce_only=True,
             )
             await self._save_linked_order(stop_response, position.id)
             logger.info(
-                "Stop-loss placed for %s: price=%s",
+                "Stop-loss placed for %s: stop_price=%s",
                 position.symbol,
                 position.stop_loss,
                 extra={"symbol": position.symbol},
@@ -384,14 +401,14 @@ class ExecutionEngine:
             take_response = await self._exchange.create_order(
                 symbol=position.symbol,
                 side=take_side,
-                order_type=OrderType.TAKE_PROFIT_LIMIT,
+                order_type=OrderType.TAKE_PROFIT_MARKET,
                 quantity=position.quantity,
-                price=position.take_profit,
                 stop_price=position.take_profit,
+                reduce_only=True,
             )
             await self._save_linked_order(take_response, position.id)
             logger.info(
-                "Take-profit placed for %s: price=%s",
+                "Take-profit placed for %s: stop_price=%s",
                 position.symbol,
                 position.take_profit,
                 extra={"symbol": position.symbol},
@@ -468,6 +485,7 @@ class ExecutionEngine:
                 side=close_side,
                 order_type=OrderType.MARKET,
                 quantity=position.quantity,
+                reduce_only=True,
             )
             await self._state_manager.remove_position(position.id)
             logger.warning(
@@ -496,13 +514,9 @@ class ExecutionEngine:
 
     def _position_side(
         self,
-        action: Literal["BUY", "SELL", "CLOSE"],
+        action: Literal["LONG", "SHORT", "CLOSE"],
     ) -> Literal[
         "LONG",
         "SHORT",
     ]:
-        return "LONG" if action == "BUY" else "SHORT"
-
-    def _stop_price_for_side(self, side: str, stop_loss: Decimal) -> Decimal:
-        adjustment = Decimal("0.999") if side == "LONG" else Decimal("1.001")
-        return stop_loss * adjustment
+        return "LONG" if action == "LONG" else "SHORT"

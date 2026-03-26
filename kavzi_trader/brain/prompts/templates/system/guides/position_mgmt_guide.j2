@@ -20,3 +20,9 @@ POSITION MANAGEMENT PARAMETERS — set these based on current market conditions:
 
 - scale_in_max_multiplier (1.0-2.0): Maximum position size as multiple of initial.
   Standard: 1.5 if scaling is allowed. Default: 1.0 if not.
+
+FUNDING RATE AND HOLD DURATION:
+- Funding is charged every 8h. For holds >8h, factor cumulative funding into R:R.
+- At 0.03%/8h with 3x leverage, a 24h hold costs ~0.27% of position value.
+- If funding is against your direction and >0.05%/8h, prefer shorter max_hold_time_hours.
+- With leverage, scale-ins increase margin requirements. Ensure total exposure stays within risk limits.

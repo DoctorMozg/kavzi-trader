@@ -40,6 +40,7 @@ class DynamicRiskValidator:
         current_atr: Decimal,
         atr_history: list[Decimal],
         state_manager: StateManager,
+        leverage: int = 1,
     ) -> RiskValidationResultSchema:
         rejection_reasons: list[str] = []
         warnings: list[str] = []
@@ -100,6 +101,21 @@ class DynamicRiskValidator:
         if rr_result:
             rejection_reasons.append(rr_result)
         logger.debug("R:R check: result=%s", rr_result)
+
+        liq_result = self._check_liquidation_distance(
+            entry_price,
+            stop_loss,
+            side,
+            leverage,
+        )
+        if liq_result:
+            rejection_reasons.append(liq_result)
+        logger.debug("Liquidation check: result=%s", liq_result)
+
+        margin_result = await self._check_margin_ratio(state_manager)
+        if margin_result:
+            rejection_reasons.append(margin_result)
+        logger.debug("Margin ratio check: result=%s", margin_result)
 
         recommended_size = Decimal(0)
         if not rejection_reasons:
@@ -272,5 +288,59 @@ class DynamicRiskValidator:
 
         if rr_ratio < min_rr:
             return f"R:R ratio {rr_ratio:.2f} below minimum {min_rr}"
+
+        return None
+
+    def _check_liquidation_distance(
+        self,
+        entry_price: Decimal,
+        stop_loss: Decimal,
+        side: Literal["LONG", "SHORT"],
+        leverage: int,
+    ) -> str | None:
+        if leverage <= 1:
+            return None
+
+        if side == "LONG":
+            liq_price = entry_price * (Decimal(1) - Decimal(1) / Decimal(leverage))
+        else:
+            liq_price = entry_price * (Decimal(1) + Decimal(1) / Decimal(leverage))
+
+        sl_distance = abs(entry_price - stop_loss)
+        liq_distance = abs(entry_price - liq_price)
+
+        if liq_distance == 0:
+            return None
+
+        if sl_distance > liq_distance * Decimal("0.5"):
+            return (
+                f"Stop loss too close to liquidation price "
+                f"(SL dist: {sl_distance:.2f}, liq dist: {liq_distance:.2f}, "
+                f"leverage: {leverage}x)"
+            )
+
+        return None
+
+    async def _check_margin_ratio(
+        self,
+        state_manager: StateManager,
+    ) -> str | None:
+        try:
+            account = await state_manager.get_account_state()
+        except Exception:
+            logger.exception(
+                "Failed to check margin ratio, rejecting as safety measure",
+            )
+            return "Margin ratio check failed — state unavailable"
+
+        if account is None:
+            return None
+
+        max_ratio = self._config.max_margin_ratio
+        if account.margin_ratio >= max_ratio:
+            return (
+                f"Account margin ratio {account.margin_ratio:.2f} "
+                f"exceeds maximum {max_ratio}"
+            )
 
         return None

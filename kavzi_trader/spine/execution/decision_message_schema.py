@@ -12,7 +12,7 @@ class DecisionMessageSchema(BaseModel):
 
     decision_id: Annotated[str, Field(...)]
     symbol: Annotated[str, Field(...)]
-    action: Annotated[Literal["BUY", "SELL", "CLOSE"], Field(...)]
+    action: Annotated[Literal["LONG", "SHORT", "CLOSE"], Field(...)]
     entry_price: Annotated[Decimal, Field(...)]
     stop_loss: Annotated[Decimal, Field(...)]
     take_profit: Annotated[Decimal, Field(...)]
@@ -26,5 +26,6 @@ class DecisionMessageSchema(BaseModel):
     reasoning: Annotated[str, Field(default="")]
     current_atr: Annotated[Decimal, Field(...)]
     atr_history: Annotated[list[Decimal], Field(default_factory=list)]
+    leverage: Annotated[int, Field(default=3, ge=1, le=125)]
 
     model_config = ConfigDict(frozen=True)

@@ -16,7 +16,7 @@ from kavzi_trader.spine.state.schemas import OpenOrderSchema, PositionSchema
 logger = logging.getLogger(__name__)
 
 _STOP_ORDER_TYPES = frozenset(
-    {OrderType.STOP_LOSS, OrderType.STOP_LOSS_LIMIT},
+    {OrderType.STOP, OrderType.STOP_MARKET},
 )
 
 
@@ -70,6 +70,7 @@ class PositionActionExecutor:
             side=exit_side,
             order_type=OrderType.MARKET,
             quantity=action.exit_quantity,
+            reduce_only=True,
         )
         await self._cancel_linked_orders(position)
         remaining = position.quantity - action.exit_quantity
@@ -92,6 +93,7 @@ class PositionActionExecutor:
             side=exit_side,
             order_type=OrderType.MARKET,
             quantity=position.quantity,
+            reduce_only=True,
         )
         await self._cancel_linked_orders(position)
         await self._state.remove_position(position.id)
@@ -140,15 +142,13 @@ class PositionActionExecutor:
         quantity: Decimal,
     ) -> None:
         stop_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        adjustment = Decimal("0.999") if position.side == "LONG" else Decimal("1.001")
-        limit_price = stop_loss * adjustment
         response = await self._exchange.create_order(
             symbol=position.symbol,
             side=stop_side,
-            order_type=OrderType.STOP_LOSS_LIMIT,
+            order_type=OrderType.STOP_MARKET,
             quantity=quantity,
-            price=limit_price,
             stop_price=stop_loss,
+            reduce_only=True,
         )
         await self._save_linked_order(response, position.id)
 
@@ -162,10 +162,10 @@ class PositionActionExecutor:
         response = await self._exchange.create_order(
             symbol=position.symbol,
             side=tp_side,
-            order_type=OrderType.TAKE_PROFIT_LIMIT,
+            order_type=OrderType.TAKE_PROFIT_MARKET,
             quantity=quantity,
-            price=take_profit,
             stop_price=take_profit,
+            reduce_only=True,
         )
         await self._save_linked_order(response, position.id)
 

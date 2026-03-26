@@ -123,6 +123,24 @@ async def _start_orchestrator(
     else:
         exchange = _build_exchange(app_config)
 
+    # --- Futures initialization ---
+    logger.info("Initialising futures leverage and margin type")
+    for symbol in app_config.trading.symbols:
+        leverage = app_config.futures.symbol_leverage.get(
+            symbol,
+            app_config.futures.default_leverage,
+        )
+        await exchange.futures_change_leverage(symbol, leverage)
+        await exchange.futures_change_margin_type(
+            symbol,
+            app_config.futures.margin_type,
+        )
+    logger.info(
+        "Futures initialised: default_leverage=%sx margin_type=%s",
+        app_config.futures.default_leverage,
+        app_config.futures.margin_type,
+    )
+
     logger.info("Building state manager and exchange client")
     state_manager = _build_state_manager(app_config, exchange)
 
@@ -187,6 +205,7 @@ async def _start_orchestrator(
         exchange=exchange,
         event_store=event_store,
         timeframe=app_config.trading.interval,
+        futures_config=app_config.futures,
     )
     atr_provider = LiveAtrProvider(cache)
 
@@ -195,11 +214,12 @@ async def _start_orchestrator(
     engine = ExecutionEngine(
         exchange=exchange,
         state_manager=state_manager,
-        risk_validator=DynamicRiskValidator(),
+        risk_validator=DynamicRiskValidator(app_config.risk),
         staleness_checker=StalenessChecker(app_config.execution),
         translator=DecisionTranslator(),
         monitor=OrderMonitor(exchange, app_config.execution.timeout_s),
         event_store=event_store,
+        leverage=app_config.futures.default_leverage,
     )
 
     # --- Brain agents ---
@@ -335,8 +355,10 @@ def start(
             else app_config.paper.initial_balance_usdt
         )
         click.echo("=" * 60)
-        click.echo("  PAPER TRADING MODE")
+        click.echo("  PAPER FUTURES TRADING MODE")
         click.echo(f"  Initial balance: {balance_display} USDT")
+        click.echo(f"  Default leverage: {app_config.futures.default_leverage}x")
+        click.echo(f"  Margin type: {app_config.futures.margin_type}")
         click.echo(f"  Commission rate: {app_config.paper.commission_rate}")
         click.echo(
             "  Orders are simulated. Market data is LIVE.",

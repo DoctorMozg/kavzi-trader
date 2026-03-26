@@ -16,7 +16,7 @@ class TradeDecisionSchema(BaseModel):
     or skip a trade.
     """
 
-    action: Annotated[Literal["BUY", "SELL", "WAIT", "CLOSE"], Field(...)]
+    action: Annotated[Literal["LONG", "SHORT", "WAIT", "CLOSE"], Field(...)]
     confidence: Annotated[float, Field(..., ge=0.0, le=1.0)]
     reasoning: Annotated[str, Field(..., max_length=2000)]
     suggested_entry: Annotated[Decimal | None, Field(default=None)]
@@ -29,25 +29,25 @@ class TradeDecisionSchema(BaseModel):
 
     @model_validator(mode="after")
     def validate_trade_logic(self) -> "TradeDecisionSchema":
-        if self.action in {"BUY", "SELL"}:
+        if self.action in {"LONG", "SHORT"}:
             if (
                 self.suggested_entry is None
                 or self.suggested_stop_loss is None
                 or self.suggested_take_profit is None
             ):
                 raise ValueError("Trade requires entry, stop loss, and take profit.")
-            if self.action == "BUY" and not (
+            if self.action == "LONG" and not (
                 self.suggested_stop_loss
                 < self.suggested_entry
                 < self.suggested_take_profit
             ):
-                raise ValueError("BUY requires stop < entry < take profit.")
-            if self.action == "SELL" and not (
+                raise ValueError("LONG requires stop < entry < take profit.")
+            if self.action == "SHORT" and not (
                 self.suggested_stop_loss
                 > self.suggested_entry
                 > self.suggested_take_profit
             ):
-                raise ValueError("SELL requires stop > entry > take profit.")
+                raise ValueError("SHORT requires stop > entry > take profit.")
             risk = abs(self.suggested_entry - self.suggested_stop_loss)
             reward = abs(self.suggested_take_profit - self.suggested_entry)
             if risk == 0:

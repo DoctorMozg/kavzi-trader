@@ -40,6 +40,7 @@ class TestPositionSizer:
             stop_loss_atr_multiplier=Decimal(2),
             regime=normal_regime,
             entry_price=Decimal(50000),
+            leverage=3,
         )
 
         assert result.risk_amount == Decimal(100)
@@ -59,6 +60,7 @@ class TestPositionSizer:
             stop_loss_atr_multiplier=Decimal(2),
             regime=high_regime,
             entry_price=Decimal(50000),
+            leverage=3,
         )
 
         assert result.base_size == Decimal("0.5")

@@ -76,14 +76,14 @@ class TestTradeReportPopulator:
     ) -> None:
         await populator.record_trade(
             symbol="ETHUSDT",
-            side="BUY",
+            side="LONG",
             status="FILLED",
             confidence=0.85,
             entry_price=Decimal(3500),
             quantity=Decimal("0.5"),
         )
         assert len(populator.state.trades) == 1
-        assert populator.state.trades[0].side == "BUY"
+        assert populator.state.trades[0].side == "LONG"
         assert populator.state.version == 2
 
     @pytest.mark.asyncio
@@ -93,13 +93,13 @@ class TestTradeReportPopulator:
     ) -> None:
         await populator.record_trade(
             symbol="BTCUSDT",
-            side="SELL",
+            side="SHORT",
             status="REJECTED",
             confidence=0.6,
             reasoning="Risk too high",
         )
         html = populator.report_path.read_text(encoding="utf-8")
-        assert "SELL" in html
+        assert "SHORT" in html
         assert "REJECTED" in html
 
     @pytest.mark.asyncio
@@ -135,7 +135,7 @@ class TestTradeReportPopulator:
         )
         await populator.record_trade(
             symbol="Z",
-            side="BUY",
+            side="LONG",
             status="FILLED",
             confidence=0.5,
         )
@@ -162,7 +162,7 @@ class TestTradeReportPopulator:
         for _i in range(25):
             await populator.record_trade(
                 symbol="SYM",
-                side="BUY",
+                side="LONG",
                 status="FILLED",
                 confidence=0.5,
             )

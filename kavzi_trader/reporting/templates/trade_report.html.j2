@@ -152,10 +152,10 @@
                                         <td><small>{{ trade.timestamp.strftime('%H:%M:%S') if trade.timestamp is not string else trade.timestamp }}</small></td>
                                         <td><strong>{{ trade.symbol }}</strong></td>
                                         <td>
-                                            {% if trade.side == "BUY" %}
-                                            <span class="badge bg-success">BUY</span>
-                                            {% elif trade.side == "SELL" %}
-                                            <span class="badge bg-danger">SELL</span>
+                                            {% if trade.side == "LONG" %}
+                                            <span class="badge bg-success">LONG</span>
+                                            {% elif trade.side == "SHORT" %}
+                                            <span class="badge bg-danger">SHORT</span>
                                             {% else %}
                                             <span class="badge bg-warning text-dark">CLOSE</span>
                                             {% endif %}

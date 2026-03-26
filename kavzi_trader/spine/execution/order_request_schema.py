@@ -17,5 +17,6 @@ class OrderRequestSchema(BaseModel):
     time_in_force: Annotated[TimeInForce | None, Field(default=None)]
     stop_price: Annotated[Decimal | None, Field(default=None)]
     client_order_id: Annotated[str | None, Field(default=None)]
+    reduce_only: Annotated[bool, Field(default=False)] = False
 
     model_config = ConfigDict(frozen=True)

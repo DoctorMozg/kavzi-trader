@@ -21,6 +21,8 @@ class PositionSizer:
         stop_loss_atr_multiplier: Decimal,
         regime: VolatilityRegimeSchema,
         entry_price: Decimal,
+        leverage: int = 1,
+        available_balance: Decimal | None = None,
     ) -> PositionSizeResultSchema:
         if atr <= 0 or entry_price <= 0:
             logger.warning(
@@ -44,6 +46,25 @@ class PositionSizer:
         adjusted_size = base_size * size_multiplier
 
         adjusted_size = Decimal(str(round(float(adjusted_size), 8)))
+
+        if leverage > 0 and entry_price > 0:
+            balance_for_margin = (
+                available_balance if available_balance is not None else account_balance
+            )
+            max_size_by_margin = balance_for_margin * Decimal(leverage) / entry_price
+            if adjusted_size > max_size_by_margin:
+                logger.warning(
+                    "Margin clamp: adjusted_size=%s exceeds max=%s "
+                    "(balance=%s leverage=%s entry=%s)",
+                    adjusted_size,
+                    max_size_by_margin,
+                    balance_for_margin,
+                    leverage,
+                    entry_price,
+                )
+                adjusted_size = Decimal(
+                    str(round(float(max_size_by_margin), 8)),
+                )
 
         logger.debug(
             "Position sizer: balance=%s atr=%s sl_mult=%s regime=%s"

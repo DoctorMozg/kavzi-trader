@@ -52,18 +52,18 @@ class TestReportTradeEntrySchema:
         entry = ReportTradeEntrySchema(
             timestamp=_now(),
             symbol="BTCUSDT",
-            side="BUY",
+            side="LONG",
             status="FILLED",
             confidence=0.85,
         )
-        assert entry.side == "BUY"
+        assert entry.side == "LONG"
         assert entry.entry_price is None
 
     def test_full_fields(self) -> None:
         entry = ReportTradeEntrySchema(
             timestamp=_now(),
             symbol="ETHUSDT",
-            side="SELL",
+            side="SHORT",
             entry_price=Decimal("3500.00"),
             quantity=Decimal("0.5"),
             stop_loss=Decimal("3600.00"),
@@ -80,7 +80,7 @@ class TestReportTradeEntrySchema:
             ReportTradeEntrySchema(
                 timestamp=_now(),
                 symbol="BTCUSDT",
-                side="LONG",  # type: ignore[arg-type]
+                side="INVALID",  # type: ignore[arg-type]
                 status="FILLED",
                 confidence=0.5,
             )
@@ -90,7 +90,7 @@ class TestReportTradeEntrySchema:
             ReportTradeEntrySchema(
                 timestamp=_now(),
                 symbol="BTCUSDT",
-                side="BUY",
+                side="LONG",
                 status="FILLED",
                 confidence=1.5,
             )

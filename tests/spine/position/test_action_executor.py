@@ -36,7 +36,7 @@ def mock_exchange() -> AsyncMock:
             executed_qty=Decimal(0),
             status=OrderStatus.NEW,
             time_in_force=TimeInForce.GTC,
-            type=OrderType.STOP_LOSS_LIMIT,
+            type=OrderType.STOP_MARKET,
             side=OrderSide.SELL,
             time=now,
             update_time=now,
@@ -99,7 +99,7 @@ class TestMoveStopLoss:
             order_id="100",
             symbol="BTCUSDT",
             side=OrderSide.SELL,
-            order_type=OrderType.STOP_LOSS_LIMIT,
+            order_type=OrderType.STOP_MARKET,
             price=Decimal(48000),
             quantity=Decimal("0.1"),
             status=OrderStatus.NEW,
@@ -122,7 +122,7 @@ class TestMoveStopLoss:
         mock_state_manager.remove_order.assert_called_once_with("100")
         assert mock_exchange.create_order.call_count == 1
         call_kwargs = mock_exchange.create_order.call_args.kwargs
-        assert call_kwargs["order_type"] == OrderType.STOP_LOSS_LIMIT
+        assert call_kwargs["order_type"] == OrderType.STOP_MARKET
         assert call_kwargs["stop_price"] == Decimal(49000)
 
     async def test_no_op_without_new_stop_loss(
@@ -154,7 +154,7 @@ class TestPartialExit:
                 order_id="200",
                 symbol="BTCUSDT",
                 side=OrderSide.SELL,
-                order_type=OrderType.STOP_LOSS_LIMIT,
+                order_type=OrderType.STOP_MARKET,
                 price=Decimal(48000),
                 quantity=Decimal("0.1"),
                 status=OrderStatus.NEW,
@@ -165,7 +165,7 @@ class TestPartialExit:
                 order_id="201",
                 symbol="BTCUSDT",
                 side=OrderSide.SELL,
-                order_type=OrderType.TAKE_PROFIT_LIMIT,
+                order_type=OrderType.TAKE_PROFIT_MARKET,
                 price=Decimal(55000),
                 quantity=Decimal("0.1"),
                 status=OrderStatus.NEW,

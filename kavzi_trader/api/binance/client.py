@@ -20,6 +20,7 @@ from kavzi_trader.api.binance.constants import (
     BINANCE_API_TESTNET_URL,
     BINANCE_API_URL,
     ERROR_CODE_INVALID_API_KEY,
+    ERROR_CODE_MARGIN_TYPE_ALREADY_SET,
     ERROR_CODE_RATE_LIMIT_EXCEEDED,
     ERROR_CODE_UNAUTHORIZED,
     KLINE_INTERVALS,
@@ -615,25 +616,30 @@ class BinanceClient:
     @handle_api_errors
     async def get_account_info(self) -> dict[str, Any]:
         """
-        Get account information (requires API key).
+        Get futures account information (requires API key).
 
         Returns:
-            Account information
+            Futures account information with totalWalletBalance,
+            availableBalance, totalUnrealizedProfit, positions, etc.
         """
-        return cast("dict[str, Any]", await self.client.get_account())
+        return cast("dict[str, Any]", await self.client.futures_account())
 
     @handle_api_errors
     async def get_asset_balance(self, asset: str) -> dict[str, Any]:
         """
-        Get asset balance for a specific asset (requires API key).
+        Get futures account balance for a specific asset (requires API key).
 
         Args:
-            asset: Asset symbol (e.g., "BTC")
+            asset: Asset symbol (e.g., "USDT")
 
         Returns:
             Asset balance information
         """
-        return cast("dict[str, Any]", await self.client.get_asset_balance(asset=asset))
+        balances = await self.client.futures_account_balance()
+        for balance in balances:
+            if balance["asset"] == asset:
+                return cast("dict[str, Any]", balance)
+        raise ExchangeError(f"Asset not found: {asset}")
 
     @handle_api_errors
     async def create_order(
@@ -646,42 +652,46 @@ class BinanceClient:
         time_in_force: TimeInForce | None = None,
         client_order_id: str | None = None,
         stop_price: Decimal | None = None,
-        iceberg_qty: Decimal | None = None,
+        reduce_only: bool = False,
     ) -> OrderResponseSchema:
         """
-        Create a new order (requires API key).
+        Create a new futures order (requires API key).
 
         Args:
             symbol: Trading pair symbol (e.g., "BTCUSDT")
             side: Order side (BUY or SELL)
-            order_type: Order type (LIMIT, MARKET, etc.)
+            order_type: Order type (LIMIT, MARKET, STOP_MARKET, etc.)
             quantity: Order quantity
             price: Order price (required for limit orders)
             time_in_force: Time in force (required for limit orders)
             client_order_id: Client-side order ID
-            stop_price: Stop price (required for stop orders)
-            iceberg_qty: Iceberg quantity
+            stop_price: Stop price (required for STOP_MARKET/TAKE_PROFIT_MARKET)
+            reduce_only: Whether this order only reduces position
 
         Returns:
             Order response
         """
-        # Validate required parameters
         if order_type == OrderType.LIMIT and (price is None or time_in_force is None):
             raise ValueError(
                 "Price and time_in_force are required for LIMIT orders",
             )
 
         if (
-            order_type in (OrderType.STOP_LOSS_LIMIT, OrderType.TAKE_PROFIT_LIMIT)
+            order_type
+            in (
+                OrderType.STOP,
+                OrderType.STOP_MARKET,
+                OrderType.TAKE_PROFIT,
+                OrderType.TAKE_PROFIT_MARKET,
+            )
             and stop_price is None
         ):
-            raise ValueError("Stop price is required for stop orders")
+            raise ValueError("Stop price is required for stop/take-profit orders")
 
         if quantity is None and order_type != OrderType.MARKET:
             raise ValueError("Quantity is required")
 
-        # Prepare parameters
-        params = {
+        params: dict[str, str] = {
             "symbol": symbol,
             "side": side.value,
             "type": order_type.value,
@@ -702,13 +712,14 @@ class BinanceClient:
         if stop_price is not None:
             params["stopPrice"] = str(stop_price)
 
-        if iceberg_qty is not None:
-            params["icebergQty"] = str(iceberg_qty)
+        if reduce_only:
+            params["reduceOnly"] = "true"
 
-        # Execute request
-        response = cast("dict[str, Any]", await self.client.create_order(**params))
+        response = cast(
+            "dict[str, Any]",
+            await self.client.futures_create_order(**params),
+        )
 
-        # Convert the response to our schema
         return self._parse_order_response(response)
 
     @handle_api_errors
@@ -740,9 +751,11 @@ class BinanceClient:
         if client_order_id is not None:
             params["origClientOrderId"] = client_order_id
 
-        response = cast("dict[str, Any]", await self.client.get_order(**params))
+        response = cast(
+            "dict[str, Any]",
+            await self.client.futures_get_order(**params),
+        )
 
-        # Convert the response to our schema
         return self._parse_order_response(response)
 
     @handle_api_errors
@@ -774,9 +787,11 @@ class BinanceClient:
         if client_order_id is not None:
             params["origClientOrderId"] = client_order_id
 
-        response = cast("dict[str, Any]", await self.client.cancel_order(**params))
+        response = cast(
+            "dict[str, Any]",
+            await self.client.futures_cancel_order(**params),
+        )
 
-        # Convert the response to our schema
         return self._parse_order_response(response)
 
     @handle_api_errors
@@ -797,9 +812,8 @@ class BinanceClient:
         if symbol is not None:
             params["symbol"] = symbol
 
-        response = await self.client.get_open_orders(**params)
+        response = await self.client.futures_get_open_orders(**params)
 
-        # Convert the response to our schema
         return [self._parse_order_response(order) for order in response]
 
     def _parse_order_response(self, response: dict[str, Any]) -> OrderResponseSchema:
@@ -846,7 +860,6 @@ class BinanceClient:
         if "side" in response:
             side = OrderSide(response["side"])
 
-        # Create and return OrderResponseSchema
         return OrderResponseSchema(
             symbol=response["symbol"],
             order_id=response["orderId"],
@@ -882,6 +895,114 @@ class BinanceClient:
             orig_quote_order_qty=Decimal(response.get("origQuoteOrderQty", "0"))
             if "origQuoteOrderQty" in response
             else None,
+            reduce_only=response.get("reduceOnly", False),
+            position_side=response.get("positionSide"),
+            close_position=response.get("closePosition", False),
+        )
+
+    @handle_api_errors
+    async def futures_change_leverage(
+        self,
+        symbol: str,
+        leverage: int,
+    ) -> dict[str, Any]:
+        """
+        Change leverage for a futures symbol.
+
+        Args:
+            symbol: Trading pair symbol (e.g., "BTCUSDT")
+            leverage: Leverage value (1-125)
+
+        Returns:
+            Response with leverage and maxNotionalValue
+        """
+        return cast(
+            "dict[str, Any]",
+            await self.client.futures_change_leverage(
+                symbol=symbol,
+                leverage=leverage,
+            ),
+        )
+
+    async def futures_change_margin_type(
+        self,
+        symbol: str,
+        margin_type: str,
+    ) -> dict[str, Any] | None:
+        """
+        Change margin type for a futures symbol.
+
+        Catches and ignores error -4046 (margin type already set).
+
+        Args:
+            symbol: Trading pair symbol (e.g., "BTCUSDT")
+            margin_type: "ISOLATED" or "CROSSED"
+
+        Returns:
+            Response dict or None if already set
+        """
+        try:
+            return cast(
+                "dict[str, Any]",
+                await self.client.futures_change_margin_type(
+                    symbol=symbol,
+                    marginType=margin_type,
+                ),
+            )
+        except BinanceAPIException as e:
+            if e.code == ERROR_CODE_MARGIN_TYPE_ALREADY_SET:
+                logger.debug(
+                    "Margin type already %s for %s, ignoring",
+                    margin_type,
+                    symbol,
+                )
+                return None
+            raise
+
+    @handle_api_errors
+    async def futures_get_position_info(
+        self,
+        symbol: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get futures position information.
+
+        Args:
+            symbol: Trading pair symbol (optional, returns all if None)
+
+        Returns:
+            List of position info dicts with markPrice, liquidationPrice, etc.
+        """
+        params: dict[str, str] = {}
+        if symbol is not None:
+            params["symbol"] = symbol
+
+        return cast(
+            "list[dict[str, Any]]",
+            await self.client.futures_position_information(**params),
+        )
+
+    @handle_api_errors
+    async def futures_get_leverage_brackets(
+        self,
+        symbol: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get leverage bracket information for maintenance margin rates.
+
+        Args:
+            symbol: Trading pair symbol (optional)
+
+        Returns:
+            List of leverage bracket data
+        """
+        params: dict[str, str] = {}
+        if symbol is not None:
+            params["symbol"] = symbol
+
+        return cast(
+            "list[dict[str, Any]]",
+            await self.client.futures_leverage_bracket(**params),
         )
 
     @handle_api_errors

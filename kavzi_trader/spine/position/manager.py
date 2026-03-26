@@ -4,6 +4,7 @@ from decimal import Decimal
 from kavzi_trader.spine.position.break_even import BreakEvenMover
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
+from kavzi_trader.spine.position.position_action_type import PositionActionType
 from kavzi_trader.spine.position.scaling import ScaleInChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.position.trailing import TrailingStopChecker
@@ -34,14 +35,41 @@ class PositionManager:
         position: PositionSchema,
         current_price: Decimal,
         current_atr: Decimal,
+        mark_price: Decimal | None = None,
+        liquidation_emergency_percent: Decimal = Decimal("5.0"),
     ) -> list[PositionActionSchema]:
         logger.debug(
-            "Evaluating position %s %s: price=%s atr=%s",
+            "Evaluating position %s %s: price=%s atr=%s mark=%s",
             position.id,
             position.symbol,
             current_price,
             current_atr,
+            mark_price,
         )
+
+        price_for_liq = mark_price if mark_price is not None else current_price
+        if position.liquidation_price is not None and position.liquidation_price > 0:
+            liq_dist = abs(price_for_liq - position.liquidation_price)
+            entry_to_liq = abs(position.entry_price - position.liquidation_price)
+            if entry_to_liq > 0:
+                dist_pct = (liq_dist / entry_to_liq) * Decimal(100)
+                if dist_pct <= liquidation_emergency_percent:
+                    logger.warning(
+                        "LIQUIDATION PROXIMITY: position %s %s is %.1f%% "
+                        "from liquidation (mark=%s liq=%s)",
+                        position.id,
+                        position.symbol,
+                        float(dist_pct),
+                        price_for_liq,
+                        position.liquidation_price,
+                    )
+                    return [
+                        PositionActionSchema(
+                            action=PositionActionType.FULL_EXIT,
+                            reason="Emergency: near liquidation price",
+                        ),
+                    ]
+
         if current_atr <= 0:
             logger.warning(
                 "ATR is %s for %s, trailing stop and break-even cannot function",

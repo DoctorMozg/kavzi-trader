@@ -84,7 +84,8 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         "_build_state_manager",
         lambda *_args, **_kw: AsyncMock(),
     )
-    monkeypatch.setattr(trade_module, "_build_exchange", lambda _: object())
+    mock_exchange = AsyncMock()
+    monkeypatch.setattr(trade_module, "_build_exchange", lambda _: mock_exchange)
     monkeypatch.setattr(trade_module, "RedisStateClient", lambda *_: redis_client)
     monkeypatch.setattr(trade_module, "RedisEventStore", lambda *_: object())
     monkeypatch.setattr(

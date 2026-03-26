@@ -3,6 +3,7 @@ Configuration management for KavziTrader.
 """
 
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -105,6 +106,19 @@ class ReportingConfigSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class FuturesConfigSchema(BaseModel):
+    """Configuration for USDT-M perpetual futures trading."""
+
+    default_leverage: Annotated[int, Field(default=3, ge=1, le=125)]
+    margin_type: Annotated[str, Field(default="ISOLATED")]
+    position_mode: Annotated[str, Field(default="ONE_WAY")]
+    symbol_leverage: Annotated[dict[str, int], Field(default_factory=dict)]
+    liquidation_emergency_percent: Annotated[Decimal, Field(default=Decimal("5.0"))]
+    max_margin_ratio: Annotated[Decimal, Field(default=Decimal("0.5"))]
+
+    model_config = ConfigDict(frozen=True)
+
+
 class AppConfig(BaseModel):
     """Main application configuration."""
 
@@ -113,6 +127,10 @@ class AppConfig(BaseModel):
     brain: Annotated[BrainConfigSchema, Field(default_factory=BrainConfigSchema)]
     trading: Annotated[TradingConfigSchema, Field(...)]
     risk: Annotated[RiskConfigSchema, Field(...)]
+    futures: Annotated[
+        FuturesConfigSchema,
+        Field(default_factory=FuturesConfigSchema),
+    ]
     position_management: Annotated[PositionManagementConfigSchema, Field(...)]
     order_flow: Annotated[OrderFlowConfigSchema, Field(...)]
     filters: Annotated[FilterConfigSchema, Field(...)]

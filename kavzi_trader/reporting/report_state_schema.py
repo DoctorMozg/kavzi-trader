@@ -22,7 +22,7 @@ class ReportTradeEntrySchema(BaseModel):
 
     timestamp: Annotated[datetime, Field(...)]
     symbol: Annotated[str, Field(...)]
-    side: Annotated[Literal["BUY", "SELL", "CLOSE"], Field(...)]
+    side: Annotated[Literal["LONG", "SHORT", "CLOSE"], Field(...)]
     entry_price: Annotated[Decimal | None, Field(default=None)]
     quantity: Annotated[Decimal | None, Field(default=None)]
     stop_loss: Annotated[Decimal | None, Field(default=None)]

@@ -9,6 +9,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
+from kavzi_trader.config import FuturesConfigSchema
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
@@ -33,6 +34,7 @@ class LiveDependenciesProvider:
         exchange: BinanceClient,
         event_store: RedisEventStore,
         timeframe: str,
+        futures_config: FuturesConfigSchema | None = None,
     ) -> None:
         self._cache = cache
         self._confluence = confluence_calculator
@@ -41,7 +43,13 @@ class LiveDependenciesProvider:
         self._exchange = exchange
         self._event_store = event_store
         self._timeframe = timeframe
+        self._futures_config = futures_config or FuturesConfigSchema.model_validate({})
         self._cycle_cache: dict[str, Any] = {}
+
+    def _get_leverage(self, symbol: str) -> int:
+        return self._futures_config.symbol_leverage.get(
+            symbol, self._futures_config.default_leverage
+        )
 
     def clear_cycle_cache(self) -> None:
         self._cycle_cache.clear()
@@ -117,6 +125,7 @@ class LiveDependenciesProvider:
             order_flow=order_flow,
             algorithm_confluence=confluence,
             volatility_regime=self._get_regime(symbol),
+            leverage=self._get_leverage(symbol),
         )
 
     async def get_trader(self, symbol: str) -> TradingDependenciesSchema:
@@ -152,6 +161,7 @@ class LiveDependenciesProvider:
             volatility_regime=self._get_regime(symbol),
             account_state=account_state,
             open_positions=open_positions,
+            leverage=self._get_leverage(symbol),
             exchange_client=self._exchange,
             event_store=self._event_store,
             atr_history=self._cache.get_atr_history(symbol),

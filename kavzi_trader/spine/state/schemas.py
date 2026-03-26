@@ -29,6 +29,11 @@ class PositionSchema(BaseModel):
     take_profit: Decimal
     current_stop_loss: Decimal
     management_config: PositionManagementConfigSchema
+    leverage: int = 1
+    liquidation_price: Decimal | None = None
+    initial_margin: Decimal = Decimal(0)
+    unrealized_pnl: Decimal = Decimal(0)
+    accumulated_funding: Decimal = Decimal(0)
     stop_loss_moved_to_breakeven: bool = False
     partial_exit_done: bool = False
     opened_at: datetime
@@ -59,6 +64,8 @@ class AccountStateSchema(BaseModel):
     unrealized_pnl: Decimal = Decimal(0)
     peak_balance: Decimal
     current_drawdown_percent: Decimal = Decimal(0)
+    total_margin_balance: Decimal = Decimal(0)
+    margin_ratio: Decimal = Decimal(0)
     updated_at: datetime
 
     model_config = ConfigDict(frozen=True)

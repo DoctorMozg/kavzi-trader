@@ -20,7 +20,7 @@ class DecisionTranslator:
         decision: DecisionMessageSchema,
         quantity_override: Decimal | None = None,
     ) -> OrderRequestSchema:
-        side = OrderSide.BUY if decision.action == "BUY" else OrderSide.SELL
+        side = OrderSide.BUY if decision.action == "LONG" else OrderSide.SELL
         quantity = (
             quantity_override if quantity_override is not None else decision.quantity
         )

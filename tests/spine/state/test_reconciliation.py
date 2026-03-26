@@ -21,10 +21,12 @@ class TestReconciliationService:
         exchange = AsyncMock()
         exchange.get_account_info = AsyncMock(
             return_value={
-                "balances": [
-                    {"asset": "USDT", "free": "9000", "locked": "1000"},
-                    {"asset": "BTC", "free": "0.1", "locked": "0"},
-                ],
+                "totalWalletBalance": "10000",
+                "availableBalance": "9000",
+                "totalUnrealizedProfit": "0",
+                "totalInitialMargin": "1000",
+                "totalMaintMargin": "0",
+                "positions": [],
             },
         )
         exchange.get_open_orders = AsyncMock(return_value=[])
@@ -88,6 +90,7 @@ class TestReconciliationService:
             total_balance=Decimal(10000),
             available_balance=Decimal(9000),
             locked_balance=Decimal(1000),
+            unrealized_pnl=Decimal(0),
         )
 
     async def test_reconcile_imports_unknown_orders(

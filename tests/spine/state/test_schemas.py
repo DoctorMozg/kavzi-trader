@@ -69,7 +69,7 @@ class TestOpenOrderSchema:
         assert sample_order.executed_qty == Decimal(0)
 
     def test_sl_order(self, sample_sl_order: OpenOrderSchema):
-        assert sample_sl_order.order_type == OrderType.STOP_LOSS_LIMIT
+        assert sample_sl_order.order_type == OrderType.STOP_MARKET
         assert sample_sl_order.linked_position_id == "pos_123"
 
     def test_serialization_roundtrip(self, sample_order: OpenOrderSchema):

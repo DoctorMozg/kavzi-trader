@@ -109,7 +109,7 @@ class TradeReportPopulator:
     async def record_trade(
         self,
         symbol: str,
-        side: Literal["BUY", "SELL", "CLOSE"],
+        side: Literal["LONG", "SHORT", "CLOSE"],
         status: str,
         confidence: float,
         entry_price: Decimal | None = None,

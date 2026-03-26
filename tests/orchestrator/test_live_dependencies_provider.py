@@ -4,7 +4,10 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.config import FuturesConfigSchema
+from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
     ANALYSIS_CANDLES_COUNT,
@@ -15,6 +18,7 @@ from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
 )
 from kavzi_trader.spine.risk.schemas import VolatilityRegime, VolatilityRegimeSchema
+from kavzi_trader.spine.state.schemas import AccountStateSchema
 
 
 def _build_candle(minute: int) -> CandlestickSchema:
@@ -36,7 +40,9 @@ def _build_candle(minute: int) -> CandlestickSchema:
     )
 
 
-def _make_provider() -> LiveDependenciesProvider:
+def _make_provider(
+    futures_config: FuturesConfigSchema | None = None,
+) -> LiveDependenciesProvider:
     detector = Mock()
     detector.detect_regime.return_value = VolatilityRegimeSchema(
         regime=VolatilityRegime.NORMAL,
@@ -73,14 +79,29 @@ def _make_provider() -> LiveDependenciesProvider:
         oi_supports_direction=False,
         score=3,
     )
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    state_manager = AsyncMock()
+    state_manager.get_account_state = AsyncMock(
+        return_value=AccountStateSchema(
+            total_balance_usdt=Decimal(10000),
+            available_balance_usdt=Decimal(8000),
+            locked_balance_usdt=Decimal(2000),
+            unrealized_pnl=Decimal(0),
+            peak_balance=Decimal(10000),
+            current_drawdown_percent=Decimal(0),
+            updated_at=now,
+        ),
+    )
+    state_manager.get_all_positions = AsyncMock(return_value=[])
     return LiveDependenciesProvider(
         cache=cache,
         confluence_calculator=confluence_calc,
         volatility_detector=detector,
-        state_manager=AsyncMock(),
-        exchange=Mock(),
-        event_store=Mock(),
+        state_manager=state_manager,
+        exchange=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
         timeframe="1m",
+        futures_config=futures_config,
     )
 
 
@@ -106,3 +127,28 @@ async def test_cycle_cache_is_cleared() -> None:
     assert regime_1 == regime_2
     provider.clear_cycle_cache()
     assert len(provider._cycle_cache) == 0
+
+
+@pytest.mark.asyncio
+async def test_trader_deps_include_default_leverage() -> None:
+    provider = _make_provider()
+    deps = await provider.get_trader("BTCUSDT")
+    assert deps.leverage == 3
+
+
+@pytest.mark.asyncio
+async def test_analyst_deps_include_default_leverage() -> None:
+    provider = _make_provider()
+    deps = await provider.get_analyst("BTCUSDT")
+    assert deps.leverage == 3
+
+
+@pytest.mark.asyncio
+async def test_symbol_specific_leverage() -> None:
+    provider = _make_provider(
+        futures_config=FuturesConfigSchema.model_validate(
+            {"symbol_leverage": {"BTCUSDT": 5}},
+        ),
+    )
+    deps = await provider.get_trader("BTCUSDT")
+    assert deps.leverage == 5

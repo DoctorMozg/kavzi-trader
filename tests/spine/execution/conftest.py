@@ -26,7 +26,7 @@ def decision_message() -> DecisionMessageSchema:
     return DecisionMessageSchema(
         decision_id="decision-1",
         symbol="BTCUSDT",
-        action="BUY",
+        action="LONG",
         entry_price=Decimal(100),
         stop_loss=Decimal(95),
         take_profit=Decimal(110),

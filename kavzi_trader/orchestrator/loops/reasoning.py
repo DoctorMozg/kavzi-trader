@@ -115,7 +115,7 @@ class ReasoningLoop:
             return False
         if result.trader is None:
             return False
-        return result.trader.action in {"BUY", "SELL", "CLOSE"}
+        return result.trader.action in {"LONG", "SHORT", "CLOSE"}
 
     async def _enqueue_decision(
         self,
@@ -208,9 +208,9 @@ class ReasoningLoop:
         stop_loss = trader.suggested_stop_loss or entry_price
         take_profit = trader.suggested_take_profit or entry_price
         atr = deps.indicators.atr_14 or Decimal(0)
-        if trader.action not in {"BUY", "SELL", "CLOSE"}:
+        if trader.action not in {"LONG", "SHORT", "CLOSE"}:
             raise ValueError("Unsupported action for execution queue")
-        action = cast("Literal['BUY', 'SELL', 'CLOSE']", trader.action)
+        action = cast("Literal['LONG', 'SHORT', 'CLOSE']", trader.action)
 
         return DecisionMessageSchema(
             decision_id=decision_id,
@@ -231,4 +231,5 @@ class ReasoningLoop:
             expires_at_ms=snapshot_at_ms + 60_000,
             current_atr=atr,
             atr_history=deps.atr_history,
+            leverage=deps.leverage,
         )

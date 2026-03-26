@@ -14,7 +14,7 @@ class PaperTradingConfigSchema(BaseModel):
     commission_rate: Annotated[Decimal, Field(ge=0)] = Decimal("0.001")
     testnet_api_key: Annotated[str | None, Field()] = None
     testnet_api_secret: Annotated[str | None, Field()] = None
-    testnet_base_url: Annotated[str, Field()] = "https://testnet.binance.vision"
-    testnet_ws_url: Annotated[str, Field()] = "wss://testnet.binance.vision/ws"
+    testnet_base_url: Annotated[str, Field()] = "https://testnet.binancefuture.com"
+    testnet_ws_url: Annotated[str, Field()] = "wss://stream.binancefuture.com/ws"
 
     model_config = ConfigDict(frozen=True)

@@ -75,6 +75,7 @@ def test_context_builder_analyst(
     assert context["order_flow_json"] is not None, "Expected order flow JSON."
     assert "algorithm_confluence" in context, "Expected structured confluence dict."
     assert "market_snapshot" in context, "Expected structured market snapshot dict."
+    assert context["futures_leverage"] == 3
 
 
 def test_context_builder_trader(
@@ -108,6 +109,10 @@ def test_context_builder_trader(
     assert context["analyst_result_json"] is None, (
         "Expected None without analyst result."
     )
+    assert context["futures_leverage"] == 3
+    assert context["liquidation_distance_percent"] == 33.3
+    assert "BTCUSDT" in context["open_positions_json"]
+    assert context["funding_rate_24h_percent"] is not None
 
 
 def test_context_builder_trader_with_analyst_result(
@@ -144,3 +149,82 @@ def test_context_builder_trader_with_analyst_result(
     context = builder.build_trader_context(deps, analyst_result=analyst_result)
     assert context["analyst_result_json"] is not None, "Expected analyst result JSON."
     assert "LONG" in context["analyst_result_json"]
+
+
+def test_trader_context_no_positions(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+    account_state,
+) -> None:
+    deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        open_positions=[],
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+    builder = ContextBuilder()
+    context = builder.build_trader_context(deps)
+    assert context["open_positions_json"] == "No open positions."
+
+
+def test_trader_context_funding_cost(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+    account_state,
+) -> None:
+    deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+    builder = ContextBuilder()
+    context = builder.build_trader_context(deps)
+    assert context["funding_rate_24h_percent"] is not None
+    assert "%" in context["funding_rate_24h_percent"]
+
+
+def test_trader_context_no_funding_without_order_flow(
+    candle,
+    indicators,
+    algorithm_confluence,
+    volatility_regime,
+    account_state,
+) -> None:
+    deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=None,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+    builder = ContextBuilder()
+    context = builder.build_trader_context(deps)
+    assert context["funding_rate_24h_percent"] is None

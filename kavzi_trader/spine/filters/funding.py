@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal
 from typing import Literal
 
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
@@ -53,13 +54,26 @@ class FundingRateFilter:
                 reason="crowded_short",
             )
 
+        size_multiplier = Decimal("1.0")
+        abs_zscore = abs(zscore)
+        adverse = (side == "LONG" and zscore > 0) or (side == "SHORT" and zscore < 0)
+        if adverse and Decimal("1.0") <= abs_zscore < Decimal("2.0"):
+            size_multiplier = Decimal("0.8")
+            logger.debug(
+                "Funding filter: moderate adverse funding zscore=%s,"
+                " reducing size to 80%%",
+                zscore,
+            )
+
         logger.debug(
-            "Funding filter: side=%s zscore=%s, allowed",
+            "Funding filter: side=%s zscore=%s, allowed (multiplier=%s)",
             side,
             zscore,
+            size_multiplier,
         )
         return FilterResultSchema(
             name="funding",
             is_allowed=True,
             reason=None,
+            size_multiplier=size_multiplier,
         )

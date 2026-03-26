@@ -21,6 +21,9 @@ class RiskConfigSchema(BaseModel):
 
     atr_zscore_period: int = 30
 
+    liquidation_emergency_percent: Decimal = Decimal("5.0")
+    max_margin_ratio: Decimal = Decimal("0.5")
+
     model_config = ConfigDict(frozen=True)
 
     @model_validator(mode="after")

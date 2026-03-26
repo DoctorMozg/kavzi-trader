@@ -15,6 +15,15 @@ ACCOUNT STATE:
 {% include "user/context/account_state.j2" %}
 Current drawdown: {{ account_state.current_drawdown_percent }}%
 Available margin: {{ account_state.available_balance_usdt }} USDT of {{ account_state.total_balance_usdt }} USDT
+Leverage: {{ futures_leverage }}x
+Approximate liquidation distance: {{ liquidation_distance_percent }}% from entry
+
+OPEN POSITIONS:
+{{ open_positions_json }}
+{% if funding_rate_24h_percent %}
+
+24h funding rate impact: {{ funding_rate_24h_percent }}
+{% endif %}
 
 ATR(14) for position sizing: {{ market_snapshot.indicators.atr_14 if market_snapshot.indicators.atr_14 is not none else "unavailable" }}
 

@@ -20,15 +20,30 @@ class OrderSide(StrEnum):
 
 
 class OrderType(StrEnum):
-    """Order type enum."""
+    """Order type enum for USDT-M Futures."""
 
     LIMIT = "LIMIT"
     MARKET = "MARKET"
-    STOP_LOSS = "STOP_LOSS"
-    STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"
+    STOP = "STOP"
+    STOP_MARKET = "STOP_MARKET"
     TAKE_PROFIT = "TAKE_PROFIT"
-    TAKE_PROFIT_LIMIT = "TAKE_PROFIT_LIMIT"
-    LIMIT_MAKER = "LIMIT_MAKER"
+    TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"
+    TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
+
+
+class MarginType(StrEnum):
+    """Futures margin type enum."""
+
+    ISOLATED = "ISOLATED"
+    CROSSED = "CROSSED"
+
+
+class PositionSide(StrEnum):
+    """Futures position side enum."""
+
+    BOTH = "BOTH"
+    LONG = "LONG"
+    SHORT = "SHORT"
 
 
 class OrderStatus(StrEnum):
@@ -49,6 +64,7 @@ class TimeInForce(StrEnum):
     GTC = "GTC"  # Good Till Canceled
     IOC = "IOC"  # Immediate or Cancel
     FOK = "FOK"  # Fill or Kill
+    GTX = "GTX"  # Good Till Crossing (post-only)
 
 
 class SymbolInfoSchema(BaseModel):
@@ -191,5 +207,9 @@ class OrderResponseSchema(BaseModel):
     update_time: datetime | None = None
     is_working: bool | None = None
     orig_quote_order_qty: Decimal | None = None
+    # Futures-specific fields
+    reduce_only: bool = False
+    position_side: str | None = None
+    close_position: bool = False
 
     model_config = ConfigDict(frozen=True)

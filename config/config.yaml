@@ -88,6 +88,44 @@ trading:
   # Max concurrent positions is configured in risk.max_positions
 
 # -----------------------------------------------------------------------------
+# Futures — USDT-M perpetual futures settings
+# -----------------------------------------------------------------------------
+futures:
+  # Default leverage for all symbols (overridable per symbol below).
+  #   1  = no leverage (spot-equivalent)
+  #   3  = default (conservative — liquidation ~33% from entry)
+  #   5  = moderate
+  #   10 = aggressive (liquidation ~10% from entry — NOT recommended)
+  default_leverage: 3
+
+  # Margin type for all positions.
+  #   "ISOLATED" = each position has its own margin (default — safer)
+  #   "CROSSED"  = all positions share margin (dangerous — one bad trade drains account)
+  margin_type: "ISOLATED"
+
+  # Position mode on Binance Futures.
+  #   "ONE_WAY" = one position per symbol (default — simpler)
+  #   "HEDGE"   = can hold both LONG and SHORT simultaneously (not supported)
+  position_mode: "ONE_WAY"
+
+  # Per-symbol leverage overrides (symbol → leverage).
+  # If a symbol is not listed here, default_leverage is used.
+  # symbol_leverage:
+  #   BTCUSDT: 3
+  #   ETHUSDT: 3
+
+  # Distance from liquidation price (%) at which position manager triggers
+  # emergency exit as a safety net (in case SL order fails to fill).
+  liquidation_emergency_percent: 5.0
+
+  # Maximum account margin ratio (maintenance margin / margin balance).
+  # New trades are rejected when this threshold is exceeded.
+  #   0.3 = conservative
+  #   0.5 = default
+  #   0.8 = permissive (dangerous)
+  max_margin_ratio: 0.5
+
+# -----------------------------------------------------------------------------
 # Risk — per-trade sizing, drawdown limits, volatility regime detection
 # -----------------------------------------------------------------------------
 risk:
@@ -486,6 +524,6 @@ paper:
   testnet_api_key: ""
   testnet_api_secret: ""
 
-  # Testnet endpoint URLs
-  testnet_base_url: "https://testnet.binance.vision"
-  testnet_ws_url: "wss://testnet.binance.vision/ws"
+  # Testnet endpoint URLs (Binance Futures testnet)
+  testnet_base_url: "https://testnet.binancefuture.com"
+  testnet_ws_url: "wss://stream.binancefuture.com/ws"

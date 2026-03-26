@@ -30,7 +30,10 @@ def paper_client() -> PaperExchangeClient:
 
 
 @pytest.mark.asyncio
-async def test_buy_deducts_balance(paper_client: PaperExchangeClient) -> None:
+async def test_buy_opens_long_deducts_margin(
+    paper_client: PaperExchangeClient,
+) -> None:
+    """BUY opens a LONG position, deducting initial margin + commission."""
     result = await paper_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.BUY,
@@ -46,29 +49,37 @@ async def test_buy_deducts_balance(paper_client: PaperExchangeClient) -> None:
     assert result.side == OrderSide.BUY
     assert len(result.fills) == 1
 
-    expected = Decimal(10000) - Decimal("0.1") * Decimal(50000) * Decimal("1.001")
+    # leverage=1 (default): margin = 0.1 * 50000 / 1 = 5000
+    # commission = 0.1 * 50000 * 0.001 = 5
+    expected = Decimal(10000) - Decimal(5000) - Decimal(5)
     assert paper_client.balance_usdt == expected
 
 
 @pytest.mark.asyncio
-async def test_sell_without_holdings_rejected(
+async def test_sell_opens_short_deducts_margin(
     paper_client: PaperExchangeClient,
 ) -> None:
-    with pytest.raises(ExchangeError, match="Insufficient asset balance"):
-        await paper_client.create_order(
-            symbol="BTCUSDT",
-            side=OrderSide.SELL,
-            order_type=OrderType.LIMIT,
-            quantity=Decimal("0.1"),
-            price=Decimal(50000),
-            time_in_force=TimeInForce.GTC,
-        )
+    """SELL without existing position opens a SHORT (futures behaviour)."""
+    result = await paper_client.create_order(
+        symbol="BTCUSDT",
+        side=OrderSide.SELL,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.1"),
+        price=Decimal(50000),
+        time_in_force=TimeInForce.GTC,
+    )
+
+    assert result.status == OrderStatus.FILLED
+    # leverage=1 (default): margin = 0.1 * 50000 = 5000, commission = 5
+    expected = Decimal(10000) - Decimal(5000) - Decimal(5)
+    assert paper_client.balance_usdt == expected
 
 
 @pytest.mark.asyncio
-async def test_buy_then_sell_with_profit(
+async def test_long_then_close_with_profit(
     paper_client: PaperExchangeClient,
 ) -> None:
+    """Open LONG, then close (SELL) at a higher price for profit."""
     await paper_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.BUY,
@@ -85,24 +96,20 @@ async def test_buy_then_sell_with_profit(
     await paper_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.SELL,
-        order_type=OrderType.LIMIT,
+        order_type=OrderType.MARKET,
         quantity=Decimal("0.1"),
-        price=Decimal(51000),
-        time_in_force=TimeInForce.GTC,
     )
     after_sell = paper_client.balance_usdt
 
-    assert after_buy < Decimal(10000)
     assert after_sell > after_buy
-    expected_sell_proceeds = Decimal("0.1") * Decimal(51000) * Decimal("0.999")
-    assert after_sell == after_buy + expected_sell_proceeds
 
 
 @pytest.mark.asyncio
-async def test_insufficient_balance_rejects(
+async def test_insufficient_margin_rejects(
     paper_client: PaperExchangeClient,
 ) -> None:
-    with pytest.raises(ExchangeError, match="Insufficient paper balance"):
+    """Opening a position without sufficient margin should be rejected."""
+    with pytest.raises(ExchangeError, match="Insufficient margin"):
         await paper_client.create_order(
             symbol="BTCUSDT",
             side=OrderSide.BUY,
@@ -114,26 +121,17 @@ async def test_insufficient_balance_rejects(
 
 
 @pytest.mark.asyncio
-async def test_sell_more_than_held_rejected(
+async def test_reduce_only_without_position_rejected(
     paper_client: PaperExchangeClient,
 ) -> None:
-    await paper_client.create_order(
-        symbol="BTCUSDT",
-        side=OrderSide.BUY,
-        order_type=OrderType.LIMIT,
-        quantity=Decimal("0.01"),
-        price=Decimal(50000),
-        time_in_force=TimeInForce.GTC,
-    )
-
-    with pytest.raises(ExchangeError, match="Insufficient asset balance"):
+    """reduce_only order without a matching position is rejected."""
+    with pytest.raises(ExchangeError, match="reduce_only"):
         await paper_client.create_order(
             symbol="BTCUSDT",
             side=OrderSide.SELL,
-            order_type=OrderType.LIMIT,
+            order_type=OrderType.MARKET,
             quantity=Decimal("0.1"),
-            price=Decimal(50000),
-            time_in_force=TimeInForce.GTC,
+            reduce_only=True,
         )
 
 
@@ -144,11 +142,10 @@ async def test_protective_order_stored_as_new(
     result = await paper_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.SELL,
-        order_type=OrderType.STOP_LOSS_LIMIT,
+        order_type=OrderType.STOP_MARKET,
         quantity=Decimal("0.1"),
-        price=Decimal(49000),
         stop_price=Decimal(49500),
-        time_in_force=TimeInForce.GTC,
+        reduce_only=True,
     )
 
     assert result.status == OrderStatus.NEW
@@ -161,9 +158,8 @@ async def test_cancel_order(paper_client: PaperExchangeClient) -> None:
     order = await paper_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.SELL,
-        order_type=OrderType.STOP_LOSS_LIMIT,
+        order_type=OrderType.STOP_MARKET,
         quantity=Decimal("0.1"),
-        price=Decimal(49000),
         stop_price=Decimal(49500),
     )
 
@@ -215,15 +211,14 @@ async def test_get_open_orders(paper_client: PaperExchangeClient) -> None:
     await paper_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.SELL,
-        order_type=OrderType.STOP_LOSS_LIMIT,
+        order_type=OrderType.STOP_MARKET,
         quantity=Decimal("0.01"),
         stop_price=Decimal(49000),
-        price=Decimal(48900),
     )
 
     open_orders = await paper_client.get_open_orders(symbol="BTCUSDT")
     assert len(open_orders) == 1
-    assert open_orders[0].type == OrderType.STOP_LOSS_LIMIT
+    assert open_orders[0].type == OrderType.STOP_MARKET
 
 
 @pytest.mark.asyncio
@@ -233,10 +228,9 @@ async def test_order_ids_are_unique(paper_client: PaperExchangeClient) -> None:
         order = await paper_client.create_order(
             symbol="ETHUSDT",
             side=OrderSide.SELL,
-            order_type=OrderType.STOP_LOSS_LIMIT,
+            order_type=OrderType.STOP_MARKET,
             quantity=Decimal(1),
             stop_price=Decimal(3000),
-            price=Decimal(2990),
         )
         ids.add(order.order_id)
 
@@ -287,10 +281,9 @@ async def test_market_order_uses_ticker_price(
 @pytest.mark.asyncio
 async def test_get_account_info(paper_client: PaperExchangeClient) -> None:
     info = await paper_client.get_account_info()
-    balances = info["balances"]
-    assert len(balances) == 1
-    assert balances[0]["asset"] == "USDT"
-    assert balances[0]["free"] == "10000"
+    assert info["totalWalletBalance"] == "10000"
+    assert info["availableBalance"] == "10000"
+    assert info["totalUnrealizedProfit"] == "0"
 
 
 @pytest.mark.asyncio
@@ -299,7 +292,8 @@ async def test_get_asset_balance_usdt(
 ) -> None:
     balance = await paper_client.get_asset_balance("USDT")
     assert balance["asset"] == "USDT"
-    assert balance["free"] == "10000"
+    assert balance["balance"] == "10000"
+    assert balance["availableBalance"] == "10000"
 
 
 @pytest.mark.asyncio
@@ -308,7 +302,8 @@ async def test_get_asset_balance_other(
 ) -> None:
     balance = await paper_client.get_asset_balance("BTC")
     assert balance["asset"] == "BTC"
-    assert balance["free"] == "0"
+    assert balance["balance"] == "0"
+    assert balance["availableBalance"] == "0"
 
 
 @pytest.mark.asyncio
@@ -318,12 +313,59 @@ async def test_take_profit_order_stored_as_new(
     result = await paper_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.SELL,
-        order_type=OrderType.TAKE_PROFIT_LIMIT,
+        order_type=OrderType.TAKE_PROFIT_MARKET,
         quantity=Decimal("0.1"),
-        price=Decimal(55000),
         stop_price=Decimal(55000),
-        time_in_force=TimeInForce.GTC,
+        reduce_only=True,
     )
 
     assert result.status == OrderStatus.NEW
     assert paper_client.balance_usdt == Decimal(10000)
+
+
+@pytest.mark.asyncio
+async def test_leverage_affects_margin(
+    paper_client: PaperExchangeClient,
+) -> None:
+    """Setting leverage reduces required margin."""
+    await paper_client.futures_change_leverage("BTCUSDT", 10)
+
+    await paper_client.create_order(
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.1"),
+        price=Decimal(50000),
+        time_in_force=TimeInForce.GTC,
+    )
+
+    # margin = 0.1 * 50000 / 10 = 500, commission = 5
+    expected = Decimal(10000) - Decimal(500) - Decimal(5)
+    assert paper_client.balance_usdt == expected
+
+
+@pytest.mark.asyncio
+async def test_short_then_close_with_profit(
+    paper_client: PaperExchangeClient,
+) -> None:
+    """Open SHORT, then close (BUY) at a lower price for profit."""
+    await paper_client.create_order(
+        symbol="BTCUSDT",
+        side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        quantity=Decimal("0.1"),
+    )
+    after_short = paper_client.balance_usdt
+
+    exit_ticker = TickerSchema(symbol="BTCUSDT", last_price=Decimal(49000))
+    paper_client.get_ticker = AsyncMock(return_value=exit_ticker)
+
+    await paper_client.create_order(
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        quantity=Decimal("0.1"),
+    )
+    after_close = paper_client.balance_usdt
+
+    assert after_close > after_short

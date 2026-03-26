@@ -1,4 +1,5 @@
 Validate this potential setup on {{ market_snapshot.timeframe }} {{ market_snapshot.symbol }}.
+Leverage: {{ futures_leverage | default(3) }}x (liquidation ~{{ (100 / (futures_leverage | default(3))) | round(1) }}% from entry)
 
 STEP 1 — Review algorithm confluence signals ({{ algorithm_confluence.score }}/6 rule-based signals fired):
 {% include "user/context/algorithm_confluence.j2" %}

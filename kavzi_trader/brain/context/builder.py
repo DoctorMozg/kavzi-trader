@@ -112,6 +112,7 @@ class ContextBuilder(BaseModel):
                 "order_flow_json": dump_optional_json(deps.order_flow),
                 "algorithm_confluence": deps.algorithm_confluence.model_dump(),
                 "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
+                "futures_leverage": deps.leverage,
             }
         )
         logger.debug(
@@ -128,6 +129,22 @@ class ContextBuilder(BaseModel):
     ) -> dict[str, Any]:
         self._warn_if_broken_data(deps.symbol, deps)
         context = self._build_market_context(deps)
+        positions_text = (
+            "No open positions."
+            if not deps.open_positions
+            else "\n".join(
+                f"- {p.symbol} {p.side} {p.quantity} @ {p.entry_price}"
+                f" | SL: {p.current_stop_loss} | TP: {p.take_profit}"
+                f" | Liq: {p.liquidation_price}"
+                f" | uPnL: {p.unrealized_pnl}"
+                for p in deps.open_positions
+            )
+        )
+        funding_24h: str | None = None
+        if deps.order_flow and deps.order_flow.funding_rate:
+            rate_24h = abs(deps.order_flow.funding_rate) * 3
+            funding_24h = f"{float(rate_24h * 100):.4f}%"
+
         context.update(
             {
                 "order_flow_json": dump_optional_json(deps.order_flow),
@@ -136,6 +153,10 @@ class ContextBuilder(BaseModel):
                 "account_state": deps.account_state.model_dump(),
                 "account_state_json": dump_json(deps.account_state),
                 "analyst_result_json": dump_optional_json(analyst_result),
+                "futures_leverage": deps.leverage,
+                "liquidation_distance_percent": round(100 / deps.leverage, 1),
+                "open_positions_json": positions_text,
+                "funding_rate_24h_percent": funding_24h,
             }
         )
         logger.debug(

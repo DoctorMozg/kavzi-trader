@@ -65,23 +65,25 @@ class ReconciliationService:
     async def _reconcile_account(self) -> None:
         account_info = await self._exchange.get_account_info()
 
-        total_usdt = Decimal(0)
-        available_usdt = Decimal(0)
-        locked_usdt = Decimal(0)
-
-        for balance in account_info.get("balances", []):
-            if balance["asset"] == "USDT":
-                available_usdt = Decimal(balance["free"])
-                locked_usdt = Decimal(balance["locked"])
-                total_usdt = available_usdt + locked_usdt
-                break
+        total_usdt = Decimal(account_info.get("totalWalletBalance", "0"))
+        available_usdt = Decimal(account_info.get("availableBalance", "0"))
+        unrealized_pnl = Decimal(
+            account_info.get("totalUnrealizedProfit", "0"),
+        )
+        locked_usdt = total_usdt - available_usdt
 
         await self._account.update_balance(
             total_balance=total_usdt,
             available_balance=available_usdt,
             locked_balance=locked_usdt,
+            unrealized_pnl=unrealized_pnl,
         )
-        logger.info("Account balance synced: %s USDT", total_usdt)
+        logger.info(
+            "Account balance synced: total=%s available=%s unrealized=%s",
+            total_usdt,
+            available_usdt,
+            unrealized_pnl,
+        )
 
     async def _reconcile_orders(
         self,
@@ -141,11 +143,10 @@ class ReconciliationService:
             linked_orders = await self._orders.get_by_position(position.id)
 
             has_sl = any(
-                o.order_type.value in ("STOP_LOSS", "STOP_LOSS_LIMIT")
-                for o in linked_orders
+                o.order_type.value in ("STOP", "STOP_MARKET") for o in linked_orders
             )
             has_tp = any(
-                o.order_type.value in ("TAKE_PROFIT", "TAKE_PROFIT_LIMIT")
+                o.order_type.value in ("TAKE_PROFIT", "TAKE_PROFIT_MARKET")
                 for o in linked_orders
             )
 

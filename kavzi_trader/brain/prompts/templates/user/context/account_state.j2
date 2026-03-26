@@ -1,2 +1,5 @@
-Account state (balance, margin, drawdown):
-{{ account_state_json }}
+Account state:
+- Balance: {{ account_state.total_balance_usdt }} USDT (available: {{ account_state.available_balance_usdt }})
+- Unrealized PnL: {{ account_state.unrealized_pnl }} USDT
+- Margin ratio: {{ account_state.margin_ratio }}
+- Drawdown: {{ account_state.current_drawdown_percent }}% (peak: {{ account_state.peak_balance }} USDT)
