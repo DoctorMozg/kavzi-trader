@@ -24,6 +24,9 @@ from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
 logger = logging.getLogger(__name__)
 
+_BACKOFF_MULTIPLIER = 2.0
+_MAX_BACKOFF_FACTOR = 6.0
+
 
 class ReasoningLoop:
     """Runs the agent router and enqueues trade decisions."""
@@ -53,28 +56,46 @@ class ReasoningLoop:
             self._interval_s,
         )
         cycle = 0
+        current_interval = float(self._interval_s)
         while True:
             cycle += 1
             cycle_start = time.monotonic()
             logger.debug("ReasoningLoop cycle %d starting", cycle)
             self._deps_provider.clear_cycle_cache()
-            await asyncio.gather(
+            results: list[bool] = await asyncio.gather(
                 *(self._handle_symbol_timed(symbol) for symbol in self._symbols),
             )
+            interesting_count = sum(results)
+            if interesting_count > 0:
+                current_interval = float(self._interval_s)
+            else:
+                current_interval = min(
+                    current_interval * _BACKOFF_MULTIPLIER,
+                    self._interval_s * _MAX_BACKOFF_FACTOR,
+                )
             cycle_ms = (time.monotonic() - cycle_start) * 1000
             logger.info(
-                "ReasoningLoop cycle %d complete in %.1fms, sleeping %ds",
+                "ReasoningLoop cycle %d complete in %.1fms, "
+                "interesting=%d/%d, sleeping %.0fs",
                 cycle,
                 cycle_ms,
-                self._interval_s,
-                extra={"cycle": cycle, "elapsed_ms": round(cycle_ms, 1)},
+                interesting_count,
+                len(results),
+                current_interval,
+                extra={
+                    "cycle": cycle,
+                    "elapsed_ms": round(cycle_ms, 1),
+                    "interesting_count": interesting_count,
+                    "sleep_interval": round(current_interval, 1),
+                },
             )
-            await asyncio.sleep(self._interval_s)
+            await asyncio.sleep(current_interval)
 
-    async def _handle_symbol_timed(self, symbol: str) -> None:
+    async def _handle_symbol_timed(self, symbol: str) -> bool:
         sym_start = time.monotonic()
+        interesting = False
         try:
-            await self._handle_symbol(symbol)
+            interesting = await self._handle_symbol(symbol)
         except Exception:
             logger.exception(
                 "ReasoningLoop failed for %s, continuing",
@@ -88,8 +109,9 @@ class ReasoningLoop:
             sym_ms,
             extra={"symbol": symbol, "elapsed_ms": round(sym_ms, 1)},
         )
+        return interesting
 
-    async def _handle_symbol(self, symbol: str) -> None:
+    async def _handle_symbol(self, symbol: str) -> bool:
         snapshot_at_ms = int(datetime.now(UTC).timestamp() * 1000)
         result = await self._router.run(symbol, self._deps_provider)
         try:
@@ -105,8 +127,9 @@ class ReasoningLoop:
                 symbol,
             )
         if not self._should_enqueue(result):
-            return
+            return result.scout.verdict == "INTERESTING"
         await self._enqueue_decision(result, snapshot_at_ms)
+        return True
 
     def _should_enqueue(self, result: PipelineResult) -> bool:
         if result.scout.verdict != "INTERESTING":

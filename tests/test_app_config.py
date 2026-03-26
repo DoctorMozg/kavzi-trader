@@ -13,6 +13,7 @@ def test_orchestrator_config_defaults() -> None:
     config = OrchestratorConfigSchema()
 
     assert config.reasoning_interval_s == 30
+    assert config.order_flow_fetch_interval_s == 300
 
 
 def test_app_config_from_env_timing_defaults() -> None:

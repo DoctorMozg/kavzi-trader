@@ -246,3 +246,112 @@ async def test_decision_message_includes_leverage() -> None:
     pushed_data = redis_client.client.lpush.call_args[0][1]
     message = json.loads(pushed_data)
     assert message["leverage"] == 3
+
+
+@pytest.mark.asyncio
+async def test_backoff_on_all_skip() -> None:
+    """When all symbols SKIP, the sleep interval should increase."""
+    deps = _build_deps()
+    provider = DummyDepsProvider(deps)
+    router = AsyncMock()
+    router.run = AsyncMock(
+        return_value=PipelineResult(
+            scout=ScoutDecisionSchema(
+                verdict="SKIP",
+                reason="dead market",
+                pattern_detected=None,
+            ),
+        ),
+    )
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock()
+
+    sleep_durations: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def _capture_sleep(duration: float) -> None:
+        sleep_durations.append(duration)
+        await original_sleep(0)
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=router,
+        deps_provider=provider,
+        redis_client=redis_client,
+        interval_s=10,
+    )
+
+    import unittest.mock
+
+    with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
+        task = asyncio.create_task(loop.run())
+        for _ in range(50):
+            await original_sleep(0)
+            if len(sleep_durations) >= 2:
+                break
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert len(sleep_durations) >= 2
+    assert sleep_durations[1] > sleep_durations[0]
+
+
+@pytest.mark.asyncio
+async def test_backoff_resets_on_interesting() -> None:
+    """After backoff, an INTERESTING verdict should reset the interval."""
+    deps = _build_deps()
+    provider = DummyDepsProvider(deps)
+
+    call_count = 0
+
+    async def _alternating_run(symbol: str, deps_provider: object) -> PipelineResult:
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 1:
+            return PipelineResult(
+                scout=ScoutDecisionSchema(
+                    verdict="SKIP", reason="dead", pattern_detected=None
+                ),
+            )
+        return PipelineResult(
+            scout=ScoutDecisionSchema(
+                verdict="INTERESTING", reason="volume", pattern_detected=None
+            ),
+        )
+
+    router = AsyncMock()
+    router.run = AsyncMock(side_effect=_alternating_run)
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock()
+
+    sleep_durations: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def _capture_sleep(duration: float) -> None:
+        sleep_durations.append(duration)
+        await original_sleep(0)
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=router,
+        deps_provider=provider,
+        redis_client=redis_client,
+        interval_s=10,
+    )
+
+    import unittest.mock
+
+    with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
+        task = asyncio.create_task(loop.run())
+        for _ in range(50):
+            await original_sleep(0)
+            if len(sleep_durations) >= 2:
+                break
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert len(sleep_durations) >= 2
+    # Cycle 1: all SKIP → backoff to 20
+    assert sleep_durations[0] == 20.0
+    # Cycle 2: INTERESTING → reset to base 10
+    assert sleep_durations[1] == 10.0

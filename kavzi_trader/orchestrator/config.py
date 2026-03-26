@@ -8,7 +8,7 @@ class OrchestratorConfigSchema(BaseModel):
 
     ws_reconnect_delay_s: Annotated[float, Field(ge=0.0)] = 1.0
     ws_max_reconnect_delay_s: Annotated[float, Field(ge=1.0)] = 60.0
-    order_flow_fetch_interval_s: Annotated[int, Field(ge=1)] = 60
+    order_flow_fetch_interval_s: Annotated[int, Field(ge=1)] = 300
     reasoning_interval_s: Annotated[int, Field(ge=1)] = 30
     position_check_interval_s: Annotated[int, Field(ge=1)] = 5
     health_check_interval_s: Annotated[int, Field(ge=1)] = 30

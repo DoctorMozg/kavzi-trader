@@ -131,14 +131,6 @@ class AgentRouter:
             logger.exception("Scout agent failed for %s", symbol)
             return None
         ms = (time.monotonic() - t0) * 1000
-        logger.info(
-            "Scout verdict=%s reason=%s pattern=%s elapsed_ms=%.1f",
-            result.verdict,
-            result.reason,
-            result.pattern_detected,
-            ms,
-            extra={"symbol": symbol, "elapsed_ms": round(ms, 1)},
-        )
         self._warn_slow("Scout", symbol, ms)
         return result
 
@@ -155,16 +147,6 @@ class AgentRouter:
             logger.exception("Analyst agent failed for %s", symbol)
             return None
         ms = (time.monotonic() - t0) * 1000
-        logger.info(
-            "Analyst setup_valid=%s direction=%s confluence=%d "
-            "reasoning=%s elapsed_ms=%.1f",
-            result.setup_valid,
-            result.direction,
-            result.confluence_score,
-            result.reasoning,
-            ms,
-            extra={"symbol": symbol, "elapsed_ms": round(ms, 1)},
-        )
         self._warn_slow("Analyst", symbol, ms)
         return result
 
@@ -182,18 +164,6 @@ class AgentRouter:
             logger.exception("Trader agent failed for %s", symbol)
             return None, None
         ms = (time.monotonic() - t0) * 1000
-        logger.info(
-            "Trader action=%s confidence=%.2f entry=%s SL=%s TP=%s "
-            "reasoning=%s elapsed_ms=%.1f",
-            result.action,
-            result.confidence,
-            result.suggested_entry,
-            result.suggested_stop_loss,
-            result.suggested_take_profit,
-            result.reasoning,
-            ms,
-            extra={"symbol": symbol, "elapsed_ms": round(ms, 1)},
-        )
         self._warn_slow("Trader", symbol, ms)
         return result, deps
 
