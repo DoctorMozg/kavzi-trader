@@ -94,6 +94,8 @@ Examples:
 - `[SPINE] Fix trailing stop activation threshold`
 - `[EVENTS] Switch Redis stream serialization to msgpack`
 
+Do **not** add `Co-Authored-By` trailers to commit messages.
+
 ## Coding Conventions
 
 - **Pydantic only** — no dataclasses. All models use `Schema` postfix (e.g., `TradeOrderSchema`). Use `Annotated[T, Field(...)]` syntax. Instantiate with `model_validate()`, never `**unpacking`. Use `ConfigDict(frozen=True)` for immutability.
