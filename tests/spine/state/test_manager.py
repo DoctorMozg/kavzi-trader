@@ -157,3 +157,20 @@ class TestStateManager:
         assert manager.positions == manager._position_store
         assert manager.orders == manager._order_store
         assert manager.account == manager._account_store
+
+    async def test_reset_for_paper(self, manager: StateManager):
+        manager._position_store.clear_all = AsyncMock(return_value=2)
+        manager._order_store.clear_all = AsyncMock(return_value=3)
+        manager._account_store.save = AsyncMock()
+
+        await manager.reset_for_paper(Decimal("5000"))
+
+        manager._position_store.clear_all.assert_called_once()
+        manager._order_store.clear_all.assert_called_once()
+        manager._account_store.save.assert_called_once()
+        saved_account = manager._account_store.save.call_args[0][0]
+        assert saved_account.total_balance_usdt == Decimal("5000")
+        assert saved_account.available_balance_usdt == Decimal("5000")
+        assert saved_account.locked_balance_usdt == Decimal("0")
+        assert saved_account.peak_balance == Decimal("5000")
+        assert saved_account.current_drawdown_percent == Decimal("0")

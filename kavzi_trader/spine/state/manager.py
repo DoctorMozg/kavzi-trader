@@ -2,6 +2,7 @@ import logging
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.spine.state.account_store import AccountStore
 from kavzi_trader.spine.state.config import RedisConfigSchema
 from kavzi_trader.spine.state.order_store import OrderStore
@@ -81,6 +82,25 @@ class StateManager:
     async def get_current_price(self, symbol: str) -> Decimal:
         ticker = await self._exchange.get_ticker(symbol)
         return ticker.last_price
+
+    async def reset_for_paper(self, initial_balance: Decimal) -> None:
+        logger.info("Resetting Redis state for fresh paper session")
+        await self._position_store.clear_all()
+        await self._order_store.clear_all()
+        new_state = AccountStateSchema(
+            total_balance_usdt=initial_balance,
+            available_balance_usdt=initial_balance,
+            locked_balance_usdt=Decimal("0"),
+            unrealized_pnl=Decimal("0"),
+            peak_balance=initial_balance,
+            current_drawdown_percent=Decimal("0"),
+            updated_at=utc_now(),
+        )
+        await self._account_store.save(new_state)
+        logger.info(
+            "Paper state reset: balance=%s, 0 positions, 0 orders",
+            initial_balance,
+        )
 
     async def reconcile_with_exchange(self) -> ReconciliationResultSchema:
         logger.info("Starting reconciliation with exchange")

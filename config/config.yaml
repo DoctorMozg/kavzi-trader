@@ -34,6 +34,12 @@ brain:
   openrouter_api_key: ""       # Override via KT_OPENROUTER_API_KEY env var
   openrouter_base_url: "https://openrouter.ai/api/v1"
 
+  # Maximum seconds to wait for an OpenRouter API response before timing out.
+  #   60  = aggressive (may timeout on slower models)
+  #   120 = default
+  #   300 = permissive (for heavy Opus-tier requests)
+  request_timeout_s: 120.0
+
   scout:
     # Tier 1 — Pre-filter: cheap & fast ($0.065/$0.26 per M tokens, 1M ctx)
     # Alternatives: deepseek/deepseek-v3.2, openai/gpt-4.1-nano

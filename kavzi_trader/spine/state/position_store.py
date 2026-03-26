@@ -58,6 +58,13 @@ class PositionStore:
         await self._redis.delete(self._position_key(position_id))
         logger.debug("Deleted position %s", position_id)
 
+    async def clear_all(self) -> int:
+        keys = await self._redis.keys(f"{POSITION_KEY_PREFIX}:*")
+        for key in keys:
+            await self._redis.delete(key)
+        logger.info("Cleared %d positions from Redis", len(keys))
+        return len(keys)
+
     async def count(self) -> int:
         keys = await self._redis.keys(f"{POSITION_KEY_PREFIX}:*")
         return len(keys)

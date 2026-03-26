@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from openai import AsyncOpenAI
 from pydantic_ai import Agent, PromptedOutput
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -29,10 +30,15 @@ class AgentFactory:
     ) -> None:
         self._config = config
         self._prompt_loader = prompt_loader
+        timeout_s = config.request_timeout_s
+        logger.info(
+            "OpenRouter HTTP timeout set to %.0fs", timeout_s,
+        )
         self._provider = OpenAIProvider(
             openai_client=AsyncOpenAI(
                 base_url=config.openrouter_base_url,
                 api_key=config.openrouter_api_key,
+                timeout=httpx.Timeout(timeout_s, connect=10.0),
                 default_headers={
                     "HTTP-Referer": "https://github.com/kavzitrader",
                     "X-Title": "KavziTrader",

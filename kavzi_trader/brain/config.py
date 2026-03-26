@@ -20,6 +20,9 @@ class BrainConfigSchema(BaseModel):
     openrouter_base_url: Annotated[
         str, Field(default="https://openrouter.ai/api/v1")
     ]
+    request_timeout_s: Annotated[
+        float, Field(default=120.0, ge=5.0, le=600.0)
+    ]
     scout: Annotated[
         AgentModelConfigSchema,
         Field(

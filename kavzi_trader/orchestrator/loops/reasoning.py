@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, Protocol, cast
@@ -62,8 +63,10 @@ class ReasoningLoop:
         cycle = 0
         while True:
             cycle += 1
+            cycle_start = time.monotonic()
             logger.debug("ReasoningLoop cycle %d starting", cycle)
             for symbol in self._symbols:
+                sym_start = time.monotonic()
                 try:
                     await self._handle_symbol(symbol)
                 except Exception:
@@ -72,9 +75,20 @@ class ReasoningLoop:
                         symbol,
                         extra={"symbol": symbol},
                     )
-            logger.debug(
-                "ReasoningLoop cycle %d complete, sleeping %ds",
-                cycle, self._interval_s,
+                sym_ms = (time.monotonic() - sym_start) * 1000
+                logger.info(
+                    "ReasoningLoop symbol=%s elapsed_ms=%.1f",
+                    symbol,
+                    sym_ms,
+                    extra={"symbol": symbol, "elapsed_ms": round(sym_ms, 1)},
+                )
+            cycle_ms = (time.monotonic() - cycle_start) * 1000
+            logger.info(
+                "ReasoningLoop cycle %d complete in %.1fms, sleeping %ds",
+                cycle,
+                cycle_ms,
+                self._interval_s,
+                extra={"cycle": cycle, "elapsed_ms": round(cycle_ms, 1)},
             )
             await asyncio.sleep(self._interval_s)
 

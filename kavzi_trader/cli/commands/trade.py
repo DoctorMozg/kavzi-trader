@@ -45,6 +45,7 @@ from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
+from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.break_even import BreakEvenMover
 from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
@@ -131,7 +132,7 @@ async def _start_orchestrator(
     redis_client = RedisStateClient(app_config.redis)
     await redis_client.connect()
 
-    # --- Seed paper balance in Redis ---
+    # --- Reset paper state and seed fresh balance ---
     if is_paper and isinstance(exchange, PaperExchangeClient):
         await state_manager.connect()
         paper_initial = (
@@ -139,14 +140,10 @@ async def _start_orchestrator(
             if paper_balance is not None
             else app_config.paper.initial_balance_usdt
         )
-        await state_manager.account.update_balance(
-            total_balance=paper_initial,
-            available_balance=paper_initial,
-            locked_balance=Decimal("0"),
-        )
+        await state_manager.reset_for_paper(paper_initial)
         exchange.set_account_store(state_manager.account)
         logger.info(
-            "Paper balance seeded in Redis: %s USDT", paper_initial,
+            "Paper state reset in Redis: %s USDT", paper_initial,
         )
 
     event_store = RedisEventStore(redis_client, app_config.events)
@@ -296,6 +293,10 @@ async def _start_orchestrator(
             manager=position_manager,
             state_manager=state_manager,
             atr_provider=atr_provider,
+            action_executor=PositionActionExecutor(
+                exchange=exchange,
+                state_manager=state_manager,
+            ),
             interval_s=app_config.orchestrator.position_check_interval_s,
             report_populator=report_populator,
         ),

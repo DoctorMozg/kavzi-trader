@@ -59,6 +59,13 @@ class OrderStore:
         await self._redis.delete(self._order_key(order_id))
         logger.debug("Deleted order %s", order_id)
 
+    async def clear_all(self) -> int:
+        keys = await self._redis.keys(f"{ORDER_KEY_PREFIX}:*")
+        for key in keys:
+            await self._redis.delete(key)
+        logger.info("Cleared %d orders from Redis", len(keys))
+        return len(keys)
+
     async def count(self) -> int:
         keys = await self._redis.keys(f"{ORDER_KEY_PREFIX}:*")
         return len(keys)

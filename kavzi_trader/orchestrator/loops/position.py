@@ -7,6 +7,7 @@ from typing import Protocol
 
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
+from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
 from kavzi_trader.spine.position.position_action_type import PositionActionType
@@ -28,12 +29,14 @@ class PositionManagementLoop:
         manager: PositionManager,
         state_manager: StateManager,
         atr_provider: AtrProvider,
+        action_executor: PositionActionExecutor,
         interval_s: int,
         report_populator: TradeReportPopulator | None = None,
     ) -> None:
         self._manager = manager
         self._state_manager = state_manager
         self._atr_provider = atr_provider
+        self._action_executor = action_executor
         self._interval_s = interval_s
         self._report_populator = report_populator
 
@@ -113,37 +116,42 @@ class PositionManagementLoop:
                 "action": action.action.value,
             },
         )
-        if action.action == PositionActionType.FULL_EXIT:
-            await self._state_manager.remove_position(position.id)
-            await self._safe_report_action(position, action)
-            return
+        await self._action_executor.execute(position, action)
+        updated = self._build_updated_position(position, action)
+        if updated is not None:
+            await self._state_manager.update_position(updated)
+        await self._safe_report_action(position, action)
 
-        updated = position
+    def _build_updated_position(
+        self,
+        position: PositionSchema,
+        action: PositionActionSchema,
+    ) -> PositionSchema | None:
+        if action.action == PositionActionType.FULL_EXIT:
+            return None
         if action.action == PositionActionType.MOVE_STOP_LOSS and action.new_stop_loss:
-            updated = updated.model_copy(
+            return position.model_copy(
                 update={
                     "current_stop_loss": action.new_stop_loss,
                     "updated_at": utc_now(),
                 },
             )
         if action.action == PositionActionType.PARTIAL_EXIT and action.exit_quantity:
-            updated_qty = updated.quantity - action.exit_quantity
-            updated = updated.model_copy(
+            return position.model_copy(
                 update={
-                    "quantity": updated_qty,
+                    "quantity": position.quantity - action.exit_quantity,
                     "partial_exit_done": True,
                     "updated_at": utc_now(),
                 },
             )
         if action.action == PositionActionType.SCALE_IN and action.scale_in_quantity:
-            updated = updated.model_copy(
+            return position.model_copy(
                 update={
-                    "quantity": updated.quantity + action.scale_in_quantity,
+                    "quantity": position.quantity + action.scale_in_quantity,
                     "updated_at": utc_now(),
                 },
             )
-        await self._state_manager.update_position(updated)
-        await self._safe_report_action(position, action)
+        return None
 
     async def _safe_report_action(
         self,
