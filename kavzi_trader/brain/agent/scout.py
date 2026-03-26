@@ -34,7 +34,7 @@ class ScoutAgent:
         t0 = time.monotonic()
         result = await self._agent.run(user_prompt, deps=deps)
         elapsed_ms = (time.monotonic() - t0) * 1000
-        output = cast(ScoutDecisionSchema, result.output)
+        output = cast("ScoutDecisionSchema", result.output)
         logger.info(
             "Scout result for %s: verdict=%s reason=%s pattern=%s elapsed_ms=%.1f",
             deps.symbol,

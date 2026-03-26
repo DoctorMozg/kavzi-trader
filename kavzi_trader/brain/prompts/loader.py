@@ -39,7 +39,7 @@ class PromptLoader:
 
     def render_system_prompt(self, agent: Literal["scout", "analyst", "trader"]) -> str:
         template_path = self._paths.system[agent]
-        return cast(str, self._env.get_template(template_path).render())
+        return cast("str", self._env.get_template(template_path).render())
 
     def render_user_prompt(
         self,
@@ -47,4 +47,4 @@ class PromptLoader:
         context: dict[str, Any],
     ) -> str:
         template_path = self._paths.user[request]
-        return cast(str, self._env.get_template(template_path).render(**context))
+        return cast("str", self._env.get_template(template_path).render(**context))

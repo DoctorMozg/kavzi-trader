@@ -18,7 +18,8 @@ class OrderFlowLoop:
 
     async def run(self) -> None:
         logger.info(
-            "OrderFlowLoop started, interval=%ds", self._interval_s,
+            "OrderFlowLoop started, interval=%ds",
+            self._interval_s,
         )
         while True:
             try:

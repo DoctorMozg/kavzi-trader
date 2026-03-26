@@ -21,7 +21,7 @@ def build_manager() -> PositionManager:
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_manager_returns_time_exit_only(position_factory, monkeypatch) -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     opened_at = now - timedelta(hours=30)
@@ -35,8 +35,8 @@ async def test_manager_returns_time_exit_only(position_factory, monkeypatch) -> 
 
     actions = await manager.evaluate_position(
         position=position,
-        current_price=Decimal("110"),
-        current_atr=Decimal("10"),
+        current_price=Decimal(110),
+        current_atr=Decimal(10),
     )
 
     assert actions is not None
@@ -44,45 +44,45 @@ async def test_manager_returns_time_exit_only(position_factory, monkeypatch) -> 
     assert actions[0].reason == "time_exit"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_manager_prefers_trailing_over_break_even(position_factory) -> None:
-    position = position_factory(current_stop_loss=Decimal("90"))
+    position = position_factory(current_stop_loss=Decimal(90))
     manager = build_manager()
 
     actions = await manager.evaluate_position(
         position=position,
-        current_price=Decimal("130"),
-        current_atr=Decimal("10"),
+        current_price=Decimal(130),
+        current_atr=Decimal(10),
     )
 
     assert any(action.reason == "trailing_stop" for action in actions)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_manager_returns_break_even_when_trailing_not_ready(
     position_factory,
 ) -> None:
-    position = position_factory(current_stop_loss=Decimal("90"))
+    position = position_factory(current_stop_loss=Decimal(90))
     manager = build_manager()
 
     actions = await manager.evaluate_position(
         position=position,
-        current_price=Decimal("112"),
-        current_atr=Decimal("10"),
+        current_price=Decimal(112),
+        current_atr=Decimal(10),
     )
 
     assert any(action.reason == "break_even" for action in actions)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_manager_includes_partial_exit(position_factory) -> None:
-    position = position_factory(entry_price=Decimal("100"), take_profit=Decimal("120"))
+    position = position_factory(entry_price=Decimal(100), take_profit=Decimal(120))
     manager = build_manager()
 
     actions = await manager.evaluate_position(
         position=position,
-        current_price=Decimal("110"),
-        current_atr=Decimal("10"),
+        current_price=Decimal(110),
+        current_atr=Decimal(10),
     )
 
     assert any(action.reason == "partial_exit" for action in actions)

@@ -35,7 +35,7 @@ class AccountStore:
         total_balance: Decimal,
         available_balance: Decimal,
         locked_balance: Decimal,
-        unrealized_pnl: Decimal = Decimal("0"),
+        unrealized_pnl: Decimal = Decimal(0),
     ) -> AccountStateSchema:
         current = await self.get()
 
@@ -43,7 +43,7 @@ class AccountStore:
         if current and current.peak_balance > total_balance:
             peak_balance = current.peak_balance
 
-        drawdown = Decimal("0")
+        drawdown = Decimal(0)
         if peak_balance > 0:
             drawdown = ((peak_balance - total_balance) / peak_balance) * 100
 
@@ -63,7 +63,7 @@ class AccountStore:
     async def get_drawdown(self) -> Decimal:
         account = await self.get()
         if not account:
-            return Decimal("0")
+            return Decimal(0)
         return account.current_drawdown_percent
 
     async def reset_peak_balance(self) -> None:
@@ -75,7 +75,7 @@ class AccountStore:
                 locked_balance_usdt=account.locked_balance_usdt,
                 unrealized_pnl=account.unrealized_pnl,
                 peak_balance=account.total_balance_usdt,
-                current_drawdown_percent=Decimal("0"),
+                current_drawdown_percent=Decimal(0),
                 updated_at=utc_now(),
             )
             await self.save(new_state)

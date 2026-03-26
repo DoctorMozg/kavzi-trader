@@ -21,19 +21,15 @@ class OrderMonitor:
     ) -> OrderResponseSchema | None:
         logger.debug(
             "Monitoring order %s for %s, timeout=%ds",
-            order_id, symbol, self._timeout_s,
+            order_id,
+            symbol,
+            self._timeout_s,
         )
         try:
             result = await asyncio.wait_for(
                 self._poll_status(symbol, order_id),
                 timeout=self._timeout_s,
             )
-            logger.info(
-                "Order %s for %s completed: status=%s",
-                order_id, symbol, result.status.value,
-                extra={"symbol": symbol},
-            )
-            return result
         except TimeoutError:
             logger.warning(
                 "Order %s for %s not completed within %ds",
@@ -42,18 +38,28 @@ class OrderMonitor:
                 self._timeout_s,
             )
             return None
+        logger.info(
+            "Order %s for %s completed: status=%s",
+            order_id,
+            symbol,
+            result.status.value,
+            extra={"symbol": symbol},
+        )
+        return result
 
     async def _poll_status(self, symbol: str, order_id: int) -> OrderResponseSchema:
         while True:
             try:
                 order = await self._exchange.get_order(
-                    symbol=symbol, order_id=order_id,
+                    symbol=symbol,
+                    order_id=order_id,
                 )
                 if order.status in {OrderStatus.FILLED, OrderStatus.CANCELED}:
                     return order
             except Exception:
                 logger.exception(
                     "Failed to poll order %s for %s, retrying",
-                    order_id, symbol,
+                    order_id,
+                    symbol,
                 )
             await asyncio.sleep(1)

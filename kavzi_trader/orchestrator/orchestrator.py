@@ -72,7 +72,8 @@ class TradingOrchestrator:
             task = asyncio.create_task(factory(), name=name)
             self._tasks.add(task)
         logger.info(
-            "All %d loops launched, orchestrator running", len(self._tasks),
+            "All %d loops launched, orchestrator running",
+            len(self._tasks),
         )
         await self._supervise_tasks()
 
@@ -80,7 +81,8 @@ class TradingOrchestrator:
         """Monitor tasks and restart any that crash unexpectedly."""
         while self._tasks:
             done, _ = await asyncio.wait(
-                self._tasks, return_when=asyncio.FIRST_COMPLETED,
+                self._tasks,
+                return_when=asyncio.FIRST_COMPLETED,
             )
             for task in done:
                 self._tasks.discard(task)
@@ -111,7 +113,10 @@ class TradingOrchestrator:
                         self._tasks.add(new_task)
 
     async def shutdown(self) -> None:
-        logger.info("Orchestrator shutting down — cancelling %d tasks", len(self._tasks))
+        logger.info(
+            "Orchestrator shutting down — cancelling %d tasks",
+            len(self._tasks),
+        )
         for task in self._tasks:
             task.cancel()
         if self._tasks:

@@ -22,10 +22,10 @@ class DummyRedisClient:
 class DummyRedisStateClient(RedisStateClient):
     def __init__(self) -> None:
         super().__init__(RedisConfigSchema())
-        self._client = cast(Redis, DummyRedisClient())
+        self._client = cast("Redis", DummyRedisClient())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_store_append_calls_xadd() -> None:
     redis_client = DummyRedisStateClient()
     store = RedisEventStore(redis_client, EventStoreConfigSchema())
@@ -46,7 +46,7 @@ async def test_store_append_calls_xadd() -> None:
     redis_client.client.xadd.assert_called_once()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_store_read_returns_events() -> None:
     redis_client = DummyRedisStateClient()
     store = RedisEventStore(redis_client, EventStoreConfigSchema())

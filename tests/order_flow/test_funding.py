@@ -53,7 +53,7 @@ def test_calculate_funding_zscore_handles_zero_std():
     result = calculate_funding_zscore(constant_rates)
 
     assert result is not None
-    assert result.funding_zscore == Decimal("0")
+    assert result.funding_zscore == Decimal(0)
 
 
 def test_calculate_funding_zscore_with_custom_window(sample_funding_rates):

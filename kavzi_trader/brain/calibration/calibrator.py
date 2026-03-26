@@ -40,7 +40,9 @@ class ConfidenceCalibrator:
             calibrated = accuracy
         logger.debug(
             "Calibration: raw=%.3f bucket=%s calibrated=%.3f",
-            raw_confidence, bucket, calibrated,
+            raw_confidence,
+            bucket,
+            calibrated,
         )
         return calibrated
 
@@ -53,7 +55,9 @@ class ConfidenceCalibrator:
         bucket = self._bucket(raw_confidence)
         logger.debug(
             "Recording outcome: decision_id=%s bucket=%s correct=%s",
-            decision_id, bucket, was_correct,
+            decision_id,
+            bucket,
+            was_correct,
         )
         try:
             await self._history.record(bucket, was_correct)

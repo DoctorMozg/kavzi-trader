@@ -31,7 +31,9 @@ class FundingRateFilter:
         if side == "LONG" and zscore > self._config.crowded_long_zscore:
             logger.debug(
                 "Funding filter: side=%s zscore=%s > threshold=%s, blocked",
-                side, zscore, self._config.crowded_long_zscore,
+                side,
+                zscore,
+                self._config.crowded_long_zscore,
             )
             return FilterResultSchema(
                 name="funding",
@@ -41,7 +43,9 @@ class FundingRateFilter:
         if side == "SHORT" and zscore < self._config.crowded_short_zscore:
             logger.debug(
                 "Funding filter: side=%s zscore=%s < threshold=%s, blocked",
-                side, zscore, self._config.crowded_short_zscore,
+                side,
+                zscore,
+                self._config.crowded_short_zscore,
             )
             return FilterResultSchema(
                 name="funding",
@@ -50,7 +54,9 @@ class FundingRateFilter:
             )
 
         logger.debug(
-            "Funding filter: side=%s zscore=%s, allowed", side, zscore,
+            "Funding filter: side=%s zscore=%s, allowed",
+            side,
+            zscore,
         )
         return FilterResultSchema(
             name="funding",

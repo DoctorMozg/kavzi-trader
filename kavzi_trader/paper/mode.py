@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class TradingMode(str, Enum):
+class TradingMode(StrEnum):
     """Trading mode selection for execution routing."""
 
     LIVE = "LIVE"

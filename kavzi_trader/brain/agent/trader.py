@@ -35,13 +35,14 @@ class TraderAgent:
     ) -> TradeDecisionSchema:
         logger.debug("Trader building context for %s", deps.symbol)
         context = self._context_builder.build_trader_context(
-            deps, analyst_result=analyst_result,
+            deps,
+            analyst_result=analyst_result,
         )
         user_prompt = self._prompt_loader.render_user_prompt("make_decision", context)
         t0 = time.monotonic()
         result = await self._agent.run(user_prompt, deps=deps)
         elapsed_ms = (time.monotonic() - t0) * 1000
-        output = cast(TradeDecisionSchema, result.output)
+        output = cast("TradeDecisionSchema", result.output)
         logger.info(
             "Trader result for %s: action=%s confidence=%.2f "
             "entry=%s SL=%s TP=%s elapsed_ms=%.1f",

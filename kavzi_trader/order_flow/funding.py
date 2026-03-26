@@ -22,7 +22,7 @@ def calculate_funding_zscore(
     std = series.rolling(window=min(window, len(rates)), min_periods=2).std()
 
     if std.iloc[-1] == 0 or pd.isna(std.iloc[-1]):
-        zscore = Decimal("0")
+        zscore = Decimal(0)
     else:
         zscore = Decimal(str((rates[-1] - mean.iloc[-1]) / std.iloc[-1]))
 

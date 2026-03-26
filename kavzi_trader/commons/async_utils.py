@@ -5,13 +5,10 @@ Utility functions for working with asynchronous code.
 import asyncio
 import functools
 from collections.abc import Awaitable, Callable
-from typing import ParamSpec, TypeVar, cast
-
-P = ParamSpec("P")
-R = TypeVar("R")
+from typing import cast
 
 
-def to_async(func: Callable[P, R]) -> Callable[P, Awaitable[R]]:
+def to_async[**P, R](func: Callable[P, R]) -> Callable[P, Awaitable[R]]:
     """
     Decorator that converts a synchronous function to an asynchronous one.
 
@@ -38,10 +35,10 @@ def to_async(func: Callable[P, R]) -> Callable[P, Awaitable[R]]:
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         return await asyncio.to_thread(func, *args, **kwargs)
 
-    return cast(Callable[P, Awaitable[R]], wrapper)
+    return cast("Callable[P, Awaitable[R]]", wrapper)
 
 
-def to_sync(func: Callable[P, Awaitable[R]]) -> Callable[P, R]:
+def to_sync[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, R]:
     """
     Decorator that converts an asynchronous function to a synchronous one.
 
@@ -84,4 +81,4 @@ def to_sync(func: Callable[P, Awaitable[R]]) -> Callable[P, R]:
                 "Cannot call sync function from async context",
             )
 
-    return cast(Callable[P, R], wrapper)
+    return cast("Callable[P, R]", wrapper)

@@ -12,7 +12,7 @@ from kavzi_trader.commons.datetime_schema import (
 from kavzi_trader.commons.time_utility import utc_now
 
 __all__ = [
-    "utc_now",
     "DateTimeWithTimezoneSchema",
     "TimestampedSchema",
+    "utc_now",
 ]

@@ -49,7 +49,9 @@ class ExecutionEngine:
     async def execute(self, decision: DecisionMessageSchema) -> ExecutionResultSchema:
         logger.info(
             "Executing decision %s for %s: action=%s",
-            decision.decision_id, decision.symbol, decision.action,
+            decision.decision_id,
+            decision.symbol,
+            decision.action,
             extra={
                 "decision_id": decision.decision_id,
                 "symbol": decision.symbol,
@@ -61,7 +63,8 @@ class ExecutionEngine:
         ):
             logger.info(
                 "Decision %s EXPIRED for %s",
-                decision.decision_id, decision.symbol,
+                decision.decision_id,
+                decision.symbol,
                 extra={"decision_id": decision.decision_id},
             )
             return ExecutionResultSchema(
@@ -91,7 +94,8 @@ class ExecutionEngine:
         if not validation.is_valid:
             logger.info(
                 "Decision %s REJECTED for %s: %s",
-                decision.decision_id, decision.symbol,
+                decision.decision_id,
+                decision.symbol,
                 "; ".join(validation.rejection_reasons),
                 extra={"decision_id": decision.decision_id},
             )
@@ -118,7 +122,8 @@ class ExecutionEngine:
             logger.warning(
                 "Recommended size is 0 for %s after risk validation passed,"
                 " using decision quantity %s",
-                decision.symbol, decision.quantity,
+                decision.symbol,
+                decision.quantity,
             )
         order_request = self._translator.translate(
             decision=decision,
@@ -126,8 +131,10 @@ class ExecutionEngine:
         )
         logger.debug(
             "Order translated: symbol=%s side=%s qty=%s price=%s",
-            order_request.symbol, order_request.side,
-            order_request.quantity, order_request.price,
+            order_request.symbol,
+            order_request.side,
+            order_request.quantity,
+            order_request.price,
         )
 
         try:
@@ -185,7 +192,8 @@ class ExecutionEngine:
             )
         logger.info(
             "Order submitted for %s: order_id=%s status=%s",
-            decision.symbol, order_response.order_id,
+            decision.symbol,
+            order_response.order_id,
             order_response.status.value,
             extra={
                 "decision_id": decision.decision_id,
@@ -236,7 +244,8 @@ class ExecutionEngine:
     ) -> ExecutionResultSchema:
         logger.info(
             "Closing position for %s, decision_id=%s",
-            decision.symbol, decision.decision_id,
+            decision.symbol,
+            decision.decision_id,
             extra={"symbol": decision.symbol},
         )
         position = await self._state_manager.get_position(decision.symbol)
@@ -315,9 +324,13 @@ class ExecutionEngine:
         await self._state_manager.update_position(position)
         logger.info(
             "Position opened: id=%s %s %s qty=%s entry=%s SL=%s TP=%s",
-            position.id, position.symbol, position.side,
-            position.quantity, position.entry_price,
-            position.stop_loss, position.take_profit,
+            position.id,
+            position.symbol,
+            position.side,
+            position.quantity,
+            position.entry_price,
+            position.stop_loss,
+            position.take_profit,
             extra={
                 "symbol": position.symbol,
                 "position_id": position.id,
@@ -355,7 +368,8 @@ class ExecutionEngine:
             await self._save_linked_order(stop_response, position.id)
             logger.info(
                 "Stop-loss placed for %s: price=%s",
-                position.symbol, position.stop_loss,
+                position.symbol,
+                position.stop_loss,
                 extra={"symbol": position.symbol},
             )
         except Exception:
@@ -378,7 +392,8 @@ class ExecutionEngine:
             await self._save_linked_order(take_response, position.id)
             logger.info(
                 "Take-profit placed for %s: price=%s",
-                position.symbol, position.take_profit,
+                position.symbol,
+                position.take_profit,
                 extra={"symbol": position.symbol},
             )
         except Exception:

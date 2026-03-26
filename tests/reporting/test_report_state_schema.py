@@ -102,15 +102,15 @@ class TestReportStateSchema:
         return ReportStateSchema(
             session_started_at=now,
             last_updated_at=now,
-            initial_balance_usdt=Decimal("1000"),
-            current_balance_usdt=Decimal("1000"),
+            initial_balance_usdt=Decimal(1000),
+            current_balance_usdt=Decimal(1000),
         )
 
     def test_defaults(self) -> None:
         state = self._make_state()
         assert state.version == 1
-        assert state.session_revenue_usdt == Decimal("0")
-        assert state.unrealized_pnl_usdt == Decimal("0")
+        assert state.session_revenue_usdt == Decimal(0)
+        assert state.unrealized_pnl_usdt == Decimal(0)
         assert state.active_positions_count == 0
         assert state.actions == []
         assert state.trades == []

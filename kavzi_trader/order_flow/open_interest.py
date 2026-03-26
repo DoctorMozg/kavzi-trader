@@ -34,7 +34,7 @@ def _get_oi_at_offset(
     offset: int,
 ) -> Decimal:
     if not oi_history:
-        return Decimal("0")
+        return Decimal(0)
     if len(oi_history) <= offset:
         return oi_history[0].open_interest
     return oi_history[-(offset + 1)].open_interest
@@ -42,6 +42,6 @@ def _get_oi_at_offset(
 
 def _calculate_percent_change(current: Decimal, previous: Decimal) -> Decimal:
     if previous == 0:
-        return Decimal("0")
+        return Decimal(0)
     change = ((current - previous) / previous) * 100
     return change.quantize(Decimal("0.01"))

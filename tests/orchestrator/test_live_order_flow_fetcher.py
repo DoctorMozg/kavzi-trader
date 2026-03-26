@@ -18,9 +18,9 @@ def _build_candle(close_time: datetime, close_price: Decimal) -> CandlestickSche
         high_price=close_price,
         low_price=close_price,
         close_price=close_price,
-        volume=Decimal("1"),
+        volume=Decimal(1),
         close_time=close_time,
-        quote_volume=Decimal("1"),
+        quote_volume=Decimal(1),
         trades_count=1,
         taker_buy_base_volume=Decimal("0.5"),
         taker_buy_quote_volume=Decimal("0.5"),
@@ -29,7 +29,7 @@ def _build_candle(close_time: datetime, close_price: Decimal) -> CandlestickSche
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_fetch_symbol_uses_full_hour_price_change_for_1m() -> None:
     start = datetime(2026, 1, 1, tzinfo=UTC)
     candles = [
@@ -77,15 +77,15 @@ async def test_fetch_symbol_uses_full_hour_price_change_for_1m() -> None:
             symbol="BTCUSDT",
             timestamp=start,
             funding_rate=Decimal("0.0001"),
-            funding_zscore=Decimal("0"),
+            funding_zscore=Decimal(0),
             next_funding_time=start,
-            open_interest=Decimal("1000"),
-            oi_change_1h_percent=Decimal("0"),
-            oi_change_24h_percent=Decimal("0"),
+            open_interest=Decimal(1000),
+            oi_change_1h_percent=Decimal(0),
+            oi_change_24h_percent=Decimal(0),
             long_short_ratio=Decimal("1.1"),
             long_account_percent=Decimal("0.55"),
             short_account_percent=Decimal("0.45"),
-            price_change_1h_percent=Decimal("0"),
+            price_change_1h_percent=Decimal(0),
         ),
     )
 
@@ -98,16 +98,15 @@ async def test_fetch_symbol_uses_full_hour_price_change_for_1m() -> None:
 
     await fetcher._fetch_symbol("BTCUSDT")
 
-    assert (
-        calculator.calculate.call_args.kwargs["price_change_1h_percent"]
-        == Decimal("60")
+    assert calculator.calculate.call_args.kwargs["price_change_1h_percent"] == Decimal(
+        60,
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_fetch_symbol_skips_price_change_when_hour_anchor_is_missing() -> None:
     start = datetime(2026, 1, 1, tzinfo=UTC)
-    candles = [_build_candle(start - timedelta(minutes=1), Decimal("99"))]
+    candles = [_build_candle(start - timedelta(minutes=1), Decimal(99))]
     candles.extend(
         _build_candle(start + timedelta(minutes=minute), Decimal(str(100 + minute)))
         for minute in range(2, 61)
@@ -153,11 +152,11 @@ async def test_fetch_symbol_skips_price_change_when_hour_anchor_is_missing() -> 
             symbol="BTCUSDT",
             timestamp=start,
             funding_rate=Decimal("0.0001"),
-            funding_zscore=Decimal("0"),
+            funding_zscore=Decimal(0),
             next_funding_time=start,
-            open_interest=Decimal("1000"),
-            oi_change_1h_percent=Decimal("0"),
-            oi_change_24h_percent=Decimal("0"),
+            open_interest=Decimal(1000),
+            oi_change_1h_percent=Decimal(0),
+            oi_change_24h_percent=Decimal(0),
             long_short_ratio=Decimal("1.1"),
             long_account_percent=Decimal("0.55"),
             short_account_percent=Decimal("0.45"),

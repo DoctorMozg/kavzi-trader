@@ -19,11 +19,11 @@ class _SymbolCache:
     """Mutable per-symbol market data bucket."""
 
     __slots__ = (
+        "atr_history",
         "candles",
+        "current_price",
         "indicators",
         "order_flow",
-        "current_price",
-        "atr_history",
     )
 
     def __init__(self, max_candles: int) -> None:
@@ -32,7 +32,7 @@ class _SymbolCache:
         )
         self.indicators: TechnicalIndicatorsSchema | None = None
         self.order_flow: OrderFlowSchema | None = None
-        self.current_price: Decimal = Decimal("0")
+        self.current_price: Decimal = Decimal(0)
         self.atr_history: list[Decimal] = []
 
 
@@ -65,11 +65,14 @@ class MarketDataCache:
         for symbol, cache in self._caches.items():
             try:
                 candles = await exchange.get_klines(
-                    symbol, interval, limit=self._max_candles,
+                    symbol,
+                    interval,
+                    limit=self._max_candles,
                 )
                 if not candles:
                     logger.warning(
-                        "No historical candles returned for %s", symbol,
+                        "No historical candles returned for %s",
+                        symbol,
                     )
                     continue
                 cache.candles.extend(candles)
@@ -81,13 +84,12 @@ class MarketDataCache:
                     symbol,
                     len(cache.candles),
                     cache.current_price,
-                    cache.indicators.atr_14
-                    if cache.indicators
-                    else "N/A",
+                    cache.indicators.atr_14 if cache.indicators else "N/A",
                 )
             except Exception:
                 logger.exception(
-                    "Failed to initialise cache for %s", symbol,
+                    "Failed to initialise cache for %s",
+                    symbol,
                 )
 
     # ------------------------------------------------------------------
@@ -107,10 +109,7 @@ class MarketDataCache:
         async with self._lock:
             cache.current_price = candle.close_price
             if is_closed:
-                if (
-                    cache.candles
-                    and cache.candles[-1].open_time == candle.open_time
-                ):
+                if cache.candles and cache.candles[-1].open_time == candle.open_time:
                     cache.candles[-1] = candle
                 else:
                     cache.candles.append(candle)
@@ -118,9 +117,7 @@ class MarketDataCache:
                 if cache.indicators and cache.indicators.atr_14 is not None:
                     cache.atr_history.append(cache.indicators.atr_14)
                     if len(cache.atr_history) > ATR_HISTORY_LENGTH:
-                        cache.atr_history = cache.atr_history[
-                            -ATR_HISTORY_LENGTH:
-                        ]
+                        cache.atr_history = cache.atr_history[-ATR_HISTORY_LENGTH:]
 
     async def update_price(self, symbol: str, price: Decimal) -> None:
         cache = self._caches.get(symbol)
@@ -166,14 +163,14 @@ class MarketDataCache:
     def get_current_price(self, symbol: str) -> Decimal:
         cache = self._caches.get(symbol)
         if cache is None:
-            return Decimal("0")
+            return Decimal(0)
         return cache.current_price
 
     def get_atr(self, symbol: str) -> Decimal:
         cache = self._caches.get(symbol)
         if cache is None or cache.indicators is None:
-            return Decimal("0")
-        return cache.indicators.atr_14 or Decimal("0")
+            return Decimal(0)
+        return cache.indicators.atr_14 or Decimal(0)
 
     def get_atr_history(self, symbol: str) -> list[Decimal]:
         cache = self._caches.get(symbol)
@@ -207,5 +204,6 @@ class MarketDataCache:
                 history.append(result.atr_14)
         cache.atr_history = history
         logger.debug(
-            "Seeded ATR history with %d entries", len(history),
+            "Seeded ATR history with %d entries",
+            len(history),
         )

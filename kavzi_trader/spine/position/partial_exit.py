@@ -39,7 +39,9 @@ class PartialExitChecker:
 
         logger.debug(
             "Partial exit triggered for %s: progress=%.1f%% exit_qty=%s",
-            position.symbol, float(progress) * 100, exit_quantity,
+            position.symbol,
+            float(progress) * 100,
+            exit_quantity,
         )
         return PositionActionSchema(
             action=PositionActionType.PARTIAL_EXIT,

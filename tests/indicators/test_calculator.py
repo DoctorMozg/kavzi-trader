@@ -61,10 +61,10 @@ def test_calculator_trending_up(trending_up_candles: list[CandlestickSchema]) ->
     assert result is not None
 
     assert result.rsi_14 is not None
-    assert result.rsi_14 > Decimal("50")
+    assert result.rsi_14 > Decimal(50)
 
     assert result.macd is not None
-    assert result.macd.macd_line > Decimal("0")
+    assert result.macd.macd_line > Decimal(0)
 
 
 def test_calculator_trending_down(
@@ -76,10 +76,10 @@ def test_calculator_trending_down(
     assert result is not None
 
     assert result.rsi_14 is not None
-    assert result.rsi_14 < Decimal("50")
+    assert result.rsi_14 < Decimal(50)
 
     assert result.macd is not None
-    assert result.macd.macd_line < Decimal("0")
+    assert result.macd.macd_line < Decimal(0)
 
 
 def test_calculator_custom_params(sample_candles: list[CandlestickSchema]) -> None:
@@ -105,7 +105,7 @@ def test_calculator_frozen_result(sample_candles: list[CandlestickSchema]) -> No
     assert result is not None
 
     try:
-        result.ema_20 = Decimal("999")  # type: ignore[misc]
+        result.ema_20 = Decimal(999)  # type: ignore[misc]
         raise AssertionError("Should have raised an error")
     except pydantic.ValidationError:
         pass

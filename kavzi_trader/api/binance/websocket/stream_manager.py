@@ -5,6 +5,7 @@ This module provides functionality for managing WebSocket connections and stream
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
@@ -149,10 +150,8 @@ class StreamManager:
 
         _socket, task = entry
         task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
         self.stream_callbacks.pop(stream_name, None)
         logger.info("Unsubscribed from stream: %s", stream_name)
 
@@ -177,7 +176,8 @@ class StreamManager:
             raise
         except Exception:
             logger.exception(
-                "Recv loop error for stream %s", stream_name,
+                "Recv loop error for stream %s",
+                stream_name,
             )
             if self.on_error_callback:
                 self.on_error_callback(
@@ -190,7 +190,7 @@ class StreamManager:
 
     async def _process_message(self, msg: dict[str, Any]) -> None:
         if "error" in msg:
-            error_msg = "WebSocket error: %s" % msg["error"]
+            error_msg = f"WebSocket error: {msg['error']!s}"
             logger.error(error_msg)
             if self.on_error_callback:
                 self.on_error_callback(APIError(error_msg))
@@ -216,7 +216,7 @@ class StreamManager:
         msg: dict[str, Any],
     ) -> str | None:
         if "stream" in msg:
-            return cast(str, msg["stream"])
+            return cast("str", msg["stream"])
 
         event_type = msg.get("e")
         symbol = msg.get("s", "").lower() if msg.get("s") else None

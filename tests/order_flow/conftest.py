@@ -11,7 +11,7 @@ from kavzi_trader.order_flow.schemas import (
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_funding_rates() -> list[FundingRateSchema]:
     base_time = utc_now()
     rates = [
@@ -31,29 +31,29 @@ def sample_funding_rates() -> list[FundingRateSchema]:
             symbol="BTCUSDT",
             funding_rate=rate,
             funding_time=base_time + timedelta(hours=8 * i),
-            mark_price=Decimal("50000"),
+            mark_price=Decimal(50000),
         )
         for i, rate in enumerate(rates)
     ]
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_oi_history() -> list[OpenInterestSchema]:
     base_time = utc_now()
     oi_values = [
-        Decimal("100000"),
-        Decimal("102000"),
-        Decimal("101500"),
-        Decimal("103000"),
-        Decimal("105000"),
-        Decimal("104000"),
-        Decimal("106000"),
-        Decimal("108000"),
-        Decimal("107500"),
-        Decimal("110000"),
-        Decimal("112000"),
-        Decimal("115000"),
-        Decimal("118000"),
+        Decimal(100000),
+        Decimal(102000),
+        Decimal(101500),
+        Decimal(103000),
+        Decimal(105000),
+        Decimal(104000),
+        Decimal(106000),
+        Decimal(108000),
+        Decimal(107500),
+        Decimal(110000),
+        Decimal(112000),
+        Decimal(115000),
+        Decimal(118000),
     ]
     return [
         OpenInterestSchema(
@@ -65,7 +65,7 @@ def sample_oi_history() -> list[OpenInterestSchema]:
     ]
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_long_short_ratio() -> LongShortRatioSchema:
     return LongShortRatioSchema(
         symbol="BTCUSDT",

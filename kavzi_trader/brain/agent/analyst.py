@@ -34,7 +34,7 @@ class AnalystAgent:
         t0 = time.monotonic()
         result = await self._agent.run(user_prompt, deps=deps)
         elapsed_ms = (time.monotonic() - t0) * 1000
-        output = cast(AnalystDecisionSchema, result.output)
+        output = cast("AnalystDecisionSchema", result.output)
         logger.info(
             "Analyst result for %s: setup_valid=%s direction=%s "
             "confluence=%d elapsed_ms=%.1f",

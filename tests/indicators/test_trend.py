@@ -19,7 +19,7 @@ def test_calculate_ema_basic() -> None:
 
     assert result is not None
     assert isinstance(result, Decimal)
-    assert result > Decimal("100")
+    assert result > Decimal(100)
 
 
 def test_calculate_ema_responds_to_recent_prices() -> None:

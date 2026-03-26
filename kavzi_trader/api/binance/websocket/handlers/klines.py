@@ -41,7 +41,7 @@ class KlineStreamHandler(BaseStreamHandler[KlineData]):
         Returns:
             Stream name
         """
-        interval = cast(str, kwargs.get("interval"))
+        interval = cast("str", kwargs.get("interval"))
         if not interval:
             raise ValueError("Interval is required for kline streams")
 

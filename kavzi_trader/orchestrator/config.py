@@ -19,9 +19,6 @@ class OrchestratorConfigSchema(BaseModel):
     @model_validator(mode="after")
     def _validate_delays(self) -> Self:
         if self.ws_reconnect_delay_s >= self.ws_max_reconnect_delay_s:
-            msg = (
-                "ws_reconnect_delay_s must be"
-                " < ws_max_reconnect_delay_s"
-            )
+            msg = "ws_reconnect_delay_s must be < ws_max_reconnect_delay_s"
             raise ValueError(msg)
         return self

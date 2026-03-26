@@ -27,7 +27,7 @@ def test_calculate_atr_basic() -> None:
     result = calculate_atr(high, low, close, period=14)
 
     assert result is not None
-    assert result > Decimal("0")
+    assert result > Decimal(0)
 
 
 def test_calculate_atr_volatile_vs_calm() -> None:
@@ -99,7 +99,7 @@ def test_volatility_with_candles(sample_candles: list[CandlestickSchema]) -> Non
     bb = calculate_bollinger_bands(ohlcv["close"], period=20)
 
     assert atr is not None
-    assert atr > Decimal("0")
+    assert atr > Decimal(0)
 
     assert bb is not None
     assert bb.lower < bb.middle < bb.upper

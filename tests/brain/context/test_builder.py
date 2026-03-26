@@ -18,7 +18,7 @@ from kavzi_trader.events.store import RedisEventStore
 def test_context_builder_scout(candle, indicators, volatility_regime) -> None:
     deps = ScoutDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -32,11 +32,14 @@ def test_context_builder_scout(candle, indicators, volatility_regime) -> None:
 
 
 def test_context_builder_scout_logs_recent_candle_count(
-    caplog, candle, indicators, volatility_regime
+    caplog,
+    candle,
+    indicators,
+    volatility_regime,
 ) -> None:
     deps = ScoutDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -47,7 +50,10 @@ def test_context_builder_scout_logs_recent_candle_count(
     with caplog.at_level(logging.DEBUG):
         builder.build_scout_context(deps)
 
-    assert "Built scout context for BTCUSDT: context_keys=2 recent_candles=1" in caplog.text
+    assert (
+        "Built scout context for BTCUSDT: context_keys=2 recent_candles=1"
+        in caplog.text
+    )
 
 
 def test_context_builder_analyst(
@@ -59,7 +65,7 @@ def test_context_builder_analyst(
 ) -> None:
     deps = AnalystDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -85,7 +91,7 @@ def test_context_builder_trader(
 ) -> None:
     deps = TradingDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -102,7 +108,9 @@ def test_context_builder_trader(
     assert context["account_state_json"] is not None, "Expected account state JSON."
     assert "account_state" in context, "Expected structured account state dict."
     assert "analyst_result_json" in context, "Expected analyst result key."
-    assert context["analyst_result_json"] is None, "Expected None without analyst result."
+    assert context["analyst_result_json"] is None, (
+        "Expected None without analyst result."
+    )
 
 
 def test_context_builder_trader_with_analyst_result(
@@ -116,7 +124,7 @@ def test_context_builder_trader_with_analyst_result(
 ) -> None:
     deps = TradingDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,

@@ -35,7 +35,7 @@ def test_confluence_short_funding(
     order_flow = sample_order_flow.model_copy(
         update={
             "funding_zscore": Decimal("1.0"),
-            "oi_change_1h_percent": Decimal("-1"),
+            "oi_change_1h_percent": Decimal(-1),
         },
     )
 

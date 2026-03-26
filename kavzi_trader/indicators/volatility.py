@@ -117,9 +117,7 @@ def calculate_bollinger_bands(
         (current_upper - current_lower) / current_middle if current_middle else 0
     )
     band_range = current_upper - current_lower
-    percent_b = (
-        (current_close - current_lower) / band_range if band_range > 0 else 0.5
-    )
+    percent_b = (current_close - current_lower) / band_range if band_range > 0 else 0.5
 
     return BollingerBandsSchema(
         upper=Decimal(str(round(current_upper, 8))),

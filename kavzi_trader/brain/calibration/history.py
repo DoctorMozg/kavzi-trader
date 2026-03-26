@@ -20,7 +20,9 @@ class ConfidenceHistoryStore:
         if was_correct:
             await self._redis.hincrby(key, "correct", 1)
         logger.debug(
-            "Recorded outcome: bucket=%s correct=%s", bucket, was_correct,
+            "Recorded outcome: bucket=%s correct=%s",
+            bucket,
+            was_correct,
         )
 
     async def get_accuracy(self, bucket: str) -> float | None:
@@ -37,6 +39,9 @@ class ConfidenceHistoryStore:
         accuracy = correct / total
         logger.debug(
             "Accuracy for bucket %s: %d/%d = %.3f",
-            bucket, correct, total, accuracy,
+            bucket,
+            correct,
+            total,
+            accuracy,
         )
         return accuracy

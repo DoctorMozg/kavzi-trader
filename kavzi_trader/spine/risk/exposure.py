@@ -21,7 +21,9 @@ class ExposureLimiter:
 
         logger.debug(
             "Exposure check: symbol=%s positions=%d/%d",
-            symbol, position_count, max_positions,
+            symbol,
+            position_count,
+            max_positions,
         )
 
         if position_count >= max_positions:

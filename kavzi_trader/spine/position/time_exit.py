@@ -23,7 +23,9 @@ class TimeExitChecker:
 
         logger.debug(
             "Time exit triggered for %s: elapsed=%ds max=%ds",
-            position.symbol, int(elapsed.total_seconds()), max_seconds,
+            position.symbol,
+            int(elapsed.total_seconds()),
+            max_seconds,
         )
         return PositionActionSchema(
             action=PositionActionType.FULL_EXIT,

@@ -13,15 +13,15 @@ from kavzi_trader.spine.state.schemas import (
 
 
 class TestStateManager:
-    @pytest.fixture()
+    @pytest.fixture
     def mock_exchange(self) -> AsyncMock:
         exchange = AsyncMock()
         exchange.get_ticker = AsyncMock(
-            return_value=MagicMock(last_price=Decimal("50000")),
+            return_value=MagicMock(last_price=Decimal(50000)),
         )
         return exchange
 
-    @pytest.fixture()
+    @pytest.fixture
     def manager(
         self,
         redis_config: RedisConfigSchema,
@@ -150,7 +150,7 @@ class TestStateManager:
     ):
         result = await manager.get_current_price("BTCUSDT")
 
-        assert result == Decimal("50000")
+        assert result == Decimal(50000)
         mock_exchange.get_ticker.assert_called_once_with("BTCUSDT")
 
     async def test_properties(self, manager: StateManager):
@@ -163,14 +163,14 @@ class TestStateManager:
         manager._order_store.clear_all = AsyncMock(return_value=3)
         manager._account_store.save = AsyncMock()
 
-        await manager.reset_for_paper(Decimal("5000"))
+        await manager.reset_for_paper(Decimal(5000))
 
         manager._position_store.clear_all.assert_called_once()
         manager._order_store.clear_all.assert_called_once()
         manager._account_store.save.assert_called_once()
         saved_account = manager._account_store.save.call_args[0][0]
-        assert saved_account.total_balance_usdt == Decimal("5000")
-        assert saved_account.available_balance_usdt == Decimal("5000")
-        assert saved_account.locked_balance_usdt == Decimal("0")
-        assert saved_account.peak_balance == Decimal("5000")
-        assert saved_account.current_drawdown_percent == Decimal("0")
+        assert saved_account.total_balance_usdt == Decimal(5000)
+        assert saved_account.available_balance_usdt == Decimal(5000)
+        assert saved_account.locked_balance_usdt == Decimal(0)
+        assert saved_account.peak_balance == Decimal(5000)
+        assert saved_account.current_drawdown_percent == Decimal(0)

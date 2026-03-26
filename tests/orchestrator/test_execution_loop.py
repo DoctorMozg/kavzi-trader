@@ -10,23 +10,23 @@ from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_execution_loop_dispatches() -> None:
     decision = DecisionMessageSchema(
         decision_id="decision-1",
         symbol="BTCUSDT",
         action="BUY",
-        entry_price=Decimal("100"),
-        stop_loss=Decimal("95"),
-        take_profit=Decimal("110"),
-        quantity=Decimal("1"),
+        entry_price=Decimal(100),
+        stop_loss=Decimal(95),
+        take_profit=Decimal(110),
+        quantity=Decimal(1),
         raw_confidence=0.8,
         calibrated_confidence=0.7,
         volatility_regime=VolatilityRegime.NORMAL,
         position_management=PositionManagementConfigSchema(),
         created_at_ms=1,
         expires_at_ms=60_000,
-        current_atr=Decimal("2"),
+        current_atr=Decimal(2),
         atr_history=[],
     )
     redis_client = AsyncMock()

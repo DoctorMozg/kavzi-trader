@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 import dateparser
 from pydantic import BaseModel
@@ -16,10 +16,8 @@ from kavzi_trader.commons.time_utility import utc_now
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=BaseModel)
 
-
-class BaseDownloader(Generic[T]):
+class BaseDownloader[T: BaseModel]:
     """
     Base class for historical data downloaders.
 

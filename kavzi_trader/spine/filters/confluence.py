@@ -47,11 +47,14 @@ class ConfluenceCalculator:
                 side,
             )
         logger.debug(
-            "Confluence: ema=%s rsi=%s vol=%s boll=%s fund=%s oi=%s"
-            " score=%d",
-            ema_alignment, rsi_favorable, volume_above_average,
-            price_at_bollinger, funding_favorable,
-            oi_supports_direction, int(score),
+            "Confluence: ema=%s rsi=%s vol=%s boll=%s fund=%s oi=%s score=%d",
+            ema_alignment,
+            rsi_favorable,
+            volume_above_average,
+            price_at_bollinger,
+            funding_favorable,
+            oi_supports_direction,
+            int(score),
         )
 
         return AlgorithmConfluenceSchema(
@@ -87,8 +90,8 @@ class ConfluenceCalculator:
         if rsi is None:
             return False
         if side == "LONG":
-            return Decimal("30") <= rsi <= Decimal("40")
-        return Decimal("60") <= rsi <= Decimal("70")
+            return Decimal(30) <= rsi <= Decimal(40)
+        return Decimal(60) <= rsi <= Decimal(70)
 
     def _volume_above_average(
         self,
@@ -120,8 +123,8 @@ class ConfluenceCalculator:
         if order_flow is None:
             return False
         if side == "LONG":
-            return order_flow.funding_zscore <= Decimal("0")
-        return order_flow.funding_zscore >= Decimal("0")
+            return order_flow.funding_zscore <= Decimal(0)
+        return order_flow.funding_zscore >= Decimal(0)
 
     def _oi_supports_direction(
         self,
@@ -131,5 +134,5 @@ class ConfluenceCalculator:
         if order_flow is None:
             return False
         if side == "LONG":
-            return order_flow.oi_change_1h_percent > Decimal("0")
-        return order_flow.oi_change_1h_percent < Decimal("0")
+            return order_flow.oi_change_1h_percent > Decimal(0)
+        return order_flow.oi_change_1h_percent < Decimal(0)

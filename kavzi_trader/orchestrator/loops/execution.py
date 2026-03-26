@@ -30,12 +30,14 @@ class ExecutionLoop:
 
     async def run(self) -> None:
         logger.info(
-            "ExecutionLoop started, listening on queue %s", self._queue_key,
+            "ExecutionLoop started, listening on queue %s",
+            self._queue_key,
         )
         while True:
             try:
                 item = await self._redis_client.client.brpop(
-                    self._queue_key, timeout=1,
+                    self._queue_key,
+                    timeout=1,
                 )
                 if not item:
                     await asyncio.sleep(0.1)

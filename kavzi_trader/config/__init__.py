@@ -68,7 +68,7 @@ class TradingConfigSchema(BaseModel):
     @classmethod
     def _interval_valid(cls, v: str) -> str:
         if v not in VALID_INTERVALS:
-            msg = "trading.interval must be one of %s" % VALID_INTERVALS
+            msg = f"trading.interval must be one of {VALID_INTERVALS!r}"
             raise ValueError(msg)
         return v
 
@@ -138,13 +138,11 @@ class AppConfig(BaseModel):
             )
         if not self.api.binance.api_secret:
             errors.append(
-                "KT_BINANCE_API_SECRET (or api.binance.api_secret)"
-                " is required",
+                "KT_BINANCE_API_SECRET (or api.binance.api_secret) is required",
             )
         if not self.brain.openrouter_api_key:
             errors.append(
-                "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key)"
-                " is required",
+                "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key) is required",
             )
         if not self.trading.symbols:
             errors.append(
@@ -160,8 +158,7 @@ class AppConfig(BaseModel):
         errors: list[str] = []
         if not self.brain.openrouter_api_key:
             errors.append(
-                "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key)"
-                " is required",
+                "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key) is required",
             )
         if not self.trading.symbols:
             errors.append(
@@ -169,8 +166,7 @@ class AppConfig(BaseModel):
             )
         if errors:
             raise ValueError(
-                "Paper trading configuration errors:\n  - "
-                + "\n  - ".join(errors),
+                "Paper trading configuration errors:\n  - " + "\n  - ".join(errors),
             )
 
     @classmethod
@@ -186,8 +182,8 @@ class AppConfig(BaseModel):
 
     @classmethod
     def _apply_env_overrides(cls, data: dict[str, object]) -> None:
-        api = cast(dict[str, object], data.setdefault("api", {}))
-        binance = cast(dict[str, object], api.setdefault("binance", {}))
+        api = cast("dict[str, object]", data.setdefault("api", {}))
+        binance = cast("dict[str, object]", api.setdefault("binance", {}))
         env_api_key = os.getenv("KT_BINANCE_API_KEY")
         env_api_secret = os.getenv("KT_BINANCE_API_SECRET")
         env_testnet = os.getenv("KT_BINANCE_TESTNET")
@@ -198,7 +194,7 @@ class AppConfig(BaseModel):
         if env_testnet is not None:
             binance["testnet"] = env_testnet.lower() == "true"
 
-        brain = cast(dict[str, object], data.setdefault("brain", {}))
+        brain = cast("dict[str, object]", data.setdefault("brain", {}))
         env_openrouter_key = os.getenv("KT_OPENROUTER_API_KEY")
         if env_openrouter_key is not None:
             brain["openrouter_api_key"] = env_openrouter_key

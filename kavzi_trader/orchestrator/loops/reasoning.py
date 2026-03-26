@@ -107,7 +107,8 @@ class ReasoningLoop:
             await self._report_decisions(symbol, scout, analyst, trader)
         except Exception:
             logger.exception(
-                "Failed to report decisions for %s", symbol,
+                "Failed to report decisions for %s",
+                symbol,
             )
         if not self._should_enqueue(scout, analyst, trader):
             logger.debug(
@@ -121,7 +122,9 @@ class ReasoningLoop:
         if trader is None:
             return
         decision = self._build_decision_message(
-            trader, trader_deps, snapshot_at_ms,
+            trader,
+            trader_deps,
+            snapshot_at_ms,
         )
         try:
             await self._redis_client.client.lpush(
@@ -130,13 +133,13 @@ class ReasoningLoop:
             )
         except Exception:
             logger.exception(
-                "Failed to enqueue decision for %s", symbol,
+                "Failed to enqueue decision for %s",
+                symbol,
                 extra={"symbol": symbol},
             )
             return
         logger.info(
-            "Enqueuing decision for %s: action=%s confidence=%.2f "
-            "decision_id=%s",
+            "Enqueuing decision for %s: action=%s confidence=%.2f decision_id=%s",
             symbol,
             trader.action,
             trader.confidence,
@@ -160,23 +163,27 @@ class ReasoningLoop:
         await self._report_populator.record_action(
             action_type="scout_scan",
             symbol=symbol,
-            summary="Verdict: %s — %s" % (scout.verdict, scout.reason),
+            summary=f"Verdict: {scout.verdict} — {scout.reason}",
             details=scout.pattern_detected,
         )
         if analyst is not None:
             await self._report_populator.record_action(
                 action_type="analyst_review",
                 symbol=symbol,
-                summary="Valid: %s, Direction: %s, Confluence: %d/10"
-                % (analyst.setup_valid, analyst.direction, analyst.confluence_score),
+                summary=(
+                    f"Valid: {analyst.setup_valid}, Direction: {analyst.direction}, "
+                    f"Confluence: {analyst.confluence_score}/10"
+                ),
                 details=analyst.reasoning,
             )
         if trader is not None:
             await self._report_populator.record_action(
                 action_type="trader_decision",
                 symbol=symbol,
-                summary="Action: %s, Confidence: %.0f%%"
-                % (trader.action, trader.confidence * 100),
+                summary=(
+                    f"Action: {trader.action}, "
+                    f"Confidence: {trader.confidence * 100:.0f}%"
+                ),
                 details=trader.reasoning,
             )
 
@@ -210,10 +217,10 @@ class ReasoningLoop:
         entry_price = trader.suggested_entry or deps.current_price
         stop_loss = trader.suggested_stop_loss or entry_price
         take_profit = trader.suggested_take_profit or entry_price
-        atr = deps.indicators.atr_14 or Decimal("0")
+        atr = deps.indicators.atr_14 or Decimal(0)
         if trader.action not in {"BUY", "SELL", "CLOSE"}:
             raise ValueError("Unsupported action for execution queue")
-        action = cast(Literal["BUY", "SELL", "CLOSE"], trader.action)
+        action = cast("Literal['BUY', 'SELL', 'CLOSE']", trader.action)
 
         return DecisionMessageSchema(
             decision_id=decision_id,
@@ -222,7 +229,7 @@ class ReasoningLoop:
             entry_price=entry_price,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            quantity=Decimal("0"),
+            quantity=Decimal(0),
             reasoning=trader.reasoning,
             raw_confidence=trader.confidence,
             calibrated_confidence=trader.calibrated_confidence

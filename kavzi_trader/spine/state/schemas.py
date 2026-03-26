@@ -44,7 +44,7 @@ class OpenOrderSchema(BaseModel):
     order_type: OrderType
     price: Decimal
     quantity: Decimal
-    executed_qty: Decimal = Decimal("0")
+    executed_qty: Decimal = Decimal(0)
     status: OrderStatus
     linked_position_id: str | None = None
     created_at: datetime
@@ -56,9 +56,9 @@ class AccountStateSchema(BaseModel):
     total_balance_usdt: Decimal
     available_balance_usdt: Decimal
     locked_balance_usdt: Decimal
-    unrealized_pnl: Decimal = Decimal("0")
+    unrealized_pnl: Decimal = Decimal(0)
     peak_balance: Decimal
-    current_drawdown_percent: Decimal = Decimal("0")
+    current_drawdown_percent: Decimal = Decimal(0)
     updated_at: datetime
 
     model_config = ConfigDict(frozen=True)

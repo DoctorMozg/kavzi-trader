@@ -39,7 +39,7 @@ def test_trade_status_outputs_counts(monkeypatch, capsys) -> None:
     assert "Open orders: 0" in captured.out
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_start_orchestrator_uses_configured_runtime_values(
     monkeypatch,
 ) -> None:
@@ -80,13 +80,17 @@ async def test_start_orchestrator_uses_configured_runtime_values(
 
     monkeypatch.setattr(trade_module, "rebuild_deferred_models", lambda: None)
     monkeypatch.setattr(
-        trade_module, "_build_state_manager", lambda *_args, **_kw: AsyncMock(),
+        trade_module,
+        "_build_state_manager",
+        lambda *_args, **_kw: AsyncMock(),
     )
     monkeypatch.setattr(trade_module, "_build_exchange", lambda _: object())
     monkeypatch.setattr(trade_module, "RedisStateClient", lambda *_: redis_client)
     monkeypatch.setattr(trade_module, "RedisEventStore", lambda *_: object())
     monkeypatch.setattr(
-        trade_module, "TechnicalIndicatorCalculator", lambda: object(),
+        trade_module,
+        "TechnicalIndicatorCalculator",
+        lambda: object(),
     )
 
     class FakeCache:
@@ -110,7 +114,9 @@ async def test_start_orchestrator_uses_configured_runtime_values(
     monkeypatch.setattr(trade_module, "LiveStreamManager", lambda **_: object())
 
     monkeypatch.setattr(
-        trade_module, "LiveOrderFlowFetcher", lambda **_: object(),
+        trade_module,
+        "LiveOrderFlowFetcher",
+        lambda **_: object(),
     )
     monkeypatch.setattr(trade_module, "LiveDependenciesProvider", lambda **_: object())
     monkeypatch.setattr(trade_module, "LiveAtrProvider", lambda *_: object())
@@ -155,7 +161,9 @@ async def test_start_orchestrator_uses_configured_runtime_values(
     monkeypatch.setattr(trade_module, "ReasoningLoop", build_reasoning_loop)
     monkeypatch.setattr(trade_module, "ExecutionLoop", lambda **_: object())
     monkeypatch.setattr(
-        trade_module, "PositionManagementLoop", build_position_loop,
+        trade_module,
+        "PositionManagementLoop",
+        build_position_loop,
     )
     monkeypatch.setattr(trade_module, "HealthChecker", lambda: object())
 

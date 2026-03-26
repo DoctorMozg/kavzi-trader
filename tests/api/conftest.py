@@ -55,14 +55,14 @@ async def binance_client() -> BinanceClient:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_binance_client() -> MagicMock:
     """Create a mock Binance client for testing."""
     return MagicMock(spec=BinanceClient)
 
 
-@pytest.fixture()
-def mock_stream_manager() -> Generator[MagicMock, None, None]:
+@pytest.fixture
+def mock_stream_manager() -> Generator[MagicMock]:
     """Create a mock StreamManager for testing."""
     with patch(
         "kavzi_trader.api.binance.websocket.stream_manager.StreamManager",
@@ -73,8 +73,8 @@ def mock_stream_manager() -> Generator[MagicMock, None, None]:
         yield mock_manager
 
 
-@pytest.fixture()
-def mock_twm() -> Generator[MagicMock, None, None]:
+@pytest.fixture
+def mock_twm() -> Generator[MagicMock]:
     """Create a mock of ThreadedWebsocketManager."""
     with patch(
         "kavzi_trader.api.binance.websocket.stream_manager.ThreadedWebsocketManager",
@@ -86,7 +86,7 @@ def mock_twm() -> Generator[MagicMock, None, None]:
 @pytest_asyncio.fixture()
 async def historical_client(
     mock_binance_client: MagicMock,
-) -> AsyncGenerator[BinanceHistoricalDataClient, None]:
+) -> AsyncGenerator[BinanceHistoricalDataClient]:
     """Create a historical data client with mocked dependencies for testing."""
     with patch(
         "kavzi_trader.api.binance.historical.client.BinanceClient",
@@ -100,7 +100,7 @@ async def historical_client(
         yield client
 
 
-@pytest.fixture()
+@pytest.fixture
 def websocket_client(mock_stream_manager: MagicMock) -> BinanceWebsocketClient:
     """Create a websocket client with mocked dependencies for testing."""
     with patch(
@@ -110,7 +110,7 @@ def websocket_client(mock_stream_manager: MagicMock) -> BinanceWebsocketClient:
         return BinanceWebsocketClient(testnet=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_response_time() -> dict[str, int]:
     """Mock server time response."""
     return {
@@ -118,7 +118,7 @@ def mock_response_time() -> dict[str, int]:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_symbol_info() -> dict[str, Any]:
     """Mock symbol info response."""
     return {
@@ -145,7 +145,7 @@ def mock_symbol_info() -> dict[str, Any]:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_orderbook() -> dict[str, Any]:
     """Mock orderbook response."""
     return {
@@ -163,7 +163,7 @@ def mock_orderbook() -> dict[str, Any]:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_trades() -> list[dict[str, Any]]:
     """Mock trades response."""
     return [
@@ -186,7 +186,7 @@ def mock_trades() -> list[dict[str, Any]]:
     ]
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_klines() -> list[list[Any]]:
     """Mock klines response."""
     return [
@@ -221,7 +221,7 @@ def mock_klines() -> list[list[Any]]:
     ]
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_ticker() -> dict[str, Any]:
     """Mock ticker response."""
     return {
@@ -249,7 +249,7 @@ def mock_ticker() -> dict[str, Any]:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_account() -> dict[str, Any]:
     """Mock account response."""
     return {
@@ -277,7 +277,7 @@ def mock_account() -> dict[str, Any]:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_order_response() -> dict[str, Any]:
     """Mock order response."""
     return {

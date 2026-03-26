@@ -19,7 +19,7 @@ class DummyLoop:
         await asyncio.sleep(0)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_orchestrator_start_runs_loops() -> None:
     config = OrchestratorConfigSchema(health_check_interval_s=1)
     state_manager = AsyncMock()
@@ -27,11 +27,11 @@ async def test_orchestrator_start_runs_loops() -> None:
     orchestrator = TradingOrchestrator(
         config=config,
         state_manager=state_manager,
-        ingest_loop=cast(DataIngestLoop, DummyLoop()),
-        order_flow_loop=cast(OrderFlowLoop, DummyLoop()),
-        reasoning_loop=cast(ReasoningLoop, DummyLoop()),
-        execution_loop=cast(ExecutionLoop, DummyLoop()),
-        position_loop=cast(PositionManagementLoop, DummyLoop()),
+        ingest_loop=cast("DataIngestLoop", DummyLoop()),
+        order_flow_loop=cast("OrderFlowLoop", DummyLoop()),
+        reasoning_loop=cast("ReasoningLoop", DummyLoop()),
+        execution_loop=cast("ExecutionLoop", DummyLoop()),
+        position_loop=cast("PositionManagementLoop", DummyLoop()),
         health_checker=health,
     )
 

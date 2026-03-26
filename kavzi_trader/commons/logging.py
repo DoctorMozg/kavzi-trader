@@ -12,6 +12,11 @@ from pathlib import Path
 from kavzi_trader.commons.time_utility import timestamp_path
 from kavzi_trader.monitoring.structured_logger import JsonLogFormatter
 
+try:
+    from dotenv import load_dotenv as _load_dotenv
+except ImportError:
+    _load_dotenv = None
+
 
 def setup_logging(
     log_level: str = "DEBUG",
@@ -68,14 +73,10 @@ def setup_logging(
 
     logger.info("Logging initialized with level %s", log_level)
 
-    # If dotenv is installed, log environment variables (except sensitive ones)
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv()
+    if _load_dotenv is not None:
+        _load_dotenv()
         logger.debug("Environment variables loaded from .env file")
 
-        # Log non-sensitive environment variables at debug level
         excluded_vars = {
             "BINANCE_API_KEY",
             "BINANCE_API_SECRET",
@@ -89,8 +90,7 @@ def setup_logging(
 
         if env_vars:
             logger.debug("Relevant environment variables: %s", env_vars)
-
-    except ImportError:
+    else:
         logger.debug(
             "python-dotenv not installed. Environment variables must be set manually.",
         )

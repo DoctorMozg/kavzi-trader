@@ -30,9 +30,9 @@ class CorrelationFilter:
         for position in positions:
             if position.symbol in correlated:
                 logger.debug(
-                    "Correlation filter: %s has correlated position %s,"
-                    " multiplier=%s",
-                    symbol, position.symbol,
+                    "Correlation filter: %s has correlated position %s, multiplier=%s",
+                    symbol,
+                    position.symbol,
                     self._config.max_correlated_exposure,
                 )
                 return FilterResultSchema(

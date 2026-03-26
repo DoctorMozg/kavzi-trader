@@ -15,6 +15,7 @@ from kavzi_trader.order_flow.schemas import (
 logger = logging.getLogger(__name__)
 
 ONE_HOUR = timedelta(hours=1)
+_MIN_CANDLES_FOR_1H_CHANGE = 2
 
 
 class LiveOrderFlowFetcher:
@@ -45,22 +46,23 @@ class LiveOrderFlowFetcher:
 
     async def _fetch_symbol(self, symbol: str) -> None:
         raw_funding = await self._exchange.get_funding_rate(
-            symbol, limit=100,
+            symbol,
+            limit=100,
         )
         funding_rates = [
             FundingRateSchema(
                 symbol=symbol,
                 funding_rate=Decimal(str(d["fundingRate"])),
                 funding_time=milliseconds_to_datetime(int(d["fundingTime"])),
-                mark_price=Decimal(str(d["markPrice"]))
-                if d.get("markPrice")
-                else None,
+                mark_price=Decimal(str(d["markPrice"])) if d.get("markPrice") else None,
             )
             for d in raw_funding
         ]
 
         raw_oi = await self._exchange.get_open_interest_history(
-            symbol, period="15m", limit=30,
+            symbol,
+            period="15m",
+            limit=30,
         )
         oi_history = [
             OpenInterestSchema(
@@ -72,7 +74,9 @@ class LiveOrderFlowFetcher:
         ]
 
         raw_ls = await self._exchange.get_long_short_ratio(
-            symbol, period="15m", limit=1,
+            symbol,
+            period="15m",
+            limit=1,
         )
         ls_ratio: LongShortRatioSchema | None = None
         if raw_ls:
@@ -105,13 +109,14 @@ class LiveOrderFlowFetcher:
             )
         else:
             logger.warning(
-                "Order flow calculation returned None for %s", symbol,
+                "Order flow calculation returned None for %s",
+                symbol,
                 extra={"symbol": symbol},
             )
 
     def _calculate_price_change_1h(self, symbol: str) -> Decimal | None:
         candles = self._cache.get_candles(symbol)
-        if len(candles) < 2:
+        if len(candles) < _MIN_CANDLES_FOR_1H_CHANGE:
             return None
 
         current_candle = candles[-1]

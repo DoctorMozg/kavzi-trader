@@ -7,17 +7,17 @@ from kavzi_trader.spine.risk.position_sizer import PositionSizer
 from kavzi_trader.spine.risk.schemas import VolatilityRegime, VolatilityRegimeSchema
 
 
-@pytest.fixture()
+@pytest.fixture
 def normal_regime() -> VolatilityRegimeSchema:
     return VolatilityRegimeSchema(
         regime=VolatilityRegime.NORMAL,
-        atr_zscore=Decimal("0"),
+        atr_zscore=Decimal(0),
         size_multiplier=Decimal("1.0"),
         is_tradeable=True,
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def high_regime() -> VolatilityRegimeSchema:
     return VolatilityRegimeSchema(
         regime=VolatilityRegime.HIGH,
@@ -35,14 +35,14 @@ class TestPositionSizer:
     ) -> None:
         sizer = PositionSizer(risk_config)
         result = sizer.calculate_size(
-            account_balance=Decimal("10000"),
-            atr=Decimal("100"),
-            stop_loss_atr_multiplier=Decimal("2"),
+            account_balance=Decimal(10000),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(2),
             regime=normal_regime,
-            entry_price=Decimal("50000"),
+            entry_price=Decimal(50000),
         )
 
-        assert result.risk_amount == Decimal("100")
+        assert result.risk_amount == Decimal(100)
         assert result.base_size == Decimal("0.5")
         assert result.adjusted_size == Decimal("0.5")
         assert result.size_multiplier == Decimal("1.0")
@@ -54,11 +54,11 @@ class TestPositionSizer:
     ) -> None:
         sizer = PositionSizer(risk_config)
         result = sizer.calculate_size(
-            account_balance=Decimal("10000"),
-            atr=Decimal("100"),
-            stop_loss_atr_multiplier=Decimal("2"),
+            account_balance=Decimal(10000),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(2),
             regime=high_regime,
-            entry_price=Decimal("50000"),
+            entry_price=Decimal(50000),
         )
 
         assert result.base_size == Decimal("0.5")
@@ -72,15 +72,15 @@ class TestPositionSizer:
     ) -> None:
         sizer = PositionSizer(risk_config)
         result = sizer.calculate_size(
-            account_balance=Decimal("10000"),
-            atr=Decimal("0"),
-            stop_loss_atr_multiplier=Decimal("2"),
+            account_balance=Decimal(10000),
+            atr=Decimal(0),
+            stop_loss_atr_multiplier=Decimal(2),
             regime=normal_regime,
-            entry_price=Decimal("50000"),
+            entry_price=Decimal(50000),
         )
 
-        assert result.base_size == Decimal("0")
-        assert result.adjusted_size == Decimal("0")
+        assert result.base_size == Decimal(0)
+        assert result.adjusted_size == Decimal(0)
 
     def test_zero_entry_price_returns_zero_size(
         self,
@@ -89,14 +89,14 @@ class TestPositionSizer:
     ) -> None:
         sizer = PositionSizer(risk_config)
         result = sizer.calculate_size(
-            account_balance=Decimal("10000"),
-            atr=Decimal("100"),
-            stop_loss_atr_multiplier=Decimal("2"),
+            account_balance=Decimal(10000),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(2),
             regime=normal_regime,
-            entry_price=Decimal("0"),
+            entry_price=Decimal(0),
         )
 
-        assert result.adjusted_size == Decimal("0")
+        assert result.adjusted_size == Decimal(0)
 
     def test_larger_atr_multiplier_reduces_size(
         self,
@@ -106,19 +106,19 @@ class TestPositionSizer:
         sizer = PositionSizer(risk_config)
 
         result_2x = sizer.calculate_size(
-            account_balance=Decimal("10000"),
-            atr=Decimal("100"),
-            stop_loss_atr_multiplier=Decimal("2"),
+            account_balance=Decimal(10000),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(2),
             regime=normal_regime,
-            entry_price=Decimal("50000"),
+            entry_price=Decimal(50000),
         )
 
         result_4x = sizer.calculate_size(
-            account_balance=Decimal("10000"),
-            atr=Decimal("100"),
-            stop_loss_atr_multiplier=Decimal("4"),
+            account_balance=Decimal(10000),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(4),
             regime=normal_regime,
-            entry_price=Decimal("50000"),
+            entry_price=Decimal(50000),
         )
 
         assert result_4x.base_size == result_2x.base_size / 2
@@ -131,11 +131,11 @@ class TestPositionSizer:
         sizer = PositionSizer(config)
 
         result = sizer.calculate_size(
-            account_balance=Decimal("10000"),
-            atr=Decimal("100"),
-            stop_loss_atr_multiplier=Decimal("2"),
+            account_balance=Decimal(10000),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(2),
             regime=normal_regime,
-            entry_price=Decimal("50000"),
+            entry_price=Decimal(50000),
         )
 
-        assert result.risk_amount == Decimal("200")
+        assert result.risk_amount == Decimal(200)

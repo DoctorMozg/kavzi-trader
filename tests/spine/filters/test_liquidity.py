@@ -25,9 +25,9 @@ def test_sunday_reopen_multiplier() -> None:
     result = liquidity_filter.evaluate()
 
     assert result.size_multiplier == Decimal("0.8"), "Expected Sunday reopen multiplier"
-    assert (
-        result.period == LiquidityPeriod.MEDIUM
-    ), "Expected medium period after 20 UTC"
+    assert result.period == LiquidityPeriod.MEDIUM, (
+        "Expected medium period after 20 UTC"
+    )
 
 
 def test_high_liquidity_session() -> None:

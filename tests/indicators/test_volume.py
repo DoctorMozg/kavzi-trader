@@ -24,7 +24,7 @@ def test_calculate_obv_rising_prices() -> None:
     result = calculate_obv(close, volume)
 
     assert result is not None
-    assert result > Decimal("0")
+    assert result > Decimal(0)
 
 
 def test_calculate_obv_falling_prices() -> None:
@@ -33,7 +33,7 @@ def test_calculate_obv_falling_prices() -> None:
     result = calculate_obv(close, volume)
 
     assert result is not None
-    assert result < Decimal("0")
+    assert result < Decimal(0)
 
 
 def test_calculate_obv_mixed() -> None:
@@ -42,7 +42,7 @@ def test_calculate_obv_mixed() -> None:
     result = calculate_obv(close, volume)
 
     assert result is not None
-    assert result == Decimal("0")
+    assert result == Decimal(0)
 
 
 def test_calculate_volume_analysis_insufficient_data() -> None:
@@ -91,5 +91,5 @@ def test_volume_with_candles(sample_candles: list[CandlestickSchema]) -> None:
 
     assert result is not None
     assert result.obv is not None
-    assert result.current_volume > Decimal("0")
-    assert result.average_volume > Decimal("0")
+    assert result.current_volume > Decimal(0)
+    assert result.average_volume > Decimal(0)

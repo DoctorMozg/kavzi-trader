@@ -16,7 +16,7 @@ from kavzi_trader.spine.state.schemas import OpenOrderSchema, PositionSchema
 
 
 class TestReconciliationService:
-    @pytest.fixture()
+    @pytest.fixture
     def mock_exchange(self) -> AsyncMock:
         exchange = AsyncMock()
         exchange.get_account_info = AsyncMock(
@@ -30,13 +30,13 @@ class TestReconciliationService:
         exchange.get_open_orders = AsyncMock(return_value=[])
         return exchange
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_position_store(self) -> AsyncMock:
         store = AsyncMock()
         store.get_all = AsyncMock(return_value=[])
         return store
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_order_store(self) -> AsyncMock:
         store = AsyncMock()
         store.get_all = AsyncMock(return_value=[])
@@ -45,13 +45,13 @@ class TestReconciliationService:
         store.delete = AsyncMock()
         return store
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_account_store(self) -> AsyncMock:
         store = AsyncMock()
         store.update_balance = AsyncMock()
         return store
 
-    @pytest.fixture()
+    @pytest.fixture
     def service(
         self,
         mock_exchange: AsyncMock,
@@ -85,9 +85,9 @@ class TestReconciliationService:
         await service.reconcile()
 
         mock_account_store.update_balance.assert_called_once_with(
-            total_balance=Decimal("10000"),
-            available_balance=Decimal("9000"),
-            locked_balance=Decimal("1000"),
+            total_balance=Decimal(10000),
+            available_balance=Decimal(9000),
+            locked_balance=Decimal(1000),
         )
 
     async def test_reconcile_imports_unknown_orders(
@@ -102,9 +102,9 @@ class TestReconciliationService:
             order_id=12345,
             client_order_id="client_123",
             transact_time=now,
-            price=Decimal("50000"),
+            price=Decimal(50000),
             orig_qty=Decimal("0.1"),
-            executed_qty=Decimal("0"),
+            executed_qty=Decimal(0),
             status=OrderStatus.NEW,
             time_in_force=TimeInForce.GTC,
             type=OrderType.LIMIT,
@@ -128,7 +128,7 @@ class TestReconciliationService:
             symbol="BTCUSDT",
             side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
-            price=Decimal("49000"),
+            price=Decimal(49000),
             quantity=Decimal("0.1"),
             status=OrderStatus.NEW,
             created_at=utc_now(),

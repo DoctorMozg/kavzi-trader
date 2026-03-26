@@ -37,13 +37,16 @@ class PositionManager:
     ) -> list[PositionActionSchema]:
         logger.debug(
             "Evaluating position %s %s: price=%s atr=%s",
-            position.id, position.symbol, current_price, current_atr,
+            position.id,
+            position.symbol,
+            current_price,
+            current_atr,
         )
         if current_atr <= 0:
             logger.warning(
-                "ATR is %s for %s, trailing stop and break-even"
-                " cannot function",
-                current_atr, position.symbol,
+                "ATR is %s for %s, trailing stop and break-even cannot function",
+                current_atr,
+                position.symbol,
             )
 
         time_exit_action = self._time_exit.evaluate(position)
@@ -74,6 +77,7 @@ class PositionManager:
 
         logger.debug(
             "Position %s evaluation: %d actions",
-            position.id, len(actions),
+            position.id,
+            len(actions),
         )
         return actions

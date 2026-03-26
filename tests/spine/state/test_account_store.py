@@ -8,7 +8,7 @@ from kavzi_trader.spine.state.schemas import AccountStateSchema
 
 
 class TestAccountStore:
-    @pytest.fixture()
+    @pytest.fixture
     def store(self, mock_redis_client: AsyncMock) -> AccountStore:
         store = AccountStore.__new__(AccountStore)
         store._redis = mock_redis_client
@@ -33,7 +33,7 @@ class TestAccountStore:
         result = await store.get()
 
         assert result is not None
-        assert result.total_balance_usdt == Decimal("10000")
+        assert result.total_balance_usdt == Decimal(10000)
 
     async def test_get_account_not_found(self, store: AccountStore):
         store._redis.get.return_value = None
@@ -46,14 +46,14 @@ class TestAccountStore:
         store._redis.get.return_value = None
 
         result = await store.update_balance(
-            total_balance=Decimal("10000"),
-            available_balance=Decimal("9000"),
-            locked_balance=Decimal("1000"),
+            total_balance=Decimal(10000),
+            available_balance=Decimal(9000),
+            locked_balance=Decimal(1000),
         )
 
-        assert result.total_balance_usdt == Decimal("10000")
-        assert result.peak_balance == Decimal("10000")
-        assert result.current_drawdown_percent == Decimal("0")
+        assert result.total_balance_usdt == Decimal(10000)
+        assert result.peak_balance == Decimal(10000)
+        assert result.current_drawdown_percent == Decimal(0)
 
     async def test_update_balance_tracks_peak(
         self,
@@ -63,13 +63,13 @@ class TestAccountStore:
         store._redis.get.return_value = sample_account_state.model_dump_json()
 
         result = await store.update_balance(
-            total_balance=Decimal("9000"),
-            available_balance=Decimal("9000"),
-            locked_balance=Decimal("0"),
+            total_balance=Decimal(9000),
+            available_balance=Decimal(9000),
+            locked_balance=Decimal(0),
         )
 
-        assert result.peak_balance == Decimal("10500")
-        assert result.current_drawdown_percent > Decimal("0")
+        assert result.peak_balance == Decimal(10500)
+        assert result.current_drawdown_percent > Decimal(0)
 
     async def test_update_balance_new_peak(
         self,
@@ -79,13 +79,13 @@ class TestAccountStore:
         store._redis.get.return_value = sample_account_state.model_dump_json()
 
         result = await store.update_balance(
-            total_balance=Decimal("11000"),
-            available_balance=Decimal("11000"),
-            locked_balance=Decimal("0"),
+            total_balance=Decimal(11000),
+            available_balance=Decimal(11000),
+            locked_balance=Decimal(0),
         )
 
-        assert result.peak_balance == Decimal("11000")
-        assert result.current_drawdown_percent == Decimal("0")
+        assert result.peak_balance == Decimal(11000)
+        assert result.current_drawdown_percent == Decimal(0)
 
     async def test_get_drawdown(
         self,
@@ -103,7 +103,7 @@ class TestAccountStore:
 
         drawdown = await store.get_drawdown()
 
-        assert drawdown == Decimal("0")
+        assert drawdown == Decimal(0)
 
     async def test_reset_peak_balance(
         self,

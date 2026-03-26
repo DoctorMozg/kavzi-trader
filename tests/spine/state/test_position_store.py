@@ -7,7 +7,7 @@ from kavzi_trader.spine.state.schemas import PositionSchema
 
 
 class TestPositionStore:
-    @pytest.fixture()
+    @pytest.fixture
     def store(self, mock_redis_client: AsyncMock) -> PositionStore:
         store = PositionStore.__new__(PositionStore)
         store._redis = mock_redis_client

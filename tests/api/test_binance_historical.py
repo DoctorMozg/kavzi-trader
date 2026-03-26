@@ -65,7 +65,7 @@ def test_get_batch_intervals(
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_candlestick_schemas() -> list[CandlestickSchema]:
     """Create mock kline data for testing."""
     now = utc_now()
@@ -78,22 +78,22 @@ def mock_candlestick_schemas() -> list[CandlestickSchema]:
             interval="1h",
             open_time=kline_time,
             close_time=kline_time + timedelta(hours=1),
-            open_price=Decimal(50000.0),
-            high_price=Decimal(51000.0),
-            low_price=Decimal(49500.0),
-            close_price=Decimal(50500.0),
-            volume=Decimal(10.5),
-            quote_volume=Decimal(525000.0),
+            open_price=Decimal(50000),
+            high_price=Decimal(51000),
+            low_price=Decimal(49500),
+            close_price=Decimal(50500),
+            volume=Decimal("10.5"),
+            quote_volume=Decimal(525000),
             trades_count=1000,
-            taker_buy_base_volume=Decimal(5.25),
-            taker_buy_quote_volume=Decimal(262500.0),
+            taker_buy_base_volume=Decimal("5.25"),
+            taker_buy_quote_volume=Decimal(262500),
         )
         klines.append(kline)
 
     return klines
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_trade_schemas() -> list[TradeSchema]:
     """Create mock trade data for testing."""
     now = utc_now()
@@ -103,12 +103,12 @@ def mock_trade_schemas() -> list[TradeSchema]:
         trade_time = now - timedelta(minutes=i)
         trade = TradeSchema(
             id=1000 + i,
-            price=Decimal(50000.0 + i * 10),
-            qty=Decimal(0.1),
+            price=Decimal(50000) + Decimal(i * 10),
+            qty=Decimal("0.1"),
             time=trade_time,
             is_buyer_maker=i % 2 == 0,
             is_best_match=True,
-            quote_qty=Decimal(5000.0 + i),
+            quote_qty=Decimal(5000) + Decimal(i),
         )
         trades.append(trade)
 

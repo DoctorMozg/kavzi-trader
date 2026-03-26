@@ -61,18 +61,22 @@ class PreTradeFilterChain:
         results: list[FilterResultSchema] = []
         size_multiplier = Decimal("1.0")
         logger.info(
-            "Filter chain started for %s %s", symbol, side,
+            "Filter chain started for %s %s",
+            symbol,
+            side,
             extra={"symbol": symbol, "side": side},
         )
 
-        current_atr = indicators.atr_14 or Decimal("0")
-        if current_atr == Decimal("0"):
+        current_atr = indicators.atr_14 or Decimal(0)
+        if current_atr == Decimal(0):
             logger.warning(
-                "ATR is zero for %s, volatility detection unreliable", symbol,
+                "ATR is zero for %s, volatility detection unreliable",
+                symbol,
             )
         if not atr_history:
             logger.warning(
-                "ATR history empty for %s, regime defaults to NORMAL", symbol,
+                "ATR history empty for %s, regime defaults to NORMAL",
+                symbol,
             )
         regime = self._volatility_detector.detect_regime(current_atr, atr_history)
         volatility_allowed = regime.regime in {
@@ -87,12 +91,16 @@ class PreTradeFilterChain:
         results.append(volatility_result)
         logger.debug(
             "Filter volatility: allowed=%s regime=%s zscore=%s",
-            volatility_allowed, regime.regime.value, regime.atr_zscore,
+            volatility_allowed,
+            regime.regime.value,
+            regime.atr_zscore,
         )
         if not volatility_allowed:
             logger.info(
                 "Filter chain REJECTED for %s %s by volatility: %s",
-                symbol, side, regime.regime.value,
+                symbol,
+                side,
+                regime.regime.value,
                 extra={"symbol": symbol, "side": side},
             )
             return FilterChainResultSchema(
@@ -111,12 +119,15 @@ class PreTradeFilterChain:
         results.append(news_result)
         logger.debug(
             "Filter news: allowed=%s reason=%s",
-            news_result.is_allowed, news_result.reason,
+            news_result.is_allowed,
+            news_result.reason,
         )
         if not news_result.is_allowed:
             logger.info(
                 "Filter chain REJECTED for %s %s by news: %s",
-                symbol, side, news_result.reason,
+                symbol,
+                side,
+                news_result.reason,
                 extra={"symbol": symbol, "side": side},
             )
             return FilterChainResultSchema(
@@ -136,12 +147,15 @@ class PreTradeFilterChain:
         results.append(funding_result)
         logger.debug(
             "Filter funding: allowed=%s reason=%s",
-            funding_result.is_allowed, funding_result.reason,
+            funding_result.is_allowed,
+            funding_result.reason,
         )
         if not funding_result.is_allowed:
             logger.info(
                 "Filter chain REJECTED for %s %s by funding: %s",
-                symbol, side, funding_result.reason,
+                symbol,
+                side,
+                funding_result.reason,
                 extra={"symbol": symbol, "side": side},
             )
             return FilterChainResultSchema(
@@ -161,12 +175,15 @@ class PreTradeFilterChain:
         results.append(movement_result)
         logger.debug(
             "Filter movement: allowed=%s reason=%s",
-            movement_result.is_allowed, movement_result.reason,
+            movement_result.is_allowed,
+            movement_result.reason,
         )
         if not movement_result.is_allowed:
             logger.info(
                 "Filter chain REJECTED for %s %s by movement: %s",
-                symbol, side, movement_result.reason,
+                symbol,
+                side,
+                movement_result.reason,
                 extra={"symbol": symbol, "side": side},
             )
             return FilterChainResultSchema(
@@ -195,7 +212,9 @@ class PreTradeFilterChain:
         if not exposure_result.is_allowed:
             logger.info(
                 "Filter chain REJECTED for %s %s by exposure: %s",
-                symbol, side, exposure_result.reason,
+                symbol,
+                side,
+                exposure_result.reason,
                 extra={"symbol": symbol, "side": side},
             )
             return FilterChainResultSchema(
@@ -213,7 +232,8 @@ class PreTradeFilterChain:
         results.append(liquidity_result)
         logger.debug(
             "Filter liquidity: period=%s multiplier=%s",
-            liquidity_result.period, liquidity_result.size_multiplier,
+            liquidity_result.period,
+            liquidity_result.size_multiplier,
         )
 
         correlation_result = self._correlation_filter.evaluate(
@@ -224,7 +244,8 @@ class PreTradeFilterChain:
         results.append(correlation_result)
         logger.debug(
             "Filter correlation: reason=%s multiplier=%s",
-            correlation_result.reason, correlation_result.size_multiplier,
+            correlation_result.reason,
+            correlation_result.size_multiplier,
         )
 
         confluence = self._confluence_calculator.evaluate(
@@ -236,7 +257,10 @@ class PreTradeFilterChain:
 
         logger.info(
             "Filter chain PASSED for %s %s, size_mult=%s confluence=%d",
-            symbol, side, size_multiplier, confluence.score,
+            symbol,
+            side,
+            size_multiplier,
+            confluence.score,
             extra={"symbol": symbol, "side": side},
         )
         return FilterChainResultSchema(

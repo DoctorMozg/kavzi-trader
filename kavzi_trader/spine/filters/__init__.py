@@ -19,11 +19,10 @@ from kavzi_trader.spine.filters.news_event_schema import NewsEventSchema
 
 __all__ = [
     "AlgorithmConfluenceSchema",
-    "PreTradeFilterChain",
-    "FilterConfigSchema",
     "ConfluenceCalculator",
     "CorrelationFilter",
     "FilterChainResultSchema",
+    "FilterConfigSchema",
     "FilterResultSchema",
     "FundingRateFilter",
     "LiquidityFilter",
@@ -32,4 +31,5 @@ __all__ = [
     "MinimumMovementFilter",
     "NewsEventFilter",
     "NewsEventSchema",
+    "PreTradeFilterChain",
 ]

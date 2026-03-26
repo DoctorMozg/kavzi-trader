@@ -7,7 +7,7 @@ This module provides a base class for handling different types of WebSocket stre
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from binance import ReconnectingWebsocket
 from binance.exceptions import BinanceAPIException
@@ -17,10 +17,8 @@ from kavzi_trader.api.common.exceptions import APIError
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")  # Type for the callback data
 
-
-class BaseStreamHandler(Generic[T], ABC):
+class BaseStreamHandler[T](ABC):
     """
     Base class for WebSocket stream handlers.
 

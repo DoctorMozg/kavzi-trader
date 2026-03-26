@@ -38,7 +38,7 @@ def test_client_initialization(
     assert isinstance(websocket_client.user_data_handler, UserDataStreamHandler)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_start_stop(
     websocket_client: BinanceWebsocketClient,
     mock_stream_manager: MagicMock,
@@ -59,7 +59,7 @@ async def test_start_stop(
     mock_stream_manager.stop.assert_called_once()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_kline_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a kline stream."""
     # Mock the handler's subscribe method
@@ -89,7 +89,7 @@ async def test_kline_stream(websocket_client: BinanceWebsocketClient) -> None:
     assert stream_name == "btcusdt@kline_1m"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_ticker_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a ticker stream."""
     # Mock the handler's subscribe method
@@ -115,7 +115,7 @@ async def test_ticker_stream(websocket_client: BinanceWebsocketClient) -> None:
     assert stream_name == "ethusdt@ticker"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_trades_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a trades stream."""
     # Mock the handler's subscribe method
@@ -141,7 +141,7 @@ async def test_trades_stream(websocket_client: BinanceWebsocketClient) -> None:
     assert stream_name == "adausdt@trade"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_depth_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a depth stream."""
     # Mock the handler's subscribe method
@@ -169,7 +169,7 @@ async def test_depth_stream(websocket_client: BinanceWebsocketClient) -> None:
     assert stream_name == "bnbusdt@depth10"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_user_data_stream(websocket_client: BinanceWebsocketClient) -> None:
     """Test subscribing to a user data stream."""
     # Mock the handler's subscribe method
@@ -193,7 +193,7 @@ async def test_user_data_stream(websocket_client: BinanceWebsocketClient) -> Non
     assert stream_name == "user-data-stream"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_multiplex_streams(
     websocket_client: BinanceWebsocketClient,
     mock_stream_manager: MagicMock,
@@ -231,7 +231,7 @@ async def test_multiplex_streams(
     assert stream_name == "btcusdt@kline_1m/ethusdt@ticker"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_unsubscribe_stream(
     websocket_client: BinanceWebsocketClient,
     mock_stream_manager: MagicMock,
@@ -247,7 +247,7 @@ async def test_unsubscribe_stream(
     mock_stream_manager.unregister_stream.assert_called_once_with("btcusdt@kline_1m")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_unsubscribe_all_streams(
     websocket_client: BinanceWebsocketClient,
     mock_stream_manager: MagicMock,
@@ -323,7 +323,7 @@ def test_stream_manager_init() -> None:
         _ = manager.bsm
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_stream_manager_start_stop() -> None:
     """Test StreamManager start and stop methods."""
     with (
@@ -356,7 +356,7 @@ async def test_stream_manager_start_stop() -> None:
         mock_client.close_connection.assert_called_once()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_stream_manager_process_message() -> None:
     """Test StreamManager _process_message method."""
     # Create a StreamManager with mock callbacks (bsm not needed here)
@@ -392,7 +392,7 @@ async def test_stream_manager_process_message() -> None:
 
 
 # Tests for handlers
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_base_handler_unsubscribe() -> None:
     """Test BaseStreamHandler unsubscribe method."""
     # Create a mock StreamManager
@@ -414,7 +414,7 @@ async def test_base_handler_unsubscribe() -> None:
         mock_manager.unregister_stream.assert_called_once_with("test_stream")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_kline_handler_subscribe() -> None:
     """Test KlineStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute
@@ -445,7 +445,7 @@ async def test_kline_handler_subscribe() -> None:
     assert stream_name == "btcusdt@kline_1m"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_ticker_handler_subscribe() -> None:
     """Test TickerStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute
@@ -475,7 +475,7 @@ async def test_ticker_handler_subscribe() -> None:
     assert stream_name == "ethusdt@ticker"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_trades_handler_subscribe() -> None:
     """Test TradeStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute
@@ -505,7 +505,7 @@ async def test_trades_handler_subscribe() -> None:
     assert stream_name == "adausdt@trade"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_depth_handler_subscribe() -> None:
     """Test DepthStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute
@@ -536,7 +536,7 @@ async def test_depth_handler_subscribe() -> None:
     assert stream_name == "bnbusdt@depth10"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_user_data_handler_subscribe() -> None:
     """Test UserDataStreamHandler subscribe method."""
     # Create a mock StreamManager with twm attribute

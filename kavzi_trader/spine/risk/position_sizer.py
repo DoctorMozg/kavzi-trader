@@ -25,13 +25,14 @@ class PositionSizer:
         if atr <= 0 or entry_price <= 0:
             logger.warning(
                 "Position sizer: atr=%s entry_price=%s, returning zero size",
-                atr, entry_price,
+                atr,
+                entry_price,
             )
             return PositionSizeResultSchema(
-                base_size=Decimal("0"),
-                adjusted_size=Decimal("0"),
-                size_multiplier=Decimal("0"),
-                risk_amount=Decimal("0"),
+                base_size=Decimal(0),
+                adjusted_size=Decimal(0),
+                size_multiplier=Decimal(0),
+                risk_amount=Decimal(0),
             )
 
         risk_amount = account_balance * (self._config.risk_per_trade_percent / 100)
@@ -47,8 +48,13 @@ class PositionSizer:
         logger.debug(
             "Position sizer: balance=%s atr=%s sl_mult=%s regime=%s"
             " base=%s adjusted=%s risk=%s",
-            account_balance, atr, stop_loss_atr_multiplier,
-            regime.regime.value, base_size, adjusted_size, risk_amount,
+            account_balance,
+            atr,
+            stop_loss_atr_multiplier,
+            regime.regime.value,
+            base_size,
+            adjusted_size,
+            risk_amount,
         )
 
         return PositionSizeResultSchema(

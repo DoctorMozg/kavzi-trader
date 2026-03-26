@@ -12,8 +12,8 @@ def test_scale_in_triggers_on_small_retrace(position_factory) -> None:
 
     action = checker.evaluate(
         position=position,
-        current_price=Decimal("104"),
-        current_atr=Decimal("10"),
+        current_price=Decimal(104),
+        current_atr=Decimal(10),
     )
 
     assert action is not None
@@ -28,8 +28,8 @@ def test_scale_in_skips_when_profit_too_large(position_factory) -> None:
 
     action = checker.evaluate(
         position=position,
-        current_price=Decimal("108"),
-        current_atr=Decimal("10"),
+        current_price=Decimal(108),
+        current_atr=Decimal(10),
     )
 
     assert action is None
@@ -41,8 +41,8 @@ def test_scale_in_skips_when_disabled(position_factory) -> None:
 
     action = checker.evaluate(
         position=position,
-        current_price=Decimal("104"),
-        current_atr=Decimal("10"),
+        current_price=Decimal(104),
+        current_atr=Decimal(10),
     )
 
     assert action is None

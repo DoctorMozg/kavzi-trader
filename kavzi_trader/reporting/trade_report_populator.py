@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import aiofiles
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
 from kavzi_trader.commons.path_utility import ensure_directory_exists
 from kavzi_trader.commons.time_utility import timestamp_path, utc_now
@@ -33,7 +33,9 @@ class TradeReportPopulator:
     ) -> None:
         ensure_directory_exists(report_dir)
         self._report_path = timestamp_path(
-            "trade_report", report_dir, "html",
+            "trade_report",
+            report_dir,
+            "html",
         )
         self._max_action_entries = max_action_entries
         self._max_trade_entries = max_trade_entries
@@ -43,7 +45,7 @@ class TradeReportPopulator:
         self._env = Environment(
             loader=FileSystemLoader(_TEMPLATES_DIR),
             undefined=StrictUndefined,
-            autoescape=False,
+            autoescape=select_autoescape(("html", "htm", "xml")),
         )
 
         now = utc_now()
@@ -53,8 +55,8 @@ class TradeReportPopulator:
             version=1,
             initial_balance_usdt=initial_balance_usdt,
             current_balance_usdt=initial_balance_usdt,
-            session_revenue_usdt=Decimal("0"),
-            unrealized_pnl_usdt=Decimal("0"),
+            session_revenue_usdt=Decimal(0),
+            unrealized_pnl_usdt=Decimal(0),
             active_positions_count=0,
             actions=[],
             trades=[],
@@ -99,7 +101,9 @@ class TradeReportPopulator:
                 await self._render()
         except Exception:
             logger.exception(
-                "Failed to record action %s for %s", action_type, symbol,
+                "Failed to record action %s for %s",
+                action_type,
+                symbol,
             )
 
     async def record_trade(
@@ -142,13 +146,15 @@ class TradeReportPopulator:
                 await self._render()
         except Exception:
             logger.exception(
-                "Failed to record trade %s for %s", side, symbol,
+                "Failed to record trade %s for %s",
+                side,
+                symbol,
             )
 
     async def update_balance(
         self,
         current_balance_usdt: Decimal,
-        unrealized_pnl_usdt: Decimal = Decimal("0"),
+        unrealized_pnl_usdt: Decimal = Decimal(0),
         active_positions_count: int = 0,
     ) -> None:
         """Update balance/revenue header and re-render."""
@@ -183,5 +189,6 @@ class TradeReportPopulator:
             tmp_path.rename(self._report_path)
         except Exception:
             logger.exception(
-                "Failed to render report to %s", self._report_path,
+                "Failed to render report to %s",
+                self._report_path,
             )

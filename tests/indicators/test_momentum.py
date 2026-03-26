@@ -20,7 +20,7 @@ def test_calculate_rsi_overbought_condition() -> None:
     result = calculate_rsi(series, period=14)
 
     assert result is not None
-    assert result > Decimal("70")
+    assert result > Decimal(70)
 
 
 def test_calculate_rsi_oversold_condition() -> None:
@@ -29,7 +29,7 @@ def test_calculate_rsi_oversold_condition() -> None:
     result = calculate_rsi(series, period=14)
 
     assert result is not None
-    assert result < Decimal("30")
+    assert result < Decimal(30)
 
 
 def test_calculate_rsi_neutral() -> None:
@@ -38,7 +38,7 @@ def test_calculate_rsi_neutral() -> None:
     result = calculate_rsi(series, period=14)
 
     assert result is not None
-    assert Decimal("40") < result < Decimal("60")
+    assert Decimal(40) < result < Decimal(60)
 
 
 def test_calculate_rsi_range() -> None:
@@ -47,7 +47,7 @@ def test_calculate_rsi_range() -> None:
     result = calculate_rsi(series, period=14)
 
     assert result is not None
-    assert Decimal("0") <= result <= Decimal("100")
+    assert Decimal(0) <= result <= Decimal(100)
 
 
 def test_calculate_macd_insufficient_data() -> None:
@@ -63,7 +63,7 @@ def test_calculate_macd_basic() -> None:
 
     assert result is not None
     assert isinstance(result, MACDResultSchema)
-    assert result.macd_line > Decimal("0")
+    assert result.macd_line > Decimal(0)
 
 
 def test_calculate_macd_bullish_crossover() -> None:
@@ -72,7 +72,7 @@ def test_calculate_macd_bullish_crossover() -> None:
     result = calculate_macd(series)
 
     assert result is not None
-    assert result.histogram > Decimal("0")
+    assert result.histogram > Decimal(0)
 
 
 def test_calculate_macd_bearish_crossover() -> None:
@@ -81,7 +81,7 @@ def test_calculate_macd_bearish_crossover() -> None:
     result = calculate_macd(series)
 
     assert result is not None
-    assert result.macd_line < Decimal("0")
+    assert result.macd_line < Decimal(0)
 
 
 def test_momentum_with_trending_candles(
@@ -94,10 +94,10 @@ def test_momentum_with_trending_candles(
     macd = calculate_macd(close)
 
     assert rsi is not None
-    assert rsi > Decimal("50")
+    assert rsi > Decimal(50)
 
     assert macd is not None
-    assert macd.macd_line > Decimal("0")
+    assert macd.macd_line > Decimal(0)
 
 
 def test_momentum_with_downtrend(
@@ -110,7 +110,7 @@ def test_momentum_with_downtrend(
     macd = calculate_macd(close)
 
     assert rsi is not None
-    assert rsi < Decimal("50")
+    assert rsi < Decimal(50)
 
     assert macd is not None
-    assert macd.macd_line < Decimal("0")
+    assert macd.macd_line < Decimal(0)

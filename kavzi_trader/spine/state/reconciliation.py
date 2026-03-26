@@ -65,9 +65,9 @@ class ReconciliationService:
     async def _reconcile_account(self) -> None:
         account_info = await self._exchange.get_account_info()
 
-        total_usdt = Decimal("0")
-        available_usdt = Decimal("0")
-        locked_usdt = Decimal("0")
+        total_usdt = Decimal(0)
+        available_usdt = Decimal(0)
+        locked_usdt = Decimal(0)
 
         for balance in account_info.get("balances", []):
             if balance["asset"] == "USDT":

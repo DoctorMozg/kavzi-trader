@@ -1,5 +1,5 @@
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -21,7 +21,7 @@ from kavzi_trader.spine.state.schemas import (
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_exchange() -> AsyncMock:
     exchange = AsyncMock()
     now = utc_now()
@@ -31,9 +31,9 @@ def mock_exchange() -> AsyncMock:
             order_id=1001,
             client_order_id="test",
             transact_time=now,
-            price=Decimal("48000"),
+            price=Decimal(48000),
             orig_qty=Decimal("0.1"),
-            executed_qty=Decimal("0"),
+            executed_qty=Decimal(0),
             status=OrderStatus.NEW,
             time_in_force=TimeInForce.GTC,
             type=OrderType.STOP_LOSS_LIMIT,
@@ -47,7 +47,7 @@ def mock_exchange() -> AsyncMock:
     return exchange
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_state_manager() -> AsyncMock:
     state = AsyncMock()
     state.orders = AsyncMock()
@@ -58,7 +58,7 @@ def mock_state_manager() -> AsyncMock:
     return state
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_position() -> PositionSchema:
     now = utc_now()
     return PositionSchema(
@@ -66,17 +66,17 @@ def sample_position() -> PositionSchema:
         symbol="BTCUSDT",
         side="LONG",
         quantity=Decimal("0.1"),
-        entry_price=Decimal("50000"),
-        stop_loss=Decimal("48000"),
-        take_profit=Decimal("55000"),
-        current_stop_loss=Decimal("48000"),
+        entry_price=Decimal(50000),
+        stop_loss=Decimal(48000),
+        take_profit=Decimal(55000),
+        current_stop_loss=Decimal(48000),
         management_config=PositionManagementConfigSchema(),
         opened_at=now,
         updated_at=now,
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def executor(
     mock_exchange: AsyncMock,
     mock_state_manager: AsyncMock,
@@ -100,7 +100,7 @@ class TestMoveStopLoss:
             symbol="BTCUSDT",
             side=OrderSide.SELL,
             order_type=OrderType.STOP_LOSS_LIMIT,
-            price=Decimal("48000"),
+            price=Decimal(48000),
             quantity=Decimal("0.1"),
             status=OrderStatus.NEW,
             linked_position_id="pos_001",
@@ -109,20 +109,21 @@ class TestMoveStopLoss:
         mock_state_manager.orders.get_by_position.return_value = [existing_sl]
         action = PositionActionSchema(
             action=PositionActionType.MOVE_STOP_LOSS,
-            new_stop_loss=Decimal("49000"),
+            new_stop_loss=Decimal(49000),
             reason="trailing stop",
         )
 
         await executor.execute(sample_position, action)
 
         mock_exchange.cancel_order.assert_called_once_with(
-            symbol="BTCUSDT", order_id=100,
+            symbol="BTCUSDT",
+            order_id=100,
         )
         mock_state_manager.remove_order.assert_called_once_with("100")
         assert mock_exchange.create_order.call_count == 1
         call_kwargs = mock_exchange.create_order.call_args.kwargs
         assert call_kwargs["order_type"] == OrderType.STOP_LOSS_LIMIT
-        assert call_kwargs["stop_price"] == Decimal("49000")
+        assert call_kwargs["stop_price"] == Decimal(49000)
 
     async def test_no_op_without_new_stop_loss(
         self,
@@ -154,7 +155,7 @@ class TestPartialExit:
                 symbol="BTCUSDT",
                 side=OrderSide.SELL,
                 order_type=OrderType.STOP_LOSS_LIMIT,
-                price=Decimal("48000"),
+                price=Decimal(48000),
                 quantity=Decimal("0.1"),
                 status=OrderStatus.NEW,
                 linked_position_id="pos_001",
@@ -165,7 +166,7 @@ class TestPartialExit:
                 symbol="BTCUSDT",
                 side=OrderSide.SELL,
                 order_type=OrderType.TAKE_PROFIT_LIMIT,
-                price=Decimal("55000"),
+                price=Decimal(55000),
                 quantity=Decimal("0.1"),
                 status=OrderStatus.NEW,
                 linked_position_id="pos_001",

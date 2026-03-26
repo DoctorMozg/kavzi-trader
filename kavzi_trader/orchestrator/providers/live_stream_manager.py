@@ -37,10 +37,13 @@ class LiveStreamManager:
         await self._ws_client.start()
         for symbol in self._symbols:
             await self._ws_client.subscribe_kline_stream(
-                symbol, self._interval, self._on_kline,
+                symbol,
+                self._interval,
+                self._on_kline,
             )
             await self._ws_client.subscribe_ticker_stream(
-                symbol, self._on_ticker,
+                symbol,
+                self._on_ticker,
             )
             logger.info("Subscribed to streams for %s", symbol)
 
@@ -62,10 +65,12 @@ class LiveStreamManager:
             candle = CandlestickSchema.model_validate(
                 {
                     "open_time": datetime.fromtimestamp(
-                        open_time_ms / 1000, UTC,
+                        open_time_ms / 1000,
+                        UTC,
                     ),
                     "close_time": datetime.fromtimestamp(
-                        close_time_ms / 1000, UTC,
+                        close_time_ms / 1000,
+                        UTC,
                     ),
                     "open_price": Decimal(str(k["o"])),
                     "high_price": Decimal(str(k["h"])),
@@ -81,12 +86,16 @@ class LiveStreamManager:
                 },
             )
             await self._cache.update_candle(
-                symbol, candle, is_closed=is_closed,
+                symbol,
+                candle,
+                is_closed=is_closed,
             )
             if is_closed:
                 logger.info(
                     "Candle closed for %s: close=%s volume=%s",
-                    symbol, candle.close_price, candle.volume,
+                    symbol,
+                    candle.close_price,
+                    candle.volume,
                 )
         except Exception:
             logger.exception("Error processing kline data")

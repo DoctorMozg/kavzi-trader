@@ -1,5 +1,9 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
+_REDIS_DB_MAX = 15
+_REDIS_PORT_MAX = 65535
+_REDIS_PORT_MIN = 1
+
 
 class RedisConfigSchema(BaseModel):
     host: str = "localhost"
@@ -14,7 +18,7 @@ class RedisConfigSchema(BaseModel):
     @field_validator("port")
     @classmethod
     def _port_range(cls, v: int) -> int:
-        if not (1 <= v <= 65535):
+        if not (_REDIS_PORT_MIN <= v <= _REDIS_PORT_MAX):
             msg = "Redis port must be 1-65535"
             raise ValueError(msg)
         return v
@@ -22,7 +26,7 @@ class RedisConfigSchema(BaseModel):
     @field_validator("db")
     @classmethod
     def _db_range(cls, v: int) -> int:
-        if not (0 <= v <= 15):
+        if not (0 <= v <= _REDIS_DB_MAX):
             msg = "Redis db must be 0-15"
             raise ValueError(msg)
         return v

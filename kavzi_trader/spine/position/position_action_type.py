@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class PositionActionType(str, Enum):
+class PositionActionType(StrEnum):
     """Names the kind of change to apply to an open position."""
 
     NO_ACTION = "NO_ACTION"

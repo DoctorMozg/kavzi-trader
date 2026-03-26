@@ -1,6 +1,7 @@
 """Paper trading exchange client that simulates spot order execution."""
 
 import logging
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -16,12 +17,17 @@ from kavzi_trader.api.common.models import (
     TimeInForce,
 )
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.spine.state.account_store import AccountStore
 
 logger = logging.getLogger(__name__)
 
 _PROTECTIVE_ORDER_TYPES = frozenset(
-    {OrderType.STOP_LOSS, OrderType.STOP_LOSS_LIMIT,
-     OrderType.TAKE_PROFIT, OrderType.TAKE_PROFIT_LIMIT},
+    {
+        OrderType.STOP_LOSS,
+        OrderType.STOP_LOSS_LIMIT,
+        OrderType.TAKE_PROFIT,
+        OrderType.TAKE_PROFIT_LIMIT,
+    },
 )
 
 
@@ -38,24 +44,24 @@ class PaperExchangeClient(BinanceClient):
 
     def __init__(
         self,
-        initial_balance_usdt: Decimal = Decimal("10000"),
+        initial_balance_usdt: Decimal = Decimal(10000),
         commission_rate: Decimal = Decimal("0.001"),
     ) -> None:
         super().__init__(api_key="", api_secret="", testnet=False)
         self._balance_usdt = initial_balance_usdt
-        self._locked_usdt = Decimal("0")
+        self._locked_usdt = Decimal(0)
         self._commission_rate = commission_rate
         self._order_counter = 900_000_000
         self._orders: dict[int, OrderResponseSchema] = {}
         self._holdings: dict[str, Decimal] = {}
-        self._account_store: Any = None
+        self._account_store: AccountStore | None = None
         logger.info(
             "Paper exchange initialised: balance=%s USDT, commission=%s",
             initial_balance_usdt,
             commission_rate,
         )
 
-    def set_account_store(self, account_store: Any) -> None:
+    def set_account_store(self, account_store: AccountStore) -> None:
         """Wire the Redis account store for balance sync after each fill."""
         self._account_store = account_store
 
@@ -90,7 +96,7 @@ class PaperExchangeClient(BinanceClient):
         time_in_force: TimeInForce | None = None,
         client_order_id: str | None = None,
         stop_price: Decimal | None = None,
-        iceberg_qty: Decimal | None = None,
+        iceberg_qty: Decimal | None = None,  # noqa: ARG002
     ) -> OrderResponseSchema:
         """Simulate order execution with instant fills."""
         if quantity is None:
@@ -108,7 +114,7 @@ class PaperExchangeClient(BinanceClient):
                 side=side,
                 order_type=order_type,
                 quantity=quantity,
-                price=price or stop_price or Decimal("0"),
+                price=price or stop_price or Decimal(0),
                 stop_price=stop_price,
                 time_in_force=time_in_force or TimeInForce.GTC,
                 now=now,
@@ -166,8 +172,7 @@ class PaperExchangeClient(BinanceClient):
         fill_price = ticker.last_price
         if order_price is not None:
             logger.debug(
-                "Paper LIMIT order for %s: order_price=%s ticker=%s "
-                "(using ticker)",
+                "Paper LIMIT order for %s: order_price=%s ticker=%s (using ticker)",
                 symbol,
                 order_price,
                 fill_price,
@@ -188,32 +193,28 @@ class PaperExchangeClient(BinanceClient):
         fill_price: Decimal,
     ) -> None:
         if side == OrderSide.BUY:
-            total_cost = quantity * fill_price * (
-                Decimal("1") + self._commission_rate
-            )
+            total_cost = quantity * fill_price * (Decimal(1) + self._commission_rate)
             if self._balance_usdt < total_cost:
                 raise ExchangeError(
-                    "Insufficient paper balance: need %s USDT, have %s USDT"
-                    % (total_cost, self._balance_usdt),
+                    f"Insufficient paper balance: need {total_cost} USDT, "
+                    f"have {self._balance_usdt} USDT",
                     code=-2010,
                 )
             self._balance_usdt -= total_cost
-            held = self._holdings.get(symbol, Decimal("0"))
+            held = self._holdings.get(symbol, Decimal(0))
             self._holdings[symbol] = held + quantity
         else:
-            held = self._holdings.get(symbol, Decimal("0"))
+            held = self._holdings.get(symbol, Decimal(0))
             if held < quantity:
                 raise ExchangeError(
-                    "Insufficient asset balance for %s: need %s, have %s"
-                    % (symbol, quantity, held),
+                    f"Insufficient asset balance for {symbol}: "
+                    f"need {quantity}, have {held}",
                     code=-2010,
                 )
-            proceeds = quantity * fill_price * (
-                Decimal("1") - self._commission_rate
-            )
+            proceeds = quantity * fill_price * (Decimal(1) - self._commission_rate)
             self._balance_usdt += proceeds
             remaining = held - quantity
-            if remaining > Decimal("0"):
+            if remaining > Decimal(0):
                 self._holdings[symbol] = remaining
             else:
                 del self._holdings[symbol]
@@ -229,7 +230,7 @@ class PaperExchangeClient(BinanceClient):
         price: Decimal,
         stop_price: Decimal | None,
         time_in_force: TimeInForce,
-        now: Any,
+        now: datetime,
     ) -> OrderResponseSchema:
         order = OrderResponseSchema(
             symbol=symbol,
@@ -238,7 +239,7 @@ class PaperExchangeClient(BinanceClient):
             transact_time=now,
             price=price,
             orig_qty=quantity,
-            executed_qty=Decimal("0"),
+            executed_qty=Decimal(0),
             status=OrderStatus.NEW,
             time_in_force=time_in_force,
             type=order_type,
@@ -261,7 +262,7 @@ class PaperExchangeClient(BinanceClient):
 
     async def get_order(
         self,
-        symbol: str,
+        symbol: str,  # noqa: ARG002
         order_id: int | None = None,
         client_order_id: str | None = None,
     ) -> OrderResponseSchema:
@@ -275,8 +276,8 @@ class PaperExchangeClient(BinanceClient):
                     return order
 
         raise ExchangeError(
-            "Paper order not found: order_id=%s client_order_id=%s"
-            % (order_id, client_order_id),
+            f"Paper order not found: order_id={order_id} "
+            f"client_order_id={client_order_id}",
         )
 
     async def cancel_order(
@@ -287,7 +288,9 @@ class PaperExchangeClient(BinanceClient):
     ) -> OrderResponseSchema:
         """Cancel a simulated order."""
         existing = await self.get_order(
-            symbol, order_id=order_id, client_order_id=client_order_id,
+            symbol,
+            order_id=order_id,
+            client_order_id=client_order_id,
         )
         cancelled = OrderResponseSchema(
             symbol=existing.symbol,
@@ -315,10 +318,7 @@ class PaperExchangeClient(BinanceClient):
         symbol: str | None = None,
     ) -> list[OrderResponseSchema]:
         """Return simulated orders with status NEW."""
-        result = [
-            o for o in self._orders.values()
-            if o.status == OrderStatus.NEW
-        ]
+        result = [o for o in self._orders.values() if o.status == OrderStatus.NEW]
         if symbol is not None:
             result = [o for o in result if o.symbol == symbol]
         return result

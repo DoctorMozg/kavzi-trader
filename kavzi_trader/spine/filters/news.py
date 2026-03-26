@@ -44,7 +44,9 @@ class NewsEventFilter:
             if window_start <= now <= window_end:
                 logger.debug(
                     "News filter: blocked by event=%s window=%s..%s",
-                    event.name, window_start, window_end,
+                    event.name,
+                    window_start,
+                    window_end,
                 )
                 return FilterResultSchema(
                     name="news",

@@ -21,13 +21,19 @@ if TYPE_CHECKING:
 
 def rebuild_deferred_models() -> None:
     """Call after all modules are loaded to resolve forward references."""
-    from kavzi_trader.api.binance.client import BinanceClient as _BinanceClient  # noqa: F811
-    from kavzi_trader.events.store import RedisEventStore as _RedisEventStore  # noqa: F811
+    from kavzi_trader.api.binance.client import (
+        BinanceClient as _BinanceClient,
+    )
+    from kavzi_trader.events.store import (
+        RedisEventStore as _RedisEventStore,
+    )
 
-    TradingDependenciesSchema.model_rebuild(_types_namespace={
-        "BinanceClient": _BinanceClient,
-        "RedisEventStore": _RedisEventStore,
-    })
+    TradingDependenciesSchema.model_rebuild(
+        _types_namespace={
+            "BinanceClient": _BinanceClient,
+            "RedisEventStore": _RedisEventStore,
+        },
+    )
 
 
 class ScoutDependenciesSchema(BaseModel):

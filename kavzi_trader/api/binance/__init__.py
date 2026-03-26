@@ -10,8 +10,8 @@ from kavzi_trader.api.binance.historical import BinanceHistoricalDataClient
 from kavzi_trader.api.binance.websocket import BinanceWebsocketClient
 
 __all__ = [
+    "KLINE_INTERVALS",
     "BinanceClient",
     "BinanceHistoricalDataClient",
     "BinanceWebsocketClient",
-    "KLINE_INTERVALS",
 ]

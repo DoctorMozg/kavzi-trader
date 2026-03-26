@@ -6,20 +6,20 @@ This module defines common data models for representing API responses.
 
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class OrderSide(str, Enum):
+class OrderSide(StrEnum):
     """Order side enum: BUY or SELL."""
 
     BUY = "BUY"
     SELL = "SELL"
 
 
-class OrderType(str, Enum):
+class OrderType(StrEnum):
     """Order type enum."""
 
     LIMIT = "LIMIT"
@@ -31,7 +31,7 @@ class OrderType(str, Enum):
     LIMIT_MAKER = "LIMIT_MAKER"
 
 
-class OrderStatus(str, Enum):
+class OrderStatus(StrEnum):
     """Order status enum."""
 
     NEW = "NEW"
@@ -43,7 +43,7 @@ class OrderStatus(str, Enum):
     EXPIRED = "EXPIRED"
 
 
-class TimeInForce(str, Enum):
+class TimeInForce(StrEnum):
     """Time in force enum."""
 
     GTC = "GTC"  # Good Till Canceled
@@ -101,7 +101,7 @@ class TradeSchema(BaseModel):
     time: datetime
     is_buyer_maker: bool
     is_best_match: bool = True
-    quote_qty: Decimal = Decimal("0")
+    quote_qty: Decimal = Decimal(0)
     first_trade_id: int | None = None
     last_trade_id: int | None = None
     # Optional fields that may be present in some exchanges
@@ -116,8 +116,8 @@ class TickerSchema(BaseModel):
 
     symbol: str
     last_price: Decimal
-    price_change: Decimal = Decimal("0")
-    price_change_percent: Decimal = Decimal("0")
+    price_change: Decimal = Decimal(0)
+    price_change_percent: Decimal = Decimal(0)
     weighted_avg_price: Decimal | None = None
     prev_close_price: Decimal | None = None
     last_qty: Decimal | None = None

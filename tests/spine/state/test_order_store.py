@@ -7,7 +7,7 @@ from kavzi_trader.spine.state.schemas import OpenOrderSchema
 
 
 class TestOrderStore:
-    @pytest.fixture()
+    @pytest.fixture
     def store(self, mock_redis_client: AsyncMock) -> OrderStore:
         store = OrderStore.__new__(OrderStore)
         store._redis = mock_redis_client

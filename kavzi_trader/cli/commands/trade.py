@@ -92,16 +92,14 @@ async def _start_orchestrator(
     is_paper = paper
     if is_paper:
         logger.info(
-            "Starting orchestrator in PAPER mode for symbols=%s"
-            " interval=%s",
+            "Starting orchestrator in PAPER mode for symbols=%s interval=%s",
             app_config.trading.symbols,
             app_config.trading.interval,
         )
         app_config.validate_for_paper_trading()
     else:
         logger.info(
-            "Starting orchestrator for symbols=%s interval=%s"
-            " testnet=%s",
+            "Starting orchestrator for symbols=%s interval=%s testnet=%s",
             app_config.trading.symbols,
             app_config.trading.interval,
             app_config.api.binance.testnet,
@@ -143,7 +141,8 @@ async def _start_orchestrator(
         await state_manager.reset_for_paper(paper_initial)
         exchange.set_account_store(state_manager.account)
         logger.info(
-            "Paper state reset in Redis: %s USDT", paper_initial,
+            "Paper state reset in Redis: %s USDT",
+            paper_initial,
         )
 
     event_store = RedisEventStore(redis_client, app_config.events)
@@ -164,15 +163,9 @@ async def _start_orchestrator(
     # --- Real providers ---
     logger.info("Creating WebSocket client and stream manager")
     ws_client = BinanceWebsocketClient(
-        api_key=app_config.api.binance.api_key
-        if not is_paper
-        else None,
-        api_secret=app_config.api.binance.api_secret
-        if not is_paper
-        else None,
-        testnet=app_config.api.binance.testnet
-        if not is_paper
-        else False,
+        api_key=app_config.api.binance.api_key if not is_paper else None,
+        api_secret=app_config.api.binance.api_secret if not is_paper else None,
+        testnet=app_config.api.binance.testnet if not is_paper else False,
     )
     stream_manager = LiveStreamManager(
         ws_client=ws_client,
@@ -217,13 +210,19 @@ async def _start_orchestrator(
     context_builder = ContextBuilder()
     factory = AgentFactory(app_config.brain, prompt_loader)
     scout = ScoutAgent(
-        factory.create_scout_agent(), prompt_loader, context_builder,
+        factory.create_scout_agent(),
+        prompt_loader,
+        context_builder,
     )
     analyst = AnalystAgent(
-        factory.create_analyst_agent(), prompt_loader, context_builder,
+        factory.create_analyst_agent(),
+        prompt_loader,
+        context_builder,
     )
     trader = TraderAgent(
-        factory.create_trader_agent(), prompt_loader, context_builder,
+        factory.create_trader_agent(),
+        prompt_loader,
+        context_builder,
     )
 
     router = AgentRouter(scout, analyst, trader)
@@ -245,9 +244,7 @@ async def _start_orchestrator(
             await state_manager.connect()
             account = await state_manager.get_account_state()
             initial_balance = (
-                account.total_balance_usdt
-                if account is not None
-                else Decimal("1000")
+                account.total_balance_usdt if account is not None else Decimal(1000)
             )
             report_populator = TradeReportPopulator(
                 report_dir=app_config.reporting.report_dir,
@@ -262,8 +259,7 @@ async def _start_orchestrator(
             )
         except Exception:
             logger.exception(
-                "Failed to initialize report populator,"
-                " continuing without reporting",
+                "Failed to initialize report populator, continuing without reporting",
             )
 
     # --- Orchestrator ---
@@ -340,11 +336,8 @@ def start(
         )
         click.echo("=" * 60)
         click.echo("  PAPER TRADING MODE")
-        click.echo("  Initial balance: %s USDT" % balance_display)
-        click.echo(
-            "  Commission rate: %s"
-            % app_config.paper.commission_rate,
-        )
+        click.echo(f"  Initial balance: {balance_display} USDT")
+        click.echo(f"  Commission rate: {app_config.paper.commission_rate}")
         click.echo(
             "  Orders are simulated. Market data is LIVE.",
         )

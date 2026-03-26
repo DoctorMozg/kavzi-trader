@@ -21,7 +21,8 @@ class MinimumMovementFilter:
     ) -> FilterResultSchema:
         if atr is None or atr <= 0:
             logger.warning(
-                "ATR is %s, movement filter bypassed", atr,
+                "ATR is %s, movement filter bypassed",
+                atr,
             )
             return FilterResultSchema(
                 name="movement",
@@ -34,7 +35,8 @@ class MinimumMovementFilter:
 
         logger.debug(
             "Movement filter: body/ATR ratio=%s threshold=%s",
-            ratio, self._config.min_body_atr_ratio,
+            ratio,
+            self._config.min_body_atr_ratio,
         )
 
         if ratio < self._config.min_body_atr_ratio:

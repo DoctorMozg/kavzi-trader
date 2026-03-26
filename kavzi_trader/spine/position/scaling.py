@@ -43,7 +43,9 @@ class ScaleInChecker:
 
         logger.debug(
             "Scale-in triggered for %s: profit_atr=%s scale_qty=%s",
-            position.symbol, profit_atr, scale_in_quantity,
+            position.symbol,
+            profit_atr,
+            scale_in_quantity,
         )
         return PositionActionSchema(
             action=PositionActionType.SCALE_IN,

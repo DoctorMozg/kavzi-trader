@@ -136,7 +136,7 @@ async def test_create_test_order(binance_testnet_client: BinanceClient) -> None:
         side="BUY",
         order_type="LIMIT",
         quantity=Decimal("0.001"),
-        price=Decimal("20000"),
+        price=Decimal(20000),
         time_in_force="GTC",
         test=True,
     )
@@ -157,7 +157,7 @@ async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
         side="BUY",
         order_type="LIMIT",
         quantity=Decimal("0.001"),
-        price=Decimal("20000"),
+        price=Decimal(20000),
         time_in_force="GTC",
         test=True,
     )
@@ -170,7 +170,7 @@ async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
         side="SELL",
         order_type="LIMIT",
         quantity=Decimal("0.001"),
-        price=Decimal("50000"),
+        price=Decimal(50000),
         time_in_force="GTC",
         test=True,
     )

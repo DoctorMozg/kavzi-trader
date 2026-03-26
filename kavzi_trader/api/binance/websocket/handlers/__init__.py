@@ -19,11 +19,11 @@ from kavzi_trader.api.binance.websocket.handlers.user_data import UserDataStream
 
 __all__ = [
     "BaseStreamHandler",
+    "DepthStreamHandler",
+    "ForceOrderStreamHandler",
     "KlineStreamHandler",
+    "MarkPriceStreamHandler",
     "TickerStreamHandler",
     "TradeStreamHandler",
-    "DepthStreamHandler",
     "UserDataStreamHandler",
-    "MarkPriceStreamHandler",
-    "ForceOrderStreamHandler",
 ]

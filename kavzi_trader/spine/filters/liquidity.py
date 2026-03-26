@@ -68,7 +68,10 @@ class LiquidityFilter:
 
         logger.debug(
             "Liquidity filter: day=%d hour=%d period=%s multiplier=%s",
-            weekday, hour, period.value, multiplier,
+            weekday,
+            hour,
+            period.value,
+            multiplier,
         )
         return FilterResultSchema(
             name="liquidity",

@@ -26,11 +26,15 @@ class DecisionTranslator:
         )
         if quantity_override is not None and quantity_override == 0:
             logger.warning(
-                "Quantity override is zero for %s", decision.symbol,
+                "Quantity override is zero for %s",
+                decision.symbol,
             )
         logger.debug(
             "Translating decision: %s %s qty=%s price=%s",
-            side.value, decision.symbol, quantity, decision.entry_price,
+            side.value,
+            decision.symbol,
+            quantity,
+            decision.entry_price,
         )
 
         return OrderRequestSchema(

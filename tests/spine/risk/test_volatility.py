@@ -12,7 +12,7 @@ class TestVolatilityRegimeDetector:
         atr_history_normal: list[Decimal],
     ) -> None:
         detector = VolatilityRegimeDetector(risk_config)
-        result = detector.detect_regime(Decimal("100"), atr_history_normal)
+        result = detector.detect_regime(Decimal(100), atr_history_normal)
 
         assert result.regime == VolatilityRegime.NORMAL
         assert result.is_tradeable is True
@@ -23,7 +23,7 @@ class TestVolatilityRegimeDetector:
         history = [
             Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
         ]
-        result = detector.detect_regime(Decimal("105"), history)
+        result = detector.detect_regime(Decimal(105), history)
 
         assert result.regime == VolatilityRegime.HIGH
         assert result.is_tradeable is True
@@ -34,47 +34,47 @@ class TestVolatilityRegimeDetector:
         history = [
             Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
         ]
-        result = detector.detect_regime(Decimal("120"), history)
+        result = detector.detect_regime(Decimal(120), history)
 
         assert result.regime == VolatilityRegime.EXTREME
         assert result.is_tradeable is False
-        assert result.size_multiplier == Decimal("0")
+        assert result.size_multiplier == Decimal(0)
 
     def test_low_regime_detected(self, risk_config: RiskConfigSchema) -> None:
         detector = VolatilityRegimeDetector(risk_config)
         history = [
             Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
         ]
-        result = detector.detect_regime(Decimal("92"), history)
+        result = detector.detect_regime(Decimal(92), history)
 
         assert result.regime == VolatilityRegime.LOW
         assert result.is_tradeable is False
-        assert result.size_multiplier == Decimal("0")
+        assert result.size_multiplier == Decimal(0)
 
     def test_insufficient_history_returns_normal(
         self,
         risk_config: RiskConfigSchema,
     ) -> None:
         detector = VolatilityRegimeDetector(risk_config)
-        result = detector.detect_regime(Decimal("100"), [Decimal("100")])
+        result = detector.detect_regime(Decimal(100), [Decimal(100)])
 
         assert result.regime == VolatilityRegime.NORMAL
-        assert result.atr_zscore == Decimal("0")
+        assert result.atr_zscore == Decimal(0)
 
     def test_zero_std_returns_normal(self, risk_config: RiskConfigSchema) -> None:
         detector = VolatilityRegimeDetector(risk_config)
-        history = [Decimal("100")] * 10
-        result = detector.detect_regime(Decimal("100"), history)
+        history = [Decimal(100)] * 10
+        result = detector.detect_regime(Decimal(100), history)
 
         assert result.regime == VolatilityRegime.NORMAL
-        assert result.atr_zscore == Decimal("0")
+        assert result.atr_zscore == Decimal(0)
 
     def test_zscore_calculation_accuracy(self, risk_config: RiskConfigSchema) -> None:
         detector = VolatilityRegimeDetector(risk_config)
-        history = [Decimal("90"), Decimal("100"), Decimal("110")]
-        result = detector.detect_regime(Decimal("100"), history)
+        history = [Decimal(90), Decimal(100), Decimal(110)]
+        result = detector.detect_regime(Decimal(100), history)
 
-        assert result.atr_zscore == Decimal("0")
+        assert result.atr_zscore == Decimal(0)
 
     def test_boundary_high_threshold(self) -> None:
         config = RiskConfigSchema(volatility_high_threshold=Decimal("1.0"))
@@ -83,5 +83,5 @@ class TestVolatilityRegimeDetector:
             Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
         ]
 
-        result = detector.detect_regime(Decimal("104"), history)
+        result = detector.detect_regime(Decimal(104), history)
         assert result.regime in (VolatilityRegime.NORMAL, VolatilityRegime.HIGH)

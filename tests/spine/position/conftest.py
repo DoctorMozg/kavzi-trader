@@ -11,12 +11,12 @@ from kavzi_trader.spine.state.schemas import (
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def position_factory() -> Callable[..., PositionSchema]:
     def _factory(
         side: Literal["LONG", "SHORT"] = "LONG",
-        entry_price: Decimal = Decimal("100"),
-        quantity: Decimal = Decimal("1"),
+        entry_price: Decimal = Decimal(100),
+        quantity: Decimal = Decimal(1),
         current_stop_loss: Decimal | None = None,
         stop_loss: Decimal | None = None,
         take_profit: Decimal | None = None,
@@ -33,9 +33,9 @@ def position_factory() -> Callable[..., PositionSchema]:
             updated_at = now
 
         if stop_loss is None:
-            stop_loss = Decimal("90") if side == "LONG" else Decimal("110")
+            stop_loss = Decimal(90) if side == "LONG" else Decimal(110)
         if take_profit is None:
-            take_profit = Decimal("120") if side == "LONG" else Decimal("80")
+            take_profit = Decimal(120) if side == "LONG" else Decimal(80)
         if current_stop_loss is None:
             current_stop_loss = stop_loss
 

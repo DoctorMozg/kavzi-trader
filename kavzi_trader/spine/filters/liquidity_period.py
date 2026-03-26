@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class LiquidityPeriod(str, Enum):
+class LiquidityPeriod(StrEnum):
     """Represents market liquidity bands used for size adjustments."""
 
     HIGH = "HIGH"

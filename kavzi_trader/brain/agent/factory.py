@@ -32,7 +32,8 @@ class AgentFactory:
         self._prompt_loader = prompt_loader
         timeout_s = config.request_timeout_s
         logger.info(
-            "OpenRouter HTTP timeout set to %.0fs", timeout_s,
+            "OpenRouter HTTP timeout set to %.0fs",
+            timeout_s,
         )
         self._provider = OpenAIProvider(
             openai_client=AsyncOpenAI(

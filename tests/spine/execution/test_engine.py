@@ -12,7 +12,7 @@ from kavzi_trader.spine.execution.translator import DecisionTranslator
 from kavzi_trader.spine.risk.schemas import RiskValidationResultSchema, VolatilityRegime
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_engine_rejects_stale(
     decision_message,
     execution_config: ExecutionConfigSchema,
@@ -40,7 +40,7 @@ async def test_engine_rejects_stale(
     exchange.create_order.assert_not_called()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_engine_rejects_risk(
     decision_message,
     execution_config: ExecutionConfigSchema,
@@ -53,8 +53,8 @@ async def test_engine_rejects_risk(
             is_valid=False,
             rejection_reasons=["bad risk"],
             volatility_regime=VolatilityRegime.NORMAL,
-            recommended_size=Decimal("0"),
-            size_multiplier=Decimal("1"),
+            recommended_size=Decimal(0),
+            size_multiplier=Decimal(1),
             warnings=[],
             should_close_all=False,
         ),
@@ -80,7 +80,7 @@ async def test_engine_rejects_risk(
     exchange.create_order.assert_not_called()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_engine_executes_filled_order(
     decision_message,
     execution_config: ExecutionConfigSchema,
@@ -95,8 +95,8 @@ async def test_engine_executes_filled_order(
             is_valid=True,
             rejection_reasons=[],
             volatility_regime=VolatilityRegime.NORMAL,
-            recommended_size=Decimal("1"),
-            size_multiplier=Decimal("1"),
+            recommended_size=Decimal(1),
+            size_multiplier=Decimal(1),
             warnings=[],
             should_close_all=False,
         ),

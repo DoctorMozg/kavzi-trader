@@ -55,7 +55,7 @@ class DummyTrader:
         )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_router_stops_on_scout_skip(
     candle,
     indicators,
@@ -68,7 +68,7 @@ async def test_router_stops_on_scout_skip(
     router = AgentRouter(DummyScout("SKIP"), DummyAnalyst(True), DummyTrader())
     scout_deps = ScoutDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -76,7 +76,7 @@ async def test_router_stops_on_scout_skip(
     )
     analyst_deps = AnalystDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -86,7 +86,7 @@ async def test_router_stops_on_scout_skip(
     )
     trader_deps = TradingDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -104,7 +104,7 @@ async def test_router_stops_on_scout_skip(
     assert trader is None, "Expected trader to be skipped."
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_router_stops_on_invalid_setup(
     candle,
     indicators,
@@ -117,7 +117,7 @@ async def test_router_stops_on_invalid_setup(
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(False), DummyTrader())
     scout_deps = ScoutDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -125,7 +125,7 @@ async def test_router_stops_on_invalid_setup(
     )
     analyst_deps = AnalystDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -135,7 +135,7 @@ async def test_router_stops_on_invalid_setup(
     )
     trader_deps = TradingDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -153,7 +153,7 @@ async def test_router_stops_on_invalid_setup(
     assert trader is None, "Expected trader to be skipped."
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_router_runs_trader_on_valid_setup(
     candle,
     indicators,
@@ -166,7 +166,7 @@ async def test_router_runs_trader_on_valid_setup(
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
     scout_deps = ScoutDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -174,7 +174,7 @@ async def test_router_runs_trader_on_valid_setup(
     )
     analyst_deps = AnalystDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -184,7 +184,7 @@ async def test_router_runs_trader_on_valid_setup(
     )
     trader_deps = TradingDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -196,5 +196,5 @@ async def test_router_runs_trader_on_valid_setup(
         exchange_client=BinanceClient.__new__(BinanceClient),
         event_store=RedisEventStore.__new__(RedisEventStore),
     )
-    scout, analyst, trader = await router.run(scout_deps, analyst_deps, trader_deps)
+    _scout, _analyst, trader = await router.run(scout_deps, analyst_deps, trader_deps)
     assert trader is not None, "Expected trader result."

@@ -6,7 +6,7 @@ import pytest
 from kavzi_trader.api.common.models import CandlestickSchema
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_candles() -> list[CandlestickSchema]:
     base_time = datetime(2024, 1, 1, tzinfo=UTC)
     prices = [
@@ -88,7 +88,7 @@ def sample_candles() -> list[CandlestickSchema]:
     return candles
 
 
-@pytest.fixture()
+@pytest.fixture
 def trending_up_candles() -> list[CandlestickSchema]:
     base_time = datetime(2024, 1, 1, tzinfo=UTC)
     candles = []
@@ -105,17 +105,17 @@ def trending_up_candles() -> list[CandlestickSchema]:
                 high_price=Decimal(str(price + 1)),
                 low_price=Decimal(str(price - 2)),
                 close_price=Decimal(str(price)),
-                volume=Decimal("1000"),
+                volume=Decimal(1000),
                 quote_volume=Decimal(str(1000 * price)),
                 trades_count=100,
-                taker_buy_base_volume=Decimal("600"),
+                taker_buy_base_volume=Decimal(600),
                 taker_buy_quote_volume=Decimal(str(600 * price)),
             ),
         )
     return candles
 
 
-@pytest.fixture()
+@pytest.fixture
 def trending_down_candles() -> list[CandlestickSchema]:
     base_time = datetime(2024, 1, 1, tzinfo=UTC)
     candles = []
@@ -132,10 +132,10 @@ def trending_down_candles() -> list[CandlestickSchema]:
                 high_price=Decimal(str(price + 2)),
                 low_price=Decimal(str(price - 1)),
                 close_price=Decimal(str(price)),
-                volume=Decimal("1000"),
+                volume=Decimal(1000),
                 quote_volume=Decimal(str(1000 * price)),
                 trades_count=100,
-                taker_buy_base_volume=Decimal("400"),
+                taker_buy_base_volume=Decimal(400),
                 taker_buy_quote_volume=Decimal(str(400 * price)),
             ),
         )

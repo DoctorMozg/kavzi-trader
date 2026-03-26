@@ -46,7 +46,7 @@ class TestPositionSchema:
         assert sample_position.symbol == "BTCUSDT"
         assert sample_position.side == "LONG"
         assert sample_position.quantity == Decimal("0.1")
-        assert sample_position.entry_price == Decimal("50000")
+        assert sample_position.entry_price == Decimal(50000)
         assert sample_position.stop_loss_moved_to_breakeven is False
 
     def test_create_short_position(self, sample_position_short: PositionSchema):
@@ -66,7 +66,7 @@ class TestOpenOrderSchema:
         assert sample_order.symbol == "BTCUSDT"
         assert sample_order.side == OrderSide.BUY
         assert sample_order.order_type == OrderType.LIMIT
-        assert sample_order.executed_qty == Decimal("0")
+        assert sample_order.executed_qty == Decimal(0)
 
     def test_sl_order(self, sample_sl_order: OpenOrderSchema):
         assert sample_sl_order.order_type == OrderType.STOP_LOSS_LIMIT
@@ -81,16 +81,16 @@ class TestOpenOrderSchema:
 
 class TestAccountStateSchema:
     def test_create_account_state(self, sample_account_state: AccountStateSchema):
-        assert sample_account_state.total_balance_usdt == Decimal("10000")
-        assert sample_account_state.available_balance_usdt == Decimal("9000")
-        assert sample_account_state.locked_balance_usdt == Decimal("1000")
+        assert sample_account_state.total_balance_usdt == Decimal(10000)
+        assert sample_account_state.available_balance_usdt == Decimal(9000)
+        assert sample_account_state.locked_balance_usdt == Decimal(1000)
 
     def test_drawdown_calculation(self):
         state = AccountStateSchema(
-            total_balance_usdt=Decimal("9500"),
-            available_balance_usdt=Decimal("9500"),
-            locked_balance_usdt=Decimal("0"),
-            peak_balance=Decimal("10000"),
+            total_balance_usdt=Decimal(9500),
+            available_balance_usdt=Decimal(9500),
+            locked_balance_usdt=Decimal(0),
+            peak_balance=Decimal(10000),
             current_drawdown_percent=Decimal("5.0"),
             updated_at=utc_now(),
         )

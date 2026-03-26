@@ -13,7 +13,6 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 
-
 logger = logging.getLogger(__name__)
 
 MIN_CANDLES_EXPECTED = 5
@@ -33,12 +32,12 @@ class ContextBuilder(BaseModel):
         | AnalystDependenciesSchema
         | TradingDependenciesSchema,
     ) -> None:
-        if deps.current_price == Decimal("0"):
+        if deps.current_price == Decimal(0):
             logger.warning(
                 "Context for %s: current_price is 0, data may be broken",
                 symbol,
             )
-        if deps.indicators.atr_14 is None or deps.indicators.atr_14 == Decimal("0"):
+        if deps.indicators.atr_14 is None or deps.indicators.atr_14 == Decimal(0):
             logger.warning("Context for %s: ATR is None/zero", symbol)
         if (
             deps.indicators.ema_20 is None
@@ -46,7 +45,8 @@ class ContextBuilder(BaseModel):
             and deps.indicators.ema_200 is None
         ):
             logger.warning(
-                "Context for %s: all EMA indicators are missing", symbol,
+                "Context for %s: all EMA indicators are missing",
+                symbol,
             )
         if len(deps.recent_candles) < MIN_CANDLES_EXPECTED:
             logger.warning(
@@ -102,7 +102,9 @@ class ContextBuilder(BaseModel):
             "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
         }
         logger.debug(
-            "Built analyst context for %s: %d keys", deps.symbol, len(context),
+            "Built analyst context for %s: %d keys",
+            deps.symbol,
+            len(context),
         )
         return context
 
@@ -131,6 +133,8 @@ class ContextBuilder(BaseModel):
             "analyst_result_json": dump_optional_json(analyst_result),
         }
         logger.debug(
-            "Built trader context for %s: %d keys", deps.symbol, len(context),
+            "Built trader context for %s: %d keys",
+            deps.symbol,
+            len(context),
         )
         return context

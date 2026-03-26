@@ -42,7 +42,8 @@ class PositionManagementLoop:
 
     async def run(self) -> None:
         logger.info(
-            "PositionManagementLoop started, interval=%ds", self._interval_s,
+            "PositionManagementLoop started, interval=%ds",
+            self._interval_s,
         )
         while True:
             try:
@@ -57,7 +58,8 @@ class PositionManagementLoop:
         positions = await self._state_manager.get_all_positions()
         if positions:
             logger.debug(
-                "Position management cycle: %d open positions", len(positions),
+                "Position management cycle: %d open positions",
+                len(positions),
             )
         for position in positions:
             try:
@@ -74,7 +76,8 @@ class PositionManagementLoop:
                 )
 
     async def _manage_single_position(
-        self, position: PositionSchema,
+        self,
+        position: PositionSchema,
     ) -> None:
         current_price = await self._state_manager.get_current_price(
             position.symbol,

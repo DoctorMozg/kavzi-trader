@@ -15,7 +15,7 @@ class DummyHistoryStore:
         self.records.append((bucket, was_correct))
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_calibrator_defaults_to_bucket_value() -> None:
     history = DummyHistoryStore(accuracy=None)
     calibrator = ConfidenceCalibrator(history)
@@ -23,7 +23,7 @@ async def test_calibrator_defaults_to_bucket_value() -> None:
     assert calibrated == 0.65, "Expected default calibration for 0.9+ bucket."
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_calibrator_uses_history_accuracy() -> None:
     history = DummyHistoryStore(accuracy=0.72)
     calibrator = ConfidenceCalibrator(history)
@@ -31,7 +31,7 @@ async def test_calibrator_uses_history_accuracy() -> None:
     assert calibrated == 0.72, "Expected historical accuracy to be used."
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_calibrator_records_outcome() -> None:
     history = DummyHistoryStore(accuracy=None)
     calibrator = ConfidenceCalibrator(history)

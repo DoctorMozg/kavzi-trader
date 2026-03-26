@@ -19,10 +19,10 @@ def make_position(symbol: str) -> PositionSchema:
         symbol=symbol,
         side="LONG",
         quantity=Decimal("0.1"),
-        entry_price=Decimal("50000"),
-        stop_loss=Decimal("49000"),
-        take_profit=Decimal("52000"),
-        current_stop_loss=Decimal("49000"),
+        entry_price=Decimal(50000),
+        stop_loss=Decimal(49000),
+        take_profit=Decimal(52000),
+        current_stop_loss=Decimal(49000),
         management_config=PositionManagementConfigSchema(),
         opened_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
@@ -30,18 +30,18 @@ def make_position(symbol: str) -> PositionSchema:
 
 
 class TestDynamicRiskValidator:
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_valid_trade_passes(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
-        atr_history = [Decimal("100")] * 10
+        atr_history = [Decimal(100)] * 10
 
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("50200"),
-            current_atr=Decimal("100"),
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
             atr_history=atr_history,
             state_manager=mock_state_manager,
         )
@@ -50,7 +50,7 @@ class TestDynamicRiskValidator:
         assert result.rejection_reasons == []
         assert result.volatility_regime == VolatilityRegime.NORMAL
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_rejects_high_drawdown(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
         mock_state_manager.get_current_drawdown = AsyncMock(return_value=Decimal("4.0"))
@@ -58,18 +58,18 @@ class TestDynamicRiskValidator:
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("50200"),
-            current_atr=Decimal("100"),
-            atr_history=[Decimal("100")] * 10,
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
             state_manager=mock_state_manager,
         )
 
         assert result.is_valid is False
         assert any("drawdown" in r.lower() for r in result.rejection_reasons)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_close_all_triggered_at_5_percent(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
         mock_state_manager.get_current_drawdown = AsyncMock(return_value=Decimal("6.0"))
@@ -77,18 +77,18 @@ class TestDynamicRiskValidator:
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("50200"),
-            current_atr=Decimal("100"),
-            atr_history=[Decimal("100")] * 10,
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
             state_manager=mock_state_manager,
         )
 
         assert result.is_valid is False
         assert result.should_close_all is True
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_rejects_max_positions(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
         mock_state_manager.get_all_positions = AsyncMock(
@@ -98,18 +98,18 @@ class TestDynamicRiskValidator:
         result = await validator.validate_trade(
             symbol="SOLUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("50200"),
-            current_atr=Decimal("100"),
-            atr_history=[Decimal("100")] * 10,
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
             state_manager=mock_state_manager,
         )
 
         assert result.is_valid is False
         assert any("max positions" in r.lower() for r in result.rejection_reasons)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_rejects_extreme_volatility(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
         atr_history = [
@@ -119,10 +119,10 @@ class TestDynamicRiskValidator:
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("50200"),
-            current_atr=Decimal("120"),
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(120),
             atr_history=atr_history,
             state_manager=mock_state_manager,
         )
@@ -130,7 +130,7 @@ class TestDynamicRiskValidator:
         assert result.is_valid is False
         assert result.volatility_regime == VolatilityRegime.EXTREME
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_rejects_low_volatility(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
         atr_history = [
@@ -140,10 +140,10 @@ class TestDynamicRiskValidator:
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("50200"),
-            current_atr=Decimal("92"),
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(92),
             atr_history=atr_history,
             state_manager=mock_state_manager,
         )
@@ -151,97 +151,97 @@ class TestDynamicRiskValidator:
         assert result.is_valid is False
         assert result.volatility_regime == VolatilityRegime.LOW
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_rejects_stop_loss_too_tight(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49990"),
-            take_profit=Decimal("50200"),
-            current_atr=Decimal("100"),
-            atr_history=[Decimal("100")] * 10,
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49990),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
             state_manager=mock_state_manager,
         )
 
         assert result.is_valid is False
         assert any("too tight" in r.lower() for r in result.rejection_reasons)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_rejects_stop_loss_too_wide(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49500"),
-            take_profit=Decimal("52000"),
-            current_atr=Decimal("100"),
-            atr_history=[Decimal("100")] * 10,
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49500),
+            take_profit=Decimal(52000),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
             state_manager=mock_state_manager,
         )
 
         assert result.is_valid is False
         assert any("too wide" in r.lower() for r in result.rejection_reasons)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_rejects_poor_risk_reward(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("50050"),
-            current_atr=Decimal("100"),
-            atr_history=[Decimal("100")] * 10,
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50050),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
             state_manager=mock_state_manager,
         )
 
         assert result.is_valid is False
         assert any("r:r ratio" in r.lower() for r in result.rejection_reasons)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_rejects_long_with_sl_above_entry(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("50100"),
-            take_profit=Decimal("51000"),
-            current_atr=Decimal("100"),
-            atr_history=[Decimal("100")] * 10,
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(50100),
+            take_profit=Decimal(51000),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
             state_manager=mock_state_manager,
         )
 
         assert result.is_valid is False
         assert any("below entry" in r.lower() for r in result.rejection_reasons)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_rejects_short_with_sl_below_entry(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="SHORT",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("49000"),
-            current_atr=Decimal("100"),
-            atr_history=[Decimal("100")] * 10,
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(49000),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
             state_manager=mock_state_manager,
         )
 
         assert result.is_valid is False
         assert any("above entry" in r.lower() for r in result.rejection_reasons)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_high_volatility_warning(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
         atr_history = [
@@ -251,10 +251,10 @@ class TestDynamicRiskValidator:
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("50200"),
-            current_atr=Decimal("105"),
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(105),
             atr_history=atr_history,
             state_manager=mock_state_manager,
         )
@@ -262,15 +262,15 @@ class TestDynamicRiskValidator:
         assert result.volatility_regime == VolatilityRegime.HIGH
         assert any("high volatility" in w.lower() for w in result.warnings)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_calculates_recommended_size(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
         mock_state_manager.get_account_state = AsyncMock(
             return_value=AccountStateSchema(
-                total_balance_usdt=Decimal("10000"),
-                available_balance_usdt=Decimal("10000"),
-                locked_balance_usdt=Decimal("0"),
-                peak_balance=Decimal("10000"),
+                total_balance_usdt=Decimal(10000),
+                available_balance_usdt=Decimal(10000),
+                locked_balance_usdt=Decimal(0),
+                peak_balance=Decimal(10000),
                 updated_at=datetime.now(UTC),
             ),
         )
@@ -278,13 +278,13 @@ class TestDynamicRiskValidator:
         result = await validator.validate_trade(
             symbol="BTCUSDT",
             side="LONG",
-            entry_price=Decimal("50000"),
-            stop_loss=Decimal("49900"),
-            take_profit=Decimal("50200"),
-            current_atr=Decimal("100"),
-            atr_history=[Decimal("100")] * 10,
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
             state_manager=mock_state_manager,
         )
 
         assert result.is_valid is True
-        assert result.recommended_size > Decimal("0")
+        assert result.recommended_size > Decimal(0)

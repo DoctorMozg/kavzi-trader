@@ -10,7 +10,7 @@ from kavzi_trader.monitoring.decision_log_schema import DecisionLogSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_decision_log_writer(tmp_path) -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     indicators = TechnicalIndicatorsSchema(
@@ -21,22 +21,22 @@ async def test_decision_log_writer(tmp_path) -> None:
         rsi_14=None,
         macd=None,
         bollinger=None,
-        atr_14=Decimal("0"),
+        atr_14=Decimal(0),
         volume=None,
         timestamp=now,
     )
     order_flow = OrderFlowSchema(
         symbol="BTCUSDT",
         timestamp=now,
-        funding_rate=Decimal("0"),
-        funding_zscore=Decimal("0"),
+        funding_rate=Decimal(0),
+        funding_zscore=Decimal(0),
         next_funding_time=now,
-        open_interest=Decimal("0"),
-        oi_change_1h_percent=Decimal("0"),
-        oi_change_24h_percent=Decimal("0"),
-        long_short_ratio=Decimal("0"),
-        long_account_percent=Decimal("0"),
-        short_account_percent=Decimal("0"),
+        open_interest=Decimal(0),
+        oi_change_1h_percent=Decimal(0),
+        oi_change_24h_percent=Decimal(0),
+        long_short_ratio=Decimal(0),
+        long_account_percent=Decimal(0),
+        short_account_percent=Decimal(0),
     )
     decision = TradeDecisionSchema(
         action="WAIT",

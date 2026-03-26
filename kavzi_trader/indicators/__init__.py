@@ -13,13 +13,13 @@ from kavzi_trader.indicators.schemas import (
 )
 
 __all__ = [
-    "TechnicalIndicatorCalculator",
-    "IndicatorConfigSchema",
-    "EMAPeriodsSchema",
-    "MACDParamsSchema",
-    "BollingerParamsSchema",
-    "TechnicalIndicatorsSchema",
-    "MACDResultSchema",
     "BollingerBandsSchema",
+    "BollingerParamsSchema",
+    "EMAPeriodsSchema",
+    "IndicatorConfigSchema",
+    "MACDParamsSchema",
+    "MACDResultSchema",
+    "TechnicalIndicatorCalculator",
+    "TechnicalIndicatorsSchema",
     "VolumeAnalysisSchema",
 ]

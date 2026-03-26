@@ -60,13 +60,13 @@ def _build_deps() -> TradingDependenciesSchema:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     candle = CandlestickSchema(
         open_time=now,
-        open_price=Decimal("100"),
-        high_price=Decimal("110"),
-        low_price=Decimal("95"),
-        close_price=Decimal("105"),
-        volume=Decimal("1"),
+        open_price=Decimal(100),
+        high_price=Decimal(110),
+        low_price=Decimal(95),
+        close_price=Decimal(105),
+        volume=Decimal(1),
         close_time=now,
-        quote_volume=Decimal("1"),
+        quote_volume=Decimal(1),
         trades_count=1,
         taker_buy_base_volume=Decimal("0.5"),
         taker_buy_quote_volume=Decimal("0.5"),
@@ -74,14 +74,14 @@ def _build_deps() -> TradingDependenciesSchema:
         symbol="BTCUSDT",
     )
     indicators = TechnicalIndicatorsSchema(
-        ema_20=Decimal("100"),
-        ema_50=Decimal("100"),
-        ema_200=Decimal("100"),
-        sma_20=Decimal("100"),
-        rsi_14=Decimal("50"),
+        ema_20=Decimal(100),
+        ema_50=Decimal(100),
+        ema_200=Decimal(100),
+        sma_20=Decimal(100),
+        rsi_14=Decimal(50),
         macd=None,
         bollinger=None,
-        atr_14=Decimal("2"),
+        atr_14=Decimal(2),
         volume=None,
         timestamp=now,
     )
@@ -91,10 +91,10 @@ def _build_deps() -> TradingDependenciesSchema:
         funding_rate=Decimal("0.0"),
         funding_zscore=Decimal("0.0"),
         next_funding_time=now,
-        open_interest=Decimal("1"),
-        oi_change_1h_percent=Decimal("0"),
-        oi_change_24h_percent=Decimal("0"),
-        long_short_ratio=Decimal("1"),
+        open_interest=Decimal(1),
+        oi_change_1h_percent=Decimal(0),
+        oi_change_24h_percent=Decimal(0),
+        long_short_ratio=Decimal(1),
         long_account_percent=Decimal("0.5"),
         short_account_percent=Decimal("0.5"),
     )
@@ -108,17 +108,17 @@ def _build_deps() -> TradingDependenciesSchema:
         score=5,
     )
     account_state = AccountStateSchema(
-        total_balance_usdt=Decimal("1000"),
-        available_balance_usdt=Decimal("1000"),
-        locked_balance_usdt=Decimal("0"),
-        unrealized_pnl=Decimal("0"),
-        peak_balance=Decimal("1000"),
-        current_drawdown_percent=Decimal("0"),
+        total_balance_usdt=Decimal(1000),
+        available_balance_usdt=Decimal(1000),
+        locked_balance_usdt=Decimal(0),
+        unrealized_pnl=Decimal(0),
+        peak_balance=Decimal(1000),
+        current_drawdown_percent=Decimal(0),
         updated_at=now,
     )
     return TradingDependenciesSchema(
         symbol="BTCUSDT",
-        current_price=Decimal("105"),
+        current_price=Decimal(105),
         timeframe="15m",
         recent_candles=[candle],
         indicators=indicators,
@@ -132,7 +132,7 @@ def _build_deps() -> TradingDependenciesSchema:
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reasoning_loop_enqueues_decision() -> None:
     deps = _build_deps()
     provider = DummyDepsProvider(deps)
@@ -155,9 +155,9 @@ async def test_reasoning_loop_enqueues_decision() -> None:
                 action="BUY",
                 confidence=0.8,
                 reasoning="go",
-                suggested_entry=Decimal("105"),
-                suggested_stop_loss=Decimal("95"),
-                suggested_take_profit=Decimal("120"),
+                suggested_entry=Decimal(105),
+                suggested_stop_loss=Decimal(95),
+                suggested_take_profit=Decimal(120),
                 position_management=None,
                 calibrated_confidence=0.7,
             ),

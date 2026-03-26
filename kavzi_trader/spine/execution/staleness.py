@@ -31,7 +31,10 @@ class StalenessChecker:
             )
         logger.debug(
             "Staleness check: age_ms=%d threshold_ms=%d regime=%s stale=%s",
-            age_ms, threshold, regime.value, stale,
+            age_ms,
+            threshold,
+            regime.value,
+            stale,
         )
         return stale
 

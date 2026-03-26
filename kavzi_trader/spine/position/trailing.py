@@ -20,7 +20,8 @@ class TrailingStopChecker:
         if current_atr <= 0:
             logger.warning(
                 "ATR is %s for %s, trailing stop cannot function",
-                current_atr, position.symbol,
+                current_atr,
+                position.symbol,
             )
             return None
 
@@ -49,10 +50,11 @@ class TrailingStopChecker:
                 return None
 
         logger.debug(
-            "Trailing stop triggered for %s: profit_atr=%s"
-            " new_sl=%s old_sl=%s",
-            position.symbol, profit_atr,
-            new_stop_loss, position.current_stop_loss,
+            "Trailing stop triggered for %s: profit_atr=%s new_sl=%s old_sl=%s",
+            position.symbol,
+            profit_atr,
+            new_stop_loss,
+            position.current_stop_loss,
         )
         return PositionActionSchema(
             action=PositionActionType.MOVE_STOP_LOSS,

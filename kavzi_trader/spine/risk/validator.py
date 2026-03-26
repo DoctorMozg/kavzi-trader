@@ -45,16 +45,21 @@ class DynamicRiskValidator:
         warnings: list[str] = []
 
         logger.info(
-            "Risk validation started: symbol=%s side=%s entry=%s SL=%s"
-            " TP=%s ATR=%s",
-            symbol, side, entry_price, stop_loss, take_profit, current_atr,
+            "Risk validation started: symbol=%s side=%s entry=%s SL=%s TP=%s ATR=%s",
+            symbol,
+            side,
+            entry_price,
+            stop_loss,
+            take_profit,
+            current_atr,
             extra={"symbol": symbol, "side": side},
         )
 
         if current_atr <= 0:
             logger.warning(
                 "ATR is %s for %s, SL validation will be skipped",
-                current_atr, symbol,
+                current_atr,
+                symbol,
             )
 
         regime = self._volatility_detector.detect_regime(current_atr, atr_history)
@@ -64,11 +69,13 @@ class DynamicRiskValidator:
         should_close_all = drawdown_result.should_close_all
         logger.debug(
             "Drawdown check: rejections=%d should_close_all=%s",
-            len(drawdown_result.rejections), should_close_all,
+            len(drawdown_result.rejections),
+            should_close_all,
         )
         if should_close_all:
             logger.warning(
-                "Emergency drawdown for %s — should_close_all=True", symbol,
+                "Emergency drawdown for %s — should_close_all=True",
+                symbol,
             )
 
         exposure_result = await self._check_exposure(symbol, state_manager)
@@ -81,7 +88,8 @@ class DynamicRiskValidator:
             rejection_reasons.append(regime_result)
         logger.debug(
             "Regime check: regime=%s result=%s",
-            regime.regime.value, regime_result,
+            regime.regime.value,
+            regime_result,
         )
 
         sl_result = self._check_stop_loss(entry_price, stop_loss, current_atr, side)
@@ -93,13 +101,13 @@ class DynamicRiskValidator:
             rejection_reasons.append(rr_result)
         logger.debug("R:R check: result=%s", rr_result)
 
-        recommended_size = Decimal("0")
+        recommended_size = Decimal(0)
         if not rejection_reasons:
             account = await state_manager.get_account_state()
             if account:
                 sl_distance = abs(entry_price - stop_loss)
                 sl_atr_mult = (
-                    sl_distance / current_atr if current_atr > 0 else Decimal("1")
+                    sl_distance / current_atr if current_atr > 0 else Decimal(1)
                 )
                 size_result = self._position_sizer.calculate_size(
                     account_balance=account.total_balance_usdt,
@@ -110,15 +118,15 @@ class DynamicRiskValidator:
                 )
                 recommended_size = size_result.adjusted_size
                 logger.debug(
-                    "Position sizing: balance=%s base=%s adjusted=%s"
-                    " multiplier=%s",
-                    account.total_balance_usdt, size_result.base_size,
-                    size_result.adjusted_size, size_result.size_multiplier,
+                    "Position sizing: balance=%s base=%s adjusted=%s multiplier=%s",
+                    account.total_balance_usdt,
+                    size_result.base_size,
+                    size_result.adjusted_size,
+                    size_result.size_multiplier,
                 )
             else:
                 logger.warning(
-                    "Account state unavailable, cannot size position"
-                    " for %s",
+                    "Account state unavailable, cannot size position for %s",
                     symbol,
                 )
 
@@ -128,8 +136,10 @@ class DynamicRiskValidator:
         logger.info(
             "Risk validation result: symbol=%s valid=%s rejections=%d"
             " size=%s regime=%s",
-            symbol, len(rejection_reasons) == 0,
-            len(rejection_reasons), recommended_size,
+            symbol,
+            len(rejection_reasons) == 0,
+            len(rejection_reasons),
+            recommended_size,
             regime.regime.value,
             extra={"symbol": symbol},
         )

@@ -1,11 +1,14 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any, TypeVar, cast
+from typing import TypeVar, cast
 
 from redis.asyncio import Redis  # type: ignore[import-untyped]
-from redis.exceptions import ConnectionError as RedisConnectionError  # type: ignore[import-untyped]
-from redis.exceptions import RedisError, TimeoutError as RedisTimeoutError  # type: ignore[import-untyped]
+from redis.exceptions import (
+    ConnectionError as RedisConnectionError,  # type: ignore[import-untyped]
+)
+from redis.exceptions import RedisError  # type: ignore[import-untyped]
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from kavzi_trader.spine.state.config import RedisConfigSchema
 
@@ -56,8 +59,8 @@ class RedisStateClient:
     async def _retry(
         self,
         operation: Callable[..., Awaitable[T]],
-        *args: Any,
-        **kwargs: Any,
+        *args: object,
+        **kwargs: object,
     ) -> T:
         """Execute a Redis operation with retry on transient failures."""
         last_error: Exception | None = None
@@ -80,9 +83,11 @@ class RedisStateClient:
             except RedisError as exc:
                 logger.exception("Non-retryable Redis error")
                 raise RedisStateError(str(exc)) from exc
-        raise RedisStateError(
-            f"Redis operation failed after {self._retry_attempts} attempts: {last_error}",
+        msg = (
+            f"Redis operation failed after {self._retry_attempts} attempts: "
+            f"{last_error}"
         )
+        raise RedisStateError(msg)
 
     async def _reconnect(self) -> None:
         """Attempt to re-establish the Redis connection."""
@@ -104,47 +109,47 @@ class RedisStateClient:
         except Exception:
             logger.exception("Redis reconnection failed")
 
-    async def hset(self, key: str, mapping: dict[str, Any]) -> None:
+    async def hset(self, key: str, mapping: dict[str, object]) -> None:
         normalized = {field: str(value) for field, value in mapping.items()}
         payload = cast(
-            Mapping[str | bytes, bytes | float | int | str],
+            "Mapping[str | bytes, bytes | float | int | str]",
             normalized,
         )
         await self._retry(self.client.hset, key, mapping=payload)
 
     async def hget(self, key: str, field: str) -> str | None:
         result = await self._retry(self.client.hget, key, field)
-        return cast(str | None, result)
+        return cast("str | None", result)
 
     async def hgetall(self, key: str) -> dict[str, str]:
         result = await self._retry(self.client.hgetall, key)
-        return cast(dict[str, str], result) if result else {}
+        return cast("dict[str, str]", result) if result else {}
 
     async def hdel(self, key: str, *fields: str) -> int:
         result = await self._retry(self.client.hdel, key, *fields)
-        return cast(int, result)
+        return cast("int", result)
 
     async def delete(self, key: str) -> int:
         result = await self._retry(self.client.delete, key)
-        return cast(int, result)
+        return cast("int", result)
 
     async def keys(self, pattern: str) -> list[str]:
         result = await self._retry(self.client.keys, pattern)
-        return cast(list[str], result)
+        return cast("list[str]", result)
 
     async def set(self, key: str, value: str) -> None:
         await self._retry(self.client.set, key, value)
 
     async def get(self, key: str) -> str | None:
         result = await self._retry(self.client.get, key)
-        return cast(str | None, result)
+        return cast("str | None", result)
 
     async def ping(self) -> bool:
         try:
             await self.client.ping()
-            return True
-        except Exception:
+        except RedisError:
             return False
+        return True
 
 
 class RedisStateError(Exception):

@@ -6,7 +6,7 @@ from kavzi_trader.api.common.models import OrderStatus
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_monitor_returns_filled_order(filled_order_response) -> None:
     exchange = AsyncMock()
     exchange.get_order = AsyncMock(return_value=filled_order_response)

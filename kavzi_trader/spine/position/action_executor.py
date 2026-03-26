@@ -52,7 +52,9 @@ class PositionActionExecutor:
             return
         await self._cancel_linked_stop_orders(position)
         await self._place_stop_order(
-            position, action.new_stop_loss, position.quantity,
+            position,
+            action.new_stop_loss,
+            position.quantity,
         )
 
     async def _partial_exit(
@@ -62,9 +64,7 @@ class PositionActionExecutor:
     ) -> None:
         if action.exit_quantity is None:
             return
-        exit_side = (
-            OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        )
+        exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
         await self._exchange.create_order(
             symbol=position.symbol,
             side=exit_side,
@@ -75,16 +75,18 @@ class PositionActionExecutor:
         remaining = position.quantity - action.exit_quantity
         if remaining > 0:
             await self._place_stop_order(
-                position, position.current_stop_loss, remaining,
+                position,
+                position.current_stop_loss,
+                remaining,
             )
             await self._place_take_profit_order(
-                position, position.take_profit, remaining,
+                position,
+                position.take_profit,
+                remaining,
             )
 
     async def _full_exit(self, position: PositionSchema) -> None:
-        exit_side = (
-            OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        )
+        exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
         await self._exchange.create_order(
             symbol=position.symbol,
             side=exit_side,
@@ -99,7 +101,8 @@ class PositionActionExecutor:
         for order in linked:
             try:
                 await self._exchange.cancel_order(
-                    symbol=position.symbol, order_id=int(order.order_id),
+                    symbol=position.symbol,
+                    order_id=int(order.order_id),
                 )
             except Exception:
                 logger.exception(
@@ -110,7 +113,8 @@ class PositionActionExecutor:
             await self._state.remove_order(order.order_id)
 
     async def _cancel_linked_stop_orders(
-        self, position: PositionSchema,
+        self,
+        position: PositionSchema,
     ) -> None:
         linked = await self._state.orders.get_by_position(position.id)
         for order in linked:
@@ -118,7 +122,8 @@ class PositionActionExecutor:
                 continue
             try:
                 await self._exchange.cancel_order(
-                    symbol=position.symbol, order_id=int(order.order_id),
+                    symbol=position.symbol,
+                    order_id=int(order.order_id),
                 )
             except Exception:
                 logger.exception(
@@ -134,12 +139,8 @@ class PositionActionExecutor:
         stop_loss: Decimal,
         quantity: Decimal,
     ) -> None:
-        stop_side = (
-            OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        )
-        adjustment = (
-            Decimal("0.999") if position.side == "LONG" else Decimal("1.001")
-        )
+        stop_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        adjustment = Decimal("0.999") if position.side == "LONG" else Decimal("1.001")
         limit_price = stop_loss * adjustment
         response = await self._exchange.create_order(
             symbol=position.symbol,
@@ -157,9 +158,7 @@ class PositionActionExecutor:
         take_profit: Decimal,
         quantity: Decimal,
     ) -> None:
-        tp_side = (
-            OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        )
+        tp_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
         response = await self._exchange.create_order(
             symbol=position.symbol,
             side=tp_side,

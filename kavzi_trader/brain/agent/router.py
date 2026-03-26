@@ -68,7 +68,8 @@ class AgentRouter:
             logger.exception("Scout agent failed for %s", symbol)
             return (
                 ScoutDecisionSchema(
-                    verdict="SKIP", reason="agent_error",
+                    verdict="SKIP",
+                    reason="agent_error",
                     pattern_detected=None,
                 ),
                 None,
@@ -85,13 +86,16 @@ class AgentRouter:
         )
         if scout_ms / 1000 > SLOW_AGENT_THRESHOLD_S:
             logger.warning(
-                "Scout agent slow for %s: %.1fs", symbol, scout_ms / 1000,
+                "Scout agent slow for %s: %.1fs",
+                symbol,
+                scout_ms / 1000,
             )
         if scout_result.verdict != "INTERESTING":
             total_ms = (time.monotonic() - total_start) * 1000
             logger.info(
                 "Pipeline stopped at Scout for %s in %.1fms",
-                symbol, total_ms,
+                symbol,
+                total_ms,
             )
             return scout_result, None, None
 
@@ -114,20 +118,24 @@ class AgentRouter:
         )
         if analyst_ms / 1000 > SLOW_AGENT_THRESHOLD_S:
             logger.warning(
-                "Analyst agent slow for %s: %.1fs", symbol, analyst_ms / 1000,
+                "Analyst agent slow for %s: %.1fs",
+                symbol,
+                analyst_ms / 1000,
             )
         if not analyst_result.setup_valid:
             total_ms = (time.monotonic() - total_start) * 1000
             logger.info(
                 "Pipeline stopped at Analyst for %s in %.1fms",
-                symbol, total_ms,
+                symbol,
+                total_ms,
             )
             return scout_result, analyst_result, None
 
         t0 = time.monotonic()
         try:
             trader_result = await self._trader.run(
-                trader_deps, analyst_result=analyst_result,
+                trader_deps,
+                analyst_result=analyst_result,
             )
         except Exception:
             logger.exception("Trader agent failed for %s", symbol)
@@ -147,12 +155,15 @@ class AgentRouter:
         )
         if trader_ms / 1000 > SLOW_AGENT_THRESHOLD_S:
             logger.warning(
-                "Trader agent slow for %s: %.1fs", symbol, trader_ms / 1000,
+                "Trader agent slow for %s: %.1fs",
+                symbol,
+                trader_ms / 1000,
             )
 
         total_ms = (time.monotonic() - total_start) * 1000
         logger.info(
             "Agent pipeline completed for %s in %.1fms — reached tier trader",
-            symbol, total_ms,
+            symbol,
+            total_ms,
         )
         return scout_result, analyst_result, trader_result

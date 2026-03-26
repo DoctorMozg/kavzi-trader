@@ -43,16 +43,18 @@ class ReportStateSchema(BaseModel):
 
     initial_balance_usdt: Annotated[Decimal, Field(...)]
     current_balance_usdt: Annotated[Decimal, Field(...)]
-    session_revenue_usdt: Annotated[Decimal, Field(default=Decimal("0"))]
-    unrealized_pnl_usdt: Annotated[Decimal, Field(default=Decimal("0"))]
+    session_revenue_usdt: Annotated[Decimal, Field(default=Decimal(0))]
+    unrealized_pnl_usdt: Annotated[Decimal, Field(default=Decimal(0))]
 
     active_positions_count: Annotated[int, Field(default=0, ge=0)]
 
     actions: Annotated[
-        list[ReportActionEntrySchema], Field(default_factory=list)
+        list[ReportActionEntrySchema],
+        Field(default_factory=list),
     ]
     trades: Annotated[
-        list[ReportTradeEntrySchema], Field(default_factory=list)
+        list[ReportTradeEntrySchema],
+        Field(default_factory=list),
     ]
 
     model_config = ConfigDict(frozen=True)

@@ -62,14 +62,15 @@ class LiveDependenciesProvider:
         candles = self._cache.get_candles(symbol)
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:
-            msg = "Indicators not yet available for %s" % symbol
+            msg = f"Indicators not yet available for {symbol}"
             raise RuntimeError(msg)
 
         price = self._cache.get_current_price(symbol)
         atr_history = self._cache.get_atr_history(symbol)
-        current_atr = indicators.atr_14 or Decimal("0")
+        current_atr = indicators.atr_14 or Decimal(0)
         regime_result = self._volatility.detect_regime(
-            current_atr, atr_history,
+            current_atr,
+            atr_history,
         )
 
         recent = self._recent_candles(symbol, candles, "Scout")
@@ -86,31 +87,33 @@ class LiveDependenciesProvider:
         candles = self._cache.get_candles(symbol)
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:
-            msg = "Indicators not yet available for %s" % symbol
+            msg = f"Indicators not yet available for {symbol}"
             raise RuntimeError(msg)
 
         price = self._cache.get_current_price(symbol)
         atr_history = self._cache.get_atr_history(symbol)
-        current_atr = indicators.atr_14 or Decimal("0")
+        current_atr = indicators.atr_14 or Decimal(0)
         regime_result = self._volatility.detect_regime(
-            current_atr, atr_history,
+            current_atr,
+            atr_history,
         )
 
         order_flow = self._cache.get_order_flow(symbol)
 
         side: Literal["LONG", "SHORT"] = "LONG"
         if indicators.ema_20 is not None and indicators.ema_50 is not None:
-            side = (
-                "LONG" if indicators.ema_20 > indicators.ema_50 else "SHORT"
-            )
+            side = "LONG" if indicators.ema_20 > indicators.ema_50 else "SHORT"
 
         last_candle = candles[-1] if candles else None
         if last_candle is None:
-            msg = "No candles available for %s" % symbol
+            msg = f"No candles available for {symbol}"
             raise RuntimeError(msg)
 
         confluence = self._confluence.evaluate(
-            side, last_candle, indicators, order_flow,
+            side,
+            last_candle,
+            indicators,
+            order_flow,
         )
 
         recent = self._recent_candles(symbol, candles, "Analyst")
@@ -129,31 +132,33 @@ class LiveDependenciesProvider:
         candles = self._cache.get_candles(symbol)
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:
-            msg = "Indicators not yet available for %s" % symbol
+            msg = f"Indicators not yet available for {symbol}"
             raise RuntimeError(msg)
 
         price = self._cache.get_current_price(symbol)
         atr_history = self._cache.get_atr_history(symbol)
-        current_atr = indicators.atr_14 or Decimal("0")
+        current_atr = indicators.atr_14 or Decimal(0)
         regime_result = self._volatility.detect_regime(
-            current_atr, atr_history,
+            current_atr,
+            atr_history,
         )
 
         order_flow = self._cache.get_order_flow(symbol)
 
         side: Literal["LONG", "SHORT"] = "LONG"
         if indicators.ema_20 is not None and indicators.ema_50 is not None:
-            side = (
-                "LONG" if indicators.ema_20 > indicators.ema_50 else "SHORT"
-            )
+            side = "LONG" if indicators.ema_20 > indicators.ema_50 else "SHORT"
 
         last_candle = candles[-1] if candles else None
         if last_candle is None:
-            msg = "No candles available for %s" % symbol
+            msg = f"No candles available for {symbol}"
             raise RuntimeError(msg)
 
         confluence = self._confluence.evaluate(
-            side, last_candle, indicators, order_flow,
+            side,
+            last_candle,
+            indicators,
+            order_flow,
         )
 
         account_state = await self._state_manager.get_account_state()

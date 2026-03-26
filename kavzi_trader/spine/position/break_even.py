@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class BreakEvenMover:
     """Moves the stop loss to the entry price after enough profit."""
 
-    def evaluate(
+    def evaluate(  # noqa: PLR0911
         self,
         position: PositionSchema,
         current_price: Decimal,
@@ -20,7 +20,8 @@ class BreakEvenMover:
         if current_atr <= 0:
             logger.warning(
                 "ATR is %s for %s, break-even cannot function",
-                current_atr, position.symbol,
+                current_atr,
+                position.symbol,
             )
             return None
         if position.stop_loss_moved_to_breakeven:
@@ -47,9 +48,11 @@ class BreakEvenMover:
             return None
 
         logger.debug(
-            "Break-even triggered for %s: profit_atr=%s"
-            " trigger=%s new_sl=%s",
-            position.symbol, profit_atr, trigger_atr, new_stop_loss,
+            "Break-even triggered for %s: profit_atr=%s trigger=%s new_sl=%s",
+            position.symbol,
+            profit_atr,
+            trigger_atr,
+            new_stop_loss,
         )
         return PositionActionSchema(
             action=PositionActionType.MOVE_STOP_LOSS,

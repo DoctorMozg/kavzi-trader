@@ -39,7 +39,8 @@ class RedisEventStore:
             return str(event_id)
         except Exception:
             logger.exception(
-                "Failed to append event %s to store", event.event_id,
+                "Failed to append event %s to store",
+                event.event_id,
             )
             return ""
 

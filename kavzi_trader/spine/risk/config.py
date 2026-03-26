@@ -36,9 +36,6 @@ class RiskConfigSchema(BaseModel):
             < self.volatility_high_threshold
             < self.volatility_extreme_threshold
         ):
-            msg = (
-                "volatility thresholds must be ordered:"
-                " low < high < extreme"
-            )
+            msg = "volatility thresholds must be ordered: low < high < extreme"
             raise ValueError(msg)
         return self

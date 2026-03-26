@@ -90,10 +90,10 @@ class StateManager:
         new_state = AccountStateSchema(
             total_balance_usdt=initial_balance,
             available_balance_usdt=initial_balance,
-            locked_balance_usdt=Decimal("0"),
-            unrealized_pnl=Decimal("0"),
+            locked_balance_usdt=Decimal(0),
+            unrealized_pnl=Decimal(0),
             peak_balance=initial_balance,
-            current_drawdown_percent=Decimal("0"),
+            current_drawdown_percent=Decimal(0),
             updated_at=utc_now(),
         )
         await self._account_store.save(new_state)

@@ -25,7 +25,7 @@ def test_calculate_oi_momentum_with_short_history():
     short_history = [
         OpenInterestSchema(
             symbol="BTCUSDT",
-            open_interest=Decimal("100000"),
+            open_interest=Decimal(100000),
             timestamp=utc_now(),
         ),
     ]
@@ -33,9 +33,9 @@ def test_calculate_oi_momentum_with_short_history():
     result = calculate_oi_momentum(short_history)
 
     assert result is not None
-    assert result.open_interest == Decimal("100000")
-    assert result.oi_change_1h_percent == Decimal("0")
-    assert result.oi_change_24h_percent == Decimal("0")
+    assert result.open_interest == Decimal(100000)
+    assert result.oi_change_1h_percent == Decimal(0)
+    assert result.oi_change_24h_percent == Decimal(0)
 
 
 def test_calculate_oi_momentum_positive_change(sample_oi_history):

@@ -13,7 +13,7 @@ from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_chain_allows_and_returns_confluence(
     filter_config,
     sample_candle,
@@ -38,7 +38,7 @@ async def test_chain_allows_and_returns_confluence(
         indicators=sample_indicators,
         order_flow=sample_order_flow,
         positions=[],
-        atr_history=[Decimal("5")] * 10,
+        atr_history=[Decimal(5)] * 10,
         scheduled_events=None,
     )
 
@@ -47,7 +47,7 @@ async def test_chain_allows_and_returns_confluence(
     assert result.confluence.score == 4, "Expected confluence score from fixtures"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_chain_blocks_on_funding(
     filter_config,
     sample_candle,
@@ -75,7 +75,7 @@ async def test_chain_blocks_on_funding(
         indicators=sample_indicators,
         order_flow=crowded,
         positions=[],
-        atr_history=[Decimal("5")] * 10,
+        atr_history=[Decimal(5)] * 10,
         scheduled_events=None,
     )
 

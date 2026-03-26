@@ -11,7 +11,7 @@ from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from functools import wraps
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
 from binance.async_client import AsyncClient as BinanceAPIClient
 from binance.exceptions import BinanceAPIException, BinanceRequestException
@@ -53,11 +53,8 @@ from kavzi_trader.commons.time_utility import (
 
 logger = logging.getLogger(__name__)
 
-# Define a generic type variable for the return type
-T = TypeVar("T")
 
-
-def handle_api_errors(func: Callable[..., T]) -> Callable[..., T]:
+def handle_api_errors[T](func: Callable[..., T]) -> Callable[..., T]:
     """
     Decorator to handle API errors from Binance.
 
@@ -130,7 +127,7 @@ class BinanceClient:
             api_key=api_key,
             api_secret=api_secret,
             testnet=testnet,
-            requests_params=requests_params if requests_params else None,
+            requests_params=requests_params or None,
         )
 
         logger.info(
@@ -203,7 +200,7 @@ class BinanceClient:
         Returns:
             Dictionary with {'serverTime': timestamp} in milliseconds
         """
-        return cast(dict[str, int], await self.client.get_server_time())
+        return cast("dict[str, int]", await self.client.get_server_time())
 
     @handle_api_errors
     async def get_exchange_info(self) -> dict[str, Any]:
@@ -213,7 +210,7 @@ class BinanceClient:
         Returns:
             Exchange information
         """
-        return cast(dict[str, Any], await self.client.get_exchange_info())
+        return cast("dict[str, Any]", await self.client.get_exchange_info())
 
     @handle_api_errors
     async def get_symbol_info(self, symbol: str) -> SymbolInfoSchema:
@@ -613,7 +610,7 @@ class BinanceClient:
         Returns:
             Average price information
         """
-        return cast(dict[str, Any], await self.client.get_avg_price(symbol=symbol))
+        return cast("dict[str, Any]", await self.client.get_avg_price(symbol=symbol))
 
     @handle_api_errors
     async def get_account_info(self) -> dict[str, Any]:
@@ -623,7 +620,7 @@ class BinanceClient:
         Returns:
             Account information
         """
-        return cast(dict[str, Any], await self.client.get_account())
+        return cast("dict[str, Any]", await self.client.get_account())
 
     @handle_api_errors
     async def get_asset_balance(self, asset: str) -> dict[str, Any]:
@@ -636,7 +633,7 @@ class BinanceClient:
         Returns:
             Asset balance information
         """
-        return cast(dict[str, Any], await self.client.get_asset_balance(asset=asset))
+        return cast("dict[str, Any]", await self.client.get_asset_balance(asset=asset))
 
     @handle_api_errors
     async def create_order(
@@ -709,7 +706,7 @@ class BinanceClient:
             params["icebergQty"] = str(iceberg_qty)
 
         # Execute request
-        response = cast(dict[str, Any], await self.client.create_order(**params))
+        response = cast("dict[str, Any]", await self.client.create_order(**params))
 
         # Convert the response to our schema
         return self._parse_order_response(response)
@@ -743,7 +740,7 @@ class BinanceClient:
         if client_order_id is not None:
             params["origClientOrderId"] = client_order_id
 
-        response = cast(dict[str, Any], await self.client.get_order(**params))
+        response = cast("dict[str, Any]", await self.client.get_order(**params))
 
         # Convert the response to our schema
         return self._parse_order_response(response)
@@ -777,7 +774,7 @@ class BinanceClient:
         if client_order_id is not None:
             params["origClientOrderId"] = client_order_id
 
-        response = cast(dict[str, Any], await self.client.cancel_order(**params))
+        response = cast("dict[str, Any]", await self.client.cancel_order(**params))
 
         # Convert the response to our schema
         return self._parse_order_response(response)
@@ -924,7 +921,7 @@ class BinanceClient:
                 params["endTime"] = end_time
 
         return cast(
-            list[dict[str, Any]],
+            "list[dict[str, Any]]",
             await self.client.futures_funding_rate(**params),
         )
 
@@ -940,7 +937,7 @@ class BinanceClient:
             Open interest data with symbol, openInterest, and time
         """
         return cast(
-            dict[str, Any],
+            "dict[str, Any]",
             await self.client.futures_open_interest(symbol=symbol),
         )
 
@@ -983,7 +980,7 @@ class BinanceClient:
                 params["endTime"] = end_time
 
         return cast(
-            list[dict[str, Any]],
+            "list[dict[str, Any]]",
             await self.client.futures_open_interest_hist(**params),
         )
 
@@ -1026,6 +1023,6 @@ class BinanceClient:
                 params["endTime"] = end_time
 
         return cast(
-            list[dict[str, Any]],
+            "list[dict[str, Any]]",
             await self.client.futures_global_longshort_ratio(**params),
         )

@@ -9,10 +9,10 @@ from kavzi_trader.spine.position.trailing import TrailingStopChecker
 
 __all__ = [
     "BreakEvenMover",
+    "PartialExitChecker",
     "PositionActionSchema",
     "PositionActionType",
     "PositionManager",
-    "PartialExitChecker",
     "ScaleInChecker",
     "TimeExitChecker",
     "TrailingStopChecker",

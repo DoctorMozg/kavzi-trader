@@ -1,10 +1,10 @@
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
 
-class VolatilityRegime(str, Enum):
+class VolatilityRegime(StrEnum):
     LOW = "LOW"
     NORMAL = "NORMAL"
     HIGH = "HIGH"
@@ -12,10 +12,10 @@ class VolatilityRegime(str, Enum):
 
 
 REGIME_SIZE_MULTIPLIERS: dict[VolatilityRegime, Decimal] = {
-    VolatilityRegime.LOW: Decimal("0"),
+    VolatilityRegime.LOW: Decimal(0),
     VolatilityRegime.NORMAL: Decimal("1.0"),
     VolatilityRegime.HIGH: Decimal("0.5"),
-    VolatilityRegime.EXTREME: Decimal("0"),
+    VolatilityRegime.EXTREME: Decimal(0),
 }
 
 
