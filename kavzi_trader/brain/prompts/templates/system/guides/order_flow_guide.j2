@@ -1,0 +1,13 @@
+ORDER FLOW INTERPRETATION:
+- funding_rate: Periodic payment between longs and shorts. Positive = longs pay shorts (bullish bias). Negative = shorts pay longs (bearish bias).
+- funding_zscore: Standardized funding rate. Measures how extreme current funding is relative to history.
+  - zscore > 2.0 (is_crowded_long=true): Too many longs. Bearish signal — vulnerable to long squeeze.
+  - zscore < -2.0 (is_crowded_short=true): Too many shorts. Bullish signal — vulnerable to short squeeze.
+  - zscore between -1.0 and 1.0: Neutral positioning.
+- open_interest + oi_change_1h_percent: Tracks total open contracts.
+  - Rising OI + rising price = new longs entering (bullish confirmation).
+  - Rising OI + falling price = new shorts entering (bearish confirmation).
+  - Falling OI + rising price = short covering (weak rally, not confirmed).
+  - Falling OI + falling price = long liquidation (weak decline, not confirmed).
+- long_short_ratio: Ratio of long to short accounts. Values > 2.0 or < 0.5 suggest crowded positioning.
+- squeeze_alert: True when OI changes significantly (>5%) but price barely moves (<0.5%). Indicates potential squeeze incoming — be cautious entering in the crowded direction.

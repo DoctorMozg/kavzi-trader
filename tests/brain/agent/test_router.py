@@ -42,7 +42,7 @@ class DummyAnalyst:
 
 
 class DummyTrader:
-    async def run(self, deps):
+    async def run(self, deps, analyst_result=None):
         return TradeDecisionSchema(
             action="WAIT",
             confidence=0.5,

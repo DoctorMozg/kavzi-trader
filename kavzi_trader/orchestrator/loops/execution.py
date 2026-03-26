@@ -96,5 +96,5 @@ class ExecutionLoop:
             else decision.quantity,
             stop_loss=decision.stop_loss,
             take_profit=decision.take_profit,
-            reasoning=result.error_message or "",
+            reasoning=result.error_message or decision.reasoning,
         )

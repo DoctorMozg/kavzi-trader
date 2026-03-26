@@ -144,13 +144,15 @@ class ReasoningLoop:
             action_type="scout_scan",
             symbol=symbol,
             summary="Verdict: %s — %s" % (scout.verdict, scout.reason),
+            details=scout.pattern_detected,
         )
         if analyst is not None:
             await self._report_populator.record_action(
                 action_type="analyst_review",
                 symbol=symbol,
-                summary="Valid: %s, Direction: %s"
-                % (analyst.setup_valid, analyst.direction),
+                summary="Valid: %s, Direction: %s, Confluence: %d/10"
+                % (analyst.setup_valid, analyst.direction, analyst.confluence_score),
+                details=analyst.reasoning,
             )
         if trader is not None:
             await self._report_populator.record_action(
@@ -158,6 +160,7 @@ class ReasoningLoop:
                 symbol=symbol,
                 summary="Action: %s, Confidence: %.0f%%"
                 % (trader.action, trader.confidence * 100),
+                details=trader.reasoning,
             )
 
     def _should_enqueue(
@@ -203,6 +206,7 @@ class ReasoningLoop:
             stop_loss=stop_loss,
             take_profit=take_profit,
             quantity=Decimal("0"),
+            reasoning=trader.reasoning,
             raw_confidence=trader.confidence,
             calibrated_confidence=trader.calibrated_confidence
             if trader.calibrated_confidence is not None
