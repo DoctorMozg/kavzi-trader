@@ -1,5 +1,7 @@
 ORDER FLOW INTERPRETATION:
-- funding_rate: Periodic payment between longs and shorts. Positive = longs pay shorts (bullish bias). Negative = shorts pay longs (bearish bias).
+- funding_rate: Periodic payment between longs and shorts in perpetual futures.
+  - Positive funding rate = longs pay shorts = economically favorable for SHORT (shorts earn funding income).
+  - Negative funding rate = shorts pay longs = economically favorable for LONG (longs earn funding income).
 - funding_zscore: Standardized funding rate. Measures how extreme current funding is relative to history.
   - zscore > 2.0 (is_crowded_long=true): Too many longs. Bearish signal — vulnerable to long squeeze.
   - zscore < -2.0 (is_crowded_short=true): Too many shorts. Bullish signal — vulnerable to short squeeze.

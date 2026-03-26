@@ -177,4 +177,5 @@ class LiveDependenciesProvider:
             open_positions=open_positions,
             exchange_client=self._exchange,
             event_store=self._event_store,
+            atr_history=atr_history,
         )

@@ -79,5 +79,6 @@ class TradingDependenciesSchema(BaseModel):
     open_positions: Annotated[list[PositionSchema], Field(default_factory=list)]
     exchange_client: Annotated[BinanceClient, Field(...)]
     event_store: Annotated[RedisEventStore, Field(...)]
+    atr_history: Annotated[list[Decimal], Field(default_factory=list)]
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)

@@ -79,6 +79,7 @@ class ReasoningLoop:
             await asyncio.sleep(self._interval_s)
 
     async def _handle_symbol(self, symbol: str) -> None:
+        snapshot_at_ms = int(datetime.now(UTC).timestamp() * 1000)
         scout_deps = await self._deps_provider.get_scout(symbol)
         analyst_deps = await self._deps_provider.get_analyst(symbol)
         trader_deps = await self._deps_provider.get_trader(symbol)
@@ -105,7 +106,9 @@ class ReasoningLoop:
             return
         if trader is None:
             return
-        decision = self._build_decision_message(trader, trader_deps)
+        decision = self._build_decision_message(
+            trader, trader_deps, snapshot_at_ms,
+        )
         try:
             await self._redis_client.client.lpush(
                 self._queue_key,
@@ -181,8 +184,8 @@ class ReasoningLoop:
         self,
         trader: TradeDecisionSchema,
         deps: TradingDependenciesSchema,
+        snapshot_at_ms: int,
     ) -> DecisionMessageSchema:
-        now = datetime.now(UTC)
         decision_id = str(uuid4())
         position_management = PositionManagementConfigSchema()
         if trader.position_management is not None:
@@ -213,8 +216,8 @@ class ReasoningLoop:
             else trader.confidence,
             volatility_regime=deps.volatility_regime,
             position_management=position_management,
-            created_at_ms=int(now.timestamp() * 1000),
-            expires_at_ms=int(now.timestamp() * 1000) + 60_000,
+            created_at_ms=snapshot_at_ms,
+            expires_at_ms=snapshot_at_ms + 60_000,
             current_atr=atr,
-            atr_history=[],
+            atr_history=deps.atr_history,
         )

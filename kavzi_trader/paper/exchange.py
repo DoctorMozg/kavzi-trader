@@ -1,4 +1,4 @@
-"""Paper trading exchange client that simulates order execution."""
+"""Paper trading exchange client that simulates spot order execution."""
 
 import logging
 from decimal import Decimal
@@ -26,11 +26,14 @@ _PROTECTIVE_ORDER_TYPES = frozenset(
 
 
 class PaperExchangeClient(BinanceClient):
-    """Binance client that simulates order execution with in-memory balance.
+    """Binance client that simulates spot order execution.
 
     Inherits all read-only market data methods from BinanceClient (get_ticker,
     get_klines, get_orderbook, etc.) which hit real Binance public endpoints.
     Order and account methods are overridden to simulate fills locally.
+
+    Tracks asset holdings per symbol. SELL orders are rejected if the
+    account does not hold enough of the base asset (no naked shorts).
     """
 
     def __init__(
@@ -44,6 +47,7 @@ class PaperExchangeClient(BinanceClient):
         self._commission_rate = commission_rate
         self._order_counter = 900_000_000
         self._orders: dict[int, OrderResponseSchema] = {}
+        self._holdings: dict[str, Decimal] = {}
         self._account_store: Any = None
         logger.info(
             "Paper exchange initialised: balance=%s USDT, commission=%s",
@@ -110,17 +114,8 @@ class PaperExchangeClient(BinanceClient):
                 now=now,
             )
 
-        fill_price = price
-        if fill_price is None:
-            ticker = await self.get_ticker(symbol)
-            fill_price = ticker.last_price
-            logger.debug(
-                "Paper MARKET order using ticker price %s for %s",
-                fill_price,
-                symbol,
-            )
-
-        self._apply_balance_change(side, quantity, fill_price)
+        fill_price = await self._resolve_fill_price(symbol, price)
+        self._apply_balance_change(symbol, side, quantity, fill_price)
 
         commission = quantity * fill_price * self._commission_rate
         fill = OrderFillSchema(
@@ -162,8 +157,32 @@ class PaperExchangeClient(BinanceClient):
         await self._sync_balance_to_store()
         return order
 
+    async def _resolve_fill_price(
+        self,
+        symbol: str,
+        order_price: Decimal | None,
+    ) -> Decimal:
+        ticker = await self.get_ticker(symbol)
+        fill_price = ticker.last_price
+        if order_price is not None:
+            logger.debug(
+                "Paper LIMIT order for %s: order_price=%s ticker=%s "
+                "(using ticker)",
+                symbol,
+                order_price,
+                fill_price,
+            )
+        else:
+            logger.debug(
+                "Paper MARKET order using ticker price %s for %s",
+                fill_price,
+                symbol,
+            )
+        return fill_price
+
     def _apply_balance_change(
         self,
+        symbol: str,
         side: OrderSide,
         quantity: Decimal,
         fill_price: Decimal,
@@ -179,11 +198,25 @@ class PaperExchangeClient(BinanceClient):
                     code=-2010,
                 )
             self._balance_usdt -= total_cost
+            held = self._holdings.get(symbol, Decimal("0"))
+            self._holdings[symbol] = held + quantity
         else:
+            held = self._holdings.get(symbol, Decimal("0"))
+            if held < quantity:
+                raise ExchangeError(
+                    "Insufficient asset balance for %s: need %s, have %s"
+                    % (symbol, quantity, held),
+                    code=-2010,
+                )
             proceeds = quantity * fill_price * (
                 Decimal("1") - self._commission_rate
             )
             self._balance_usdt += proceeds
+            remaining = held - quantity
+            if remaining > Decimal("0"):
+                self._holdings[symbol] = remaining
+            else:
+                del self._holdings[symbol]
 
     def _store_protective_order(
         self,
