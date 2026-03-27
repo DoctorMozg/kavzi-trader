@@ -1,5 +1,6 @@
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
 )
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
 from kavzi_trader.spine.filters.config import FilterConfigSchema
@@ -21,6 +22,7 @@ __all__ = [
     "AlgorithmConfluenceSchema",
     "ConfluenceCalculator",
     "CorrelationFilter",
+    "DualConfluenceSchema",
     "FilterChainResultSchema",
     "FilterConfigSchema",
     "FilterResultSchema",

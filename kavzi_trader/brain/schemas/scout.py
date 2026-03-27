@@ -12,7 +12,7 @@ class ScoutDecisionSchema(BaseModel):
     """
 
     verdict: Annotated[Literal["INTERESTING", "SKIP"], Field(...)]
-    reason: Annotated[str, Field(..., max_length=140)]
-    pattern_detected: Annotated[str | None, Field(default=None, max_length=100)]
+    reason: Annotated[str, Field(..., max_length=300)]
+    pattern_detected: Annotated[str | None, Field(default=None, max_length=200)]
 
     model_config = ConfigDict(frozen=True)

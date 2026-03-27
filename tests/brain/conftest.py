@@ -8,6 +8,7 @@ from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
 )
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.schemas import (
@@ -72,8 +73,8 @@ def order_flow() -> OrderFlowSchema:
 
 
 @pytest.fixture
-def algorithm_confluence() -> AlgorithmConfluenceSchema:
-    return AlgorithmConfluenceSchema(
+def algorithm_confluence() -> DualConfluenceSchema:
+    long = AlgorithmConfluenceSchema(
         ema_alignment=True,
         rsi_favorable=False,
         volume_above_average=True,
@@ -82,6 +83,16 @@ def algorithm_confluence() -> AlgorithmConfluenceSchema:
         oi_supports_direction=True,
         score=4,
     )
+    short = AlgorithmConfluenceSchema(
+        ema_alignment=False,
+        rsi_favorable=False,
+        volume_above_average=True,
+        price_at_bollinger=False,
+        funding_favorable=False,
+        oi_supports_direction=False,
+        score=1,
+    )
+    return DualConfluenceSchema(long=long, short=short, detected_side="LONG")
 
 
 @pytest.fixture

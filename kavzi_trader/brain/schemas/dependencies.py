@@ -9,7 +9,7 @@ from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
-    AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
 )
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.schemas import AccountStateSchema, PositionSchema
@@ -62,7 +62,7 @@ class AnalystDependenciesSchema(BaseModel):
     recent_candles: Annotated[list[CandlestickSchema], Field(..., min_length=1)]
     indicators: Annotated[TechnicalIndicatorsSchema, Field(...)]
     order_flow: Annotated[OrderFlowSchema | None, Field(default=None)]
-    algorithm_confluence: Annotated[AlgorithmConfluenceSchema, Field(...)]
+    algorithm_confluence: Annotated[DualConfluenceSchema, Field(...)]
     volatility_regime: Annotated[VolatilityRegime, Field(...)]
     leverage: Annotated[int, Field(default=3, ge=1, le=125)]
 
@@ -80,7 +80,7 @@ class TradingDependenciesSchema(BaseModel):
     recent_candles: Annotated[list[CandlestickSchema], Field(..., min_length=1)]
     indicators: Annotated[TechnicalIndicatorsSchema, Field(...)]
     order_flow: Annotated[OrderFlowSchema | None, Field(default=None)]
-    algorithm_confluence: Annotated[AlgorithmConfluenceSchema, Field(...)]
+    algorithm_confluence: Annotated[DualConfluenceSchema, Field(...)]
     volatility_regime: Annotated[VolatilityRegime, Field(...)]
     account_state: Annotated[AccountStateSchema, Field(...)]
     open_positions: Annotated[list[PositionSchema], Field(default_factory=list)]

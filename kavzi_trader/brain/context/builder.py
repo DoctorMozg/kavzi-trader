@@ -141,11 +141,15 @@ class ContextBuilder(BaseModel):
     ) -> dict[str, Any]:
         self._warn_if_broken_data(deps.symbol, deps)
         context = self._build_market_context(deps)
+        dual = deps.algorithm_confluence
         context.update(
             {
                 "order_flow_json": dump_optional_json(deps.order_flow),
-                "algorithm_confluence": deps.algorithm_confluence.model_dump(),
-                "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
+                "algorithm_confluence_long": dual.long.model_dump(),
+                "algorithm_confluence_short": dual.short.model_dump(),
+                "algorithm_confluence_long_json": dump_json(dual.long),
+                "algorithm_confluence_short_json": dump_json(dual.short),
+                "detected_side": dual.detected_side,
                 "futures_leverage": deps.leverage,
             }
         )
@@ -179,11 +183,15 @@ class ContextBuilder(BaseModel):
             rate_24h = abs(deps.order_flow.funding_rate) * 3
             funding_24h = f"{float(rate_24h * 100):.4f}%"
 
+        dual = deps.algorithm_confluence
         context.update(
             {
                 "order_flow_json": dump_optional_json(deps.order_flow),
-                "algorithm_confluence": deps.algorithm_confluence.model_dump(),
-                "algorithm_confluence_json": dump_json(deps.algorithm_confluence),
+                "algorithm_confluence_long": dual.long.model_dump(),
+                "algorithm_confluence_short": dual.short.model_dump(),
+                "algorithm_confluence_long_json": dump_json(dual.long),
+                "algorithm_confluence_short_json": dump_json(dual.short),
+                "detected_side": dual.detected_side,
                 "account_state": deps.account_state.model_dump(),
                 "account_state_json": dump_json(deps.account_state),
                 "analyst_result_json": dump_optional_json(analyst_result),

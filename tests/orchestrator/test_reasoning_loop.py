@@ -22,6 +22,7 @@ from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
 )
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.schemas import AccountStateSchema
@@ -102,14 +103,28 @@ def _build_deps() -> TradingDependenciesSchema:
         long_account_percent=Decimal("0.5"),
         short_account_percent=Decimal("0.5"),
     )
-    confluence = AlgorithmConfluenceSchema(
+    long_conf = AlgorithmConfluenceSchema(
         ema_alignment=False,
         rsi_favorable=False,
         volume_above_average=False,
         price_at_bollinger=False,
         funding_favorable=False,
         oi_supports_direction=False,
-        score=5,
+        score=0,
+    )
+    short_conf = AlgorithmConfluenceSchema(
+        ema_alignment=False,
+        rsi_favorable=False,
+        volume_above_average=False,
+        price_at_bollinger=False,
+        funding_favorable=False,
+        oi_supports_direction=False,
+        score=0,
+    )
+    confluence = DualConfluenceSchema(
+        long=long_conf,
+        short=short_conf,
+        detected_side="LONG",
     )
     account_state = AccountStateSchema(
         total_balance_usdt=Decimal(1000),

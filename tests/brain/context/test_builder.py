@@ -76,7 +76,9 @@ def test_context_builder_analyst(
     builder = ContextBuilder()
     context = builder.build_analyst_context(deps)
     assert context["order_flow_json"] is not None, "Expected order flow JSON."
-    assert "algorithm_confluence" in context, "Expected structured confluence dict."
+    assert "algorithm_confluence_long" in context, "Expected LONG confluence dict."
+    assert "algorithm_confluence_short" in context, "Expected SHORT confluence dict."
+    assert "detected_side" in context, "Expected detected side."
     assert "market_snapshot" in context, "Expected structured market snapshot dict."
     assert context["futures_leverage"] == 3
 

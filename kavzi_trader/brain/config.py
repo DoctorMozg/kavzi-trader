@@ -30,6 +30,7 @@ class BrainConfigSchema(BaseModel):
         Field(
             default_factory=lambda: AgentModelConfigSchema(
                 model_id="qwen/qwen3.5-flash-02-23",
+                retries=3,
             ),
         ),
     ]

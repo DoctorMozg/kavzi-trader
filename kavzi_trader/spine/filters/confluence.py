@@ -7,6 +7,7 @@ from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
 )
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,28 @@ logger = logging.getLogger(__name__)
 
 class ConfluenceCalculator:
     """Scores rule-based signals to quantify setup alignment."""
+
+    def evaluate_both(
+        self,
+        detected_side: Literal["LONG", "SHORT"],
+        candle: CandlestickSchema,
+        indicators: TechnicalIndicatorsSchema,
+        order_flow: OrderFlowSchema | None,
+    ) -> DualConfluenceSchema:
+        """Evaluate confluence for both LONG and SHORT directions."""
+        long = self.evaluate("LONG", candle, indicators, order_flow)
+        short = self.evaluate("SHORT", candle, indicators, order_flow)
+        logger.debug(
+            "Dual confluence: detected_side=%s long=%d/6 short=%d/6",
+            detected_side,
+            long.score,
+            short.score,
+        )
+        return DualConfluenceSchema(
+            long=long,
+            short=short,
+            detected_side=detected_side,
+        )
 
     def evaluate(
         self,

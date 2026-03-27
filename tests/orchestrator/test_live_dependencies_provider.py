@@ -16,6 +16,7 @@ from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
 )
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
 )
 from kavzi_trader.spine.risk.schemas import VolatilityRegime, VolatilityRegimeSchema
 from kavzi_trader.spine.state.schemas import AccountStateSchema
@@ -70,14 +71,19 @@ def _make_provider(
     cache.get_atr_history.return_value = [Decimal(1), Decimal("1.1")]
     cache.get_order_flow.return_value = None
     confluence_calc = Mock()
-    confluence_calc.evaluate.return_value = AlgorithmConfluenceSchema(
+    single_conf = AlgorithmConfluenceSchema(
         ema_alignment=False,
         rsi_favorable=False,
         volume_above_average=False,
         price_at_bollinger=False,
         funding_favorable=False,
         oi_supports_direction=False,
-        score=3,
+        score=0,
+    )
+    confluence_calc.evaluate_both.return_value = DualConfluenceSchema(
+        long=single_conf,
+        short=single_conf,
+        detected_side="LONG",
     )
     now = datetime(2026, 1, 1, tzinfo=UTC)
     state_manager = AsyncMock()

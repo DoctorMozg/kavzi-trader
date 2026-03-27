@@ -10,6 +10,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 logger = logging.getLogger(__name__)
 
@@ -83,11 +84,21 @@ class AgentRouter:
         total_start = time.monotonic()
         logger.info("Agent pipeline started for %s", symbol)
 
-        scout_result = await self._run_scout(symbol, deps_provider)
+        scout_result, regime = await self._run_scout(symbol, deps_provider)
         if scout_result is None:
-            return PipelineResult(scout=_SKIP_ERROR)
+            scout_result = _SKIP_ERROR
         if scout_result.verdict != "INTERESTING":
             self._log_stop("Scout", symbol, total_start)
+            return PipelineResult(scout=scout_result)
+
+        if regime in (VolatilityRegime.LOW, VolatilityRegime.EXTREME):
+            logger.info(
+                "Skipping Analyst for %s: volatility regime %s is not tradeable",
+                symbol,
+                regime.value,
+                extra={"symbol": symbol, "regime": regime.value},
+            )
+            self._log_stop("VolatilityGate", symbol, total_start)
             return PipelineResult(scout=scout_result)
 
         analyst_result = await self._run_analyst(symbol, deps_provider)
@@ -122,17 +133,18 @@ class AgentRouter:
         self,
         symbol: str,
         deps_provider: DependenciesProvider,
-    ) -> ScoutDecisionSchema | None:
+    ) -> tuple[ScoutDecisionSchema | None, VolatilityRegime]:
         deps = await deps_provider.get_scout(symbol)
+        regime = deps.volatility_regime
         t0 = time.monotonic()
         try:
             result = await self._scout.run(deps)
         except Exception:
             logger.exception("Scout agent failed for %s", symbol)
-            return None
+            return None, regime
         ms = (time.monotonic() - t0) * 1000
         self._warn_slow("Scout", symbol, ms)
-        return result
+        return result, regime
 
     async def _run_analyst(
         self,

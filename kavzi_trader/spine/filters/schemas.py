@@ -1,5 +1,6 @@
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
 )
 from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
@@ -11,6 +12,7 @@ from kavzi_trader.spine.filters.news_event_schema import NewsEventSchema
 
 __all__ = [
     "AlgorithmConfluenceSchema",
+    "DualConfluenceSchema",
     "FilterChainResultSchema",
     "FilterResultSchema",
     "LiquidityPeriod",

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,5 +13,15 @@ class AlgorithmConfluenceSchema(BaseModel):
     funding_favorable: Annotated[bool, Field(...)]
     oi_supports_direction: Annotated[bool, Field(...)]
     score: Annotated[int, Field(..., ge=0, le=6)]
+
+    model_config = ConfigDict(frozen=True)
+
+
+class DualConfluenceSchema(BaseModel):
+    """Confluence scores for both LONG and SHORT directions."""
+
+    long: Annotated[AlgorithmConfluenceSchema, Field(...)]
+    short: Annotated[AlgorithmConfluenceSchema, Field(...)]
+    detected_side: Annotated[Literal["LONG", "SHORT"], Field(...)]
 
     model_config = ConfigDict(frozen=True)

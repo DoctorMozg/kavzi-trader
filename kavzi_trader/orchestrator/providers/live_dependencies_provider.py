@@ -11,7 +11,12 @@ from kavzi_trader.brain.schemas.dependencies import (
 )
 from kavzi_trader.config import FuturesConfigSchema
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
+from kavzi_trader.order_flow.schemas import OrderFlowSchema
+from kavzi_trader.spine.filters.algorithm_confluence_schema import (
+    DualConfluenceSchema,
+)
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -70,6 +75,29 @@ class LiveDependenciesProvider:
             return "LONG" if indicators.ema_20 > indicators.ema_50 else "SHORT"
         return "LONG"
 
+    def _evaluate_dual_confluence(
+        self,
+        symbol: str,
+        candle: CandlestickSchema,
+        indicators: TechnicalIndicatorsSchema,
+        order_flow: OrderFlowSchema | None,
+    ) -> DualConfluenceSchema:
+        detected_side = self._detect_side(symbol)
+        dual = self._confluence.evaluate_both(
+            detected_side,
+            candle,
+            indicators,
+            order_flow,
+        )
+        logger.debug(
+            "Dual confluence for %s: detected_side=%s long=%d/6 short=%d/6",
+            symbol,
+            detected_side,
+            dual.long.score,
+            dual.short.score,
+        )
+        return dual
+
     def _get_regime(self, symbol: str) -> VolatilityRegime:
         key = f"regime:{symbol}"
         if key in self._cycle_cache:
@@ -109,8 +137,8 @@ class LiveDependenciesProvider:
             raise RuntimeError(msg)
 
         order_flow = self._cache.get_order_flow(symbol)
-        confluence = self._confluence.evaluate(
-            self._detect_side(symbol),
+        confluence = self._evaluate_dual_confluence(
+            symbol,
             candles[-1],
             indicators,
             order_flow,
@@ -140,8 +168,8 @@ class LiveDependenciesProvider:
             raise RuntimeError(msg)
 
         order_flow = self._cache.get_order_flow(symbol)
-        confluence = self._confluence.evaluate(
-            self._detect_side(symbol),
+        confluence = self._evaluate_dual_confluence(
+            symbol,
             candles[-1],
             indicators,
             order_flow,

@@ -4,7 +4,7 @@ DECISION CRITERIA — mark INTERESTING if ANY is true:
 1. BREAKOUT: Price closes above upper or below lower Bollinger Band with volume_ratio > 1.2.
 2. TREND CONTINUATION: EMA20 > EMA50 > EMA200 (bullish) or EMA20 < EMA50 < EMA200 (bearish), AND RSI between 40-60, AND volume_ratio > 1.0.
 3. REVERSAL SIGNAL: RSI < 30 or RSI > 70, WITH price near a Bollinger Band boundary (percent_b < 0.1 or > 0.9).
-4. VOLUME SPIKE: volume_ratio > 1.5 with a candle whose body is large relative to its range.
+4. VOLUME SPIKE: volume_ratio > 2.0 with a candle whose body is large relative to its range, AND at least one supporting signal (EMA alignment is BULLISH or BEARISH, or RSI < 35 or > 65, or percent_b < 0.15 or > 0.85). Volume spike alone is NOT sufficient.
 5. MOMENTUM SHIFT: MACD histogram changes sign compared to previous candles.
 6. TREND WITH PULLBACK: EMA alignment is BULLISH or BEARISH (see TREND CONTEXT), price_change_window > 0.5% in the trending direction, even if current candle volume_ratio is below 1.0.
 
