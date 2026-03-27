@@ -6,6 +6,7 @@ import pytest
 from kavzi_trader.spine.position.break_even import BreakEvenMover
 from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
+from kavzi_trader.spine.position.position_action_type import PositionActionType
 from kavzi_trader.spine.position.scaling import ScaleInChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.position.trailing import TrailingStopChecker
@@ -86,3 +87,64 @@ async def test_manager_includes_partial_exit(position_factory) -> None:
     )
 
     assert any(action.reason == "partial_exit" for action in actions)
+
+
+@pytest.mark.asyncio
+async def test_stop_loss_breach_long_exits(position_factory) -> None:
+    position = position_factory(
+        side="LONG",
+        entry_price=Decimal(100),
+        current_stop_loss=Decimal(90),
+    )
+    manager = build_manager()
+
+    actions = await manager.evaluate_position(
+        position=position,
+        current_price=Decimal(89),
+        current_atr=Decimal(10),
+    )
+
+    assert len(actions) == 1
+    assert actions[0].action == PositionActionType.FULL_EXIT
+    assert actions[0].reason == "Stop-loss breached"
+
+
+@pytest.mark.asyncio
+async def test_stop_loss_breach_short_exits(position_factory) -> None:
+    position = position_factory(
+        side="SHORT",
+        entry_price=Decimal(100),
+        current_stop_loss=Decimal(110),
+    )
+    manager = build_manager()
+
+    actions = await manager.evaluate_position(
+        position=position,
+        current_price=Decimal(111),
+        current_atr=Decimal(10),
+    )
+
+    assert len(actions) == 1
+    assert actions[0].action == PositionActionType.FULL_EXIT
+    assert actions[0].reason == "Stop-loss breached"
+
+
+@pytest.mark.asyncio
+async def test_stop_loss_not_breached_continues(position_factory) -> None:
+    position = position_factory(
+        side="LONG",
+        entry_price=Decimal(100),
+        current_stop_loss=Decimal(90),
+    )
+    manager = build_manager()
+
+    actions = await manager.evaluate_position(
+        position=position,
+        current_price=Decimal(105),
+        current_atr=Decimal(10),
+    )
+
+    assert not any(
+        a.action == PositionActionType.FULL_EXIT and a.reason == "Stop-loss breached"
+        for a in actions
+    )

@@ -70,6 +70,35 @@ class PositionManager:
                         ),
                     ]
 
+        if position.side == "LONG" and current_price <= position.current_stop_loss:
+            logger.warning(
+                "STOP-LOSS BREACHED: position %s %s LONG price=%s <= sl=%s",
+                position.id,
+                position.symbol,
+                current_price,
+                position.current_stop_loss,
+            )
+            return [
+                PositionActionSchema(
+                    action=PositionActionType.FULL_EXIT,
+                    reason="Stop-loss breached",
+                ),
+            ]
+        if position.side == "SHORT" and current_price >= position.current_stop_loss:
+            logger.warning(
+                "STOP-LOSS BREACHED: position %s %s SHORT price=%s >= sl=%s",
+                position.id,
+                position.symbol,
+                current_price,
+                position.current_stop_loss,
+            )
+            return [
+                PositionActionSchema(
+                    action=PositionActionType.FULL_EXIT,
+                    reason="Stop-loss breached",
+                ),
+            ]
+
         if current_atr <= 0:
             logger.warning(
                 "ATR is %s for %s, trailing stop and break-even cannot function",

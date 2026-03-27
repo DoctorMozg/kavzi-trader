@@ -508,3 +508,61 @@ async def test_skip_symbol_with_open_position() -> None:
 
     # Router should never be called because position is open
     router.run.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_volatility_gate_reports_action() -> None:
+    deps = _build_deps()
+    provider = DummyDepsProvider(deps)
+    router = AsyncMock()
+    router.run = AsyncMock(
+        return_value=PipelineResult(
+            scout=ScoutDecisionSchema(
+                verdict="SKIP",
+                reason="volatility_gate",
+                pattern_detected=None,
+            ),
+            stopped_by="volatility_gate:LOW",
+        ),
+    )
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock()
+
+    mock_populator = AsyncMock()
+    mock_populator.record_action = AsyncMock()
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=router,
+        deps_provider=provider,
+        redis_client=redis_client,
+        interval_s=1,
+        report_populator=mock_populator,
+    )
+
+    sleep_durations: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def _capture_sleep(duration: float) -> None:
+        sleep_durations.append(duration)
+        await original_sleep(0)
+
+    import unittest.mock
+
+    with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
+        task = asyncio.create_task(loop.run())
+        for _ in range(50):
+            await original_sleep(0)
+            if len(sleep_durations) >= 1:
+                break
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    # Should have at least one record_action call with volatility_gate
+    gate_calls = [
+        c
+        for c in mock_populator.record_action.call_args_list
+        if c.kwargs.get("action_type") == "volatility_gate"
+        or (c.args and len(c.args) > 0 and c.args[0] == "volatility_gate")
+    ]
+    assert len(gate_calls) >= 1

@@ -18,6 +18,7 @@
         .badge-trader { background-color: #c2795a; }
         .badge-execution { background-color: #9678a5; }
         .badge-position { background-color: #7a9bb5; }
+        .badge-gate { background-color: #d97706; }
         .stat-value {
             font-size: 1.5rem;
             font-weight: 700;
@@ -98,6 +99,8 @@
                             <th>Current</th>
                             <th>SL</th>
                             <th>TP</th>
+                            <th>If SL</th>
+                            <th>If TP</th>
                             <th>PnL</th>
                             <th>Lev</th>
                             <th>Opened</th>
@@ -119,6 +122,22 @@
                             <td>{{ pos.current_price }}</td>
                             <td>{{ pos.stop_loss }}</td>
                             <td>{{ pos.take_profit }}</td>
+                            <td>
+                                {% if pos.side == "LONG" %}
+                                    {% set max_loss = ((pos.entry_price | float) - (pos.stop_loss | float)) * (pos.quantity | float) * -1 %}
+                                {% else %}
+                                    {% set max_loss = ((pos.stop_loss | float) - (pos.entry_price | float)) * (pos.quantity | float) * -1 %}
+                                {% endif %}
+                                <span class="revenue-negative">${{ "%.2f" | format(max_loss) }}</span>
+                            </td>
+                            <td>
+                                {% if pos.side == "LONG" %}
+                                    {% set target_profit = ((pos.take_profit | float) - (pos.entry_price | float)) * (pos.quantity | float) %}
+                                {% else %}
+                                    {% set target_profit = ((pos.entry_price | float) - (pos.take_profit | float)) * (pos.quantity | float) %}
+                                {% endif %}
+                                <span class="revenue-positive">+${{ "%.2f" | format(target_profit) }}</span>
+                            </td>
                             <td>
                                 {% set pnl_val = pos.unrealized_pnl | float %}
                                 <span class="{% if pnl_val > 0 %}revenue-positive{% elif pnl_val < 0 %}revenue-negative{% else %}revenue-zero{% endif %}">
@@ -226,6 +245,8 @@
                                         <span class="badge badge-analyst">{{ action.action_type }}</span>
                                         {% elif "trader" in action.action_type %}
                                         <span class="badge badge-trader">{{ action.action_type }}</span>
+                                        {% elif "gate" in action.action_type %}
+                                        <span class="badge badge-gate">{{ action.action_type }}</span>
                                         {% elif action.action_type in ("order_created", "order_rejected", "order_filled") %}
                                         <span class="badge badge-execution">{{ action.action_type }}</span>
                                         {% else %}

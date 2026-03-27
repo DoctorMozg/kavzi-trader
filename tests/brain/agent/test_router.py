@@ -13,6 +13,7 @@ from kavzi_trader.brain.schemas.dependencies import (
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 _ANALYST_REASONING = (
     "EMA alignment is bullish with EMA20 above EMA50 above EMA200. RSI at 55 supports"
@@ -221,3 +222,113 @@ async def test_router_runs_trader_on_valid_setup(
     assert provider.scout_calls == 1
     assert provider.analyst_calls == 1
     assert provider.trader_calls == 1
+
+
+class SpyScout:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def run(self, deps: ScoutDependenciesSchema) -> ScoutDecisionSchema:
+        self.call_count += 1
+        return ScoutDecisionSchema(
+            verdict="INTERESTING",
+            reason="Test",
+            pattern_detected=None,
+        )
+
+
+def _make_provider_with_regime(
+    regime: VolatilityRegime,
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> FakeDepsProvider:
+    scout_deps = ScoutDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        volatility_regime=regime,
+    )
+    analyst_deps = AnalystDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=regime,
+    )
+    trader_deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=regime,
+        account_state=account_state,
+        open_positions=positions,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+    return FakeDepsProvider(scout_deps, analyst_deps, trader_deps)
+
+
+@pytest.mark.asyncio
+async def test_volatility_gate_blocks_before_scout_llm(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    spy_scout = SpyScout()
+    router = AgentRouter(spy_scout, DummyAnalyst(True), DummyTrader())
+    provider = _make_provider_with_regime(
+        VolatilityRegime.LOW,
+        candle,
+        indicators,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+    assert spy_scout.call_count == 0, "Scout LLM should not be called on LOW regime"
+    assert result.stopped_by == "volatility_gate:LOW"
+    assert result.scout.reason == "volatility_gate"
+    assert result.analyst is None
+    assert result.trader is None
+
+
+@pytest.mark.asyncio
+async def test_normal_regime_runs_scout_llm(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    spy_scout = SpyScout()
+    router = AgentRouter(spy_scout, DummyAnalyst(True), DummyTrader())
+    provider = _make_provider_with_regime(
+        VolatilityRegime.NORMAL,
+        candle,
+        indicators,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+    assert spy_scout.call_count == 1, "Scout LLM should be called on NORMAL regime"
+    assert result.stopped_by is None

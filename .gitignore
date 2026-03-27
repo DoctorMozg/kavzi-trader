@@ -15,6 +15,7 @@ wheels/
 # Data
 /data/*
 /results/*
+/reports/*
 
 # Hydra config
 !hydra_config/data

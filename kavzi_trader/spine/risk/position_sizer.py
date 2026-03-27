@@ -45,6 +45,22 @@ class PositionSizer:
         size_multiplier = regime.size_multiplier
         adjusted_size = base_size * size_multiplier
 
+        # Notional cap: apply early so downstream clamps see a bounded size
+        if entry_price > 0 and self._config.max_notional_percent > 0:
+            max_notional = account_balance * (self._config.max_notional_percent / 100)
+            max_size_by_notional = max_notional / entry_price
+            if adjusted_size > max_size_by_notional:
+                logger.info(
+                    "Notional cap: adjusted_size=%s capped to max=%s "
+                    "(balance=%s max_notional_pct=%s entry=%s)",
+                    adjusted_size,
+                    max_size_by_notional,
+                    account_balance,
+                    self._config.max_notional_percent,
+                    entry_price,
+                )
+                adjusted_size = max_size_by_notional
+
         adjusted_size = Decimal(str(round(float(adjusted_size), 8)))
 
         if leverage > 0 and entry_price > 0:
@@ -64,23 +80,6 @@ class PositionSizer:
                 )
                 adjusted_size = Decimal(
                     str(round(float(max_size_by_margin), 8)),
-                )
-
-        if entry_price > 0 and self._config.max_notional_percent > 0:
-            max_notional = account_balance * (self._config.max_notional_percent / 100)
-            max_size_by_notional = max_notional / entry_price
-            if adjusted_size > max_size_by_notional:
-                logger.warning(
-                    "Notional cap: adjusted_size=%s exceeds max=%s "
-                    "(balance=%s max_notional_pct=%s entry=%s)",
-                    adjusted_size,
-                    max_size_by_notional,
-                    account_balance,
-                    self._config.max_notional_percent,
-                    entry_price,
-                )
-                adjusted_size = Decimal(
-                    str(round(float(max_size_by_notional), 8)),
                 )
 
         logger.debug(
