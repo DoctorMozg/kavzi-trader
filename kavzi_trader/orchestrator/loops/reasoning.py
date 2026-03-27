@@ -112,7 +112,6 @@ class ReasoningLoop:
         return interesting
 
     async def _handle_symbol(self, symbol: str) -> bool:
-        snapshot_at_ms = int(datetime.now(UTC).timestamp() * 1000)
         result = await self._router.run(symbol, self._deps_provider)
         try:
             await self._report_decisions(
@@ -128,7 +127,7 @@ class ReasoningLoop:
             )
         if not self._should_enqueue(result):
             return result.scout.verdict == "INTERESTING"
-        await self._enqueue_decision(result, snapshot_at_ms)
+        await self._enqueue_decision(result)
         return True
 
     def _should_enqueue(self, result: PipelineResult) -> bool:
@@ -143,14 +142,14 @@ class ReasoningLoop:
     async def _enqueue_decision(
         self,
         result: PipelineResult,
-        snapshot_at_ms: int,
     ) -> None:
         if result.trader is None or result.trader_deps is None:
             return
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
         decision = self._build_decision_message(
             result.trader,
             result.trader_deps,
-            snapshot_at_ms,
+            now_ms,
         )
         symbol = result.trader_deps.symbol
         try:
@@ -251,7 +250,7 @@ class ReasoningLoop:
             volatility_regime=deps.volatility_regime,
             position_management=position_management,
             created_at_ms=snapshot_at_ms,
-            expires_at_ms=snapshot_at_ms + 60_000,
+            expires_at_ms=snapshot_at_ms + 300_000,
             current_atr=atr,
             atr_history=deps.atr_history,
             leverage=deps.leverage,
