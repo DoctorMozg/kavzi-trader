@@ -11,7 +11,7 @@ class KeyLevelSchema(BaseModel):
 
     price: Annotated[Decimal, Field(...)]
     level_type: Annotated[Literal["SUPPORT", "RESISTANCE"], Field(...)]
-    reason: Annotated[str, Field(..., max_length=140)]
+    reason: Annotated[str, Field(..., max_length=80)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -21,7 +21,7 @@ class KeyLevelsSchema(BaseModel):
     Collection of key price levels highlighted by the Analyst agent.
     """
 
-    levels: Annotated[list[KeyLevelSchema], Field(default_factory=list, max_length=6)]
+    levels: Annotated[list[KeyLevelSchema], Field(default_factory=list, max_length=4)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -41,7 +41,7 @@ class AnalystDecisionSchema(BaseModel):
     direction: Annotated[Literal["LONG", "SHORT", "NEUTRAL"], Field(...)]
     confluence_score: Annotated[int, Field(..., ge=0, le=11)]
     key_levels: Annotated[KeyLevelsSchema, Field(...)]
-    reasoning: Annotated[str, Field(..., min_length=80, max_length=900)]
+    reasoning: Annotated[str, Field(..., min_length=80, max_length=500)]
 
     model_config = ConfigDict(frozen=True)
 

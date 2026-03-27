@@ -1,7 +1,7 @@
 ---
 name: run-analyzer
 description: Analyzes KavziTrader trading run logs to evaluate LLM decision quality, validate Scout/Analyst/Trader reasoning against market data, and propose pipeline improvements. Use when you need to review a trading session's performance.
-tools: Read, Bash, Grep, Glob, Agent(voltagent-research:search-specialist, voltagent-research:research-analyst), WebFetch, WebSearch
+tools: Read, Bash, Grep, Glob, Agent(voltagent-research:search-specialist, voltagent-research:research-analyst), WebFetch, WebSearch, mcp__claude_ai_Crypto_com__get_candlestick, mcp__claude_ai_Crypto_com__get_ticker, mcp__claude_ai_Crypto_com__get_trades, mcp__claude_ai_Crypto_com__get_book, mcp__claude_ai_Crypto_com__get_tickers, mcp__claude_ai_Crypto_com__get_mark_price, mcp__claude_ai_Crypto_com__get_index_price
 model: opus
 effort: high
 ---
@@ -112,7 +112,34 @@ Build a per-symbol timeline of all decisions in the session:
 
 ## Step 5: Validate Against Market Reality
 
-Use the `Agent` tool to spawn `voltagent-research:search-specialist` or `voltagent-research:research-analyst` subagents (or use `WebSearch`/`WebFetch` directly if subagents are unavailable) to:
+### Preferred: Crypto.com MCP Tools
+
+Use the Crypto.com MCP server tools as the **primary source** for market data validation. These provide real-time and recent historical data directly, without web scraping.
+
+**Symbol name mapping**: Binance log symbols use no separator (e.g., `BTCUSDT`), but Crypto.com MCP tools require underscore format (e.g., `BTC_USDT`). Convert accordingly before calling.
+
+Available tools and when to use them:
+
+| Tool | Use Case |
+|------|----------|
+| `mcp__claude_ai_Crypto_com__get_candlestick` | Get OHLCV candles to verify price movement after decisions. Use timeframes like `5m`, `15m`, `1h`, `4h`, `1D`. |
+| `mcp__claude_ai_Crypto_com__get_ticker` | Get current price, 24h high/low, and volume for a symbol — quick snapshot for post-session comparison. |
+| `mcp__claude_ai_Crypto_com__get_tickers` | Get all tickers at once when validating multiple symbols from the session. |
+| `mcp__claude_ai_Crypto_com__get_trades` | Check recent trade activity and direction bias for a symbol. |
+| `mcp__claude_ai_Crypto_com__get_book` | Check order book depth and spread — useful for validating liquidity assessments from the logs. |
+| `mcp__claude_ai_Crypto_com__get_mark_price` | Get current mark price — compare against logged entry/exit prices. |
+| `mcp__claude_ai_Crypto_com__get_index_price` | Get index price for basis comparison. |
+
+**Validation workflow:**
+
+1. For each symbol in the session, call `get_candlestick` with the session's timeframe to check price action after decisions
+2. Use `get_ticker` to compare current price vs logged decision prices
+3. Use `get_book` to verify liquidity conditions if the logs flagged low-liquidity skips
+4. Cross-reference candle data to determine if Scout SKIPs were correct (price stayed flat) or missed opportunities (significant moves occurred)
+
+### Fallback: Web Research
+
+If Crypto.com MCP tools are unavailable or don't cover a needed data point, fall back to `Agent` subagents (`voltagent-research:search-specialist` or `voltagent-research:research-analyst`) or use `WebSearch`/`WebFetch` directly to:
 
 - Look up what actually happened to each symbol's price after the log session
 - Check if Scout SKIP decisions on "dead market" symbols were correct (did those symbols stay flat?)

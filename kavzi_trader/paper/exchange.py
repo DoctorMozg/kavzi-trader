@@ -16,6 +16,7 @@ from kavzi_trader.api.common.models import (
     OrderSide,
     OrderStatus,
     OrderType,
+    TickerSchema,
     TimeInForce,
 )
 from kavzi_trader.commons.time_utility import utc_now
@@ -70,6 +71,7 @@ class PaperExchangeClient(BinanceClient):
         self._order_counter = 900_000_000
         self._orders: dict[int, OrderResponseSchema] = {}
         self._positions: dict[str, PaperPositionSchema] = {}
+        self._last_prices: dict[str, Decimal] = {}
         self._leverage_settings: dict[str, int] = {}
         self._margin_type_settings: dict[str, str] = {}
         self._account_store: AccountStore | None = None
@@ -94,6 +96,12 @@ class PaperExchangeClient(BinanceClient):
 
     def _get_leverage(self, symbol: str) -> int:
         return self._leverage_settings.get(symbol, 1)
+
+    async def get_ticker(self, symbol: str) -> TickerSchema:
+        """Get ticker and cache the price for unrealized PnL computation."""
+        ticker = await super().get_ticker(symbol)
+        self._last_prices[symbol] = ticker.last_price
+        return ticker
 
     async def _sync_balance_to_store(self) -> None:
         if self._account_store is None:
@@ -539,4 +547,13 @@ class PaperExchangeClient(BinanceClient):
         ]
 
     def _calculate_total_unrealized_pnl(self) -> Decimal:
-        return Decimal(0)
+        total = Decimal(0)
+        for pos in self._positions.values():
+            current_price = self._last_prices.get(pos.symbol)
+            if current_price is None:
+                continue
+            if pos.side == "LONG":
+                total += (current_price - pos.entry_price) * pos.quantity
+            else:
+                total += (pos.entry_price - current_price) * pos.quantity
+        return total

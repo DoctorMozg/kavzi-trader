@@ -48,8 +48,6 @@ async def test_decision_log_writer(tmp_path) -> None:
         suggested_entry=None,
         suggested_stop_loss=None,
         suggested_take_profit=None,
-        position_management=None,
-        calibrated_confidence=0.0,
     )
     entry = DecisionLogSchema(
         timestamp=now,

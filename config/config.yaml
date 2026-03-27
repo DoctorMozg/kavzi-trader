@@ -141,7 +141,7 @@ risk:
   #   1 = single-position mode (simplest)
   #   2 = default (one per symbol)
   #   3+ = multi-pair portfolio
-  max_positions: 2
+  max_positions: 4
 
   # Minimum risk:reward ratio required to accept a trade.
   # Calculated as: (distance to TP) / (distance to SL) >= min_rr_ratio
@@ -199,6 +199,14 @@ risk:
   #   2.0 = default
   #   3.0 = permissive (allows trading in very volatile conditions)
   volatility_extreme_threshold: 2.0
+
+  # Maximum position notional value as percentage of account balance.
+  # Prevents oversized positions on low-priced assets where ATR-based sizing
+  # produces tiny risk but huge notional exposure.
+  #   20.0 = conservative
+  #   30.0 = default (max $3,000 notional on a $10,000 account)
+  #   50.0 = permissive
+  max_notional_percent: 30.0
 
   # Number of historical ATR values for Z-score mean/stdev calculation.
   #   14 = responsive (reacts quickly to regime changes)

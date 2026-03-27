@@ -11,7 +11,7 @@ from kavzi_trader.api.common.models import (
     TickerSchema,
     TimeInForce,
 )
-from kavzi_trader.paper.exchange import PaperExchangeClient
+from kavzi_trader.paper.exchange import PaperExchangeClient, PaperPositionSchema
 
 
 @pytest.fixture
@@ -369,3 +369,57 @@ async def test_short_then_close_with_profit(
     after_close = paper_client.balance_usdt
 
     assert after_close > after_short
+
+
+def test_unrealized_pnl_long_position() -> None:
+    """Unrealized PnL computed from cached prices for LONG positions."""
+    with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
+        client = PaperExchangeClient()
+    client._positions["BTCUSDT"] = PaperPositionSchema(
+        symbol="BTCUSDT",
+        side="LONG",
+        quantity=Decimal("0.1"),
+        entry_price=Decimal(50000),
+        leverage=3,
+        margin=Decimal("1666.67"),
+    )
+    client._last_prices["BTCUSDT"] = Decimal(51000)
+    pnl = client._calculate_total_unrealized_pnl()
+    # (51000 - 50000) * 0.1 = 100
+    assert pnl == Decimal(100)
+
+
+def test_unrealized_pnl_short_position() -> None:
+    """Unrealized PnL computed from cached prices for SHORT positions."""
+    with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
+        client = PaperExchangeClient()
+    client._positions["DOGEUSDT"] = PaperPositionSchema(
+        symbol="DOGEUSDT",
+        side="SHORT",
+        quantity=Decimal(86207),
+        entry_price=Decimal("0.09055"),
+        leverage=1,
+        margin=Decimal(7810),
+    )
+    client._last_prices["DOGEUSDT"] = Decimal("0.09008")
+    pnl = client._calculate_total_unrealized_pnl()
+    # (0.09055 - 0.09008) * 86207 = ~40.52
+    expected = (Decimal("0.09055") - Decimal("0.09008")) * Decimal(86207)
+    assert pnl == expected
+    assert pnl > Decimal(0)
+
+
+def test_unrealized_pnl_no_cached_price() -> None:
+    """Positions without a cached price contribute zero PnL."""
+    with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
+        client = PaperExchangeClient()
+    client._positions["BTCUSDT"] = PaperPositionSchema(
+        symbol="BTCUSDT",
+        side="LONG",
+        quantity=Decimal("0.1"),
+        entry_price=Decimal(50000),
+        leverage=1,
+        margin=Decimal(5000),
+    )
+    # No price cached
+    assert client._calculate_total_unrealized_pnl() == Decimal(0)

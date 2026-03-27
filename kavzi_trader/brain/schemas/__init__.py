@@ -9,7 +9,6 @@ from kavzi_trader.brain.schemas.dependencies import (
     ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.brain.schemas.position_mgmt import PositionManagementSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 
 __all__ = [
@@ -17,7 +16,6 @@ __all__ = [
     "AnalystDependenciesSchema",
     "KeyLevelSchema",
     "KeyLevelsSchema",
-    "PositionManagementSchema",
     "ScoutDecisionSchema",
     "ScoutDependenciesSchema",
     "TradeDecisionSchema",

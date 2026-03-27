@@ -46,6 +46,6 @@ def test_prompt_loader_renders_analyst_system_prompt() -> None:
 def test_prompt_loader_renders_trader_system_prompt() -> None:
     loader = PromptLoader()
     rendered = loader.render_system_prompt("trader")
-    assert "POSITION MANAGEMENT PARAMETERS" in rendered, "Expected position mgmt guide."
+    assert "FUNDING COSTS" in rendered, "Expected funding costs guidance."
     assert "ACCOUNT STATE RULES" in rendered, "Expected account state rules."
     assert "VOLATILITY REGIMES" in rendered, "Expected volatility guide."

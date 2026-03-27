@@ -26,7 +26,7 @@ from kavzi_trader.spine.state.schemas import AccountStateSchema, PositionSchema
 logger = logging.getLogger(__name__)
 
 SCOUT_CANDLES_COUNT = 50
-ANALYSIS_CANDLES_COUNT = 20
+ANALYSIS_CANDLES_COUNT = 12
 
 
 class LiveDependenciesProvider:

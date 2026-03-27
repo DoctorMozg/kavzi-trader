@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 from pydantic_ai import Agent, PromptedOutput
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 
 from kavzi_trader.brain.config import BrainConfigSchema
 from kavzi_trader.brain.prompts.loader import PromptLoader
@@ -35,6 +36,9 @@ class AgentFactory:
             "OpenRouter HTTP timeout set to %.0fs",
             timeout_s,
         )
+        self._model_settings = ModelSettings(
+            extra_body={"provider": {"sort": "latency"}},
+        )
         self._provider = OpenAIProvider(
             openai_client=AsyncOpenAI(
                 base_url=config.openrouter_base_url,
@@ -64,6 +68,7 @@ class AgentFactory:
             output_type=PromptedOutput(ScoutDecisionSchema),
             deps_type=ScoutDependenciesSchema,
             instructions=system_prompt,
+            model_settings=self._model_settings,
             retries=self._config.scout.retries,
         )
 
@@ -84,6 +89,7 @@ class AgentFactory:
             output_type=AnalystDecisionSchema,
             deps_type=AnalystDependenciesSchema,
             instructions=system_prompt,
+            model_settings=self._model_settings,
             retries=self._config.analyst.retries,
         )
 
@@ -104,5 +110,6 @@ class AgentFactory:
             output_type=TradeDecisionSchema,
             deps_type=TradingDependenciesSchema,
             instructions=system_prompt,
+            model_settings=self._model_settings,
             retries=self._config.trader.retries,
         )

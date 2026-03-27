@@ -257,10 +257,6 @@ class ReasoningLoop:
     ) -> DecisionMessageSchema:
         decision_id = str(uuid4())
         position_management = PositionManagementConfigSchema()
-        if trader.position_management is not None:
-            position_management = PositionManagementConfigSchema.model_validate(
-                trader.position_management.model_dump(),
-            )
 
         entry_price = trader.suggested_entry or deps.current_price
         stop_loss = trader.suggested_stop_loss or entry_price
@@ -280,9 +276,7 @@ class ReasoningLoop:
             quantity=Decimal(0),
             reasoning=trader.reasoning,
             raw_confidence=trader.confidence,
-            calibrated_confidence=trader.calibrated_confidence
-            if trader.calibrated_confidence is not None
-            else trader.confidence,
+            calibrated_confidence=trader.confidence,
             volatility_regime=deps.volatility_regime,
             position_management=position_management,
             created_at_ms=snapshot_at_ms,

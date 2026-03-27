@@ -5,9 +5,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.brain.context.formatters import (
-    dump_json,
-    dump_optional_json,
     format_candles_table,
+    format_indicators_compact,
+    format_order_flow_compact,
 )
 from kavzi_trader.brain.context.market_snapshot import MarketSnapshotSchema
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
@@ -132,7 +132,7 @@ class ContextBuilder(BaseModel):
         return {
             "market_snapshot": snapshot.model_dump(),
             "candles_table": format_candles_table(deps.recent_candles),
-            "indicators_json": dump_json(deps.indicators),
+            "indicators_compact": format_indicators_compact(deps.indicators),
         }
 
     def build_analyst_context(
@@ -144,7 +144,7 @@ class ContextBuilder(BaseModel):
         dual = deps.algorithm_confluence
         context.update(
             {
-                "order_flow_json": dump_optional_json(deps.order_flow),
+                "order_flow_compact": format_order_flow_compact(deps.order_flow),
                 "algorithm_confluence_long": dual.long.model_dump(),
                 "algorithm_confluence_short": dual.short.model_dump(),
                 "detected_side": dual.detected_side,
@@ -184,7 +184,7 @@ class ContextBuilder(BaseModel):
         dual = deps.algorithm_confluence
         context.update(
             {
-                "order_flow_json": dump_optional_json(deps.order_flow),
+                "order_flow_compact": format_order_flow_compact(deps.order_flow),
                 "algorithm_confluence_long": dual.long.model_dump(),
                 "algorithm_confluence_short": dual.short.model_dump(),
                 "detected_side": dual.detected_side,

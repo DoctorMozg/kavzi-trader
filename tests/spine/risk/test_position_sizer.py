@@ -30,10 +30,10 @@ def high_regime() -> VolatilityRegimeSchema:
 class TestPositionSizer:
     def test_basic_position_sizing(
         self,
-        risk_config: RiskConfigSchema,
         normal_regime: VolatilityRegimeSchema,
     ) -> None:
-        sizer = PositionSizer(risk_config)
+        config = RiskConfigSchema(max_notional_percent=Decimal(999))
+        sizer = PositionSizer(config)
         result = sizer.calculate_size(
             account_balance=Decimal(10000),
             atr=Decimal(100),
@@ -50,10 +50,10 @@ class TestPositionSizer:
 
     def test_high_regime_reduces_size(
         self,
-        risk_config: RiskConfigSchema,
         high_regime: VolatilityRegimeSchema,
     ) -> None:
-        sizer = PositionSizer(risk_config)
+        config = RiskConfigSchema(max_notional_percent=Decimal(999))
+        sizer = PositionSizer(config)
         result = sizer.calculate_size(
             account_balance=Decimal(10000),
             atr=Decimal(100),
@@ -141,3 +141,25 @@ class TestPositionSizer:
         )
 
         assert result.risk_amount == Decimal(200)
+
+    def test_notional_cap_clamps_low_price_asset(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+    ) -> None:
+        """DOGEUSDT scenario: ATR sizing produces huge qty on cheap assets."""
+        config = RiskConfigSchema(max_notional_percent=Decimal("30.0"))
+        sizer = PositionSizer(config)
+        result = sizer.calculate_size(
+            account_balance=Decimal(10000),
+            atr=Decimal("0.00058"),
+            stop_loss_atr_multiplier=Decimal("1.0"),
+            regime=normal_regime,
+            entry_price=Decimal("0.09"),
+            leverage=1,
+        )
+        # Without cap: 100 / 0.00058 = 172,414 DOGE → $15,517 notional (155%)
+        # With 30% cap: max notional = $3,000 → 3000 / 0.09 = 33,333 DOGE
+        max_notional = Decimal(10000) * Decimal("0.30")
+        max_size = max_notional / Decimal("0.09")
+        assert result.adjusted_size <= max_size
+        assert result.adjusted_size > Decimal(0)

@@ -18,8 +18,6 @@ def test_trade_decision_valid_buy() -> None:
         suggested_entry=Decimal(100),
         suggested_stop_loss=Decimal(95),
         suggested_take_profit=Decimal(110),
-        position_management=None,
-        calibrated_confidence=None,
     )
     assert decision.action == "LONG", "Expected BUY action."
 
@@ -33,8 +31,6 @@ def test_trade_decision_requires_prices_for_trade() -> None:
             suggested_entry=None,
             suggested_stop_loss=None,
             suggested_take_profit=None,
-            position_management=None,
-            calibrated_confidence=None,
         )
 
 
@@ -47,6 +43,4 @@ def test_trade_decision_enforces_rr_ratio() -> None:
             suggested_entry=Decimal(100),
             suggested_stop_loss=Decimal(99),
             suggested_take_profit=Decimal("100.5"),
-            position_management=None,
-            calibrated_confidence=None,
         )

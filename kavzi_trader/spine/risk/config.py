@@ -21,6 +21,8 @@ class RiskConfigSchema(BaseModel):
 
     atr_zscore_period: int = 30
 
+    max_notional_percent: Decimal = Decimal("30.0")
+
     liquidation_emergency_percent: Decimal = Decimal("5.0")
     max_margin_ratio: Decimal = Decimal("0.5")
 

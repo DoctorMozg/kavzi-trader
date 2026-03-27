@@ -180,6 +180,10 @@ class TradingOrchestrator:
         result: list[ReportPositionEntrySchema] = []
         for pos in positions:
             current_price = self._price_provider.get_current_price(pos.symbol)
+            if pos.side == "LONG":
+                pnl = (current_price - pos.entry_price) * pos.quantity
+            else:
+                pnl = (pos.entry_price - current_price) * pos.quantity
             result.append(
                 ReportPositionEntrySchema(
                     symbol=pos.symbol,
@@ -189,7 +193,7 @@ class TradingOrchestrator:
                     current_price=current_price,
                     stop_loss=pos.current_stop_loss,
                     take_profit=pos.take_profit,
-                    unrealized_pnl=pos.unrealized_pnl,
+                    unrealized_pnl=pnl,
                     leverage=pos.leverage,
                     opened_at=pos.opened_at,
                 ),

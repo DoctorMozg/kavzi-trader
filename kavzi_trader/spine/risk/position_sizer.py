@@ -66,6 +66,23 @@ class PositionSizer:
                     str(round(float(max_size_by_margin), 8)),
                 )
 
+        if entry_price > 0 and self._config.max_notional_percent > 0:
+            max_notional = account_balance * (self._config.max_notional_percent / 100)
+            max_size_by_notional = max_notional / entry_price
+            if adjusted_size > max_size_by_notional:
+                logger.warning(
+                    "Notional cap: adjusted_size=%s exceeds max=%s "
+                    "(balance=%s max_notional_pct=%s entry=%s)",
+                    adjusted_size,
+                    max_size_by_notional,
+                    account_balance,
+                    self._config.max_notional_percent,
+                    entry_price,
+                )
+                adjusted_size = Decimal(
+                    str(round(float(max_size_by_notional), 8)),
+                )
+
         logger.debug(
             "Position sizer: balance=%s atr=%s sl_mult=%s regime=%s"
             " base=%s adjusted=%s risk=%s",

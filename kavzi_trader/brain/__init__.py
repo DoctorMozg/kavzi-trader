@@ -5,14 +5,12 @@ from kavzi_trader.brain.schemas.dependencies import (
     ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.brain.schemas.position_mgmt import PositionManagementSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 
 __all__ = [
     "AnalystDecisionSchema",
     "AnalystDependenciesSchema",
     "KeyLevelsSchema",
-    "PositionManagementSchema",
     "ScoutDecisionSchema",
     "ScoutDependenciesSchema",
     "TradeDecisionSchema",

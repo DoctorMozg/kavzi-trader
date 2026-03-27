@@ -59,8 +59,6 @@ class DummyTrader:
             suggested_entry=None,
             suggested_stop_loss=None,
             suggested_take_profit=None,
-            position_management=None,
-            calibrated_confidence=None,
         )
 
 
