@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from decimal import Decimal
+from typing import Any, Protocol
 
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
 from kavzi_trader.orchestrator.health import HealthChecker
@@ -11,10 +12,21 @@ from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.reporting.report_state_schema import (
+    ReportMarketPriceSchema,
+    ReportPositionEntrySchema,
+)
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.state.manager import StateManager
+from kavzi_trader.spine.state.schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
+
+
+class ReportPriceProvider(Protocol):
+    """Provides current prices for report snapshots."""
+
+    def get_current_price(self, symbol: str) -> Decimal: ...
 
 
 class TradingOrchestrator:
@@ -32,6 +44,8 @@ class TradingOrchestrator:
         health_checker: HealthChecker,
         report_populator: TradeReportPopulator | None = None,
         is_paper: bool = False,
+        price_provider: ReportPriceProvider | None = None,
+        trading_symbols: list[str] | None = None,
     ) -> None:
         self._config = config
         self._state_manager = state_manager
@@ -43,6 +57,8 @@ class TradingOrchestrator:
         self._health_checker = health_checker
         self._report_populator = report_populator
         self._is_paper = is_paper
+        self._price_provider = price_provider
+        self._trading_symbols = trading_symbols or []
         self._tasks: set[asyncio.Task[None]] = set()
         self._loop_factories: dict[str, Any] = {}
 
@@ -134,7 +150,7 @@ class TradingOrchestrator:
                 logger.exception("Health check loop encountered an error")
 
     async def _report_loop(self) -> None:
-        """Periodically refreshes balance data in the report."""
+        """Periodically refreshes balance, positions, and prices in the report."""
         while True:
             try:
                 await asyncio.sleep(5)
@@ -147,8 +163,47 @@ class TradingOrchestrator:
                         current_balance_usdt=account.total_balance_usdt,
                         unrealized_pnl_usdt=account.unrealized_pnl,
                         active_positions_count=len(positions),
+                        open_positions=self._build_position_snapshots(positions),
+                        market_prices=self._build_market_prices(),
                     )
             except Exception:
                 logger.exception(
                     "Report loop encountered an error, continuing",
                 )
+
+    def _build_position_snapshots(
+        self,
+        positions: list[PositionSchema],
+    ) -> list[ReportPositionEntrySchema]:
+        if not positions or self._price_provider is None:
+            return []
+        result: list[ReportPositionEntrySchema] = []
+        for pos in positions:
+            current_price = self._price_provider.get_current_price(pos.symbol)
+            result.append(
+                ReportPositionEntrySchema(
+                    symbol=pos.symbol,
+                    side=pos.side,
+                    quantity=pos.quantity,
+                    entry_price=pos.entry_price,
+                    current_price=current_price,
+                    stop_loss=pos.current_stop_loss,
+                    take_profit=pos.take_profit,
+                    unrealized_pnl=pos.unrealized_pnl,
+                    leverage=pos.leverage,
+                    opened_at=pos.opened_at,
+                ),
+            )
+        return result
+
+    def _build_market_prices(self) -> list[ReportMarketPriceSchema]:
+        if self._price_provider is None:
+            return []
+        result: list[ReportMarketPriceSchema] = []
+        for symbol in self._trading_symbols:
+            price = self._price_provider.get_current_price(symbol)
+            if price > 0:
+                result.append(
+                    ReportMarketPriceSchema(symbol=symbol, price=price),
+                )
+        return result

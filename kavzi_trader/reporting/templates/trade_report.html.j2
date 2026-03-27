@@ -69,6 +69,72 @@
             </div>
         </div>
 
+        {% if state.market_prices %}
+        <div class="d-flex flex-wrap gap-4 align-items-end mb-3 pb-3 border-bottom">
+            {% for mp in state.market_prices %}
+            <div>
+                <div class="stat-label text-body-secondary">{{ mp.symbol }}</div>
+                <div class="fw-bold" style="font-variant-numeric: tabular-nums;">${{ "%.2f" | format(mp.price | float) }}</div>
+            </div>
+            {% if not loop.last %}<div class="vr"></div>{% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if state.open_positions %}
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">
+                Open Positions
+                <span class="badge text-bg-secondary ms-1">{{ state.open_positions | length }}</span>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Entry</th>
+                            <th>Current</th>
+                            <th>SL</th>
+                            <th>TP</th>
+                            <th>PnL</th>
+                            <th>Lev</th>
+                            <th>Opened</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pos in state.open_positions %}
+                        <tr>
+                            <td><strong>{{ pos.symbol }}</strong></td>
+                            <td>
+                                {% if pos.side == "LONG" %}
+                                <span class="badge bg-success">LONG</span>
+                                {% else %}
+                                <span class="badge bg-danger">SHORT</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ pos.quantity }}</td>
+                            <td>{{ pos.entry_price }}</td>
+                            <td>{{ pos.current_price }}</td>
+                            <td>{{ pos.stop_loss }}</td>
+                            <td>{{ pos.take_profit }}</td>
+                            <td>
+                                {% set pnl_val = pos.unrealized_pnl | float %}
+                                <span class="{% if pnl_val > 0 %}revenue-positive{% elif pnl_val < 0 %}revenue-negative{% else %}revenue-zero{% endif %}">
+                                    {% if pnl_val >= 0 %}+{% endif %}${{ "%.2f" | format(pnl_val) }}
+                                </span>
+                            </td>
+                            <td>{{ pos.leverage }}x</td>
+                            <td><small>{{ pos.opened_at.strftime('%H:%M:%S') if pos.opened_at is not string else pos.opened_at }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="row g-3">
             <div class="col-lg-7">
                 <div class="card">

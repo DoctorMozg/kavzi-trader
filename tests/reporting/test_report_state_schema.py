@@ -6,6 +6,8 @@ from pydantic import ValidationError
 
 from kavzi_trader.reporting.report_state_schema import (
     ReportActionEntrySchema,
+    ReportMarketPriceSchema,
+    ReportPositionEntrySchema,
     ReportStateSchema,
     ReportTradeEntrySchema,
 )
@@ -141,7 +143,56 @@ class TestReportStateSchema:
         assert isinstance(dumped["initial_balance_usdt"], str)
         assert isinstance(dumped["session_started_at"], str)
 
+    def test_defaults_include_positions_and_prices(self) -> None:
+        state = self._make_state()
+        assert state.open_positions == []
+        assert state.market_prices == []
+
     def test_frozen(self) -> None:
         state = self._make_state()
         with pytest.raises(ValidationError):
             state.version = 99  # type: ignore[misc]
+
+
+class TestReportPositionEntrySchema:
+    def test_valid_construction(self) -> None:
+        entry = ReportPositionEntrySchema(
+            symbol="BTCUSDT",
+            side="LONG",
+            quantity=Decimal("0.01"),
+            entry_price=Decimal(100000),
+            current_price=Decimal(101000),
+            stop_loss=Decimal(99000),
+            take_profit=Decimal(105000),
+            unrealized_pnl=Decimal(10),
+            leverage=3,
+            opened_at=_now(),
+        )
+        assert entry.symbol == "BTCUSDT"
+        assert entry.side == "LONG"
+
+    def test_frozen(self) -> None:
+        entry = ReportPositionEntrySchema(
+            symbol="BTCUSDT",
+            side="SHORT",
+            quantity=Decimal("0.5"),
+            entry_price=Decimal(3500),
+            current_price=Decimal(3400),
+            stop_loss=Decimal(3600),
+            take_profit=Decimal(3200),
+            unrealized_pnl=Decimal(50),
+            leverage=3,
+            opened_at=_now(),
+        )
+        with pytest.raises(ValidationError):
+            entry.symbol = "ETHUSDT"  # type: ignore[misc]
+
+
+class TestReportMarketPriceSchema:
+    def test_valid_construction(self) -> None:
+        entry = ReportMarketPriceSchema(
+            symbol="ETHUSDT",
+            price=Decimal("3500.50"),
+        )
+        assert entry.symbol == "ETHUSDT"
+        assert entry.price == Decimal("3500.50")

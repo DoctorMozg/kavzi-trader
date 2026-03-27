@@ -108,12 +108,7 @@ def test_context_builder_trader(
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
-    assert context["account_state_json"] is not None, "Expected account state JSON."
     assert "account_state" in context, "Expected structured account state dict."
-    assert "analyst_result_json" in context, "Expected analyst result key."
-    assert context["analyst_result_json"] is None, (
-        "Expected None without analyst result."
-    )
     assert context["analyst_result"] is None, "Expected None without analyst result."
     assert context["futures_leverage"] == 3
     assert context["liquidation_distance_percent"] == 33.3
@@ -156,11 +151,10 @@ def test_context_builder_trader_with_analyst_result(
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps, analyst_result=analyst_result)
-    assert context["analyst_result_json"] is not None, "Expected analyst result JSON."
-    assert "LONG" in context["analyst_result_json"]
     assert context["analyst_result"] is analyst_result, (
         "Expected analyst_result object in context."
     )
+    assert context["analyst_result"].direction == "LONG"
 
 
 def test_trader_context_no_positions(

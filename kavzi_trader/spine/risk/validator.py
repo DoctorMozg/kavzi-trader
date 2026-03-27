@@ -131,6 +131,7 @@ class DynamicRiskValidator:
                     stop_loss_atr_multiplier=sl_atr_mult,
                     regime=regime,
                     entry_price=entry_price,
+                    leverage=leverage,
                 )
                 recommended_size = size_result.adjusted_size
                 logger.debug(

@@ -1,6 +1,7 @@
-{% if analyst_result_json %}
+{% if analyst_result %}
 ANALYST ASSESSMENT (use as your starting point — you may override if the full data disagrees, but explain why):
-{{ analyst_result_json }}
+Direction: {{ analyst_result.direction }} | Confluence: {{ analyst_result.confluence_score }}/11 | Valid: {{ analyst_result.setup_valid }}
+Reasoning: {{ analyst_result.reasoning }}
 {% endif %}
 {% if analyst_result and analyst_result.key_levels and analyst_result.key_levels.levels %}
 

@@ -1,7 +1,7 @@
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class KeyLevelSchema(BaseModel):
@@ -26,6 +26,9 @@ class KeyLevelsSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+_MIN_CONFLUENCE_FOR_VALID = 7
+
+
 class AnalystDecisionSchema(BaseModel):
     """
     Detailed analysis result that confirms whether a setup is valid.
@@ -41,3 +44,13 @@ class AnalystDecisionSchema(BaseModel):
     reasoning: Annotated[str, Field(..., min_length=80, max_length=900)]
 
     model_config = ConfigDict(frozen=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _enforce_setup_valid_from_confluence(
+        cls, data: dict[str, Any]
+    ) -> dict[str, Any]:
+        score = data.get("confluence_score")
+        if isinstance(score, int) and score >= _MIN_CONFLUENCE_FOR_VALID:
+            data["setup_valid"] = True
+        return data

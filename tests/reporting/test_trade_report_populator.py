@@ -1,8 +1,13 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
+from kavzi_trader.reporting.report_state_schema import (
+    ReportMarketPriceSchema,
+    ReportPositionEntrySchema,
+)
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 
 
@@ -193,3 +198,71 @@ class TestTradeReportPopulator:
         )
         html = populator.report_path.read_text(encoding="utf-8")
         assert 'http-equiv="refresh"' in html
+
+    @pytest.mark.asyncio
+    async def test_update_balance_with_positions_and_prices(
+        self,
+        populator: TradeReportPopulator,
+    ) -> None:
+        positions = [
+            ReportPositionEntrySchema(
+                symbol="BTCUSDT",
+                side="LONG",
+                quantity=Decimal("0.01"),
+                entry_price=Decimal(100000),
+                current_price=Decimal(101000),
+                stop_loss=Decimal(99000),
+                take_profit=Decimal(105000),
+                unrealized_pnl=Decimal(10),
+                leverage=3,
+                opened_at=datetime.now(UTC),
+            ),
+        ]
+        prices = [
+            ReportMarketPriceSchema(symbol="BTCUSDT", price=Decimal(101000)),
+            ReportMarketPriceSchema(symbol="ETHUSDT", price=Decimal(3500)),
+        ]
+        await populator.update_balance(
+            current_balance_usdt=Decimal(1050),
+            unrealized_pnl_usdt=Decimal(10),
+            active_positions_count=1,
+            open_positions=positions,
+            market_prices=prices,
+        )
+        state = populator.state
+        assert len(state.open_positions) == 1
+        assert state.open_positions[0].symbol == "BTCUSDT"
+        assert len(state.market_prices) == 2
+
+    @pytest.mark.asyncio
+    async def test_html_contains_position_data(
+        self,
+        populator: TradeReportPopulator,
+    ) -> None:
+        positions = [
+            ReportPositionEntrySchema(
+                symbol="ETHUSDT",
+                side="SHORT",
+                quantity=Decimal("0.5"),
+                entry_price=Decimal(3500),
+                current_price=Decimal(3400),
+                stop_loss=Decimal(3600),
+                take_profit=Decimal(3200),
+                unrealized_pnl=Decimal(50),
+                leverage=3,
+                opened_at=datetime.now(UTC),
+            ),
+        ]
+        prices = [
+            ReportMarketPriceSchema(symbol="ETHUSDT", price=Decimal(3400)),
+        ]
+        await populator.update_balance(
+            current_balance_usdt=Decimal(1050),
+            open_positions=positions,
+            market_prices=prices,
+        )
+        html = populator.report_path.read_text(encoding="utf-8")
+        assert "ETHUSDT" in html
+        assert "Open Positions" in html
+        assert "SHORT" in html
+        assert "3400" in html

@@ -34,6 +34,32 @@ class ReportTradeEntrySchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class ReportPositionEntrySchema(BaseModel):
+    """Snapshot of a single open position for the report."""
+
+    symbol: Annotated[str, Field(...)]
+    side: Annotated[Literal["LONG", "SHORT"], Field(...)]
+    quantity: Annotated[Decimal, Field(...)]
+    entry_price: Annotated[Decimal, Field(...)]
+    current_price: Annotated[Decimal, Field(...)]
+    stop_loss: Annotated[Decimal, Field(...)]
+    take_profit: Annotated[Decimal, Field(...)]
+    unrealized_pnl: Annotated[Decimal, Field(...)]
+    leverage: Annotated[int, Field(...)]
+    opened_at: Annotated[datetime, Field(...)]
+
+    model_config = ConfigDict(frozen=True)
+
+
+class ReportMarketPriceSchema(BaseModel):
+    """Current price for a single trading pair."""
+
+    symbol: Annotated[str, Field(...)]
+    price: Annotated[Decimal, Field(...)]
+
+    model_config = ConfigDict(frozen=True)
+
+
 class ReportStateSchema(BaseModel):
     """Complete report state rendered to HTML."""
 
@@ -47,6 +73,15 @@ class ReportStateSchema(BaseModel):
     unrealized_pnl_usdt: Annotated[Decimal, Field(default=Decimal(0))]
 
     active_positions_count: Annotated[int, Field(default=0, ge=0)]
+
+    open_positions: Annotated[
+        list[ReportPositionEntrySchema],
+        Field(default_factory=list),
+    ]
+    market_prices: Annotated[
+        list[ReportMarketPriceSchema],
+        Field(default_factory=list),
+    ]
 
     actions: Annotated[
         list[ReportActionEntrySchema],

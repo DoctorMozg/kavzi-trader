@@ -32,7 +32,7 @@ def test_prompt_loader_renders_user_prompt() -> None:
     }
     rendered = loader.render_user_prompt("scout_scan", context)
     assert "BTCUSDT" in rendered, "Expected symbol in rendered prompt."
-    assert "INDICATORS:" in rendered, "Expected indicators section."
+    assert "RSI=" in rendered, "Expected indicator values in rendered prompt."
 
 
 def test_prompt_loader_renders_analyst_system_prompt() -> None:

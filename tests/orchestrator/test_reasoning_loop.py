@@ -1,7 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -25,7 +25,11 @@ from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     DualConfluenceSchema,
 )
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.state.schemas import AccountStateSchema
+from kavzi_trader.spine.state.schemas import (
+    AccountStateSchema,
+    PositionManagementConfigSchema,
+    PositionSchema,
+)
 
 _ANALYST_REASONING = (
     "EMA alignment is bullish with EMA20 above EMA50 above EMA200. RSI at 55 supports"
@@ -382,3 +386,129 @@ async def test_backoff_resets_on_interesting() -> None:
     assert sleep_durations[0] == 20.0
     # Cycle 2: INTERESTING → reset to base 10
     assert sleep_durations[1] == 10.0
+
+
+def _make_skip_result() -> PipelineResult:
+    return PipelineResult(
+        scout=ScoutDecisionSchema(verdict="SKIP", reason="dead", pattern_detected=None),
+    )
+
+
+def _make_analyst_result() -> PipelineResult:
+    return PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING", reason="volume", pattern_detected=None
+        ),
+        analyst=AnalystDecisionSchema(
+            setup_valid=False,
+            direction="LONG",
+            confluence_score=5,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning=_ANALYST_REASONING,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_cooldown_after_analyst_skips_cycles() -> None:
+    """After Analyst is reached, symbol should be skipped for cooldown cycles."""
+    deps = _build_deps()
+    provider = DummyDepsProvider(deps)
+    router = AsyncMock()
+    router.run = AsyncMock(return_value=_make_analyst_result())
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock()
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=router,
+        deps_provider=provider,
+        redis_client=redis_client,
+        interval_s=1,
+        analyst_cooldown_cycles=2,
+    )
+
+    sleep_durations: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def _capture_sleep(duration: float) -> None:
+        sleep_durations.append(duration)
+        await original_sleep(0)
+
+    import unittest.mock
+
+    with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
+        task = asyncio.create_task(loop.run())
+        for _ in range(100):
+            await original_sleep(0)
+            if len(sleep_durations) >= 4:
+                break
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    # Cycle 1: router called (analyst reached)
+    # Cycle 2: cooldown=2, skip → router NOT called
+    # Cycle 3: cooldown=1, skip → router NOT called
+    # Cycle 4: cooldown=0 → router called again
+    assert router.run.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_skip_symbol_with_open_position() -> None:
+    """Symbols with open positions should be skipped entirely."""
+    deps = _build_deps()
+    provider = DummyDepsProvider(deps)
+    router = AsyncMock()
+    router.run = AsyncMock(return_value=_make_skip_result())
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock()
+
+    now = datetime.now(UTC)
+    mock_state_manager = MagicMock()
+    mock_state_manager.get_all_positions = AsyncMock(
+        return_value=[
+            PositionSchema(
+                id="pos-1",
+                symbol="BTCUSDT",
+                side="LONG",
+                quantity=Decimal("0.1"),
+                entry_price=Decimal(50000),
+                stop_loss=Decimal(49000),
+                take_profit=Decimal(52000),
+                current_stop_loss=Decimal(49000),
+                management_config=PositionManagementConfigSchema(),
+                opened_at=now,
+                updated_at=now,
+            ),
+        ],
+    )
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=router,
+        deps_provider=provider,
+        redis_client=redis_client,
+        interval_s=1,
+        state_manager=mock_state_manager,
+    )
+
+    sleep_durations: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def _capture_sleep(duration: float) -> None:
+        sleep_durations.append(duration)
+        await original_sleep(0)
+
+    import unittest.mock
+
+    with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
+        task = asyncio.create_task(loop.run())
+        for _ in range(50):
+            await original_sleep(0)
+            if len(sleep_durations) >= 2:
+                break
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    # Router should never be called because position is open
+    router.run.assert_not_called()

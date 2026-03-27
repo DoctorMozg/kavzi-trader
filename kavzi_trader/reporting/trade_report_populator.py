@@ -11,6 +11,8 @@ from kavzi_trader.commons.path_utility import ensure_directory_exists
 from kavzi_trader.commons.time_utility import timestamp_path, utc_now
 from kavzi_trader.reporting.report_state_schema import (
     ReportActionEntrySchema,
+    ReportMarketPriceSchema,
+    ReportPositionEntrySchema,
     ReportStateSchema,
     ReportTradeEntrySchema,
 )
@@ -58,6 +60,8 @@ class TradeReportPopulator:
             session_revenue_usdt=Decimal(0),
             unrealized_pnl_usdt=Decimal(0),
             active_positions_count=0,
+            open_positions=[],
+            market_prices=[],
             actions=[],
             trades=[],
         )
@@ -156,21 +160,26 @@ class TradeReportPopulator:
         current_balance_usdt: Decimal,
         unrealized_pnl_usdt: Decimal = Decimal(0),
         active_positions_count: int = 0,
+        open_positions: list[ReportPositionEntrySchema] | None = None,
+        market_prices: list[ReportMarketPriceSchema] | None = None,
     ) -> None:
-        """Update balance/revenue header and re-render."""
+        """Update balance/revenue header, positions, prices and re-render."""
         try:
             revenue = current_balance_usdt - self._state.initial_balance_usdt
+            update: dict[str, object] = {
+                "current_balance_usdt": current_balance_usdt,
+                "session_revenue_usdt": revenue,
+                "unrealized_pnl_usdt": unrealized_pnl_usdt,
+                "active_positions_count": active_positions_count,
+                "last_updated_at": utc_now(),
+                "version": self._state.version + 1,
+            }
+            if open_positions is not None:
+                update["open_positions"] = open_positions
+            if market_prices is not None:
+                update["market_prices"] = market_prices
             async with self._lock:
-                self._state = self._state.model_copy(
-                    update={
-                        "current_balance_usdt": current_balance_usdt,
-                        "session_revenue_usdt": revenue,
-                        "unrealized_pnl_usdt": unrealized_pnl_usdt,
-                        "active_positions_count": active_positions_count,
-                        "last_updated_at": utc_now(),
-                        "version": self._state.version + 1,
-                    },
-                )
+                self._state = self._state.model_copy(update=update)
                 await self._render()
         except Exception:
             logger.exception("Failed to update balance in report")

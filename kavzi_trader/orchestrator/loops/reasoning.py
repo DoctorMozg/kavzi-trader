@@ -19,6 +19,7 @@ from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
+from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
@@ -40,6 +41,8 @@ class ReasoningLoop:
         queue_key: str = "kt:decisions:pending",
         interval_s: int = 5,
         report_populator: TradeReportPopulator | None = None,
+        state_manager: StateManager | None = None,
+        analyst_cooldown_cycles: int = 3,
     ) -> None:
         self._symbols = symbols
         self._router = router
@@ -48,6 +51,9 @@ class ReasoningLoop:
         self._queue_key = queue_key
         self._interval_s = interval_s
         self._report_populator = report_populator
+        self._state_manager = state_manager
+        self._analyst_cooldown_cycles = analyst_cooldown_cycles
+        self._cooldowns: dict[str, int] = {}
 
     async def run(self) -> None:
         logger.info(
@@ -111,7 +117,32 @@ class ReasoningLoop:
         )
         return interesting
 
+    async def _get_open_position_symbols(self) -> set[str]:
+        if self._state_manager is None:
+            return set()
+        try:
+            positions = await self._state_manager.get_all_positions()
+            return {p.symbol for p in positions}
+        except Exception:
+            logger.exception("Failed to fetch open positions for skip check")
+            return set()
+
     async def _handle_symbol(self, symbol: str) -> bool:
+        remaining = self._cooldowns.get(symbol, 0)
+        if remaining > 0:
+            self._cooldowns[symbol] = remaining - 1
+            logger.debug(
+                "Skipping %s: cooldown remaining %d cycles",
+                symbol,
+                remaining - 1,
+            )
+            return False
+
+        open_symbols = await self._get_open_position_symbols()
+        if symbol in open_symbols:
+            logger.debug("Skipping %s: open position exists", symbol)
+            return False
+
         result = await self._router.run(symbol, self._deps_provider)
         try:
             await self._report_decisions(
@@ -125,8 +156,13 @@ class ReasoningLoop:
                 "Failed to report decisions for %s",
                 symbol,
             )
+
+        if result.analyst is not None:
+            self._cooldowns[symbol] = self._analyst_cooldown_cycles
+
         if not self._should_enqueue(result):
             return result.scout.verdict == "INTERESTING"
+        self._cooldowns[symbol] = self._analyst_cooldown_cycles * 3
         await self._enqueue_decision(result)
         return True
 

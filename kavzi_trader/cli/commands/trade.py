@@ -287,6 +287,8 @@ async def _start_orchestrator(
     orchestrator = TradingOrchestrator(
         config=app_config.orchestrator,
         state_manager=state_manager,
+        price_provider=cache,
+        trading_symbols=app_config.trading.symbols,
         ingest_loop=DataIngestLoop(stream_manager),
         order_flow_loop=OrderFlowLoop(
             order_flow_fetcher,
@@ -299,6 +301,7 @@ async def _start_orchestrator(
             redis_client=redis_client,
             interval_s=app_config.orchestrator.reasoning_interval_s,
             report_populator=report_populator,
+            state_manager=state_manager,
         ),
         execution_loop=ExecutionLoop(
             redis_client=redis_client,

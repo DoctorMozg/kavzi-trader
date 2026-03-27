@@ -288,3 +288,36 @@ class TestDynamicRiskValidator:
 
         assert result.is_valid is True
         assert result.recommended_size > Decimal(0)
+
+    @pytest.mark.asyncio
+    async def test_leverage_forwarded_to_position_sizer(
+        self, mock_state_manager
+    ) -> None:
+        validator = DynamicRiskValidator()
+
+        result_lev1 = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
+            state_manager=mock_state_manager,
+            leverage=1,
+        )
+        result_lev3 = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
+            state_manager=mock_state_manager,
+            leverage=3,
+        )
+
+        assert result_lev1.is_valid is True
+        assert result_lev3.is_valid is True
+        assert result_lev3.recommended_size >= result_lev1.recommended_size
