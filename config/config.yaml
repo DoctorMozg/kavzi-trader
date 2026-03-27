@@ -79,7 +79,7 @@ trading:
 
   # Candlestick interval for analysis
   # Valid: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 1d
-  interval: "1m"
+  interval: "5m"
 
   # How many candles to backfill into the in-memory cache at startup.
   # This improves indicator warmup without increasing Brain prompt size.
@@ -349,15 +349,15 @@ execution:
   # engine, it is marked EXPIRED and discarded (market has moved since the decision).
   # Lower = stricter freshness requirement.
   #
-  #   LOW     regime: market is slow, decisions stay valid longer  → 60000ms (60s)
-  #   NORMAL  regime: default market conditions                    → 30000ms (30s)
-  #   HIGH    regime: fast-moving market, decisions stale quicker  → 15000ms (15s)
-  #   EXTREME regime: spiking market, only very fresh decisions    →  5000ms  (5s)
+  #   LOW     regime: market is slow, decisions stay valid longer  → 300000ms (5min)
+  #   NORMAL  regime: default market conditions                    → 120000ms (2min)
+  #   HIGH    regime: fast-moving market, decisions stale quicker  →  30000ms (30s)
+  #   EXTREME regime: spiking market, only very fresh decisions    →  10000ms (10s)
   staleness_thresholds_ms:
-    LOW: 60000
-    NORMAL: 30000
-    HIGH: 15000
-    EXTREME: 5000
+    LOW: 300000
+    NORMAL: 120000
+    HIGH: 30000
+    EXTREME: 10000
 
   # Whether to place SL and TP orders immediately after entry fill.
   # true  = place SL/TP right away (recommended — protects against sudden moves)
@@ -425,10 +425,10 @@ orchestrator:
 
   # How often (seconds) the ReasoningLoop scans symbols and asks the Brain
   # for new trade decisions.
-  #   5  = very aggressive
-  #   30 = default for 1m candles
-  #   60 = conservative
-  reasoning_interval_s: 30
+  #   30 = aggressive
+  #   60 = default for 5m candles
+  #   120 = conservative
+  reasoning_interval_s: 60
 
   # How often (seconds) PositionManagementLoop evaluates open positions
   # for trailing stop, break-even, partial exit, time exit, and scale-in actions.
