@@ -109,7 +109,7 @@ class ReportingConfigSchema(BaseModel):
 class FuturesConfigSchema(BaseModel):
     """Configuration for USDT-M perpetual futures trading."""
 
-    default_leverage: Annotated[int, Field(default=3, ge=1, le=125)]
+    default_leverage: Annotated[int, Field(default=5, ge=1, le=125)]
     margin_type: Annotated[str, Field(default="ISOLATED")]
     position_mode: Annotated[str, Field(default="ONE_WAY")]
     symbol_leverage: Annotated[dict[str, int], Field(default_factory=dict)]

@@ -64,7 +64,7 @@ class AnalystDependenciesSchema(BaseModel):
     order_flow: Annotated[OrderFlowSchema | None, Field(default=None)]
     algorithm_confluence: Annotated[DualConfluenceSchema, Field(...)]
     volatility_regime: Annotated[VolatilityRegime, Field(...)]
-    leverage: Annotated[int, Field(default=3, ge=1, le=125)]
+    leverage: Annotated[int, Field(default=5, ge=1, le=125)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -84,7 +84,7 @@ class TradingDependenciesSchema(BaseModel):
     volatility_regime: Annotated[VolatilityRegime, Field(...)]
     account_state: Annotated[AccountStateSchema, Field(...)]
     open_positions: Annotated[list[PositionSchema], Field(default_factory=list)]
-    leverage: Annotated[int, Field(default=3, ge=1, le=125)]
+    leverage: Annotated[int, Field(default=5, ge=1, le=125)]
     exchange_client: Annotated[BinanceClient, Field(...)]
     event_store: Annotated[RedisEventStore, Field(...)]
     atr_history: Annotated[list[Decimal], Field(default_factory=list)]

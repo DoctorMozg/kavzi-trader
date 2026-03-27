@@ -140,14 +140,14 @@ async def test_cycle_cache_is_cleared() -> None:
 async def test_trader_deps_include_default_leverage() -> None:
     provider = _make_provider()
     deps = await provider.get_trader("BTCUSDT")
-    assert deps.leverage == 3
+    assert deps.leverage == 5
 
 
 @pytest.mark.asyncio
 async def test_analyst_deps_include_default_leverage() -> None:
     provider = _make_provider()
     deps = await provider.get_analyst("BTCUSDT")
-    assert deps.leverage == 3
+    assert deps.leverage == 5
 
 
 @pytest.mark.asyncio

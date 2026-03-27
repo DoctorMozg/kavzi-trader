@@ -149,7 +149,7 @@ class TestPositionSizer:
         """Notional cap should be applied before margin clamp."""
         # ATR-based size would be 100 / 1.0 = 100 units
         # At entry_price=10, notional = 100 * 10 = $1,000
-        # With 30% cap on $1,000 balance, max notional = $300 → max size = 30
+        # With explicit 30% cap on $1,000 balance, max notional = $300 → max size = 30
         # Margin with leverage=10: 1000 * 10 / 10 = 1000 (much larger)
         # So notional cap should be the binding constraint
         config = RiskConfigSchema(max_notional_percent=Decimal("30.0"))
@@ -172,7 +172,7 @@ class TestPositionSizer:
         normal_regime: VolatilityRegimeSchema,
     ) -> None:
         """DOGEUSDT scenario: ATR sizing produces huge qty on cheap assets."""
-        config = RiskConfigSchema(max_notional_percent=Decimal("30.0"))
+        config = RiskConfigSchema(max_notional_percent=Decimal("30.0"))  # explicit
         sizer = PositionSizer(config)
         result = sizer.calculate_size(
             account_balance=Decimal(10000),

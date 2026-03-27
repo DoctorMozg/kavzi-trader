@@ -80,7 +80,7 @@ def test_context_builder_analyst(
     assert "algorithm_confluence_short" in context, "Expected SHORT confluence dict."
     assert "detected_side" in context, "Expected detected side."
     assert "market_snapshot" in context, "Expected structured market snapshot dict."
-    assert context["futures_leverage"] == 3
+    assert context["futures_leverage"] == 5
 
 
 def test_context_builder_trader(
@@ -110,8 +110,8 @@ def test_context_builder_trader(
     context = builder.build_trader_context(deps)
     assert "account_state" in context, "Expected structured account state dict."
     assert context["analyst_result"] is None, "Expected None without analyst result."
-    assert context["futures_leverage"] == 3
-    assert context["liquidation_distance_percent"] == 33.3
+    assert context["futures_leverage"] == 5
+    assert context["liquidation_distance_percent"] == 20.0
     assert "BTCUSDT" in context["open_positions_json"]
     assert context["funding_rate_24h_percent"] is not None
 

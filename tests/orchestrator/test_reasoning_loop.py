@@ -272,7 +272,7 @@ async def test_decision_message_includes_leverage() -> None:
 
     pushed_data = redis_client.client.lpush.call_args[0][1]
     message = json.loads(pushed_data)
-    assert message["leverage"] == 3
+    assert message["leverage"] == 5
 
 
 @pytest.mark.asyncio

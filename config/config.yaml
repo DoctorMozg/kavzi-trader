@@ -93,10 +93,10 @@ trading:
 futures:
   # Default leverage for all symbols (overridable per symbol below).
   #   1  = no leverage (spot-equivalent)
-  #   3  = default (conservative — liquidation ~33% from entry)
-  #   5  = moderate
+  #   3  = conservative (liquidation ~33% from entry)
+  #   5  = default (liquidation ~20% — 13×-40× safety buffer over typical 0.5-1.5% SL)
   #   10 = aggressive (liquidation ~10% from entry — NOT recommended)
-  default_leverage: 3
+  default_leverage: 5
 
   # Margin type for all positions.
   #   "ISOLATED" = each position has its own margin (default — safer)
@@ -110,9 +110,10 @@ futures:
 
   # Per-symbol leverage overrides (symbol → leverage).
   # If a symbol is not listed here, default_leverage is used.
-  # symbol_leverage:
-  #   BTCUSDT: 3
-  #   ETHUSDT: 3
+  # TAO kept at 3x: extreme vol (90-160% annualized), thin liquidity,
+  # Binance reduced max leverage to 20x in Aug 2024.
+  symbol_leverage:
+    TAOUSDT: 3
 
   # Distance from liquidation price (%) at which position manager triggers
   # emergency exit as a safety net (in case SL order fails to fill).
@@ -204,9 +205,10 @@ risk:
   # Prevents oversized positions on low-priced assets where ATR-based sizing
   # produces tiny risk but huge notional exposure.
   #   20.0 = conservative
-  #   30.0 = default (max $3,000 notional on a $10,000 account)
-  #   50.0 = permissive
-  max_notional_percent: 30.0
+  #   30.0 = restrictive (caps sizer to 15-25% of risk budget on low-price assets)
+  #   50.0 = default (max $5,000 notional on a $10,000 account)
+  #   80.0 = permissive
+  max_notional_percent: 50.0
 
   # Number of historical ATR values for Z-score mean/stdev calculation.
   #   14 = responsive (reacts quickly to regime changes)
