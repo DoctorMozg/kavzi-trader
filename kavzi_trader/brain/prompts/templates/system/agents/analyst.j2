@@ -15,5 +15,5 @@ ANALYSIS FRAMEWORK — follow this sequence:
 RULES:
 - Use ONLY the provided data. If a field is null, state it is unavailable and reduce confluence accordingly.
 - Do NOT hallucinate price levels. Every key_level must trace back to a specific data point (an EMA value, a Bollinger band value, or a candle high/low from the provided data).
-- Your reasoning must explain how each confluence point was awarded or denied.
+- Your reasoning MUST be detailed (at least 3-4 sentences). Include: (1) trend direction with specific EMA values, (2) each algorithm signal awarded or denied with the data that drove it, (3) each discretionary point awarded or denied with justification, (4) the volatility regime and its impact. Do not give one-line answers.
 - If volatility_regime is LOW or EXTREME, set setup_valid=false regardless of confluence_score.

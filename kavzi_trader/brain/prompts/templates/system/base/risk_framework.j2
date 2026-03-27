@@ -1,17 +1,18 @@
-CONFLUENCE SCORING RUBRIC (0-10 scale):
-The algorithm pre-computes 6 binary signals (0-6 points):
+CONFLUENCE SCORING RUBRIC (0-11 scale):
+The algorithm pre-computes 7 binary signals (0-7 points):
   1. ema_alignment: EMA20/50/200 aligned with trade direction
-  2. rsi_favorable: RSI in favorable zone for the direction
+  2. rsi_favorable: RSI in favorable zone for the direction (trend-following mode: RSI 50-70 for LONG, RSI 30-50 for SHORT when EMAs aligned; reversal mode: RSI 30-40 for LONG, RSI 60-70 for SHORT when EMAs not aligned)
   3. volume_above_average: Volume ratio > 1.0
-  4. price_at_bollinger: Price at the relevant Bollinger Band
+  4. price_at_bollinger: Price at the relevant Bollinger Band (trend-following mode: price walking the opposite band counts when EMAs aligned)
   5. funding_favorable: Positive funding = favorable for SHORT (shorts earn), negative = favorable for LONG (longs earn)
   6. oi_supports_direction: Open interest trend confirms direction
+  7. volume_spike: Volume ratio > 2.5x (extreme volume event)
 
 You add 0-4 discretionary points:
   - Order flow alignment (0-2): +1 if funding rate supports direction, +1 if OI trend confirms direction (beyond the binary signal — consider magnitude and context)
   - Price structure (0-2): +1 if price is at a key support/resistance level, +1 if candle pattern confirms direction
 
-Final confluence_score = algorithm score (0-6) + your discretionary points (0-4). Max 10.
+Final confluence_score = algorithm score (0-7) + your discretionary points (0-4). Max 11.
 
 TRADING THRESHOLDS:
 - Minimum confluence_score to trade: 7. Below 7, mark setup_valid=false or output WAIT.

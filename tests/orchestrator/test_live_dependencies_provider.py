@@ -78,6 +78,7 @@ def _make_provider(
         price_at_bollinger=False,
         funding_favorable=False,
         oi_supports_direction=False,
+        volume_spike=False,
         score=0,
     )
     confluence_calc.evaluate_both.return_value = DualConfluenceSchema(

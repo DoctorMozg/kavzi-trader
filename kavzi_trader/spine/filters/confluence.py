@@ -51,6 +51,7 @@ class ConfluenceCalculator:
         price_at_bollinger = self._price_at_bollinger(candle, indicators, side)
         funding_favorable = self._funding_favorable(order_flow, side)
         oi_supports_direction = self._oi_supports_direction(order_flow, side)
+        volume_spike = self._volume_spike(indicators)
 
         score = sum(
             [
@@ -60,6 +61,7 @@ class ConfluenceCalculator:
                 price_at_bollinger,
                 funding_favorable,
                 oi_supports_direction,
+                volume_spike,
             ],
         )
 
@@ -70,13 +72,14 @@ class ConfluenceCalculator:
                 side,
             )
         logger.debug(
-            "Confluence: ema=%s rsi=%s vol=%s boll=%s fund=%s oi=%s score=%d",
+            "Confluence: ema=%s rsi=%s vol=%s boll=%s fund=%s oi=%s spike=%s score=%d",
             ema_alignment,
             rsi_favorable,
             volume_above_average,
             price_at_bollinger,
             funding_favorable,
             oi_supports_direction,
+            volume_spike,
             int(score),
         )
 
@@ -87,6 +90,7 @@ class ConfluenceCalculator:
             price_at_bollinger=price_at_bollinger,
             funding_favorable=funding_favorable,
             oi_supports_direction=oi_supports_direction,
+            volume_spike=volume_spike,
             score=int(score),
         )
 
@@ -112,8 +116,13 @@ class ConfluenceCalculator:
         rsi = indicators.rsi_14
         if rsi is None:
             return False
+        ema_aligned = self._ema_alignment(indicators, side)
         if side == "LONG":
+            if ema_aligned:
+                return Decimal(50) <= rsi <= Decimal(70)
             return Decimal(30) <= rsi <= Decimal(40)
+        if ema_aligned:
+            return Decimal(30) <= rsi <= Decimal(50)
         return Decimal(60) <= rsi <= Decimal(70)
 
     def _volume_above_average(
@@ -134,9 +143,14 @@ class ConfluenceCalculator:
         bollinger = indicators.bollinger
         if bollinger is None:
             return False
+        ema_aligned = self._ema_alignment(indicators, side)
         if side == "LONG":
-            return candle.close_price <= bollinger.lower
-        return candle.close_price >= bollinger.upper
+            if candle.close_price <= bollinger.lower:
+                return True
+            return ema_aligned and candle.close_price >= bollinger.upper
+        if candle.close_price >= bollinger.upper:
+            return True
+        return ema_aligned and candle.close_price <= bollinger.lower
 
     def _funding_favorable(
         self,
@@ -159,3 +173,12 @@ class ConfluenceCalculator:
         if side == "LONG":
             return order_flow.oi_change_1h_percent > Decimal(0)
         return order_flow.oi_change_1h_percent < Decimal(0)
+
+    def _volume_spike(
+        self,
+        indicators: TechnicalIndicatorsSchema,
+    ) -> bool:
+        volume = indicators.volume
+        if volume is None:
+            return False
+        return volume.volume_ratio > Decimal("2.5")

@@ -43,14 +43,14 @@ brain:
   scout:
     # Tier 1 — Pre-filter: cheap & fast ($0.065/$0.26 per M tokens, 1M ctx)
     # Alternatives: deepseek/deepseek-v3.2, openai/gpt-4.1-nano
-    model_id: "deepseek/deepseek-v3.2"
-    retries: 1                 # Max retry attempts on transient API errors
+    model_id: "deepseek/deepseek-chat-v3-0324"
+    retries: 2                 # Max retry attempts on transient API errors
     temperature: 0.0           # 0.0 = deterministic output (recommended for trading)
 
   analyst:
     # Tier 2 — Financial reasoning: 88.23% accuracy ($1.25/$10.00 per M tokens)
     # Alternatives: anthropic/claude-opus-4.6 (87.82%), anthropic/claude-sonnet-4.5 (83.61%)
-    model_id: "openai/gpt-5"
+    model_id: "openai/gpt-5.4-mini"
     retries: 2
     temperature: 0.0
 
@@ -186,7 +186,7 @@ risk:
   #  -1.5 = strict (blocks more often)
   #  -1.0 = default
   #  -0.5 = permissive
-  volatility_low_threshold: -1.0
+  volatility_low_threshold: -1.5
 
   # HIGH regime (z >= high_threshold): elevated volatility, position size halved (50%).
   #   0.5 = sensitive (triggers size reduction sooner)

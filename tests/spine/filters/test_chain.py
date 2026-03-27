@@ -44,7 +44,7 @@ async def test_chain_allows_and_returns_confluence(
 
     assert result.is_allowed is True, "Expected chain to allow trade"
     assert result.confluence is not None, "Expected confluence result"
-    assert result.confluence.score == 4, "Expected confluence score from fixtures"
+    assert result.confluence.score == 3, "Expected confluence score from fixtures"
 
 
 @pytest.mark.asyncio

@@ -41,7 +41,10 @@ async def test_decision_log_writer(tmp_path) -> None:
     decision = TradeDecisionSchema(
         action="WAIT",
         confidence=0.0,
-        reasoning="skip",
+        reasoning=(
+            "Mixed signals across all timeframes. EMA alignment is neutral and RSI"
+            " is flat at 50. No clear directional bias to justify a trade entry."
+        ),
         suggested_entry=None,
         suggested_stop_loss=None,
         suggested_take_profit=None,

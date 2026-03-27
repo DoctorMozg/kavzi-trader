@@ -27,6 +27,16 @@ from kavzi_trader.spine.filters.algorithm_confluence_schema import (
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.schemas import AccountStateSchema
 
+_ANALYST_REASONING = (
+    "EMA alignment is bullish with EMA20 above EMA50 above EMA200. RSI at 55 supports"
+    " continuation. Volume confirms the breakout. Volatility regime is NORMAL."
+)
+_TRADER_REASONING = (
+    "Agree with Analyst direction LONG. Confluence score 4/6 with EMA alignment and"
+    " volume supporting. Entry at 105 near current price, SL at 95 below key support,"
+    " TP at 120 at next resistance. R:R is 1.5:1 which meets minimum threshold."
+)
+
 
 class DummyDepsProvider:
     def __init__(self, deps: TradingDependenciesSchema) -> None:
@@ -110,6 +120,7 @@ def _build_deps() -> TradingDependenciesSchema:
         price_at_bollinger=False,
         funding_favorable=False,
         oi_supports_direction=False,
+        volume_spike=False,
         score=0,
     )
     short_conf = AlgorithmConfluenceSchema(
@@ -119,6 +130,7 @@ def _build_deps() -> TradingDependenciesSchema:
         price_at_bollinger=False,
         funding_favorable=False,
         oi_supports_direction=False,
+        volume_spike=False,
         score=0,
     )
     confluence = DualConfluenceSchema(
@@ -168,12 +180,12 @@ async def test_reasoning_loop_enqueues_decision() -> None:
                 direction="LONG",
                 confluence_score=7,
                 key_levels=KeyLevelsSchema(levels=[]),
-                reasoning="ok",
+                reasoning=_ANALYST_REASONING,
             ),
             trader=TradeDecisionSchema(
                 action="LONG",
                 confidence=0.8,
-                reasoning="go",
+                reasoning=_TRADER_REASONING,
                 suggested_entry=Decimal(105),
                 suggested_stop_loss=Decimal(95),
                 suggested_take_profit=Decimal(120),
@@ -222,12 +234,12 @@ async def test_decision_message_includes_leverage() -> None:
                 direction="LONG",
                 confluence_score=7,
                 key_levels=KeyLevelsSchema(levels=[]),
-                reasoning="ok",
+                reasoning=_ANALYST_REASONING,
             ),
             trader=TradeDecisionSchema(
                 action="LONG",
                 confidence=0.8,
-                reasoning="go",
+                reasoning=_TRADER_REASONING,
                 suggested_entry=Decimal(105),
                 suggested_stop_loss=Decimal(95),
                 suggested_take_profit=Decimal(120),

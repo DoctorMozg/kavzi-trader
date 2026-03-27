@@ -194,6 +194,7 @@ class ContextBuilder(BaseModel):
                 "detected_side": dual.detected_side,
                 "account_state": deps.account_state.model_dump(),
                 "account_state_json": dump_json(deps.account_state),
+                "analyst_result": analyst_result,
                 "analyst_result_json": dump_optional_json(analyst_result),
                 "futures_leverage": deps.leverage,
                 "liquidation_distance_percent": round(100 / deps.leverage, 1),

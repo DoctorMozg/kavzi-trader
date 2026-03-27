@@ -25,6 +25,7 @@ Pick the most recent one by filename sort order.
 # Log Format
 
 Each line is a JSON object with these fields:
+
 ```json
 {
   "timestamp": "ISO 8601 with timezone",
@@ -44,36 +45,44 @@ Each line is a JSON object with these fields:
 # Key Log Patterns to Extract
 
 ## Scout Decisions
+
 - Logger: `kavzi_trader.brain.agent.scout` or `kavzi_trader.brain.agent.router`
 - Pattern: `Scout verdict={SKIP|INTERESTING} reason=... pattern=... elapsed_ms=...`
 - Extra fields: `symbol`, `elapsed_ms`
 
 ## Analyst Decisions
+
 - Logger: `kavzi_trader.brain.agent.analyst`
 - Pattern: `Analyst result for {symbol}: setup_valid={True|False} direction={LONG|SHORT} confluence={N} elapsed_ms=...`
 - Detailed reasoning in separate DEBUG entry: `Analyst reasoning for {symbol}: ...`
 
 ## Trader Decisions
+
 - Logger: `kavzi_trader.brain.agent.trader` or `kavzi_trader.brain.agent.router`
 - Pattern: `Trader decision for {symbol}: action={LONG|SHORT|HOLD} confidence=... elapsed_ms=...`
 
 ## Pipeline Timing
+
 - `Pipeline stopped at {Scout|Analyst|Trader} for {symbol} in {N}ms`
 - `Pipeline complete for {symbol}` (when all 3 stages pass)
 
 ## Market Data
+
 - Candle closes: `Candle closed for {symbol}: close={price} volume={volume}`
 - Order flow: `Order flow updated for {symbol}: funding_rate={rate} oi={oi}`
 - Confluence scores: `Confluence: ema={bool} rsi={bool} vol={bool} boll={bool} fund={bool} oi={bool} score={N}`
 
 ## Warnings/Errors
+
 - Slow agents: `Analyst agent slow for {symbol}: {N}s`
 - Any ERROR level entries
 
 # Analysis Framework
 
 ## Step 1: Extract Decision Timeline
+
 Build a per-symbol timeline of all decisions in the session:
+
 - Total reasoning cycles
 - Scout verdicts per symbol (SKIP count, INTERESTING count, reasons)
 - Analyst results (setup_valid True/False, confluence scores, directions)
@@ -81,6 +90,7 @@ Build a per-symbol timeline of all decisions in the session:
 - Pipeline stage where each symbol was filtered out
 
 ## Step 2: Evaluate Scout Performance
+
 - **Filter rate**: What % of evaluations resulted in SKIP? (Target: 85-95%)
 - **Reason distribution**: Group SKIP reasons (low volume, low volatility, no criteria met, etc.)
 - **False negatives risk**: Did Scout SKIP any symbol that later showed significant price movement?
@@ -88,18 +98,22 @@ Build a per-symbol timeline of all decisions in the session:
 - **Consistency**: Does the same symbol get contradictory verdicts across cycles?
 
 ## Step 3: Evaluate Analyst Performance
+
 - **Confluence threshold**: Were setup_valid=False decisions justified by low confluence scores?
 - **Reasoning quality**: Does the analyst reasoning reference concrete data points (EMA values, RSI, volume ratios)?
 - **Direction accuracy**: Did the analyst's direction call align with subsequent price movement?
 - **Timing**: Analyst response time (target: <5s, flag anything >30s)
 
 ## Step 4: Evaluate Trader Performance (if any trades)
+
 - **Entry quality**: Was the entry price reasonable given the analysis?
 - **Risk management**: Were stop-loss and take-profit levels appropriate for the leverage and volatility regime?
 - **Confidence calibration**: Did high-confidence trades perform better than low-confidence ones?
 
 ## Step 5: Validate Against Market Reality
+
 Use the `Agent` tool to spawn `voltagent-research:search-specialist` or `voltagent-research:research-analyst` subagents (or use `WebSearch`/`WebFetch` directly if subagents are unavailable) to:
+
 - Look up what actually happened to each symbol's price after the log session
 - Check if Scout SKIP decisions on "dead market" symbols were correct (did those symbols stay flat?)
 - Verify if INTERESTING verdicts were followed by meaningful price moves
@@ -107,12 +121,18 @@ Use the `Agent` tool to spawn `voltagent-research:search-specialist` or `voltage
 - Compare funding rates logged vs current/historical funding rates for reasonableness
 
 ## Step 6: Performance Metrics Summary
+
 Calculate and report:
+
 - **Total cycles**: Number of reasoning loop iterations
 - **Filter efficiency**: % filtered at Scout / Analyst / Trader stages
 - **Cost efficiency**: Estimated API cost (Scout ~$0.001/call, Analyst ~$0.01/call, Trader ~$0.05/call)
 - **Latency profile**: p50/p90/max for each pipeline stage
 - **Decision distribution**: Chart of SKIP reasons, INTERESTING patterns, Analyst directions
+
+## Step 7: Saving
+
+Save full resulting report into ./reports folder in format report_<YYYY_MM_DD>.md
 
 # Output Format
 

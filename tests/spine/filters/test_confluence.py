@@ -1,5 +1,11 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
+from kavzi_trader.indicators.schemas import (
+    BollingerBandsSchema,
+    TechnicalIndicatorsSchema,
+    VolumeAnalysisSchema,
+)
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 
 
@@ -17,13 +23,15 @@ def test_confluence_score(
         order_flow=sample_order_flow,
     )
 
-    assert result.score == 4, "Expected confluence score to match signals"
+    # EMA aligned LONG (101>100>98), trend-mode RSI needs 50-70 but RSI=35 → False
+    assert result.score == 3, "Expected confluence score to match signals"
     assert result.ema_alignment is True, "Expected EMA alignment"
-    assert result.rsi_favorable is True, "Expected RSI favorable"
+    assert result.rsi_favorable is False, "Trend-mode LONG RSI 35 not in 50-70"
     assert result.volume_above_average is True, "Expected volume above average"
     assert result.price_at_bollinger is False, "Expected not at lower band"
     assert result.funding_favorable is False, "Expected funding not favorable"
     assert result.oi_supports_direction is True, "Expected OI to support direction"
+    assert result.volume_spike is False, "Volume ratio 1.2 not > 2.5"
 
 
 def test_confluence_short_funding(
@@ -48,3 +56,192 @@ def test_confluence_short_funding(
 
     assert result.funding_favorable is True, "Expected funding favorable for short"
     assert result.oi_supports_direction is True, "Expected OI to support short"
+
+
+def test_rsi_favorable_trend_mode_short(
+    sample_candle,
+    sample_order_flow,
+) -> None:
+    """When EMAs are bearish-aligned, RSI 30-50 is favorable for SHORT."""
+    now = datetime.now(UTC)
+    indicators = TechnicalIndicatorsSchema(
+        ema_20=Decimal(98),
+        ema_50=Decimal(100),
+        ema_200=Decimal(102),
+        sma_20=Decimal(100),
+        rsi_14=Decimal(40),
+        macd=None,
+        bollinger=None,
+        atr_14=Decimal(5),
+        volume=VolumeAnalysisSchema(
+            current_volume=Decimal(1200),
+            average_volume=Decimal(1000),
+            volume_ratio=Decimal("1.2"),
+            obv=None,
+        ),
+        timestamp=now,
+    )
+    calculator = ConfluenceCalculator()
+
+    result = calculator.evaluate(
+        side="SHORT",
+        candle=sample_candle,
+        indicators=indicators,
+        order_flow=sample_order_flow,
+    )
+
+    assert result.ema_alignment is True, "EMAs bearish-aligned"
+    assert result.rsi_favorable is True, "RSI 40 in trend-mode SHORT range 30-50"
+
+
+def test_rsi_favorable_reversal_mode_short(
+    sample_candle,
+    sample_order_flow,
+) -> None:
+    """Without EMA alignment, RSI 40 is NOT favorable for SHORT (needs 60-70)."""
+    now = datetime.now(UTC)
+    indicators = TechnicalIndicatorsSchema(
+        ema_20=Decimal(101),
+        ema_50=Decimal(100),
+        ema_200=Decimal(98),
+        sma_20=Decimal(100),
+        rsi_14=Decimal(40),
+        macd=None,
+        bollinger=None,
+        atr_14=Decimal(5),
+        volume=VolumeAnalysisSchema(
+            current_volume=Decimal(1200),
+            average_volume=Decimal(1000),
+            volume_ratio=Decimal("1.2"),
+            obv=None,
+        ),
+        timestamp=now,
+    )
+    calculator = ConfluenceCalculator()
+
+    result = calculator.evaluate(
+        side="SHORT",
+        candle=sample_candle,
+        indicators=indicators,
+        order_flow=sample_order_flow,
+    )
+
+    assert result.ema_alignment is False, "EMAs not bearish-aligned"
+    assert result.rsi_favorable is False, "RSI 40 not in reversal SHORT range 60-70"
+
+
+def test_bollinger_walks_band_short(
+    sample_order_flow,
+) -> None:
+    """SHORT with bearish EMAs + price at lower band = walks the band (True)."""
+    now = datetime.now(UTC)
+    from kavzi_trader.api.common.models import CandlestickSchema
+
+    candle = CandlestickSchema(
+        open_time=now,
+        open_price=Decimal(96),
+        high_price=Decimal(97),
+        low_price=Decimal(94),
+        close_price=Decimal(94),
+        volume=Decimal(1000),
+        close_time=now,
+        quote_volume=Decimal(100000),
+        trades_count=100,
+        taker_buy_base_volume=Decimal(500),
+        taker_buy_quote_volume=Decimal(50000),
+        interval="5m",
+        symbol="BTCUSDT",
+    )
+    indicators = TechnicalIndicatorsSchema(
+        ema_20=Decimal(98),
+        ema_50=Decimal(100),
+        ema_200=Decimal(102),
+        sma_20=Decimal(100),
+        rsi_14=Decimal(35),
+        macd=None,
+        bollinger=BollingerBandsSchema(
+            upper=Decimal(110),
+            middle=Decimal(100),
+            lower=Decimal(95),
+            width=Decimal("0.1"),
+            percent_b=Decimal("0.1"),
+        ),
+        atr_14=Decimal(5),
+        volume=VolumeAnalysisSchema(
+            current_volume=Decimal(1200),
+            average_volume=Decimal(1000),
+            volume_ratio=Decimal("1.2"),
+            obv=None,
+        ),
+        timestamp=now,
+    )
+    calculator = ConfluenceCalculator()
+
+    result = calculator.evaluate(
+        side="SHORT",
+        candle=candle,
+        indicators=indicators,
+        order_flow=sample_order_flow,
+    )
+
+    assert result.ema_alignment is True, "EMAs bearish-aligned"
+    assert result.price_at_bollinger is True, "Price at lower band + bearish EMAs"
+
+
+def test_volume_spike(
+    sample_candle,
+    sample_order_flow,
+) -> None:
+    """Volume ratio > 2.5 triggers volume_spike signal."""
+    now = datetime.now(UTC)
+    indicators_spike = TechnicalIndicatorsSchema(
+        ema_20=Decimal(101),
+        ema_50=Decimal(100),
+        ema_200=Decimal(98),
+        sma_20=Decimal(100),
+        rsi_14=Decimal(50),
+        macd=None,
+        bollinger=None,
+        atr_14=Decimal(5),
+        volume=VolumeAnalysisSchema(
+            current_volume=Decimal(3000),
+            average_volume=Decimal(1000),
+            volume_ratio=Decimal("3.0"),
+            obv=None,
+        ),
+        timestamp=now,
+    )
+    indicators_normal = TechnicalIndicatorsSchema(
+        ema_20=Decimal(101),
+        ema_50=Decimal(100),
+        ema_200=Decimal(98),
+        sma_20=Decimal(100),
+        rsi_14=Decimal(50),
+        macd=None,
+        bollinger=None,
+        atr_14=Decimal(5),
+        volume=VolumeAnalysisSchema(
+            current_volume=Decimal(2000),
+            average_volume=Decimal(1000),
+            volume_ratio=Decimal("2.0"),
+            obv=None,
+        ),
+        timestamp=now,
+    )
+    calculator = ConfluenceCalculator()
+
+    result_spike = calculator.evaluate(
+        side="LONG",
+        candle=sample_candle,
+        indicators=indicators_spike,
+        order_flow=sample_order_flow,
+    )
+    result_normal = calculator.evaluate(
+        side="LONG",
+        candle=sample_candle,
+        indicators=indicators_normal,
+        order_flow=sample_order_flow,
+    )
+
+    assert result_spike.volume_spike is True, "Volume ratio 3.0 > 2.5"
+    assert result_normal.volume_spike is False, "Volume ratio 2.0 not > 2.5"

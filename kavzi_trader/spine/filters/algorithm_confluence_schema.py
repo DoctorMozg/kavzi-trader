@@ -12,7 +12,8 @@ class AlgorithmConfluenceSchema(BaseModel):
     price_at_bollinger: Annotated[bool, Field(...)]
     funding_favorable: Annotated[bool, Field(...)]
     oi_supports_direction: Annotated[bool, Field(...)]
-    score: Annotated[int, Field(..., ge=0, le=6)]
+    volume_spike: Annotated[bool, Field(...)]
+    score: Annotated[int, Field(..., ge=0, le=7)]
 
     model_config = ConfigDict(frozen=True)
 

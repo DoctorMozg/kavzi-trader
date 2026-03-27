@@ -2,3 +2,10 @@
 ANALYST ASSESSMENT (use as your starting point — you may override if the full data disagrees, but explain why):
 {{ analyst_result_json }}
 {% endif %}
+{% if analyst_result and analyst_result.key_levels and analyst_result.key_levels.levels %}
+
+KEY LEVELS (use these for take-profit and stop-loss placement — prefer structural levels over Bollinger bands):
+{% for level in analyst_result.key_levels.levels %}
+- {{ level.level_type }} @ {{ level.price }} — {{ level.reason }}
+{% endfor %}
+{% endif %}

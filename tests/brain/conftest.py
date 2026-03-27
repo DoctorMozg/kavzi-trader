@@ -81,6 +81,7 @@ def algorithm_confluence() -> DualConfluenceSchema:
         price_at_bollinger=False,
         funding_favorable=True,
         oi_supports_direction=True,
+        volume_spike=False,
         score=4,
     )
     short = AlgorithmConfluenceSchema(
@@ -90,6 +91,7 @@ def algorithm_confluence() -> DualConfluenceSchema:
         price_at_bollinger=False,
         funding_favorable=False,
         oi_supports_direction=False,
+        volume_spike=False,
         score=1,
     )
     return DualConfluenceSchema(long=long, short=short, detected_side="LONG")

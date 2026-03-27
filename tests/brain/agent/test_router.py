@@ -14,6 +14,15 @@ from kavzi_trader.brain.schemas.dependencies import (
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.events.store import RedisEventStore
 
+_ANALYST_REASONING = (
+    "EMA alignment is bullish with EMA20 above EMA50 above EMA200. RSI at 55 supports"
+    " continuation. Volume confirms the breakout. Volatility regime is NORMAL."
+)
+_TRADER_REASONING = (
+    "Mixed signals across all timeframes. EMA alignment is neutral and RSI is flat"
+    " at 50. No clear directional bias to justify a trade entry at this time."
+)
+
 
 class DummyScout:
     def __init__(self, verdict: str) -> None:
@@ -37,7 +46,7 @@ class DummyAnalyst:
             direction="NEUTRAL",
             confluence_score=5,
             key_levels=KeyLevelsSchema(levels=[]),
-            reasoning="Test",
+            reasoning=_ANALYST_REASONING,
         )
 
 
@@ -46,7 +55,7 @@ class DummyTrader:
         return TradeDecisionSchema(
             action="WAIT",
             confidence=0.5,
-            reasoning="Test",
+            reasoning=_TRADER_REASONING,
             suggested_entry=None,
             suggested_stop_loss=None,
             suggested_take_profit=None,

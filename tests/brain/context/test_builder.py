@@ -114,6 +114,7 @@ def test_context_builder_trader(
     assert context["analyst_result_json"] is None, (
         "Expected None without analyst result."
     )
+    assert context["analyst_result"] is None, "Expected None without analyst result."
     assert context["futures_leverage"] == 3
     assert context["liquidation_distance_percent"] == 33.3
     assert "BTCUSDT" in context["open_positions_json"]
@@ -148,12 +149,18 @@ def test_context_builder_trader_with_analyst_result(
         direction="LONG",
         confluence_score=8,
         key_levels=KeyLevelsSchema(levels=[]),
-        reasoning="Test analyst result",
+        reasoning=(
+            "EMA alignment is bullish with EMA20 above EMA50 above EMA200. RSI at 55"
+            " supports continuation. Volume confirms the breakout."
+        ),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps, analyst_result=analyst_result)
     assert context["analyst_result_json"] is not None, "Expected analyst result JSON."
     assert "LONG" in context["analyst_result_json"]
+    assert context["analyst_result"] is analyst_result, (
+        "Expected analyst_result object in context."
+    )
 
 
 def test_trader_context_no_positions(

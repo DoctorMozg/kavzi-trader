@@ -36,8 +36,8 @@ class AnalystDecisionSchema(BaseModel):
 
     setup_valid: Annotated[bool, Field(...)]
     direction: Annotated[Literal["LONG", "SHORT", "NEUTRAL"], Field(...)]
-    confluence_score: Annotated[int, Field(..., ge=0, le=10)]
+    confluence_score: Annotated[int, Field(..., ge=0, le=11)]
     key_levels: Annotated[KeyLevelsSchema, Field(...)]
-    reasoning: Annotated[str, Field(..., max_length=600)]
+    reasoning: Annotated[str, Field(..., min_length=80, max_length=900)]
 
     model_config = ConfigDict(frozen=True)
