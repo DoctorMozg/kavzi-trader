@@ -79,6 +79,9 @@ class FakeDepsProvider:
         self.analyst_calls = 0
         self.trader_calls = 0
 
+    def indicators_available(self, symbol: str) -> bool:
+        return True
+
     async def get_scout(self, symbol: str) -> ScoutDependenciesSchema:
         self.scout_calls += 1
         return self._scout_deps

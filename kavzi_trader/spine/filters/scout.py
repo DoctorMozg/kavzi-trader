@@ -11,6 +11,7 @@ from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
 logger = logging.getLogger(__name__)
 
 _ZERO = Decimal(0)
+_MIN_CANDLES_FOR_CHANGE = 2
 
 
 class ScoutFilter:
@@ -129,10 +130,7 @@ class ScoutFilter:
         if bb.percent_b >= Decimal(1) or bb.percent_b <= _ZERO:
             return (
                 "INTERESTING",
-                (
-                    f"Criterion 1 BREAKOUT: %B={bb.percent_b},"
-                    f" vol_ratio={vol_ratio}"
-                ),
+                (f"Criterion 1 BREAKOUT: %B={bb.percent_b}, vol_ratio={vol_ratio}"),
                 "BREAKOUT",
             )
         return ("SKIP", "", None)
@@ -174,7 +172,9 @@ class ScoutFilter:
         bb = ind.bollinger
         if rsi is None or bb is None:
             return ("SKIP", "", None)
-        rsi_extreme = rsi < cfg.reversal_rsi_oversold or rsi > cfg.reversal_rsi_overbought
+        rsi_extreme = (
+            rsi < cfg.reversal_rsi_oversold or rsi > cfg.reversal_rsi_overbought
+        )
         bb_boundary = (
             bb.percent_b < cfg.reversal_percent_b_lower
             or bb.percent_b > cfg.reversal_percent_b_upper
@@ -182,10 +182,7 @@ class ScoutFilter:
         if rsi_extreme and bb_boundary:
             return (
                 "INTERESTING",
-                (
-                    f"Criterion 3 REVERSAL: RSI={rsi},"
-                    f" %B={bb.percent_b}"
-                ),
+                (f"Criterion 3 REVERSAL: RSI={rsi}, %B={bb.percent_b}"),
                 "REVERSAL",
             )
         return ("SKIP", "", None)
@@ -212,16 +209,12 @@ class ScoutFilter:
         rsi = ind.rsi_14
         bb = ind.bollinger
         has_ema_support = alignment != "NEUTRAL"
-        has_rsi_support = (
-            rsi is not None
-            and (rsi < cfg.volume_spike_rsi_low or rsi > cfg.volume_spike_rsi_high)
+        has_rsi_support = rsi is not None and (
+            rsi < cfg.volume_spike_rsi_low or rsi > cfg.volume_spike_rsi_high
         )
-        has_bb_support = (
-            bb is not None
-            and (
-                bb.percent_b < cfg.volume_spike_percent_b_lower
-                or bb.percent_b > cfg.volume_spike_percent_b_upper
-            )
+        has_bb_support = bb is not None and (
+            bb.percent_b < cfg.volume_spike_percent_b_lower
+            or bb.percent_b > cfg.volume_spike_percent_b_upper
         )
         if not (has_ema_support or has_rsi_support or has_bb_support):
             return ("SKIP", "", None)
@@ -252,7 +245,9 @@ class ScoutFilter:
 
         Since we only have a single indicator snapshot, we detect momentum
         shift by checking if the current MACD histogram sign differs from
-        the price direction of the previous candle (close vs open).
+        the price direction of the preceding candles.  All ``N-1``
+        preceding candles (where N = ``momentum_min_candles``) must agree
+        on the opposite direction to filter out single-candle noise.
         """
         cfg = self._cfg
         macd = ind.macd
@@ -260,29 +255,29 @@ class ScoutFilter:
             return ("SKIP", "", None)
 
         histogram = macd.histogram
-        prev_candle = candles[-2]
-        prev_direction = prev_candle.close_price - prev_candle.open_price
-
-        # Sign change: histogram is positive but previous candle was bearish,
-        # or histogram is negative but previous candle was bullish.
-        if prev_direction == _ZERO:
-            return ("SKIP", "", None)
-
         histogram_bullish = histogram > _ZERO
-        prev_bullish = prev_direction > _ZERO
 
-        if histogram_bullish != prev_bullish:
-            shift_dir = "bullish" if histogram_bullish else "bearish"
-            return (
-                "INTERESTING",
-                (
-                    f"Criterion 5 MOMENTUM_SHIFT: histogram={histogram}"
-                    f" ({shift_dir}), prev candle"
-                    f" {'bearish' if histogram_bullish else 'bullish'}"
-                ),
-                "MOMENTUM_SHIFT",
-            )
-        return ("SKIP", "", None)
+        # Check that all (N-1) preceding candles had the opposite direction.
+        lookback = cfg.momentum_min_candles - 1
+        preceding = candles[-(lookback + 1) : -1]
+        for c in preceding:
+            direction = c.close_price - c.open_price
+            if direction == _ZERO:
+                return ("SKIP", "", None)
+            if (direction > _ZERO) == histogram_bullish:
+                # This candle agrees with the histogram → no shift
+                return ("SKIP", "", None)
+
+        shift_dir = "bullish" if histogram_bullish else "bearish"
+        return (
+            "INTERESTING",
+            (
+                f"Criterion 5 MOMENTUM_SHIFT: histogram={histogram}"
+                f" ({shift_dir}), prev {lookback} candle(s)"
+                f" {'bearish' if histogram_bullish else 'bullish'}"
+            ),
+            "MOMENTUM_SHIFT",
+        )
 
     def _check_trend_pullback(
         self,
@@ -304,10 +299,7 @@ class ScoutFilter:
         if trending and abs(pct) >= cfg.pullback_price_change_min:
             return (
                 "INTERESTING",
-                (
-                    f"Criterion 6 TREND_PULLBACK: {alignment} alignment,"
-                    f" change={pct}%"
-                ),
+                (f"Criterion 6 TREND_PULLBACK: {alignment} alignment, change={pct}%"),
                 "TREND_PULLBACK",
             )
         return ("SKIP", "", None)
@@ -344,7 +336,7 @@ class ScoutFilter:
     def _compute_price_change_pct(
         candles: list[CandlestickSchema],
     ) -> Decimal | None:
-        if len(candles) < 2:
+        if len(candles) < _MIN_CANDLES_FOR_CHANGE:
             return None
         first_close = candles[0].close_price
         if first_close == _ZERO:

@@ -46,6 +46,9 @@ class DummyDepsProvider:
     def __init__(self, deps: TradingDependenciesSchema) -> None:
         self._deps = deps
 
+    def indicators_available(self, symbol: str) -> bool:
+        return True
+
     async def get_scout(self, symbol: str) -> ScoutDependenciesSchema:
         return ScoutDependenciesSchema(
             symbol=symbol,

@@ -63,8 +63,8 @@ class ScoutConfigSchema(BaseModel):
     #   30/70 = wide (accepts more)
     #   40/60 = default
     #   45/55 = strict
-    trend_rsi_low: Annotated[Decimal, Field(default=Decimal("40"))]
-    trend_rsi_high: Annotated[Decimal, Field(default=Decimal("60"))]
+    trend_rsi_low: Annotated[Decimal, Field(default=Decimal(40))]
+    trend_rsi_high: Annotated[Decimal, Field(default=Decimal(60))]
 
     # Minimum volume ratio for trend continuation.
     #   0.8 = permissive
@@ -82,8 +82,8 @@ class ScoutConfigSchema(BaseModel):
     #   25/75 = strict (only deep extremes)
     #   30/70 = default
     #   35/65 = permissive
-    reversal_rsi_oversold: Annotated[Decimal, Field(default=Decimal("30"))]
-    reversal_rsi_overbought: Annotated[Decimal, Field(default=Decimal("70"))]
+    reversal_rsi_oversold: Annotated[Decimal, Field(default=Decimal(30))]
+    reversal_rsi_overbought: Annotated[Decimal, Field(default=Decimal(70))]
 
     # Bollinger %B thresholds for price at band boundary.
     #   0.05/0.95 = strict (very close to bands)
@@ -111,7 +111,7 @@ class ScoutConfigSchema(BaseModel):
     ]
 
     # Minimum candle body-to-range ratio for "large body" check.
-    # body_ratio = abs(close - open) / (high - low)
+    # Computed as the absolute body size divided by the candle range.
     #   0.3 = permissive (accepts smaller bodies)
     #   0.5 = default
     #   0.7 = strict (requires strong directional candle)
@@ -124,8 +124,8 @@ class ScoutConfigSchema(BaseModel):
     #   30/70 = permissive
     #   35/65 = default
     #   40/60 = strict
-    volume_spike_rsi_low: Annotated[Decimal, Field(default=Decimal("35"))]
-    volume_spike_rsi_high: Annotated[Decimal, Field(default=Decimal("65"))]
+    volume_spike_rsi_low: Annotated[Decimal, Field(default=Decimal(35))]
+    volume_spike_rsi_high: Annotated[Decimal, Field(default=Decimal(65))]
 
     # Supporting Bollinger %B thresholds for volume spike.
     #   0.1/0.9   = strict (near bands)
@@ -141,11 +141,14 @@ class ScoutConfigSchema(BaseModel):
     ]
 
     # --- Criterion 5: MOMENTUM SHIFT ---
-    # MACD histogram sign change between consecutive candles.
+    # MACD histogram sign differs from the direction of recent candles.
 
-    # Minimum candles required to detect a histogram sign change.
-    #   2 = default (compares last two candle closes)
-    momentum_min_candles: Annotated[int, Field(default=2, ge=2)]
+    # How many preceding candles must agree on the opposite direction.
+    # A higher value filters out noise (single-candle fakeouts).
+    #   2 = permissive (only 1 opposing candle needed)
+    #   3 = default (2 consecutive opposing candles needed)
+    #   4 = strict (3 consecutive opposing candles needed)
+    momentum_min_candles: Annotated[int, Field(default=3, ge=2)]
 
     # --- Criterion 6: TREND WITH PULLBACK ---
     # EMA alignment + meaningful price movement over recent candles.

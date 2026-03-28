@@ -98,7 +98,7 @@ scout:
   volume_spike_percent_b_upper: 0.85  # 0.9 = strict, 0.85 = default, 0.8 = permissive
 
   # Criterion 5 MOMENTUM SHIFT — MACD histogram sign change.
-  momentum_min_candles: 2      # min candles needed to detect sign change
+  momentum_min_candles: 3      # preceding candles that must oppose the histogram
 
   # Criterion 6 TREND WITH PULLBACK — EMA aligned + price movement.
   pullback_price_change_min: 0.5  # 0.3 = permissive, 0.5 = default, 1.0 = strict
@@ -122,7 +122,6 @@ trading:
     - AVAXUSDT
     - LINKUSDT
     - LTCUSDT
-    - HYPEUSDT
     - NEARUSDT
     # Wave 2 — add after 2-3 weeks if wave 1 is stable
     - INJUSDT

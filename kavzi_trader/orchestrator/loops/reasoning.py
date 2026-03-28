@@ -138,6 +138,10 @@ class ReasoningLoop:
             )
             return False
 
+        if not self._deps_provider.indicators_available(symbol):
+            logger.debug("Skipping %s: indicators not yet available", symbol)
+            return False
+
         open_symbols = await self._get_open_position_symbols()
         if symbol in open_symbols:
             logger.debug("Skipping %s: open position exists", symbol)

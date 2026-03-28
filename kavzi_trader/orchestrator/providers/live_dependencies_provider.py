@@ -110,6 +110,10 @@ class LiveDependenciesProvider:
         self._cycle_cache[key] = result.regime
         return result.regime
 
+    def indicators_available(self, symbol: str) -> bool:
+        """Check whether indicators have been computed for *symbol*."""
+        return self._cache.get_indicators(symbol) is not None
+
     async def get_scout(self, symbol: str) -> ScoutDependenciesSchema:
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:

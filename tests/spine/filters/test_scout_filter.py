@@ -372,7 +372,7 @@ async def test_volume_spike_small_body_skip(scout: ScoutFilter) -> None:
 
 @pytest.mark.asyncio
 async def test_momentum_shift(scout: ScoutFilter) -> None:
-    """Bullish MACD histogram with bearish previous candle."""
+    """Bullish MACD histogram with 2 bearish preceding candles (default N=3)."""
     ind = _make_indicators(
         macd_histogram=Decimal("0.5"),
         ema_20=Decimal(100),
@@ -380,8 +380,9 @@ async def test_momentum_shift(scout: ScoutFilter) -> None:
         ema_200=Decimal(95),  # NEUTRAL alignment → criterion 2 skips
     )
     candles = [
-        _make_candle(Decimal(95), open_=Decimal(100), offset_min=0),  # bearish
-        _make_candle(Decimal(105), open_=Decimal(100), offset_min=5),  # bullish
+        _make_candle(Decimal(97), open_=Decimal(100), offset_min=0),  # bearish
+        _make_candle(Decimal(95), open_=Decimal(98), offset_min=5),  # bearish
+        _make_candle(Decimal(105), open_=Decimal(100), offset_min=10),  # bullish
     ]
     deps = _make_deps(ind, candles=candles)
     result = await scout.run(deps)
@@ -390,12 +391,32 @@ async def test_momentum_shift(scout: ScoutFilter) -> None:
 
 
 @pytest.mark.asyncio
+async def test_momentum_shift_mixed_preceding_skip(scout: ScoutFilter) -> None:
+    """One bearish + one bullish preceding candle → no consistent opposition."""
+    ind = _make_indicators(
+        macd_histogram=Decimal("0.5"),
+        ema_20=Decimal(100),
+        ema_50=Decimal(90),
+        ema_200=Decimal(95),
+    )
+    candles = [
+        _make_candle(Decimal(95), open_=Decimal(100), offset_min=0),  # bearish
+        _make_candle(Decimal(103), open_=Decimal(100), offset_min=5),  # bullish!
+        _make_candle(Decimal(108), open_=Decimal(103), offset_min=10),  # bullish
+    ]
+    deps = _make_deps(ind, candles=candles)
+    result = await scout.run(deps)
+    assert result.pattern_detected != "MOMENTUM_SHIFT"
+
+
+@pytest.mark.asyncio
 async def test_momentum_shift_no_change(scout: ScoutFilter) -> None:
-    """Bullish MACD with bullish previous candle → no shift."""
+    """Bullish MACD with bullish previous candles → no shift."""
     ind = _make_indicators(macd_histogram=Decimal("0.5"))
     candles = [
-        _make_candle(Decimal(105), open_=Decimal(100), offset_min=0),  # bullish
-        _make_candle(Decimal(108), open_=Decimal(103), offset_min=5),  # bullish
+        _make_candle(Decimal(102), open_=Decimal(100), offset_min=0),  # bullish
+        _make_candle(Decimal(105), open_=Decimal(100), offset_min=5),  # bullish
+        _make_candle(Decimal(108), open_=Decimal(103), offset_min=10),  # bullish
     ]
     deps = _make_deps(ind, candles=candles)
     result = await scout.run(deps)
@@ -404,9 +425,13 @@ async def test_momentum_shift_no_change(scout: ScoutFilter) -> None:
 
 @pytest.mark.asyncio
 async def test_momentum_shift_insufficient_candles(scout: ScoutFilter) -> None:
-    """Only one candle → cannot detect momentum shift."""
+    """Only two candles with default N=3 → cannot detect momentum shift."""
     ind = _make_indicators(macd_histogram=Decimal("0.5"))
-    deps = _make_deps(ind, candles=[_make_candle(Decimal(105))])
+    candles = [
+        _make_candle(Decimal(95), open_=Decimal(100), offset_min=0),
+        _make_candle(Decimal(105), open_=Decimal(100), offset_min=5),
+    ]
+    deps = _make_deps(ind, candles=candles)
     result = await scout.run(deps)
     assert result.pattern_detected != "MOMENTUM_SHIFT"
 
