@@ -1,15 +1,46 @@
 import logging
 from typing import Protocol
 
+from pydantic import BaseModel, ConfigDict
+
 from kavzi_trader.brain.calibration.history import ConfidenceHistoryStore
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BUCKETS: list[tuple[str, float, float, float]] = [
-    ("raw_0_9_plus", 0.9, 1.01, 0.65),
-    ("raw_0_8_0_9", 0.8, 0.9, 0.55),
-    ("raw_0_7_0_8", 0.7, 0.8, 0.45),
-    ("raw_below_0_7", 0.0, 0.7, 0.35),
+
+class _CalibrationBucket(BaseModel):
+    name: str
+    low: float
+    high: float
+    default_accuracy: float
+    model_config = ConfigDict(frozen=True)
+
+
+DEFAULT_BUCKETS: list[_CalibrationBucket] = [
+    _CalibrationBucket(
+        name="raw_0_9_plus",
+        low=0.9,
+        high=1.01,
+        default_accuracy=0.65,
+    ),
+    _CalibrationBucket(
+        name="raw_0_8_0_9",
+        low=0.8,
+        high=0.9,
+        default_accuracy=0.55,
+    ),
+    _CalibrationBucket(
+        name="raw_0_7_0_8",
+        low=0.7,
+        high=0.8,
+        default_accuracy=0.45,
+    ),
+    _CalibrationBucket(
+        name="raw_below_0_7",
+        low=0.0,
+        high=0.7,
+        default_accuracy=0.35,
+    ),
 ]
 
 
@@ -66,13 +97,13 @@ class ConfidenceCalibrator:
 
     def _bucket(self, raw_confidence: float) -> str:
         clamped = min(max(raw_confidence, 0.0), 1.0)
-        for name, low, high, _ in DEFAULT_BUCKETS:
-            if low <= clamped < high:
-                return name
-        return DEFAULT_BUCKETS[-1][0]
+        for b in DEFAULT_BUCKETS:
+            if b.low <= clamped < b.high:
+                return b.name
+        return DEFAULT_BUCKETS[-1].name
 
     def _default_for(self, bucket: str) -> float:
-        for name, _, _, default in DEFAULT_BUCKETS:
-            if name == bucket:
-                return default
-        return DEFAULT_BUCKETS[-1][3]
+        for b in DEFAULT_BUCKETS:
+            if b.name == bucket:
+                return b.default_accuracy
+        return DEFAULT_BUCKETS[-1].default_accuracy

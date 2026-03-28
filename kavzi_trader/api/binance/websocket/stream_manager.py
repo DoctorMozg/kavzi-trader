@@ -9,13 +9,18 @@ import contextlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from binance import AsyncClient, BinanceSocketManager, ReconnectingWebsocket
 
 from kavzi_trader.api.common.exceptions import APIError
 
 logger = logging.getLogger(__name__)
+
+
+class _StreamEntry(NamedTuple):
+    socket: ReconnectingWebsocket
+    task: asyncio.Task[None]
 
 
 class StreamManager:
@@ -43,11 +48,8 @@ class StreamManager:
         self._bsm: BinanceSocketManager | None = None
         self._async_client: AsyncClient | None = None
 
-        # stream_name → (ReconnectingWebsocket, recv-loop Task)
-        self._streams: dict[
-            str,
-            tuple[ReconnectingWebsocket, asyncio.Task[None]],
-        ] = {}
+        # stream_name → (socket, recv-loop Task)
+        self._streams: dict[str, _StreamEntry] = {}
 
         # User-provided callbacks
         self.on_message_callback = on_message
@@ -69,7 +71,7 @@ class StreamManager:
     @property
     def active_streams(self) -> dict[str, ReconnectingWebsocket]:
         """Map of stream_name → socket (kept for backward compat)."""
-        return {name: sock for name, (sock, _) in self._streams.items()}
+        return {name: entry.socket for name, entry in self._streams.items()}
 
     @property
     def bsm(self) -> BinanceSocketManager:
@@ -136,7 +138,7 @@ class StreamManager:
         task = asyncio.get_event_loop().create_task(
             self._recv_loop(stream_name, socket),
         )
-        self._streams[stream_name] = (socket, task)
+        self._streams[stream_name] = _StreamEntry(socket=socket, task=task)
 
     async def unregister_stream(self, stream_name: str) -> None:
         """Cancel the recv loop (which closes the socket via async with)."""
@@ -148,10 +150,9 @@ class StreamManager:
             )
             return
 
-        _socket, task = entry
-        task.cancel()
+        entry.task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await task
+            await entry.task
         self.stream_callbacks.pop(stream_name, None)
         logger.info("Unsubscribed from stream: %s", stream_name)
 

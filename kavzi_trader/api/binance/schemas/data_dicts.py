@@ -1,4 +1,4 @@
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class KlineData(TypedDict):
@@ -73,3 +73,88 @@ class ForceOrderData(TypedDict):
     e: str  # Event type: "forceOrder"
     E: int  # Event time (ms)
     o: dict[str, Any]  # Order data containing: s, S, o, f, q, p, ap, X, l, z, T
+
+
+# ------------------------------------------------------------------
+# Futures REST API response shapes (used by paper exchange + callers)
+# ------------------------------------------------------------------
+
+
+class AccountPositionDict(TypedDict):
+    """Single position entry in account info response."""
+
+    symbol: str
+    positionAmt: str
+    entryPrice: str
+    leverage: str
+    unrealizedProfit: str
+    marginType: str
+    isolatedMargin: str
+    positionSide: str
+
+
+class AccountInfoDict(TypedDict):
+    """Response from GET /fapi/v2/account."""
+
+    totalWalletBalance: str
+    availableBalance: str
+    totalUnrealizedProfit: str
+    totalInitialMargin: str
+    totalMaintMargin: str
+    positions: list[AccountPositionDict]
+
+
+class AssetBalanceDict(TypedDict):
+    """Response from futures asset balance query."""
+
+    asset: str
+    balance: str
+    availableBalance: str
+    crossUnPnl: NotRequired[str]
+
+
+class LeverageChangeDict(TypedDict):
+    """Response from POST /fapi/v1/leverage."""
+
+    leverage: int
+    symbol: str
+    maxNotionalValue: str
+
+
+class MarginTypeChangeDict(TypedDict):
+    """Response from POST /fapi/v1/marginType."""
+
+    code: int
+    msg: str
+
+
+class PositionInfoDict(TypedDict):
+    """Single entry from GET /fapi/v2/positionRisk."""
+
+    symbol: str
+    positionAmt: str
+    entryPrice: str
+    markPrice: str
+    unRealizedProfit: str
+    liquidationPrice: str
+    leverage: str
+    marginType: str
+    isolatedMargin: str
+    positionSide: str
+
+
+class LeverageBracketEntryDict(TypedDict):
+    """Single bracket entry in leverage bracket response."""
+
+    bracket: int
+    initialLeverage: int
+    notionalCap: int
+    notionalFloor: int
+    maintMarginRatio: float
+
+
+class LeverageBracketDict(TypedDict):
+    """Response entry from GET /fapi/v1/leverageBracket."""
+
+    symbol: str
+    brackets: list[LeverageBracketEntryDict]

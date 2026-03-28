@@ -2,6 +2,8 @@ import logging
 import time
 from typing import Protocol
 
+from pydantic import BaseModel, ConfigDict
+
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
@@ -49,6 +51,12 @@ class DependenciesProvider(Protocol):
     async def get_trader(self, symbol: str) -> TradingDependenciesSchema: ...
 
     def clear_cycle_cache(self) -> None: ...
+
+
+class _TraderRunResult(BaseModel):
+    decision: TradeDecisionSchema | None = None
+    deps: TradingDependenciesSchema | None = None
+    model_config = ConfigDict(frozen=True)
 
 
 class PipelineResult:
@@ -102,13 +110,13 @@ class AgentRouter:
             self._log_stop("Analyst", symbol, total_start)
             return PipelineResult(scout=scout_result, analyst=analyst_result)
 
-        trader_result, trader_deps = await self._run_trader(
+        trader_run = await self._run_trader(
             symbol,
             deps_provider,
             analyst_result,
             scout_pattern=scout_result.pattern_detected,
         )
-        if trader_result is None:
+        if trader_run.decision is None:
             return PipelineResult(scout=scout_result, analyst=analyst_result)
 
         total_ms = (time.monotonic() - total_start) * 1000
@@ -120,8 +128,8 @@ class AgentRouter:
         return PipelineResult(
             scout=scout_result,
             analyst=analyst_result,
-            trader=trader_result,
-            trader_deps=trader_deps,
+            trader=trader_run.decision,
+            trader_deps=trader_run.deps,
         )
 
     async def _fetch_scout_deps(
@@ -169,7 +177,7 @@ class AgentRouter:
         deps_provider: DependenciesProvider,
         analyst_result: AnalystDecisionSchema,
         scout_pattern: str | None = None,
-    ) -> tuple[TradeDecisionSchema | None, TradingDependenciesSchema | None]:
+    ) -> _TraderRunResult:
         deps = await deps_provider.get_trader(symbol)
         self._log_trader_inputs(deps, analyst_result, scout_pattern)
         t0 = time.monotonic()
@@ -181,10 +189,10 @@ class AgentRouter:
             )
         except Exception:
             logger.exception("Trader agent failed for %s", symbol)
-            return None, None
+            return _TraderRunResult()
         ms = (time.monotonic() - t0) * 1000
         self._warn_slow("Trader", symbol, ms)
-        return result, deps
+        return _TraderRunResult(decision=result, deps=deps)
 
     @staticmethod
     def _log_analyst_inputs(deps: AnalystDependenciesSchema) -> None:

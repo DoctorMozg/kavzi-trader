@@ -1,6 +1,9 @@
 import logging
 import time
 from decimal import Decimal
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.schemas.dependencies import ScoutDependenciesSchema
@@ -12,6 +15,16 @@ logger = logging.getLogger(__name__)
 
 _ZERO = Decimal(0)
 _MIN_CANDLES_FOR_CHANGE = 2
+
+
+class _ScoutCriterionResult(BaseModel):
+    verdict: Literal["INTERESTING", "SKIP"]
+    reason: str
+    pattern_detected: str | None = None
+    model_config = ConfigDict(frozen=True)
+
+
+_CRITERION_SKIP = _ScoutCriterionResult(verdict="SKIP", reason="")
 
 
 class ScoutFilter:
@@ -85,12 +98,12 @@ class ScoutFilter:
             self._check_trend_pullback(candles, alignment),
         ]
 
-        for verdict, reason, pattern in checks:
-            if verdict == "INTERESTING":
+        for check in checks:
+            if check.verdict == "INTERESTING":
                 return ScoutDecisionSchema(
                     verdict="INTERESTING",
-                    reason=reason,
-                    pattern_detected=pattern,
+                    reason=check.reason,
+                    pattern_detected=check.pattern_detected,
                 )
 
         # --- Soft volume gate (no criterion matched) ---
@@ -119,59 +132,61 @@ class ScoutFilter:
         self,
         ind: TechnicalIndicatorsSchema,
         vol_ratio: Decimal | None,
-    ) -> tuple[str, str, str | None]:
+    ) -> _ScoutCriterionResult:
         """Criterion 1: price beyond Bollinger Band with volume."""
         cfg = self._cfg
         bb = ind.bollinger
         if bb is None or vol_ratio is None:
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
         if vol_ratio < cfg.breakout_vol_ratio_min:
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
         if bb.percent_b >= Decimal(1) or bb.percent_b <= _ZERO:
-            return (
-                "INTERESTING",
-                (f"Criterion 1 BREAKOUT: %B={bb.percent_b}, vol_ratio={vol_ratio}"),
-                "BREAKOUT",
+            return _ScoutCriterionResult(
+                verdict="INTERESTING",
+                reason=(
+                    f"Criterion 1 BREAKOUT: %B={bb.percent_b}, vol_ratio={vol_ratio}"
+                ),
+                pattern_detected="BREAKOUT",
             )
-        return ("SKIP", "", None)
+        return _CRITERION_SKIP
 
     def _check_trend_continuation(
         self,
         ind: TechnicalIndicatorsSchema,
         vol_ratio: Decimal | None,
         alignment: str,
-    ) -> tuple[str, str, str | None]:
+    ) -> _ScoutCriterionResult:
         """Criterion 2: EMA alignment + RSI mid-range + volume."""
         cfg = self._cfg
         if alignment == "NEUTRAL":
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
         rsi = ind.rsi_14
         if rsi is None or vol_ratio is None:
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
         if not (cfg.trend_rsi_low <= rsi <= cfg.trend_rsi_high):
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
         if vol_ratio < cfg.trend_vol_ratio_min:
-            return ("SKIP", "", None)
-        return (
-            "INTERESTING",
-            (
+            return _CRITERION_SKIP
+        return _ScoutCriterionResult(
+            verdict="INTERESTING",
+            reason=(
                 f"Criterion 2 TREND_CONTINUATION:"
                 f" {alignment} EMA alignment, RSI={rsi},"
                 f" vol_ratio={vol_ratio}"
             ),
-            "TREND_CONTINUATION",
+            pattern_detected="TREND_CONTINUATION",
         )
 
     def _check_reversal(
         self,
         ind: TechnicalIndicatorsSchema,
-    ) -> tuple[str, str, str | None]:
+    ) -> _ScoutCriterionResult:
         """Criterion 3: RSI extreme + price at BB boundary."""
         cfg = self._cfg
         rsi = ind.rsi_14
         bb = ind.bollinger
         if rsi is None or bb is None:
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
         rsi_extreme = (
             rsi < cfg.reversal_rsi_oversold or rsi > cfg.reversal_rsi_overbought
         )
@@ -180,12 +195,12 @@ class ScoutFilter:
             or bb.percent_b > cfg.reversal_percent_b_upper
         )
         if rsi_extreme and bb_boundary:
-            return (
-                "INTERESTING",
-                (f"Criterion 3 REVERSAL: RSI={rsi}, %B={bb.percent_b}"),
-                "REVERSAL",
+            return _ScoutCriterionResult(
+                verdict="INTERESTING",
+                reason=f"Criterion 3 REVERSAL: RSI={rsi}, %B={bb.percent_b}",
+                pattern_detected="REVERSAL",
             )
-        return ("SKIP", "", None)
+        return _CRITERION_SKIP
 
     def _check_volume_spike(
         self,
@@ -193,17 +208,17 @@ class ScoutFilter:
         vol_ratio: Decimal | None,
         candles: list[CandlestickSchema],
         alignment: str,
-    ) -> tuple[str, str, str | None]:
+    ) -> _ScoutCriterionResult:
         """Criterion 4: volume spike + large body + supporting signal."""
         cfg = self._cfg
         if vol_ratio is None or vol_ratio < cfg.volume_spike_ratio_min:
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
         if not candles:
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
 
         body_ratio = self._candle_body_ratio(candles[-1])
         if body_ratio < cfg.volume_spike_body_ratio_min:
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
 
         # At least one supporting signal required
         rsi = ind.rsi_14
@@ -217,7 +232,7 @@ class ScoutFilter:
             or bb.percent_b > cfg.volume_spike_percent_b_upper
         )
         if not (has_ema_support or has_rsi_support or has_bb_support):
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
 
         support_parts: list[str] = []
         if has_ema_support:
@@ -226,21 +241,21 @@ class ScoutFilter:
             support_parts.append(f"RSI={rsi}")
         if has_bb_support:
             support_parts.append(f"%B={bb.percent_b}")  # type: ignore[union-attr]
-        return (
-            "INTERESTING",
-            (
+        return _ScoutCriterionResult(
+            verdict="INTERESTING",
+            reason=(
                 f"Criterion 4 VOLUME_SPIKE: vol_ratio={vol_ratio},"
                 f" body_ratio={body_ratio},"
                 f" support=[{', '.join(support_parts)}]"
             ),
-            "VOLUME_SPIKE",
+            pattern_detected="VOLUME_SPIKE",
         )
 
     def _check_momentum_shift(
         self,
         ind: TechnicalIndicatorsSchema,
         candles: list[CandlestickSchema],
-    ) -> tuple[str, str, str | None]:
+    ) -> _ScoutCriterionResult:
         """Criterion 5: MACD histogram sign change.
 
         Since we only have a single indicator snapshot, we detect momentum
@@ -252,7 +267,7 @@ class ScoutFilter:
         cfg = self._cfg
         macd = ind.macd
         if macd is None or len(candles) < cfg.momentum_min_candles:
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
 
         histogram = macd.histogram
         histogram_bullish = histogram > _ZERO
@@ -263,46 +278,48 @@ class ScoutFilter:
         for c in preceding:
             direction = c.close_price - c.open_price
             if direction == _ZERO:
-                return ("SKIP", "", None)
+                return _CRITERION_SKIP
             if (direction > _ZERO) == histogram_bullish:
                 # This candle agrees with the histogram → no shift
-                return ("SKIP", "", None)
+                return _CRITERION_SKIP
 
         shift_dir = "bullish" if histogram_bullish else "bearish"
-        return (
-            "INTERESTING",
-            (
+        return _ScoutCriterionResult(
+            verdict="INTERESTING",
+            reason=(
                 f"Criterion 5 MOMENTUM_SHIFT: histogram={histogram}"
                 f" ({shift_dir}), prev {lookback} candle(s)"
                 f" {'bearish' if histogram_bullish else 'bullish'}"
             ),
-            "MOMENTUM_SHIFT",
+            pattern_detected="MOMENTUM_SHIFT",
         )
 
     def _check_trend_pullback(
         self,
         candles: list[CandlestickSchema],
         alignment: str,
-    ) -> tuple[str, str, str | None]:
+    ) -> _ScoutCriterionResult:
         """Criterion 6: EMA aligned + meaningful price change."""
         cfg = self._cfg
         if alignment == "NEUTRAL":
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
         pct = self._compute_price_change_pct(candles)
         if pct is None:
-            return ("SKIP", "", None)
+            return _CRITERION_SKIP
 
         # For BULLISH alignment, require positive change; for BEARISH, negative.
         trending = (alignment == "BULLISH" and pct > _ZERO) or (
             alignment == "BEARISH" and pct < _ZERO
         )
         if trending and abs(pct) >= cfg.pullback_price_change_min:
-            return (
-                "INTERESTING",
-                (f"Criterion 6 TREND_PULLBACK: {alignment} alignment, change={pct}%"),
-                "TREND_PULLBACK",
+            return _ScoutCriterionResult(
+                verdict="INTERESTING",
+                reason=(
+                    f"Criterion 6 TREND_PULLBACK: {alignment} alignment, change={pct}%"
+                ),
+                pattern_detected="TREND_PULLBACK",
             )
-        return ("SKIP", "", None)
+        return _CRITERION_SKIP
 
     # ------------------------------------------------------------------
     # Helpers

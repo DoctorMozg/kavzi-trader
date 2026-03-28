@@ -9,6 +9,16 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.binance.schemas.data_dicts import (
+    AccountInfoDict,
+    AccountPositionDict,
+    AssetBalanceDict,
+    LeverageBracketDict,
+    LeverageBracketEntryDict,
+    LeverageChangeDict,
+    MarginTypeChangeDict,
+    PositionInfoDict,
+)
 from kavzi_trader.api.common.exceptions import ExchangeError
 from kavzi_trader.api.common.models import (
     OrderFillSchema,
@@ -432,43 +442,47 @@ class PaperExchangeClient(BinanceClient):
     async def get_account_info(self) -> dict[str, Any]:
         """Return simulated futures account info."""
         unrealized_pnl = self._calculate_total_unrealized_pnl()
-        positions_list: list[dict[str, str]] = [
-            {
-                "symbol": pos.symbol,
-                "positionAmt": str(
+        positions_list: list[AccountPositionDict] = [
+            AccountPositionDict(
+                symbol=pos.symbol,
+                positionAmt=str(
                     pos.quantity if pos.side == "LONG" else -pos.quantity,
                 ),
-                "entryPrice": str(pos.entry_price),
-                "leverage": str(pos.leverage),
-                "unrealizedProfit": "0",
-                "marginType": self._margin_type_settings.get(
+                entryPrice=str(pos.entry_price),
+                leverage=str(pos.leverage),
+                unrealizedProfit="0",
+                marginType=self._margin_type_settings.get(
                     pos.symbol,
                     "isolated",
                 ),
-                "isolatedMargin": str(pos.margin),
-                "positionSide": "BOTH",
-            }
+                isolatedMargin=str(pos.margin),
+                positionSide="BOTH",
+            )
             for pos in self._positions.values()
         ]
-        return {
-            "totalWalletBalance": str(self._balance_usdt + self._locked_usdt),
-            "availableBalance": str(self._balance_usdt),
-            "totalUnrealizedProfit": str(unrealized_pnl),
-            "totalInitialMargin": str(self._locked_usdt),
-            "totalMaintMargin": "0",
-            "positions": positions_list,
-        }
+        return AccountInfoDict(  # type: ignore[return-value]
+            totalWalletBalance=str(self._balance_usdt + self._locked_usdt),
+            availableBalance=str(self._balance_usdt),
+            totalUnrealizedProfit=str(unrealized_pnl),
+            totalInitialMargin=str(self._locked_usdt),
+            totalMaintMargin="0",
+            positions=positions_list,
+        )
 
     async def get_asset_balance(self, asset: str) -> dict[str, Any]:
         """Return simulated futures asset balance."""
         if asset == "USDT":
-            return {
-                "asset": "USDT",
-                "balance": str(self._balance_usdt + self._locked_usdt),
-                "availableBalance": str(self._balance_usdt),
-                "crossUnPnl": "0",
-            }
-        return {"asset": asset, "balance": "0", "availableBalance": "0"}
+            return AssetBalanceDict(  # type: ignore[return-value]
+                asset="USDT",
+                balance=str(self._balance_usdt + self._locked_usdt),
+                availableBalance=str(self._balance_usdt),
+                crossUnPnl="0",
+            )
+        return AssetBalanceDict(  # type: ignore[return-value]
+            asset=asset,
+            balance="0",
+            availableBalance="0",
+        )
 
     async def futures_change_leverage(
         self,
@@ -478,7 +492,11 @@ class PaperExchangeClient(BinanceClient):
         """Store leverage setting for a symbol."""
         self._leverage_settings[symbol] = leverage
         logger.info("Paper leverage set: %s → %sx", symbol, leverage)
-        return {"leverage": leverage, "symbol": symbol, "maxNotionalValue": "1000000"}
+        return LeverageChangeDict(  # type: ignore[return-value]
+            leverage=leverage,
+            symbol=symbol,
+            maxNotionalValue="1000000",
+        )
 
     async def futures_change_margin_type(
         self,
@@ -488,7 +506,7 @@ class PaperExchangeClient(BinanceClient):
         """Store margin type setting for a symbol."""
         self._margin_type_settings[symbol] = margin_type
         logger.info("Paper margin type set: %s → %s", symbol, margin_type)
-        return {"code": 200, "msg": "success"}
+        return MarginTypeChangeDict(code=200, msg="success")  # type: ignore[return-value]
 
     async def futures_get_position_info(
         self,
@@ -506,23 +524,23 @@ class PaperExchangeClient(BinanceClient):
             else:
                 liq = pos.entry_price * (Decimal(1) + Decimal(1) / Decimal(leverage))
             result.append(
-                {
-                    "symbol": pos.symbol,
-                    "positionAmt": str(
+                PositionInfoDict(  # type: ignore[arg-type]
+                    symbol=pos.symbol,
+                    positionAmt=str(
                         pos.quantity if pos.side == "LONG" else -pos.quantity,
                     ),
-                    "entryPrice": str(pos.entry_price),
-                    "markPrice": str(pos.entry_price),
-                    "unRealizedProfit": "0",
-                    "liquidationPrice": str(liq),
-                    "leverage": str(leverage),
-                    "marginType": self._margin_type_settings.get(
+                    entryPrice=str(pos.entry_price),
+                    markPrice=str(pos.entry_price),
+                    unRealizedProfit="0",
+                    liquidationPrice=str(liq),
+                    leverage=str(leverage),
+                    marginType=self._margin_type_settings.get(
                         pos.symbol,
                         "isolated",
                     ),
-                    "isolatedMargin": str(pos.margin),
-                    "positionSide": "BOTH",
-                },
+                    isolatedMargin=str(pos.margin),
+                    positionSide="BOTH",
+                ),
             )
         return result
 
@@ -532,18 +550,18 @@ class PaperExchangeClient(BinanceClient):
     ) -> list[dict[str, Any]]:
         """Return simulated leverage bracket data."""
         return [
-            {
-                "symbol": "BTCUSDT",
-                "brackets": [
-                    {
-                        "bracket": 1,
-                        "initialLeverage": 125,
-                        "notionalCap": 50000,
-                        "notionalFloor": 0,
-                        "maintMarginRatio": 0.004,
-                    },
+            LeverageBracketDict(  # type: ignore[list-item]
+                symbol="BTCUSDT",
+                brackets=[
+                    LeverageBracketEntryDict(
+                        bracket=1,
+                        initialLeverage=125,
+                        notionalCap=50000,
+                        notionalFloor=0,
+                        maintMarginRatio=0.004,
+                    ),
                 ],
-            },
+            ),
         ]
 
     def _calculate_total_unrealized_pnl(self) -> Decimal:

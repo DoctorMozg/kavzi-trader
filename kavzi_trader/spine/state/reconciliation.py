@@ -1,6 +1,8 @@
 import logging
 from decimal import Decimal
 
+from pydantic import BaseModel, ConfigDict
+
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import OrderResponseSchema
 from kavzi_trader.spine.state.account_store import AccountStore
@@ -9,6 +11,12 @@ from kavzi_trader.spine.state.position_store import PositionStore
 from kavzi_trader.spine.state.schemas import OpenOrderSchema, ReconciliationResultSchema
 
 logger = logging.getLogger(__name__)
+
+
+class _OrderReconciliationCounts(BaseModel):
+    synced: int
+    removed: int
+    model_config = ConfigDict(frozen=True)
 
 
 class ReconciliationService:
@@ -35,7 +43,9 @@ class ReconciliationService:
             logger.debug("Reconciling account balance")
             await self._reconcile_account()
             logger.debug("Reconciling open orders")
-            orders_synced, orders_removed = await self._reconcile_orders(discrepancies)
+            order_counts = await self._reconcile_orders(discrepancies)
+            orders_synced = order_counts.synced
+            orders_removed = order_counts.removed
             logger.debug("Verifying protective orders")
             positions_synced = await self._verify_protective_orders(discrepancies)
         except Exception:
@@ -88,7 +98,7 @@ class ReconciliationService:
     async def _reconcile_orders(
         self,
         discrepancies: list[str],
-    ) -> tuple[int, int]:
+    ) -> _OrderReconciliationCounts:
         exchange_orders = await self._exchange.get_open_orders()
         local_orders = await self._orders.get_all()
 
@@ -114,7 +124,10 @@ class ReconciliationService:
                 await self._orders.delete(local_order.order_id)
                 orders_removed += 1
 
-        return orders_synced, orders_removed
+        return _OrderReconciliationCounts(
+            synced=orders_synced,
+            removed=orders_removed,
+        )
 
     async def _import_order_from_exchange(
         self,

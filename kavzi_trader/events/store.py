@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime, timedelta
 
+from pydantic import BaseModel, ConfigDict
+
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.events.config import EventStoreConfigSchema
 from kavzi_trader.events.event_schema import EventSchema
@@ -8,6 +10,12 @@ from kavzi_trader.events.serialization import deserialize_event, serialize_event
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 
 logger = logging.getLogger(__name__)
+
+
+class _EventEntry(BaseModel):
+    stream_id: str
+    event: EventSchema
+    model_config = ConfigDict(frozen=True)
 
 
 class RedisEventStore:
@@ -52,7 +60,7 @@ class RedisEventStore:
         count: int | None = None,
     ) -> list[EventSchema]:
         entries = await self._read_entries(stream, start, end, count)
-        return [entry[1] for entry in entries]
+        return [entry.event for entry in entries]
 
     async def query(
         self,
@@ -78,9 +86,9 @@ class RedisEventStore:
 
     async def _trim_stream(self, stream: str, cutoff: datetime) -> None:
         entries = await self._read_entries(stream)
-        for stream_id, event in entries:
-            if event.timestamp < cutoff:
-                await self._redis.client.xdel(stream, stream_id)
+        for entry in entries:
+            if entry.event.timestamp < cutoff:
+                await self._redis.client.xdel(stream, entry.stream_id)
 
     def _stream_for_event(self, event: EventSchema) -> str:
         return self._config.streams.get(event.aggregate_type, event.aggregate_type)
@@ -91,6 +99,12 @@ class RedisEventStore:
         start: str = "-",
         end: str = "+",
         count: int | None = None,
-    ) -> list[tuple[str, EventSchema]]:
+    ) -> list[_EventEntry]:
         entries = await self._redis.client.xrange(stream, start, end, count=count)
-        return [(entry[0], deserialize_event(entry[1])) for entry in entries]
+        return [
+            _EventEntry(
+                stream_id=entry[0],
+                event=deserialize_event(entry[1]),
+            )
+            for entry in entries
+        ]

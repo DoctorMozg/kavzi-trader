@@ -10,6 +10,8 @@ from pathlib import Path
 
 import dateparser
 
+from kavzi_trader.commons.date_range_schema import DateRangeSchema
+
 MILLISECONDS_IN_SECOND = 1000
 
 
@@ -144,7 +146,7 @@ def parse_date_string(date_str: str) -> datetime:
 def parse_date_range(
     start_date: str,
     end_date: str | None = None,
-) -> tuple[datetime, datetime | None]:
+) -> DateRangeSchema:
     """
     Parse start and end date strings into datetime objects.
 
@@ -153,7 +155,7 @@ def parse_date_range(
         end_date: Optional end date string
 
     Returns:
-        tuple: (start_datetime, end_datetime or None)
+        DateRangeSchema with start and optional end datetimes.
 
     Raises:
         ValueError: If date format is invalid
@@ -164,4 +166,4 @@ def parse_date_range(
     if end_date:
         end_time = parse_date_string(end_date)
 
-    return start_time, end_time
+    return DateRangeSchema(start=start_time, end=end_time)

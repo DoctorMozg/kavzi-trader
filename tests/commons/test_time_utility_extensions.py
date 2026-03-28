@@ -56,12 +56,12 @@ class TestTimeUtilityExtensions:
         ]
 
         # Execute
-        start_time, end_time = parse_date_range(start_date, end_date)
+        result = parse_date_range(start_date, end_date)
 
         # Assert
         assert mock_parse_date_string.call_count == 2
-        assert start_time == datetime(2023, 1, 1, tzinfo=UTC)
-        assert end_time == datetime(2023, 1, 31, tzinfo=UTC)
+        assert result.start == datetime(2023, 1, 1, tzinfo=UTC)
+        assert result.end == datetime(2023, 1, 31, tzinfo=UTC)
 
     @patch("kavzi_trader.commons.time_utility.parse_date_string")
     def test_parse_date_range_no_end_date(
@@ -75,9 +75,9 @@ class TestTimeUtilityExtensions:
         mock_parse_date_string.return_value = datetime(2023, 1, 1, tzinfo=UTC)
 
         # Execute
-        start_time, end_time = parse_date_range(start_date)
+        result = parse_date_range(start_date)
 
         # Assert
         mock_parse_date_string.assert_called_once_with(start_date)
-        assert start_time == datetime(2023, 1, 1, tzinfo=UTC)
-        assert end_time is None
+        assert result.start == datetime(2023, 1, 1, tzinfo=UTC)
+        assert result.end is None

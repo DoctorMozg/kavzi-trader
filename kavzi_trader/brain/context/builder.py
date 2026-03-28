@@ -1,9 +1,13 @@
 import logging
 from decimal import Decimal
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from kavzi_trader.brain.context.context_dicts import (
+    AnalystContextDict,
+    MarketContextDict,
+    TraderContextDict,
+)
 from kavzi_trader.brain.context.formatters import (
     format_candles_table,
     format_indicators_compact,
@@ -15,7 +19,6 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.external.schemas import SentimentSummarySchema
 
 logger = logging.getLogger(__name__)
 
@@ -58,26 +61,10 @@ class ContextBuilder(BaseModel):
                 MIN_CANDLES_EXPECTED,
             )
 
-    @staticmethod
-    def _add_sentiment_context(
-        context: dict[str, Any],
-        sentiment: SentimentSummarySchema | None,
-    ) -> None:
-        if sentiment is not None:
-            context["sentiment_summary"] = sentiment.summary
-            context["sentiment_bias"] = sentiment.sentiment_bias
-            context["sentiment_confidence_adjustment"] = str(
-                sentiment.confidence_adjustment,
-            )
-        else:
-            context["sentiment_summary"] = None
-            context["sentiment_bias"] = None
-            context["sentiment_confidence_adjustment"] = None
-
     def _build_market_context(
         self,
         deps: AnalystDependenciesSchema | TradingDependenciesSchema,
-    ) -> dict[str, Any]:
+    ) -> MarketContextDict:
         snapshot = MarketSnapshotSchema(
             symbol=deps.symbol,
             current_price=deps.current_price,
@@ -86,31 +73,37 @@ class ContextBuilder(BaseModel):
             indicators=deps.indicators,
             volatility_regime=deps.volatility_regime,
         )
-        return {
-            "market_snapshot": snapshot.model_dump(),
-            "candles_table": format_candles_table(deps.recent_candles),
-            "indicators_compact": format_indicators_compact(deps.indicators),
-        }
+        return MarketContextDict(
+            market_snapshot=snapshot.model_dump(),
+            candles_table=format_candles_table(deps.recent_candles),
+            indicators_compact=format_indicators_compact(deps.indicators),
+        )
 
     def build_analyst_context(
         self,
         deps: AnalystDependenciesSchema,
-    ) -> dict[str, Any]:
+    ) -> AnalystContextDict:
         self._warn_if_broken_data(deps.symbol, deps)
-        context = self._build_market_context(deps)
+        market = self._build_market_context(deps)
         dual = deps.algorithm_confluence
-        context.update(
-            {
-                "order_flow_compact": format_order_flow_compact(deps.order_flow),
-                "algorithm_confluence_long": dual.long.model_dump(),
-                "algorithm_confluence_short": dual.short.model_dump(),
-                "detected_side": dual.detected_side,
-                "futures_leverage": deps.leverage,
-                "symbol_tier": deps.symbol_tier,
-                "tier_min_confidence": str(deps.tier_min_confidence),
-            }
+        sentiment = deps.sentiment_summary
+        context = AnalystContextDict(
+            market_snapshot=market["market_snapshot"],
+            candles_table=market["candles_table"],
+            indicators_compact=market["indicators_compact"],
+            order_flow_compact=format_order_flow_compact(deps.order_flow),
+            algorithm_confluence_long=dual.long.model_dump(),
+            algorithm_confluence_short=dual.short.model_dump(),
+            detected_side=dual.detected_side,
+            futures_leverage=deps.leverage,
+            symbol_tier=deps.symbol_tier,
+            tier_min_confidence=str(deps.tier_min_confidence),
+            sentiment_summary=sentiment.summary if sentiment else None,
+            sentiment_bias=(sentiment.sentiment_bias if sentiment else None),
+            sentiment_confidence_adjustment=(
+                str(sentiment.confidence_adjustment) if sentiment else None
+            ),
         )
-        self._add_sentiment_context(context, deps.sentiment_summary)
         logger.debug(
             "Built analyst context for %s: %d keys",
             deps.symbol,
@@ -123,9 +116,9 @@ class ContextBuilder(BaseModel):
         deps: TradingDependenciesSchema,
         analyst_result: AnalystDecisionSchema | None = None,
         scout_pattern: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> TraderContextDict:
         self._warn_if_broken_data(deps.symbol, deps)
-        context = self._build_market_context(deps)
+        market = self._build_market_context(deps)
         positions_text = (
             "No open positions."
             if not deps.open_positions
@@ -143,24 +136,30 @@ class ContextBuilder(BaseModel):
             funding_24h = f"{float(rate_24h * 100):.4f}%"
 
         dual = deps.algorithm_confluence
-        context.update(
-            {
-                "order_flow_compact": format_order_flow_compact(deps.order_flow),
-                "algorithm_confluence_long": dual.long.model_dump(),
-                "algorithm_confluence_short": dual.short.model_dump(),
-                "detected_side": dual.detected_side,
-                "account_state": deps.account_state.model_dump(),
-                "analyst_result": analyst_result,
-                "futures_leverage": deps.leverage,
-                "liquidation_distance_percent": round(100 / deps.leverage, 1),
-                "open_positions_json": positions_text,
-                "funding_rate_24h_percent": funding_24h,
-                "scout_pattern": scout_pattern,
-                "symbol_tier": deps.symbol_tier,
-                "tier_min_confidence": str(deps.tier_min_confidence),
-            }
+        sentiment = deps.sentiment_summary
+        context = TraderContextDict(
+            market_snapshot=market["market_snapshot"],
+            candles_table=market["candles_table"],
+            indicators_compact=market["indicators_compact"],
+            order_flow_compact=format_order_flow_compact(deps.order_flow),
+            algorithm_confluence_long=dual.long.model_dump(),
+            algorithm_confluence_short=dual.short.model_dump(),
+            detected_side=dual.detected_side,
+            account_state=deps.account_state.model_dump(),
+            analyst_result=analyst_result,
+            futures_leverage=deps.leverage,
+            liquidation_distance_percent=round(100 / deps.leverage, 1),
+            open_positions_json=positions_text,
+            funding_rate_24h_percent=funding_24h,
+            scout_pattern=scout_pattern,
+            symbol_tier=deps.symbol_tier,
+            tier_min_confidence=str(deps.tier_min_confidence),
+            sentiment_summary=sentiment.summary if sentiment else None,
+            sentiment_bias=(sentiment.sentiment_bias if sentiment else None),
+            sentiment_confidence_adjustment=(
+                str(sentiment.confidence_adjustment) if sentiment else None
+            ),
         )
-        self._add_sentiment_context(context, deps.sentiment_summary)
         logger.debug(
             "Built trader context for %s: %d keys",
             deps.symbol,

@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -47,7 +48,7 @@ class PromptLoader:
     def render_user_prompt(
         self,
         request: Literal["analyze_setup", "make_decision", "synthesize_sentiment"],
-        context: dict[str, Any],
+        context: Mapping[str, Any],
     ) -> str:
         template_path = self._paths.user[request]
         return cast("str", self._env.get_template(template_path).render(**context))

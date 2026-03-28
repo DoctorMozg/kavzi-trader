@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import dateparser
 from pydantic import BaseModel
@@ -92,10 +92,15 @@ class BaseDownloader[T: BaseModel]:
         # Create a semaphore to limit concurrency
         semaphore = asyncio.Semaphore(max_workers)
 
+        class _DownloadBatchResult(NamedTuple):
+            data: list[Any]
+            config: dict[str, Any]
+            batch_index: int
+
         async def download_with_semaphore(
             batch_config: dict[str, Any],
             batch_index: int,
-        ) -> tuple[list[T], dict[str, Any], int]:
+        ) -> _DownloadBatchResult:
             """Download a batch with semaphore control."""
             async with semaphore:
                 try:
@@ -107,9 +112,17 @@ class BaseDownloader[T: BaseModel]:
                         batch_config.get("start_time"),
                         batch_config.get("end_time"),
                     )
-                    return [], batch_config, batch_index
+                    return _DownloadBatchResult(
+                        data=[],
+                        config=batch_config,
+                        batch_index=batch_index,
+                    )
                 else:
-                    return batch_data, batch_config, batch_index
+                    return _DownloadBatchResult(
+                        data=batch_data,
+                        config=batch_config,
+                        batch_index=batch_index,
+                    )
 
         # Create tasks for all batches
         tasks = [download_with_semaphore(batch, i) for i, batch in enumerate(batches)]
@@ -118,10 +131,10 @@ class BaseDownloader[T: BaseModel]:
         total_batches = len(batches)
 
         for completed, task in enumerate(asyncio.as_completed(tasks)):
-            batch_data, _, _ = await task
+            batch_result = await task
 
-            if batch_data:
-                all_data.extend(batch_data)
+            if batch_result.data:
+                all_data.extend(batch_result.data)
 
             logger.info(
                 "Completed batch %d/%d for %s %s (%.1f%%)",
