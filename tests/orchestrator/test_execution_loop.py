@@ -35,7 +35,12 @@ async def test_execution_loop_dispatches() -> None:
     )
     engine = AsyncMock()
 
-    loop = ExecutionLoop(redis_client=redis_client, engine=engine)
+    state_manager = AsyncMock()
+    loop = ExecutionLoop(
+        redis_client=redis_client,
+        engine=engine,
+        state_manager=state_manager,
+    )
     task = asyncio.create_task(loop.run())
     await asyncio.sleep(0)
     task.cancel()

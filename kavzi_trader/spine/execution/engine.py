@@ -13,6 +13,7 @@ from kavzi_trader.api.common.models import (
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.execution.execution_result_schema import ExecutionResultSchema
 from kavzi_trader.spine.execution.monitor import OrderMonitor
@@ -38,6 +39,7 @@ class ExecutionEngine:
         monitor: OrderMonitor,
         event_store: RedisEventStore | None = None,
         leverage: int = 3,
+        report_populator: TradeReportPopulator | None = None,
     ) -> None:
         self._exchange = exchange
         self._state_manager = state_manager
@@ -47,6 +49,7 @@ class ExecutionEngine:
         self._monitor = monitor
         self._event_store = event_store
         self._leverage = leverage
+        self._report_populator = report_populator
 
     async def execute(self, decision: DecisionMessageSchema) -> ExecutionResultSchema:
         logger.info(
@@ -479,14 +482,16 @@ class ExecutionEngine:
     async def _emergency_close(self, position: PositionSchema) -> None:
         """Close position on exchange when protective orders cannot be placed."""
         close_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        exit_price: Decimal | None = None
         try:
-            await self._exchange.create_order(
+            order_response = await self._exchange.create_order(
                 symbol=position.symbol,
                 side=close_side,
                 order_type=OrderType.MARKET,
                 quantity=position.quantity,
                 reduce_only=True,
             )
+            exit_price = order_response.price
             await self._state_manager.remove_position(position.id)
             logger.warning(
                 "Emergency-closed position %s for %s",
@@ -511,6 +516,26 @@ class ExecutionEngine:
                 "Failed to record emergency_close event for %s",
                 position.id,
             )
+        if exit_price is not None and self._report_populator is not None:
+            try:
+                side: Literal["LONG", "SHORT"] = position.side  # type: ignore[assignment]
+                await self._report_populator.record_position_close(
+                    symbol=position.symbol,
+                    side=side,
+                    quantity=position.quantity,
+                    entry_price=position.entry_price,
+                    exit_price=exit_price,
+                    stop_loss=position.stop_loss,
+                    take_profit=position.take_profit,
+                    close_reason="Emergency close",
+                    leverage=position.leverage,
+                    opened_at=position.opened_at,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to report emergency close for %s",
+                    position.symbol,
+                )
 
     def _position_side(
         self,

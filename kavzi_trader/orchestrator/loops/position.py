@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
@@ -119,11 +119,17 @@ class PositionManagementLoop:
                 "action": action.action.value,
             },
         )
-        await self._action_executor.execute(position, action)
+        exit_price = await self._action_executor.execute(position, action)
         updated = self._build_updated_position(position, action)
         if updated is not None:
             await self._state_manager.update_position(updated)
         await self._safe_report_action(position, action)
+        if action.action == PositionActionType.FULL_EXIT and exit_price is not None:
+            await self._safe_report_position_close(
+                position,
+                action.reason,
+                exit_price,
+            )
 
     def _build_updated_position(
         self,
@@ -166,5 +172,33 @@ class PositionManagementLoop:
             logger.exception(
                 "Failed to report action %s for %s",
                 action.action.value,
+                position.symbol,
+            )
+
+    async def _safe_report_position_close(
+        self,
+        position: PositionSchema,
+        close_reason: str,
+        exit_price: Decimal,
+    ) -> None:
+        if self._report_populator is None:
+            return
+        try:
+            side: Literal["LONG", "SHORT"] = position.side  # type: ignore[assignment]
+            await self._report_populator.record_position_close(
+                symbol=position.symbol,
+                side=side,
+                quantity=position.quantity,
+                entry_price=position.entry_price,
+                exit_price=exit_price,
+                stop_loss=position.stop_loss,
+                take_profit=position.take_profit,
+                close_reason=close_reason,
+                leverage=position.leverage,
+                opened_at=position.opened_at,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to report position close for %s",
                 position.symbol,
             )

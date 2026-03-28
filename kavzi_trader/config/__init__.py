@@ -104,6 +104,7 @@ class ReportingConfigSchema(BaseModel):
     refresh_interval_s: Annotated[int, Field(default=3, ge=1)]
     max_action_entries: Annotated[int, Field(default=500, ge=10)]
     max_trade_entries: Annotated[int, Field(default=200, ge=10)]
+    max_closed_position_entries: Annotated[int, Field(default=100, ge=10)]
 
     model_config = ConfigDict(frozen=True)
 

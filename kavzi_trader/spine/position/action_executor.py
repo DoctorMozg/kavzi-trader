@@ -33,15 +33,18 @@ class PositionActionExecutor:
         self,
         position: PositionSchema,
         action: PositionActionSchema,
-    ) -> None:
+    ) -> Decimal | None:
+        """Execute action and return exit price for FULL_EXIT, None otherwise."""
         if action.action == PositionActionType.NO_ACTION:
-            return
+            return None
         if action.action == PositionActionType.MOVE_STOP_LOSS:
             await self._move_stop_loss(position, action)
-        elif action.action == PositionActionType.PARTIAL_EXIT:
+            return None
+        if action.action == PositionActionType.PARTIAL_EXIT:
             await self._partial_exit(position, action)
-        elif action.action == PositionActionType.FULL_EXIT:
-            await self._full_exit(position)
+            return None
+        # PositionActionType.FULL_EXIT
+        return await self._full_exit(position)
 
     async def _move_stop_loss(
         self,
@@ -86,9 +89,9 @@ class PositionActionExecutor:
                 remaining,
             )
 
-    async def _full_exit(self, position: PositionSchema) -> None:
+    async def _full_exit(self, position: PositionSchema) -> Decimal:
         exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        await self._exchange.create_order(
+        order_response = await self._exchange.create_order(
             symbol=position.symbol,
             side=exit_side,
             order_type=OrderType.MARKET,
@@ -97,6 +100,7 @@ class PositionActionExecutor:
         )
         await self._cancel_linked_orders(position)
         await self._state.remove_position(position.id)
+        return order_response.price
 
     async def _cancel_linked_orders(self, position: PositionSchema) -> None:
         linked = await self._state.orders.get_by_position(position.id)

@@ -285,19 +285,6 @@ async def _start_orchestrator(
     )
     atr_provider = LiveAtrProvider(cache)
 
-    # --- Execution engine ---
-    logger.info("Creating execution engine")
-    engine = ExecutionEngine(
-        exchange=exchange,
-        state_manager=state_manager,
-        risk_validator=DynamicRiskValidator(app_config.risk, tier_registry),
-        staleness_checker=StalenessChecker(app_config.execution),
-        translator=DecisionTranslator(),
-        monitor=OrderMonitor(exchange, app_config.execution.timeout_s),
-        event_store=event_store,
-        leverage=app_config.futures.default_leverage,
-    )
-
     # --- Brain agents ---
     logger.info(
         "Creating brain agents (Analyst/Trader) via OpenRouter; Scout is algorithmic",
@@ -341,6 +328,7 @@ async def _start_orchestrator(
                 initial_balance_usdt=initial_balance,
                 max_action_entries=app_config.reporting.max_action_entries,
                 max_trade_entries=app_config.reporting.max_trade_entries,
+                max_closed_position_entries=app_config.reporting.max_closed_position_entries,
                 refresh_interval_s=app_config.reporting.refresh_interval_s,
             )
             logger.info(
@@ -352,6 +340,20 @@ async def _start_orchestrator(
                 "Failed to initialize report populator, continuing without reporting",
             )
 
+    # --- Execution engine ---
+    logger.info("Creating execution engine")
+    engine = ExecutionEngine(
+        exchange=exchange,
+        state_manager=state_manager,
+        risk_validator=DynamicRiskValidator(app_config.risk, tier_registry),
+        staleness_checker=StalenessChecker(app_config.execution),
+        translator=DecisionTranslator(),
+        monitor=OrderMonitor(exchange, app_config.execution.timeout_s),
+        event_store=event_store,
+        leverage=app_config.futures.default_leverage,
+        report_populator=report_populator,
+    )
+
     # --- Pre-trade filter chain ---
     fgi_gate: FearGreedGateFilter | None = None
     if external_cache is not None:
@@ -360,7 +362,7 @@ async def _start_orchestrator(
         volatility_detector=VolatilityRegimeDetector(),
         funding_filter=FundingRateFilter(app_config.filters, tier_registry),
         movement_filter=MinimumMovementFilter(app_config.filters),
-        exposure_limiter=ExposureLimiter(),
+        exposure_limiter=ExposureLimiter(app_config.risk),
         liquidity_filter=LiquidityFilter(app_config.filters),
         correlation_filter=CorrelationFilter(app_config.filters),
         confluence_calculator=ConfluenceCalculator(),
@@ -392,6 +394,7 @@ async def _start_orchestrator(
         execution_loop=ExecutionLoop(
             redis_client=redis_client,
             engine=engine,
+            state_manager=state_manager,
             report_populator=report_populator,
         ),
         position_loop=PositionManagementLoop(

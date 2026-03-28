@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -11,6 +12,7 @@ from kavzi_trader.commons.path_utility import ensure_directory_exists
 from kavzi_trader.commons.time_utility import timestamp_path, utc_now
 from kavzi_trader.reporting.report_state_schema import (
     ReportActionEntrySchema,
+    ReportClosedPositionEntrySchema,
     ReportMarketPriceSchema,
     ReportPositionEntrySchema,
     ReportStateSchema,
@@ -31,6 +33,7 @@ class TradeReportPopulator:
         initial_balance_usdt: Decimal,
         max_action_entries: int = 500,
         max_trade_entries: int = 200,
+        max_closed_position_entries: int = 100,
         refresh_interval_s: int = 3,
     ) -> None:
         ensure_directory_exists(report_dir)
@@ -41,6 +44,7 @@ class TradeReportPopulator:
         )
         self._max_action_entries = max_action_entries
         self._max_trade_entries = max_trade_entries
+        self._max_closed_position_entries = max_closed_position_entries
         self._refresh_interval_s = refresh_interval_s
         self._lock = asyncio.Lock()
 
@@ -61,6 +65,7 @@ class TradeReportPopulator:
             unrealized_pnl_usdt=Decimal(0),
             active_positions_count=0,
             open_positions=[],
+            closed_positions=[],
             market_prices=[],
             actions=[],
             trades=[],
@@ -152,6 +157,57 @@ class TradeReportPopulator:
             logger.exception(
                 "Failed to record trade %s for %s",
                 side,
+                symbol,
+            )
+
+    async def record_position_close(
+        self,
+        symbol: str,
+        side: Literal["LONG", "SHORT"],
+        quantity: Decimal,
+        entry_price: Decimal,
+        exit_price: Decimal,
+        stop_loss: Decimal,
+        take_profit: Decimal,
+        close_reason: str,
+        leverage: int,
+        opened_at: datetime,
+    ) -> None:
+        """Record a closed position with realized PnL and re-render."""
+        try:
+            if side == "LONG":
+                pnl = (exit_price - entry_price) * quantity
+            else:
+                pnl = (entry_price - exit_price) * quantity
+            entry = ReportClosedPositionEntrySchema(
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                entry_price=entry_price,
+                exit_price=exit_price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                pnl=pnl,
+                close_reason=close_reason,
+                leverage=leverage,
+                opened_at=opened_at,
+                closed_at=utc_now(),
+            )
+            async with self._lock:
+                closed = [*self._state.closed_positions, entry]
+                if len(closed) > self._max_closed_position_entries:
+                    closed = closed[-self._max_closed_position_entries :]
+                self._state = self._state.model_copy(
+                    update={
+                        "closed_positions": closed,
+                        "last_updated_at": utc_now(),
+                        "version": self._state.version + 1,
+                    },
+                )
+                await self._render()
+        except Exception:
+            logger.exception(
+                "Failed to record position close for %s",
                 symbol,
             )
 

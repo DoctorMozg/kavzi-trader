@@ -153,6 +153,66 @@
         </div>
         {% endif %}
 
+        {% if state.closed_positions %}
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">
+                Closed Positions
+                <span class="badge text-bg-secondary ms-1">{{ state.closed_positions | length }}</span>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>SL</th>
+                            <th>TP</th>
+                            <th>PnL</th>
+                            <th>Reason</th>
+                            <th>Lev</th>
+                            <th>Opened</th>
+                            <th>Closed</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cp in state.closed_positions | reverse %}
+                        <tr>
+                            <td><strong>{{ cp.symbol }}</strong></td>
+                            <td>
+                                {% if cp.side == "LONG" %}
+                                <span class="badge bg-success">LONG</span>
+                                {% else %}
+                                <span class="badge bg-danger">SHORT</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ cp.quantity }}</td>
+                            <td>{{ cp.entry_price }}</td>
+                            <td>{{ cp.exit_price }}</td>
+                            <td>{{ cp.stop_loss }}</td>
+                            <td>{{ cp.take_profit }}</td>
+                            <td>
+                                {% set pnl_val = cp.pnl | float %}
+                                <span class="{% if pnl_val > 0 %}revenue-positive{% elif pnl_val < 0 %}revenue-negative{% else %}revenue-zero{% endif %}">
+                                    {% if pnl_val >= 0 %}+{% endif %}${{ "%.2f" | format(pnl_val) }}
+                                </span>
+                            </td>
+                            <td><span class="badge text-bg-secondary">{{ cp.close_reason }}</span></td>
+                            <td>{{ cp.leverage }}x</td>
+                            <td><small>{{ cp.opened_at.strftime('%H:%M:%S') if cp.opened_at is not string else cp.opened_at }}</small></td>
+                            <td><small>{{ cp.closed_at.strftime('%H:%M:%S') if cp.closed_at is not string else cp.closed_at }}</small></td>
+                            <td><small>{{ cp.closed_at - cp.opened_at }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="row g-3">
             <div class="col-lg-7">
                 <div class="card">
