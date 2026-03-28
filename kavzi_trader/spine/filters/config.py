@@ -81,6 +81,11 @@ class FilterConfigSchema(BaseModel):
         Field(default=Decimal("0.3")),
     ] = Decimal("0.3")
 
+    spike_body_atr_threshold: Annotated[
+        Decimal,
+        Field(default=Decimal("1.5")),
+    ] = Decimal("1.5")
+
     correlated_pairs: Annotated[
         dict[str, list[str]],
         Field(default_factory=_default_correlated_pairs),
@@ -89,6 +94,11 @@ class FilterConfigSchema(BaseModel):
         Decimal,
         Field(default=Decimal("0.5")),
     ] = Decimal("0.5")
+
+    movement_bypass_confluence_min: Annotated[
+        int,
+        Field(default=8, ge=0, le=11),
+    ] = 8
 
     fgi_extreme_fear_threshold: Annotated[
         int,

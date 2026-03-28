@@ -14,6 +14,7 @@ class RiskConfigSchema(BaseModel):
 
     min_sl_atr: Decimal = Decimal("0.5")
     max_sl_atr: Decimal = Decimal("3.0")
+    min_sl_percent: Decimal = Decimal("0.15")
 
     volatility_low_threshold: Decimal = Decimal("-1.0")
     volatility_high_threshold: Decimal = Decimal("1.0")

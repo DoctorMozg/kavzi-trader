@@ -43,16 +43,15 @@ brain:
   analyst:
     # Tier 2 — Financial reasoning: 88.23% accuracy ($1.25/$10.00 per M tokens)
     # Alternatives: anthropic/claude-opus-4.6 (87.82%), anthropic/claude-sonnet-4.5 (83.61%)
-    # or "openai/gpt-5.4-mini"
-    model_id: "deepseek/deepseek-chat-v3-0324"
+    model_id: "openai/gpt-5.4-mini"
     retries: 2
     temperature: 0.0
 
   trader:
     # Tier 3 — Final decision: 87.82% accuracy, most token-efficient ($5.00/$25.00 per M tokens)
     # Alternatives: openai/gpt-5 (88.23%), openai/gpt-4.1 (best tool-calling value)
-    # or "openai/gpt-5.4-mini" or "anthropic/claude-opus-4.6"
-    model_id: "deepseek/deepseek-chat-v3-0324"
+    # or "anthropic/claude-opus-4.6"
+    model_id: "openai/gpt-5.4"
     retries: 2
     temperature: 0.0
 

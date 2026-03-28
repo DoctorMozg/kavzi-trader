@@ -36,6 +36,7 @@ class SynthesizerConfigSchema(BaseModel):
     model_id: Annotated[str, Field(default="deepseek/deepseek-chat-v3-0324")]
     temperature: Annotated[float, Field(default=0.0, ge=0.0, le=2.0)]
     retries: Annotated[int, Field(default=1, ge=0, le=5)]
+    seed: Annotated[int | None, Field(default=42)]
 
     model_config = ConfigDict(frozen=True)
 

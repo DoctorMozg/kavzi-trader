@@ -277,6 +277,14 @@ class DynamicRiskValidator:
         if sl_atr_ratio > max_sl:
             errors.append(f"Stop loss too wide ({sl_atr_ratio:.2f} ATR, max {max_sl})")
 
+        if entry_price > 0:
+            sl_pct = (sl_distance / entry_price) * 100
+            if sl_pct < self._config.min_sl_percent:
+                errors.append(
+                    f"Stop loss too tight"
+                    f" ({sl_pct:.3f}%, min: {self._config.min_sl_percent}%)",
+                )
+
         return errors
 
     def _check_risk_reward(

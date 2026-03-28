@@ -229,6 +229,45 @@ async def test_router_runs_trader_on_valid_setup(
     assert provider.trader_calls == 1
 
 
+class TimeoutTrader:
+    """Simulates a Trader that hits a timeout."""
+
+    async def run(self, deps, analyst_result=None, scout_pattern=None):
+        raise TimeoutError("Trader timed out")
+
+
+@pytest.mark.asyncio
+async def test_router_returns_wait_on_trader_timeout(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(True),
+        TimeoutTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+    assert result.trader is not None
+    assert result.trader.action == "WAIT"
+    assert result.trader.confidence == 0.0
+    assert "timed out" in result.trader.reasoning.lower()
+    assert result.trader_deps is not None
+
+
 class SpyScout:
     def __init__(self) -> None:
         self.call_count = 0

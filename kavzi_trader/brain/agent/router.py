@@ -2,6 +2,7 @@ import logging
 import time
 from typing import Protocol
 
+import httpx
 from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
@@ -187,6 +188,27 @@ class AgentRouter:
                 analyst_result=analyst_result,
                 scout_pattern=scout_pattern,
             )
+        except (TimeoutError, httpx.TimeoutException):
+            ms = (time.monotonic() - t0) * 1000
+            logger.warning(
+                "Trader agent timed out for %s after %.1fs, returning WAIT",
+                symbol,
+                ms / 1000,
+            )
+            wait = TradeDecisionSchema(
+                action="WAIT",
+                confidence=0.0,
+                reasoning=(
+                    f"Trader agent timed out after {ms / 1000:.1f}s."
+                    " Returning WAIT to avoid stale entry."
+                    " Consider lowering trader timeout_s or using a"
+                    " faster model."
+                ),
+                suggested_entry=None,
+                suggested_stop_loss=None,
+                suggested_take_profit=None,
+            )
+            return _TraderRunResult(decision=wait, deps=deps)
         except Exception:
             logger.exception("Trader agent failed for %s", symbol)
             return _TraderRunResult()

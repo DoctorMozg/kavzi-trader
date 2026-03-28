@@ -188,6 +188,49 @@ class TestDynamicRiskValidator:
         assert any("too wide" in r.lower() for r in result.rejection_reasons)
 
     @pytest.mark.asyncio
+    async def test_rejects_stop_loss_below_min_percent(
+        self, mock_state_manager
+    ) -> None:
+        """LTCUSDT scenario: SL passes ATR check but is only 0.055% of entry."""
+        validator = DynamicRiskValidator()
+
+        result = await validator.validate_trade(
+            symbol="LTCUSDT",
+            side="LONG",
+            entry_price=Decimal("54.14"),
+            stop_loss=Decimal("54.11"),
+            take_profit=Decimal("54.72"),
+            current_atr=Decimal("0.06"),
+            atr_history=[Decimal("0.06")] * 10,
+            state_manager=mock_state_manager,
+        )
+
+        assert result.is_valid is False
+        assert any(
+            "too tight" in r.lower() and "%" in r for r in result.rejection_reasons
+        )
+
+    @pytest.mark.asyncio
+    async def test_sl_percent_floor_passes_normal_trade(
+        self, mock_state_manager
+    ) -> None:
+        """Normal trade with adequate SL distance passes both ATR and % checks."""
+        validator = DynamicRiskValidator()
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
+            state_manager=mock_state_manager,
+        )
+
+        assert result.is_valid is True
+
+    @pytest.mark.asyncio
     async def test_rejects_poor_risk_reward(self, mock_state_manager) -> None:
         validator = DynamicRiskValidator()
 

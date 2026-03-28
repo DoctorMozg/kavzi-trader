@@ -58,6 +58,7 @@ from kavzi_trader.spine.filters.funding import FundingRateFilter
 from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
 from kavzi_trader.spine.filters.scout import ScoutFilter
+from kavzi_trader.spine.filters.spike_cooldown import SpikeCooldownFilter
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.break_even import BreakEvenMover
 from kavzi_trader.spine.position.manager import PositionManager
@@ -248,11 +249,18 @@ async def _start_orchestrator(
                 provider=synth_provider,
             )
             synth_system_prompt = prompt_loader.render_system_prompt("synthesizer")
+            from pydantic_ai.settings import ModelSettings
+
+            synth_settings = ModelSettings(
+                temperature=synth_config.temperature,
+                seed=synth_config.seed,
+            )
             synth_agent: Agent[None, _SynthesizerOutputSchema] = Agent(
                 synth_model,
                 output_type=_SynthesizerOutputSchema,
                 instructions=synth_system_prompt,
                 retries=synth_config.retries,
+                model_settings=synth_settings,
             )
             synthesizer = SentimentSynthesizer(synth_agent, prompt_loader)
             logger.info(
@@ -367,6 +375,8 @@ async def _start_orchestrator(
         correlation_filter=CorrelationFilter(app_config.filters),
         confluence_calculator=ConfluenceCalculator(),
         fear_greed_gate=fgi_gate,
+        spike_cooldown_filter=SpikeCooldownFilter(app_config.filters),
+        config=app_config.filters,
     )
 
     # --- Orchestrator ---

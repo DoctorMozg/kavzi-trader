@@ -9,6 +9,7 @@ class AgentModelConfigSchema(BaseModel):
     model_id: Annotated[str, Field(..., min_length=1)]
     retries: Annotated[int, Field(default=1, ge=0, le=5)]
     temperature: Annotated[float, Field(default=0.0, ge=0.0, le=2.0)]
+    timeout_s: Annotated[float, Field(default=0.0, ge=0.0, le=300.0)]
 
     model_config = ConfigDict(frozen=True)
 

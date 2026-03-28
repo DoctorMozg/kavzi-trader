@@ -7,7 +7,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
-from kavzi_trader.brain.config import BrainConfigSchema
+from kavzi_trader.brain.config import AgentModelConfigSchema, BrainConfigSchema
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
@@ -34,8 +34,13 @@ class AgentFactory:
             "OpenRouter HTTP timeout set to %.0fs",
             timeout_s,
         )
-        self._model_settings = ModelSettings(
-            extra_body={"provider": {"sort": "latency"}},
+        self._analyst_settings = self._build_tier_settings(
+            config.analyst,
+            timeout_s,
+        )
+        self._trader_settings = self._build_tier_settings(
+            config.trader,
+            timeout_s,
         )
         self._provider = OpenAIProvider(
             openai_client=AsyncOpenAI(
@@ -66,7 +71,7 @@ class AgentFactory:
             output_type=AnalystDecisionSchema,
             deps_type=AnalystDependenciesSchema,
             instructions=system_prompt,
-            model_settings=self._model_settings,
+            model_settings=self._analyst_settings,
             retries=self._config.analyst.retries,
         )
 
@@ -87,6 +92,18 @@ class AgentFactory:
             output_type=TradeDecisionSchema,
             deps_type=TradingDependenciesSchema,
             instructions=system_prompt,
-            model_settings=self._model_settings,
+            model_settings=self._trader_settings,
             retries=self._config.trader.retries,
+        )
+
+    @staticmethod
+    def _build_tier_settings(
+        tier: AgentModelConfigSchema,
+        global_timeout_s: float,
+    ) -> ModelSettings:
+        effective_timeout = tier.timeout_s or global_timeout_s
+        return ModelSettings(
+            temperature=tier.temperature,
+            timeout=effective_timeout,
+            extra_body={"provider": {"sort": "latency"}},
         )

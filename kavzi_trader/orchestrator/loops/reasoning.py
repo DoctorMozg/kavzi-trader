@@ -252,6 +252,9 @@ class ReasoningLoop:
             return None
         deps = result.trader_deps
         positions = await self._get_open_positions()
+        confluence_score = (
+            result.analyst.confluence_score if result.analyst is not None else None
+        )
         return await self._filter_chain.evaluate(
             symbol=deps.symbol,
             side=cast("Literal['LONG', 'SHORT']", result.trader.action),
@@ -260,6 +263,7 @@ class ReasoningLoop:
             order_flow=deps.order_flow,
             positions=positions,
             atr_history=deps.atr_history,
+            analyst_confluence_score=confluence_score,
         )
 
     async def _get_open_positions(self) -> list[PositionSchema]:

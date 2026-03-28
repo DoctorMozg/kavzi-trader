@@ -5,6 +5,7 @@ from typing import Literal
 from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
+from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.filters.correlation import CorrelationFilter
 from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
@@ -15,6 +16,7 @@ from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
 from kavzi_trader.spine.filters.funding import FundingRateFilter
 from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
+from kavzi_trader.spine.filters.spike_cooldown import SpikeCooldownFilter
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -36,6 +38,8 @@ class PreTradeFilterChain:
         correlation_filter: CorrelationFilter,
         confluence_calculator: ConfluenceCalculator,
         fear_greed_gate: FearGreedGateFilter | None = None,
+        spike_cooldown_filter: SpikeCooldownFilter | None = None,
+        config: FilterConfigSchema | None = None,
     ) -> None:
         self._volatility_detector = volatility_detector
         self._funding_filter = funding_filter
@@ -45,8 +49,10 @@ class PreTradeFilterChain:
         self._correlation_filter = correlation_filter
         self._confluence_calculator = confluence_calculator
         self._fear_greed_gate = fear_greed_gate
+        self._spike_cooldown_filter = spike_cooldown_filter
+        self._config = config or FilterConfigSchema()
 
-    async def evaluate(
+    async def evaluate(  # noqa: PLR0911
         self,
         symbol: str,
         side: Literal["LONG", "SHORT"],
@@ -55,6 +61,7 @@ class PreTradeFilterChain:
         order_flow: OrderFlowSchema | None,
         positions: list[PositionSchema],
         atr_history: list[Decimal],
+        analyst_confluence_score: int | None = None,
     ) -> FilterChainResultSchema:
         results: list[FilterResultSchema] = []
         size_multiplier = Decimal("1.0")
@@ -173,22 +180,66 @@ class PreTradeFilterChain:
             movement_result.reason,
         )
         if not movement_result.is_allowed:
-            logger.info(
-                "Filter chain REJECTED for %s %s by movement: %s",
-                symbol,
-                side,
-                movement_result.reason,
-                extra={"symbol": symbol, "side": side},
+            bypass_threshold = self._config.movement_bypass_confluence_min
+            if (
+                analyst_confluence_score is not None
+                and analyst_confluence_score >= bypass_threshold
+            ):
+                logger.info(
+                    "Movement filter bypassed for %s %s: confluence=%d >= %d",
+                    symbol,
+                    side,
+                    analyst_confluence_score,
+                    bypass_threshold,
+                    extra={"symbol": symbol, "side": side},
+                )
+            else:
+                logger.info(
+                    "Filter chain REJECTED for %s %s by movement: %s",
+                    symbol,
+                    side,
+                    movement_result.reason,
+                    extra={"symbol": symbol, "side": side},
+                )
+                return FilterChainResultSchema(
+                    is_allowed=False,
+                    rejection_reason=movement_result.reason,
+                    size_multiplier=size_multiplier,
+                    results=results,
+                    confluence=None,
+                    volatility_regime=regime.regime,
+                    volatility_zscore=regime.atr_zscore,
+                )
+
+        # --- Spike cooldown (reject impulse candles) ---
+        if self._spike_cooldown_filter is not None:
+            spike_result = self._spike_cooldown_filter.evaluate(
+                candle=candle,
+                atr=indicators.atr_14,
             )
-            return FilterChainResultSchema(
-                is_allowed=False,
-                rejection_reason=movement_result.reason,
-                size_multiplier=size_multiplier,
-                results=results,
-                confluence=None,
-                volatility_regime=regime.regime,
-                volatility_zscore=regime.atr_zscore,
+            results.append(spike_result)
+            logger.debug(
+                "Filter spike_cooldown: allowed=%s reason=%s",
+                spike_result.is_allowed,
+                spike_result.reason,
             )
+            if not spike_result.is_allowed:
+                logger.info(
+                    "Filter chain REJECTED for %s %s by spike cooldown: %s",
+                    symbol,
+                    side,
+                    spike_result.reason,
+                    extra={"symbol": symbol, "side": side},
+                )
+                return FilterChainResultSchema(
+                    is_allowed=False,
+                    rejection_reason=spike_result.reason,
+                    size_multiplier=size_multiplier,
+                    results=results,
+                    confluence=None,
+                    volatility_regime=regime.regime,
+                    volatility_zscore=regime.atr_zscore,
+                )
 
         exposure_check = self._exposure_limiter.check_exposure(symbol, positions)
         exposure_result = FilterResultSchema(
