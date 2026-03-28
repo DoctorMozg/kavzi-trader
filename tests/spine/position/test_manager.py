@@ -7,7 +7,6 @@ from kavzi_trader.spine.position.break_even import BreakEvenMover
 from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.position_action_type import PositionActionType
-from kavzi_trader.spine.position.scaling import ScaleInChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.position.trailing import TrailingStopChecker
 
@@ -18,7 +17,6 @@ def build_manager() -> PositionManager:
         trailing=TrailingStopChecker(),
         partial_exit=PartialExitChecker(),
         time_exit=TimeExitChecker(),
-        scaling=ScaleInChecker(),
     )
 
 

@@ -5,7 +5,6 @@ from kavzi_trader.spine.position.break_even import BreakEvenMover
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
 from kavzi_trader.spine.position.position_action_type import PositionActionType
-from kavzi_trader.spine.position.scaling import ScaleInChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.position.trailing import TrailingStopChecker
 from kavzi_trader.spine.state.schemas import PositionSchema
@@ -22,13 +21,11 @@ class PositionManager:
         trailing: TrailingStopChecker,
         partial_exit: PartialExitChecker,
         time_exit: TimeExitChecker,
-        scaling: ScaleInChecker,
     ) -> None:
         self._break_even = break_even
         self._trailing = trailing
         self._partial_exit = partial_exit
         self._time_exit = time_exit
-        self._scaling = scaling
 
     async def evaluate_position(
         self,
@@ -127,10 +124,6 @@ class PositionManager:
         partial_exit_action = self._partial_exit.evaluate(position, current_price)
         if partial_exit_action:
             actions.append(partial_exit_action)
-
-        scale_in_action = self._scaling.evaluate(position, current_price, current_atr)
-        if scale_in_action:
-            actions.append(scale_in_action)
 
         logger.debug(
             "Position %s evaluation: %d actions",

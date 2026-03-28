@@ -125,8 +125,6 @@ def positions() -> list[PositionSchema]:
         partial_exit_at_percent=Decimal("0.5"),
         partial_exit_size=Decimal("0.3"),
         max_hold_time_hours=24,
-        scale_in_allowed=False,
-        scale_in_max_multiplier=Decimal("1.5"),
     )
     return [
         PositionSchema(

@@ -147,13 +147,6 @@ class PositionManagementLoop:
                     "updated_at": utc_now(),
                 },
             )
-        if action.action == PositionActionType.SCALE_IN and action.scale_in_quantity:
-            return position.model_copy(
-                update={
-                    "quantity": position.quantity + action.scale_in_quantity,
-                    "updated_at": utc_now(),
-                },
-            )
         return None
 
     async def _safe_report_action(

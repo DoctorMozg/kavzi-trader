@@ -12,7 +12,6 @@ class PositionActionSchema(BaseModel):
     action: Annotated[PositionActionType, Field(...)]
     new_stop_loss: Annotated[Decimal | None, Field(default=None)] = None
     exit_quantity: Annotated[Decimal | None, Field(default=None)] = None
-    scale_in_quantity: Annotated[Decimal | None, Field(default=None)] = None
     reason: Annotated[str, Field(...)]
 
     model_config = ConfigDict(frozen=True)

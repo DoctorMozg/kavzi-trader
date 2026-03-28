@@ -312,18 +312,6 @@ position_management:
   #   48 = patient (two days)
   max_hold_time_hours: 24
 
-  # Whether to allow adding to winning positions (scale-in).
-  # When true, adds to position if profitable but retraced within 0.5 ATR of entry.
-  scale_in_allowed: false
-
-  # Maximum total position size as multiplier of original size when scaling in.
-  # Only applies when scale_in_allowed is true.
-  # Additional quantity = original_quantity * (multiplier - 1.0)
-  #   1.25 = add 25% more
-  #   1.5  = default (add 50% more, total becomes 1.5x original)
-  #   2.0  = double the position
-  scale_in_max_multiplier: 1.5
-
 # -----------------------------------------------------------------------------
 # Order Flow — funding rate and open interest monitoring
 # Fetch interval is configured in orchestrator.order_flow_fetch_interval_s
@@ -507,7 +495,7 @@ orchestrator:
   reasoning_interval_s: 60
 
   # How often (seconds) PositionManagementLoop evaluates open positions
-  # for trailing stop, break-even, partial exit, time exit, and scale-in actions.
+  # for trailing stop, break-even, partial exit, and time exit actions.
   #   1  = real-time (high CPU)
   #   5  = default
   #   15 = relaxed

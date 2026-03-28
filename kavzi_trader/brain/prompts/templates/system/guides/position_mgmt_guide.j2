@@ -15,14 +15,7 @@ POSITION MANAGEMENT PARAMETERS — set these based on current market conditions:
 - max_hold_time_hours (1-168): Maximum position duration.
   5m timeframe: 2-8 hours. 15m timeframe: 4-12 hours. 1h timeframe: 12-48 hours. 4h timeframe: 24-96 hours.
 
-- scale_in_allowed (bool): Allow adding to the position if it moves favorably.
-  Only true if confluence_score >= 8 and trend is strong. Default: false.
-
-- scale_in_max_multiplier (1.0-2.0): Maximum position size as multiple of initial.
-  Standard: 1.5 if scaling is allowed. Default: 1.0 if not.
-
 FUNDING RATE AND HOLD DURATION:
 - Funding is charged every 8h. For holds >8h, factor cumulative funding into R:R.
 - At 0.03%/8h with 3x leverage, a 24h hold costs ~0.27% of position value.
 - If funding is against your direction and >0.05%/8h, prefer shorter max_hold_time_hours.
-- With leverage, scale-ins increase margin requirements. Ensure total exposure stays within risk limits.

@@ -13,8 +13,6 @@ class PositionManagementConfigSchema(BaseModel):
     partial_exit_at_percent: Decimal = Decimal("0.5")
     partial_exit_size: Decimal = Decimal("0.3")
     max_hold_time_hours: int = 24
-    scale_in_allowed: bool = False
-    scale_in_max_multiplier: Decimal = Decimal("1.5")
 
     model_config = ConfigDict(frozen=True)
 

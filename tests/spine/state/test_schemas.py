@@ -21,16 +21,12 @@ class TestPositionManagementConfigSchema:
         assert config.partial_exit_at_percent == Decimal("0.5")
         assert config.partial_exit_size == Decimal("0.3")
         assert config.max_hold_time_hours == 24
-        assert config.scale_in_allowed is False
-        assert config.scale_in_max_multiplier == Decimal("1.5")
 
     def test_custom_values(self):
         config = PositionManagementConfigSchema(
             trailing_stop_atr_multiplier=Decimal("2.0"),
-            scale_in_allowed=True,
         )
         assert config.trailing_stop_atr_multiplier == Decimal("2.0")
-        assert config.scale_in_allowed is True
 
     def test_frozen(self):
         from pydantic import ValidationError
