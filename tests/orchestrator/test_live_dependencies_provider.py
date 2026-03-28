@@ -8,6 +8,8 @@ from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.config import FuturesConfigSchema
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.external.cache import ExternalDataCache
+from kavzi_trader.external.schemas import SentimentSummarySchema
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
     ANALYSIS_CANDLES_COUNT,
@@ -43,6 +45,7 @@ def _build_candle(minute: int) -> CandlestickSchema:
 
 def _make_provider(
     futures_config: FuturesConfigSchema | None = None,
+    external_cache: ExternalDataCache | None = None,
 ) -> LiveDependenciesProvider:
     detector = Mock()
     detector.detect_regime.return_value = VolatilityRegimeSchema(
@@ -109,6 +112,7 @@ def _make_provider(
         event_store=RedisEventStore.__new__(RedisEventStore),
         timeframe="1m",
         futures_config=futures_config,
+        external_cache=external_cache,
     )
 
 
@@ -159,3 +163,42 @@ async def test_symbol_specific_leverage() -> None:
     )
     deps = await provider.get_trader("BTCUSDT")
     assert deps.leverage == 5
+
+
+@pytest.mark.asyncio
+async def test_analyst_deps_include_sentiment_when_cache_set() -> None:
+    ext_cache = ExternalDataCache()
+    summary = SentimentSummarySchema(
+        summary="Fear in the market.",
+        sentiment_bias="BEARISH",
+        confidence_adjustment=Decimal("-0.05"),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    ext_cache.set_sentiment_summary(summary)
+    provider = _make_provider(external_cache=ext_cache)
+    deps = await provider.get_analyst("BTCUSDT")
+    assert deps.sentiment_summary is not None
+    assert deps.sentiment_summary.sentiment_bias == "BEARISH"
+
+
+@pytest.mark.asyncio
+async def test_trader_deps_include_sentiment_when_cache_set() -> None:
+    ext_cache = ExternalDataCache()
+    summary = SentimentSummarySchema(
+        summary="Market is neutral.",
+        sentiment_bias="NEUTRAL",
+        confidence_adjustment=Decimal("0.00"),
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    ext_cache.set_sentiment_summary(summary)
+    provider = _make_provider(external_cache=ext_cache)
+    deps = await provider.get_trader("BTCUSDT")
+    assert deps.sentiment_summary is not None
+    assert deps.sentiment_summary.sentiment_bias == "NEUTRAL"
+
+
+@pytest.mark.asyncio
+async def test_deps_sentiment_none_without_cache() -> None:
+    provider = _make_provider()
+    deps = await provider.get_analyst("BTCUSDT")
+    assert deps.sentiment_summary is None

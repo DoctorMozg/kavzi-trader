@@ -5,6 +5,7 @@ import logging
 from decimal import Decimal
 from typing import Any, Protocol
 
+from kavzi_trader.external.loop import ExternalSentimentLoop
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
 from kavzi_trader.orchestrator.health import HealthChecker
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
@@ -46,6 +47,7 @@ class TradingOrchestrator:
         is_paper: bool = False,
         price_provider: ReportPriceProvider | None = None,
         trading_symbols: list[str] | None = None,
+        external_sentiment_loop: ExternalSentimentLoop | None = None,
     ) -> None:
         self._config = config
         self._state_manager = state_manager
@@ -59,6 +61,7 @@ class TradingOrchestrator:
         self._is_paper = is_paper
         self._price_provider = price_provider
         self._trading_symbols = trading_symbols or []
+        self._external_sentiment_loop = external_sentiment_loop
         self._tasks: set[asyncio.Task[None]] = set()
         self._loop_factories: dict[str, Any] = {}
 
@@ -84,6 +87,10 @@ class TradingOrchestrator:
         }
         if self._report_populator is not None:
             self._loop_factories["report"] = self._report_loop
+        if self._external_sentiment_loop is not None:
+            self._loop_factories["external_sentiment"] = (
+                self._external_sentiment_loop.run
+            )
         for name, factory in self._loop_factories.items():
             task = asyncio.create_task(factory(), name=name)
             self._tasks.add(task)

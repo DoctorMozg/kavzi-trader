@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from kavzi_trader.brain.config import BrainConfigSchema
 from kavzi_trader.events.config import EventStoreConfigSchema
+from kavzi_trader.external.config import ExternalSourcesConfigSchema
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
 from kavzi_trader.paper.config import PaperTradingConfigSchema
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
@@ -147,6 +148,10 @@ class AppConfig(BaseModel):
     reporting: Annotated[
         ReportingConfigSchema,
         Field(default_factory=ReportingConfigSchema),
+    ]
+    external_sources: Annotated[
+        ExternalSourcesConfigSchema,
+        Field(default_factory=ExternalSourcesConfigSchema),
     ]
     paper: Annotated[PaperTradingConfigSchema, Field(...)]
 

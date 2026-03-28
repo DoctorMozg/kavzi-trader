@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
@@ -11,6 +12,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.external.schemas import SentimentSummarySchema
 
 
 def test_context_builder_analyst(
@@ -246,3 +248,93 @@ def test_trader_context_scout_pattern_defaults_to_none(
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
     assert context["scout_pattern"] is None
+
+
+def test_analyst_context_with_sentiment(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+) -> None:
+    summary = SentimentSummarySchema(
+        summary="Options show elevated IV. Fear index at extreme fear.",
+        sentiment_bias="BEARISH",
+        confidence_adjustment=Decimal("-0.05"),
+        generated_at=datetime.now(UTC),
+    )
+    deps = AnalystDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        sentiment_summary=summary,
+    )
+    builder = ContextBuilder()
+    context = builder.build_analyst_context(deps)
+    assert context["sentiment_summary"] == summary.summary
+    assert context["sentiment_bias"] == "BEARISH"
+    assert context["sentiment_confidence_adjustment"] == "-0.05"
+
+
+def test_analyst_context_without_sentiment(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+) -> None:
+    deps = AnalystDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+    )
+    builder = ContextBuilder()
+    context = builder.build_analyst_context(deps)
+    assert context["sentiment_summary"] is None
+    assert context["sentiment_bias"] is None
+    assert context["sentiment_confidence_adjustment"] is None
+
+
+def test_trader_context_with_sentiment(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+    account_state,
+) -> None:
+    summary = SentimentSummarySchema(
+        summary="Market neutral with moderate volatility.",
+        sentiment_bias="NEUTRAL",
+        confidence_adjustment=Decimal("0.00"),
+        generated_at=datetime.now(UTC),
+    )
+    deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        open_positions=[],
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+        sentiment_summary=summary,
+    )
+    builder = ContextBuilder()
+    context = builder.build_trader_context(deps)
+    assert context["sentiment_summary"] == summary.summary
+    assert context["sentiment_bias"] == "NEUTRAL"

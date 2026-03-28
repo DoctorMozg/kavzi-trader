@@ -7,6 +7,8 @@ import logging
 from decimal import Decimal
 
 import click
+import httpx
+from openai import AsyncOpenAI
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
@@ -19,6 +21,10 @@ from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.brain.schemas.dependencies import rebuild_deferred_models
 from kavzi_trader.config import AppConfig
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.external.cache import ExternalDataCache
+from kavzi_trader.external.loop import ExternalSentimentLoop
+from kavzi_trader.external.sources import build_enabled_sources
+from kavzi_trader.external.synthesizer import SentimentSynthesizer
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
 from kavzi_trader.orchestrator.health import HealthChecker
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
@@ -202,6 +208,63 @@ async def _start_orchestrator(
         calculator=OrderFlowCalculator(),
         symbols=app_config.trading.symbols,
     )
+    # --- Brain prompt loader (needed by synthesizer and agents) ---
+    prompt_loader = PromptLoader()
+
+    # --- External data sources ---
+    external_cache: ExternalDataCache | None = None
+    external_sentiment_loop: ExternalSentimentLoop | None = None
+    if app_config.external_sources.enabled:
+        external_cache = ExternalDataCache()
+        ext_sources = build_enabled_sources(app_config.external_sources)
+        synth_config = app_config.external_sources.synthesizer
+        synthesizer = None
+        if synth_config.enabled and app_config.brain.openrouter_api_key:
+            from pydantic_ai import Agent
+            from pydantic_ai.models.openai import OpenAIChatModel
+            from pydantic_ai.providers.openai import OpenAIProvider
+
+            from kavzi_trader.external.schemas import SentimentSummarySchema
+
+            synth_provider = OpenAIProvider(
+                openai_client=AsyncOpenAI(
+                    base_url=app_config.brain.openrouter_base_url,
+                    api_key=app_config.brain.openrouter_api_key,
+                    timeout=httpx.Timeout(30.0, connect=10.0),
+                    default_headers={
+                        "HTTP-Referer": "https://github.com/kavzitrader",
+                        "X-Title": "KavziTrader-Synthesizer",
+                    },
+                ),
+            )
+            synth_model = OpenAIChatModel(
+                synth_config.model_id,
+                provider=synth_provider,
+            )
+            synth_system_prompt = prompt_loader.render_system_prompt("synthesizer")
+            synth_agent: Agent[None, SentimentSummarySchema] = Agent(
+                synth_model,
+                output_type=SentimentSummarySchema,
+                instructions=synth_system_prompt,
+                retries=synth_config.retries,
+            )
+            synthesizer = SentimentSynthesizer(synth_agent, prompt_loader)
+            logger.info(
+                "Sentiment Synthesizer created with model %s",
+                synth_config.model_id,
+            )
+        if ext_sources:
+            external_sentiment_loop = ExternalSentimentLoop(
+                sources=ext_sources,
+                synthesizer=synthesizer,
+                cache=external_cache,
+                interval_s=app_config.external_sources.run_interval_s,
+            )
+            logger.info(
+                "External sources enabled: %s",
+                [s.name for s in ext_sources],
+            )
+
     deps_provider = LiveDependenciesProvider(
         cache=cache,
         confluence_calculator=ConfluenceCalculator(),
@@ -211,6 +274,7 @@ async def _start_orchestrator(
         event_store=event_store,
         timeframe=app_config.trading.interval,
         futures_config=app_config.futures,
+        external_cache=external_cache,
     )
     atr_provider = LiveAtrProvider(cache)
 
@@ -231,7 +295,6 @@ async def _start_orchestrator(
     logger.info(
         "Creating brain agents (Analyst/Trader) via OpenRouter; Scout is algorithmic",
     )
-    prompt_loader = PromptLoader()
     context_builder = ContextBuilder()
     factory = AgentFactory(app_config.brain, prompt_loader)
     scout = ScoutFilter(app_config.scout)
@@ -334,6 +397,7 @@ async def _start_orchestrator(
         health_checker=HealthChecker(),
         report_populator=report_populator,
         is_paper=is_paper,
+        external_sentiment_loop=external_sentiment_loop,
     )
     await orchestrator.start()
 

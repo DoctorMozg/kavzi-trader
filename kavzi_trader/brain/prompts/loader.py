@@ -28,20 +28,25 @@ class PromptLoader:
             system={
                 "analyst": "system/agents/analyst.j2",
                 "trader": "system/agents/trader.j2",
+                "synthesizer": "system/agents/synthesizer.j2",
             },
             user={
                 "analyze_setup": "user/requests/analyze_setup.j2",
                 "make_decision": "user/requests/make_decision.j2",
+                "synthesize_sentiment": "user/requests/synthesize_sentiment.j2",
             },
         )
 
-    def render_system_prompt(self, agent: Literal["analyst", "trader"]) -> str:
+    def render_system_prompt(
+        self,
+        agent: Literal["analyst", "trader", "synthesizer"],
+    ) -> str:
         template_path = self._paths.system[agent]
         return cast("str", self._env.get_template(template_path).render())
 
     def render_user_prompt(
         self,
-        request: Literal["analyze_setup", "make_decision"],
+        request: Literal["analyze_setup", "make_decision", "synthesize_sentiment"],
         context: dict[str, Any],
     ) -> str:
         template_path = self._paths.user[request]

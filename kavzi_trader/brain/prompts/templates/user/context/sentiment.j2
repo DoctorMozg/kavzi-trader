@@ -1,0 +1,7 @@
+{% if sentiment_summary %}
+EXTERNAL SENTIMENT (pre-analyzed by separate model):
+{{ sentiment_summary }}
+Bias: {{ sentiment_bias }} | Suggested confidence adjustment: {{ sentiment_confidence_adjustment }}
+{% else %}
+External sentiment data unavailable. Treat external sentiment as neutral.
+{% endif %}

@@ -11,6 +11,7 @@ from kavzi_trader.brain.schemas.dependencies import (
 )
 from kavzi_trader.config import FuturesConfigSchema
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
@@ -40,6 +41,7 @@ class LiveDependenciesProvider:
         event_store: RedisEventStore,
         timeframe: str,
         futures_config: FuturesConfigSchema | None = None,
+        external_cache: ExternalDataCache | None = None,
     ) -> None:
         self._cache = cache
         self._confluence = confluence_calculator
@@ -49,6 +51,7 @@ class LiveDependenciesProvider:
         self._event_store = event_store
         self._timeframe = timeframe
         self._futures_config = futures_config or FuturesConfigSchema.model_validate({})
+        self._external_cache = external_cache
         self._cycle_cache: dict[str, Any] = {}
 
     def _get_leverage(self, symbol: str) -> int:
@@ -148,6 +151,12 @@ class LiveDependenciesProvider:
             order_flow,
         )
 
+        sentiment = (
+            self._external_cache.get_sentiment_summary()
+            if self._external_cache is not None
+            else None
+        )
+
         return AnalystDependenciesSchema(
             symbol=symbol,
             current_price=self._cache.get_current_price(symbol),
@@ -158,6 +167,7 @@ class LiveDependenciesProvider:
             algorithm_confluence=confluence,
             volatility_regime=self._get_regime(symbol),
             leverage=self._get_leverage(symbol),
+            sentiment_summary=sentiment,
         )
 
     async def get_trader(self, symbol: str) -> TradingDependenciesSchema:
@@ -182,6 +192,12 @@ class LiveDependenciesProvider:
         account_state = await self._get_cached_account_state()
         open_positions = await self._get_cached_positions()
 
+        sentiment = (
+            self._external_cache.get_sentiment_summary()
+            if self._external_cache is not None
+            else None
+        )
+
         return TradingDependenciesSchema(
             symbol=symbol,
             current_price=self._cache.get_current_price(symbol),
@@ -197,6 +213,7 @@ class LiveDependenciesProvider:
             exchange_client=self._exchange,
             event_store=self._event_store,
             atr_history=self._cache.get_atr_history(symbol),
+            sentiment_summary=sentiment,
         )
 
     async def _get_cached_account_state(self) -> AccountStateSchema:

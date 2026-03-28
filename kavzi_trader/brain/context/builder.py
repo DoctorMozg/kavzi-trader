@@ -15,6 +15,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
+from kavzi_trader.external.schemas import SentimentSummarySchema
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,22 @@ class ContextBuilder(BaseModel):
                 MIN_CANDLES_EXPECTED,
             )
 
+    @staticmethod
+    def _add_sentiment_context(
+        context: dict[str, Any],
+        sentiment: SentimentSummarySchema | None,
+    ) -> None:
+        if sentiment is not None:
+            context["sentiment_summary"] = sentiment.summary
+            context["sentiment_bias"] = sentiment.sentiment_bias
+            context["sentiment_confidence_adjustment"] = str(
+                sentiment.confidence_adjustment,
+            )
+        else:
+            context["sentiment_summary"] = None
+            context["sentiment_bias"] = None
+            context["sentiment_confidence_adjustment"] = None
+
     def _build_market_context(
         self,
         deps: AnalystDependenciesSchema | TradingDependenciesSchema,
@@ -91,6 +108,7 @@ class ContextBuilder(BaseModel):
                 "futures_leverage": deps.leverage,
             }
         )
+        self._add_sentiment_context(context, deps.sentiment_summary)
         logger.debug(
             "Built analyst context for %s: %d keys",
             deps.symbol,
@@ -138,6 +156,7 @@ class ContextBuilder(BaseModel):
                 "scout_pattern": scout_pattern,
             }
         )
+        self._add_sentiment_context(context, deps.sentiment_summary)
         logger.debug(
             "Built trader context for %s: %d keys",
             deps.symbol,

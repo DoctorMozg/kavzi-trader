@@ -549,6 +549,49 @@ reporting:
   max_trade_entries: 200
 
 # -----------------------------------------------------------------------------
+# External Sources — market-wide sentiment and options data
+# Fetched periodically (not per-symbol), synthesized by a cheap LLM into a
+# compact summary consumed by Analyst and Trader prompts.
+# Scout is algorithmic and does NOT use external data.
+# -----------------------------------------------------------------------------
+external_sources:
+  # Master switch — disables all external data fetching and synthesis.
+  enabled: true
+
+  # How often (seconds) the combined fetch + synthesize cycle runs.
+  # All sources are fetched in parallel, then the synthesizer LLM runs.
+  #   60  = aggressive (wastes LLM calls on slowly-changing data)
+  #   300 = default (5 min — catches meaningful changes without waste)
+  #   600 = conservative
+  run_interval_s: 300
+
+  # Deribit DVOL Index + BTC Put/Call Ratio (Options Market)
+  # Public API, no auth required. ~20 req/s rate limit.
+  deribit_dvol:
+    enabled: true
+
+  # Crypto Fear & Greed Index (Alternative.me)
+  # Public API, no auth required. Updated daily at midnight UTC.
+  fear_greed:
+    enabled: true
+
+  # CryptoPanic News Sentiment
+  # Requires KT_CRYPTOPANIC_API_KEY env var. ~200 req/hr.
+  cryptopanic:
+    enabled: true
+    max_results: 20
+    max_headlines: 5
+
+  # Sentiment Synthesizer — cheap LLM that pre-digests raw external data
+  # into a compact summary for Analyst/Trader consumption.
+  # Uses OpenRouter (same KT_OPENROUTER_API_KEY as brain agents).
+  synthesizer:
+    enabled: true
+    model_id: "deepseek/deepseek-chat-v3-0324"
+    temperature: 0.0
+    retries: 1
+
+# -----------------------------------------------------------------------------
 # Paper Trading — local simulation and Binance Testnet configuration
 # -----------------------------------------------------------------------------
 paper:

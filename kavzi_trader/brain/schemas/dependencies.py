@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.external.schemas import SentimentSummarySchema
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
@@ -65,6 +66,10 @@ class AnalystDependenciesSchema(BaseModel):
     algorithm_confluence: Annotated[DualConfluenceSchema, Field(...)]
     volatility_regime: Annotated[VolatilityRegime, Field(...)]
     leverage: Annotated[int, Field(default=5, ge=1, le=125)]
+    sentiment_summary: Annotated[
+        SentimentSummarySchema | None,
+        Field(default=None),
+    ]
 
     model_config = ConfigDict(frozen=True)
 
@@ -88,5 +93,9 @@ class TradingDependenciesSchema(BaseModel):
     exchange_client: Annotated[BinanceClient, Field(...)]
     event_store: Annotated[RedisEventStore, Field(...)]
     atr_history: Annotated[list[Decimal], Field(default_factory=list)]
+    sentiment_summary: Annotated[
+        SentimentSummarySchema | None,
+        Field(default=None),
+    ]
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)

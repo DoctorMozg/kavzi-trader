@@ -29,6 +29,9 @@ ACCOUNT STATE RULES:
 - Scale confidence down by 0.1 for each 1% of current drawdown.
 - If available_balance_usdt < 10% of total_balance_usdt: output WAIT (insufficient margin).
 
+EXTERNAL SENTIMENT:
+- External sentiment is pre-analyzed by a separate model. Use it to adjust confidence by the suggested amount, not to override technical analysis.
+
 CRITICAL RULES:
 - For LONG: stop_loss < suggested_entry < take_profit (enforced by validation).
 - For SHORT: stop_loss > suggested_entry > take_profit (enforced by validation).
