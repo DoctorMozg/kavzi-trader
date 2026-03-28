@@ -283,25 +283,46 @@ position_management:
   #   2.0 = wide trail (gives more room, but gives back more profit on reversal)
   trailing_stop_atr_multiplier: 1.5
 
+  # Profit threshold (in ATR multiples) to activate trailing stop.
+  # Must be greater than break_even_trigger_atr.
+  #   1.5 = aggressive trailing (locks profit early)
+  #   2.0 = default
+  #   3.0 = patient (waits for large move)
+  trailing_stop_trigger_atr: 2.0
+
   # Profit threshold (in ATR multiples) to move SL to entry price (break-even).
   # Eliminates downside risk after initial favorable move.
-  #   0.5 = aggressive (move to BE very early)
-  #   1.0 = default (1 ATR of profit before BE)
+  #   1.0 = aggressive (move to BE early)
+  #   1.5 = default (1.5 ATR of profit before BE)
   #   2.0 = patient (waits for larger move)
-  break_even_trigger_atr: 1.0
+  break_even_trigger_atr: 1.5
+
+  # Minimum seconds a position must be held before break-even can activate.
+  # Prevents premature BE-SL on normal retraces after initial favorable move.
+  #   300  = 5 min (aggressive — early BE)
+  #   900  = default (15 min — allows normal pullbacks)
+  #   1800 = 30 min (patient)
+  break_even_min_hold_s: 900
 
   # Progress toward take-profit (0.0–1.0) at which to take partial profit.
-  # 0.5 means "when price reaches 50% of the way from entry to TP".
-  #   0.3 = early partial (locks profit sooner)
-  #   0.5 = default (halfway to TP)
+  # 0.65 means "when price reaches 65% of the way from entry to TP".
+  #   0.5  = early partial (locks profit sooner)
+  #   0.65 = default (two-thirds to TP)
   #   0.75 = late partial (lets more of the move play out)
-  partial_exit_at_percent: 0.5
+  partial_exit_at_percent: 0.65
 
   # Fraction of position size (0.0–1.0) to close on partial exit.
   #   0.25 = exit quarter of position
   #   0.3  = default (exit 30%)
   #   0.5  = exit half of position
   partial_exit_size: 0.3
+
+  # Minimum profit in ATR multiples before partial exit is allowed.
+  # Prevents micro-profit partial exits where commission > captured profit.
+  #   0.5 = permissive
+  #   1.0 = default
+  #   1.5 = strict (only partial exit on strong moves)
+  partial_exit_min_profit_atr: 1.0
 
   # Maximum hours a position can stay open before force-close.
   # Prevents capital from being tied up in stale, non-moving trades.

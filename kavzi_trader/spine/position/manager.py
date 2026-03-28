@@ -121,7 +121,11 @@ class PositionManager:
             if break_even_action:
                 actions.append(break_even_action)
 
-        partial_exit_action = self._partial_exit.evaluate(position, current_price)
+        partial_exit_action = self._partial_exit.evaluate(
+            position,
+            current_price,
+            current_atr,
+        )
         if partial_exit_action:
             actions.append(partial_exit_action)
 

@@ -11,17 +11,17 @@ from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
 
 
-@pytest.fixture()
+@pytest.fixture
 def cache() -> ExternalDataCache:
     return ExternalDataCache()
 
 
-@pytest.fixture()
+@pytest.fixture
 def config() -> FilterConfigSchema:
     return FilterConfigSchema()
 
 
-@pytest.fixture()
+@pytest.fixture
 def gate(
     cache: ExternalDataCache,
     config: FilterConfigSchema,

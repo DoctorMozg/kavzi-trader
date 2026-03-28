@@ -34,7 +34,7 @@ class TrailingStopChecker:
             return None
 
         profit_atr = profit / current_atr
-        if profit_atr < Decimal("2.0"):
+        if profit_atr < position.management_config.trailing_stop_trigger_atr:
             return None
 
         trail_distance = (

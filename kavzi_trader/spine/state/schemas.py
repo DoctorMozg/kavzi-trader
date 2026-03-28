@@ -9,9 +9,12 @@ from kavzi_trader.api.common.models import OrderSide, OrderStatus, OrderType
 
 class PositionManagementConfigSchema(BaseModel):
     trailing_stop_atr_multiplier: Decimal = Decimal("1.5")
-    break_even_trigger_atr: Decimal = Decimal("1.0")
-    partial_exit_at_percent: Decimal = Decimal("0.5")
+    trailing_stop_trigger_atr: Decimal = Decimal("2.0")
+    break_even_trigger_atr: Decimal = Decimal("1.5")
+    break_even_min_hold_s: int = 900
+    partial_exit_at_percent: Decimal = Decimal("0.65")
     partial_exit_size: Decimal = Decimal("0.3")
+    partial_exit_min_profit_atr: Decimal = Decimal("1.0")
     max_hold_time_hours: int = 24
 
     model_config = ConfigDict(frozen=True)

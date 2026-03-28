@@ -2,6 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from kavzi_trader.spine.risk.symbol_tier import (
     SymbolTier,
@@ -10,7 +11,7 @@ from kavzi_trader.spine.risk.symbol_tier import (
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 
 
-@pytest.fixture()
+@pytest.fixture
 def tier_configs() -> dict[SymbolTier, SymbolTierConfigSchema]:
     return {
         SymbolTier.TIER_1: SymbolTierConfigSchema.model_validate(
@@ -46,7 +47,7 @@ def tier_configs() -> dict[SymbolTier, SymbolTierConfigSchema]:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def symbol_map() -> dict[str, SymbolTier]:
     return {
         "BTCUSDT": SymbolTier.TIER_1,
@@ -56,7 +57,7 @@ def symbol_map() -> dict[str, SymbolTier]:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def registry(
     tier_configs: dict[SymbolTier, SymbolTierConfigSchema],
     symbol_map: dict[str, SymbolTier],
@@ -179,5 +180,5 @@ def test_tier_config_is_frozen() -> None:
             "crowded_short_zscore": "-3.5",
         },
     )
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         config.max_leverage = 10  # type: ignore[misc]

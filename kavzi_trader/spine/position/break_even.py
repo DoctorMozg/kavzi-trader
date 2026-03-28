@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
@@ -26,6 +27,18 @@ class BreakEvenMover:
             return None
         if position.stop_loss_moved_to_breakeven:
             return None
+
+        min_hold_s = position.management_config.break_even_min_hold_s
+        if min_hold_s > 0:
+            age_s = (datetime.now(UTC) - position.opened_at).total_seconds()
+            if age_s < min_hold_s:
+                logger.debug(
+                    "Break-even skipped for %s: position age %.0fs < min_hold %ds",
+                    position.symbol,
+                    age_s,
+                    min_hold_s,
+                )
+                return None
 
         if position.side == "LONG":
             profit = current_price - position.entry_price

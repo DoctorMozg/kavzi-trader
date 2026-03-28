@@ -15,6 +15,7 @@ class PartialExitChecker:
         self,
         position: PositionSchema,
         current_price: Decimal,
+        current_atr: Decimal,
     ) -> PositionActionSchema | None:
         if position.partial_exit_done:
             return None
@@ -32,6 +33,18 @@ class PartialExitChecker:
         progress = current_distance / total_distance
         if progress < position.management_config.partial_exit_at_percent:
             return None
+
+        min_profit_atr = position.management_config.partial_exit_min_profit_atr
+        if current_atr > 0 and min_profit_atr > 0:
+            profit_atr = current_distance / current_atr
+            if profit_atr < min_profit_atr:
+                logger.debug(
+                    "Partial exit skipped for %s: profit_atr=%s < min=%s",
+                    position.symbol,
+                    profit_atr,
+                    min_profit_atr,
+                )
+                return None
 
         exit_quantity = position.quantity * position.management_config.partial_exit_size
         if exit_quantity <= 0:

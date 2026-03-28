@@ -61,12 +61,17 @@ async def test_manager_prefers_trailing_over_break_even(position_factory) -> Non
 async def test_manager_returns_break_even_when_trailing_not_ready(
     position_factory,
 ) -> None:
-    position = position_factory(current_stop_loss=Decimal(90))
+    one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+    position = position_factory(
+        current_stop_loss=Decimal(90),
+        opened_at=one_hour_ago,
+        updated_at=one_hour_ago,
+    )
     manager = build_manager()
 
     actions = await manager.evaluate_position(
         position=position,
-        current_price=Decimal(112),
+        current_price=Decimal(115),
         current_atr=Decimal(10),
     )
 
@@ -75,12 +80,18 @@ async def test_manager_returns_break_even_when_trailing_not_ready(
 
 @pytest.mark.asyncio
 async def test_manager_includes_partial_exit(position_factory) -> None:
-    position = position_factory(entry_price=Decimal(100), take_profit=Decimal(120))
+    one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+    position = position_factory(
+        entry_price=Decimal(100),
+        take_profit=Decimal(120),
+        opened_at=one_hour_ago,
+        updated_at=one_hour_ago,
+    )
     manager = build_manager()
 
     actions = await manager.evaluate_position(
         position=position,
-        current_price=Decimal(110),
+        current_price=Decimal(113),
         current_atr=Decimal(10),
     )
 

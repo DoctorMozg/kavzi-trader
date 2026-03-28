@@ -54,6 +54,7 @@ class ReasoningLoop:
         state_manager: StateManager | None = None,
         analyst_cooldown_cycles: int = 3,
         filter_chain: PreTradeFilterChain | None = None,
+        max_consecutive_rejection_multiplier: int = 5,
     ) -> None:
         self._symbols = symbols
         self._router = router
@@ -65,7 +66,9 @@ class ReasoningLoop:
         self._state_manager = state_manager
         self._analyst_cooldown_cycles = analyst_cooldown_cycles
         self._filter_chain = filter_chain
+        self._max_rejection_multiplier = max_consecutive_rejection_multiplier
         self._cooldowns: dict[str, int] = {}
+        self._consecutive_rejections: dict[str, int] = {}
 
     async def run(self) -> None:
         logger.info(
@@ -174,9 +177,24 @@ class ReasoningLoop:
             )
 
         if result.analyst is not None and not result.analyst.setup_valid:
-            self._cooldowns[symbol] = self._compute_rejection_cooldown(
+            count = self._consecutive_rejections.get(symbol, 0) + 1
+            self._consecutive_rejections[symbol] = count
+            base_cooldown = self._compute_rejection_cooldown(
                 result.analyst.confluence_score,
             )
+            multiplier = min(count, self._max_rejection_multiplier)
+            self._cooldowns[symbol] = base_cooldown * multiplier
+            logger.debug(
+                "Consecutive rejection %d for %s: cooldown=%d (base=%d x %d)",
+                count,
+                symbol,
+                base_cooldown * multiplier,
+                base_cooldown,
+                multiplier,
+            )
+
+        if result.analyst is not None and result.analyst.setup_valid:
+            self._consecutive_rejections.pop(symbol, None)
 
         if not self._should_enqueue(result):
             return result.scout.verdict == "INTERESTING"

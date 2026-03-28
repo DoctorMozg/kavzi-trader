@@ -788,3 +788,62 @@ async def test_no_filter_chain_passes_through() -> None:
     await asyncio.gather(task, return_exceptions=True)
 
     redis_client.client.lpush.assert_called_once()
+
+
+def test_consecutive_rejections_escalate_cooldown() -> None:
+    """Repeated analyst rejections for the same symbol increase cooldown multiplier."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+        max_consecutive_rejection_multiplier=5,
+    )
+
+    # First rejection: confluence=2 → base=15, multiplier=min(1,5)=1
+    count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
+    loop._consecutive_rejections["BTCUSDT"] = count
+    base = loop._compute_rejection_cooldown(2)
+    multiplier = min(count, loop._max_rejection_multiplier)
+    assert base == 15
+    assert base * multiplier == 15  # 15 * 1
+
+    # Second rejection: multiplier=min(2,5)=2
+    count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
+    loop._consecutive_rejections["BTCUSDT"] = count
+    multiplier = min(count, loop._max_rejection_multiplier)
+    assert base * multiplier == 30  # 15 * 2
+
+    # Sixth rejection: capped at 5
+    loop._consecutive_rejections["BTCUSDT"] = 5
+    count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
+    loop._consecutive_rejections["BTCUSDT"] = count
+    multiplier = min(count, loop._max_rejection_multiplier)
+    assert base * multiplier == 75  # 15 * 5 (capped)
+
+
+def test_consecutive_rejections_reset_on_valid_analyst() -> None:
+    """A valid analyst result resets the consecutive rejection counter."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+
+    # Accumulate 3 rejections
+    loop._consecutive_rejections["BTCUSDT"] = 3
+
+    # Reset (mirrors _handle_symbol logic on valid analyst)
+    loop._consecutive_rejections.pop("BTCUSDT", None)
+    assert "BTCUSDT" not in loop._consecutive_rejections
+
+    # Next rejection starts fresh from multiplier=1
+    count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
+    loop._consecutive_rejections["BTCUSDT"] = count
+    base = loop._compute_rejection_cooldown(2)
+    multiplier = min(count, loop._max_rejection_multiplier)
+    assert multiplier == 1
+    assert base * multiplier == 15

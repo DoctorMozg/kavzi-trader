@@ -27,8 +27,8 @@ class SymbolTierConfigSchema(BaseModel):
     min_confidence: Annotated[
         Decimal,
         Field(
-            ge=Decimal("0"),
-            le=Decimal("1"),
+            ge=Decimal(0),
+            le=Decimal(1),
             description="Minimum LLM confidence to enter a trade",
         ),
     ]

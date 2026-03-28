@@ -17,9 +17,12 @@ class TestPositionManagementConfigSchema:
     def test_default_values(self):
         config = PositionManagementConfigSchema()
         assert config.trailing_stop_atr_multiplier == Decimal("1.5")
-        assert config.break_even_trigger_atr == Decimal("1.0")
-        assert config.partial_exit_at_percent == Decimal("0.5")
+        assert config.trailing_stop_trigger_atr == Decimal("2.0")
+        assert config.break_even_trigger_atr == Decimal("1.5")
+        assert config.break_even_min_hold_s == 900
+        assert config.partial_exit_at_percent == Decimal("0.65")
         assert config.partial_exit_size == Decimal("0.3")
+        assert config.partial_exit_min_profit_atr == Decimal("1.0")
         assert config.max_hold_time_hours == 24
 
     def test_custom_values(self):
