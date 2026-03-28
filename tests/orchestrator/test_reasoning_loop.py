@@ -24,6 +24,10 @@ from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
 )
+from kavzi_trader.spine.filters.filter_chain_result_schema import (
+    FilterChainResultSchema,
+)
+from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.schemas import (
     AccountStateSchema,
@@ -625,3 +629,160 @@ def test_graduated_cooldown_near_threshold() -> None:
         analyst_cooldown_cycles=3,
     )
     assert loop._compute_rejection_cooldown(6) == 3
+
+
+def _make_trade_result() -> PipelineResult:
+    deps = _build_deps()
+    return PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING", reason="ok", pattern_detected=None
+        ),
+        analyst=AnalystDecisionSchema(
+            setup_valid=True,
+            direction="LONG",
+            confluence_score=7,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning=_ANALYST_REASONING,
+        ),
+        trader=TradeDecisionSchema(
+            action="LONG",
+            confidence=0.8,
+            reasoning=_TRADER_REASONING,
+            suggested_entry=Decimal(105),
+            suggested_stop_loss=Decimal(95),
+            suggested_take_profit=Decimal(120),
+        ),
+        trader_deps=deps,
+    )
+
+
+@pytest.mark.asyncio
+async def test_filter_chain_blocks_trade() -> None:
+    """When filter chain rejects, decision is NOT enqueued and rejection is reported."""
+    deps = _build_deps()
+    provider = DummyDepsProvider(deps)
+    router = AsyncMock()
+    router.run = AsyncMock(return_value=_make_trade_result())
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock()
+    mock_populator = AsyncMock()
+    mock_populator.record_action = AsyncMock()
+
+    mock_filter_chain = AsyncMock()
+    mock_filter_chain.evaluate = AsyncMock(
+        return_value=FilterChainResultSchema(
+            is_allowed=False,
+            rejection_reason="crowded_long",
+            results=[
+                FilterResultSchema(name="funding", is_allowed=False, reason="crowded"),
+            ],
+            volatility_regime=VolatilityRegime.NORMAL,
+            volatility_zscore=Decimal("0.5"),
+        ),
+    )
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=router,
+        deps_provider=provider,
+        redis_client=redis_client,
+        interval_s=1,
+        report_populator=mock_populator,
+        filter_chain=mock_filter_chain,
+    )
+
+    sleep_durations: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def _capture_sleep(duration: float) -> None:
+        sleep_durations.append(duration)
+        await original_sleep(0)
+
+    import unittest.mock
+
+    with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
+        task = asyncio.create_task(loop.run())
+        for _ in range(50):
+            await original_sleep(0)
+            if len(sleep_durations) >= 1:
+                break
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    redis_client.client.lpush.assert_not_called()
+    rejection_calls = [
+        c
+        for c in mock_populator.record_action.call_args_list
+        if c.kwargs.get("action_type") == "filter_rejection"
+    ]
+    assert len(rejection_calls) >= 1
+    assert "crowded_long" in rejection_calls[0].kwargs.get("summary", "")
+
+
+@pytest.mark.asyncio
+async def test_filter_chain_allows_trade() -> None:
+    """When filter chain allows, decision IS enqueued."""
+    deps = _build_deps()
+    provider = DummyDepsProvider(deps)
+    router = AsyncMock()
+    router.run = AsyncMock(return_value=_make_trade_result())
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock()
+
+    mock_filter_chain = AsyncMock()
+    mock_filter_chain.evaluate = AsyncMock(
+        return_value=FilterChainResultSchema(
+            is_allowed=True,
+            results=[],
+            volatility_regime=VolatilityRegime.NORMAL,
+            volatility_zscore=Decimal("0.5"),
+        ),
+    )
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=router,
+        deps_provider=provider,
+        redis_client=redis_client,
+        interval_s=1,
+        filter_chain=mock_filter_chain,
+    )
+
+    task = asyncio.create_task(loop.run())
+    for _ in range(20):
+        await asyncio.sleep(0)
+        if redis_client.client.lpush.call_count > 0:
+            break
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    redis_client.client.lpush.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_no_filter_chain_passes_through() -> None:
+    """Without filter_chain (None), decisions are enqueued as before."""
+    deps = _build_deps()
+    provider = DummyDepsProvider(deps)
+    router = AsyncMock()
+    router.run = AsyncMock(return_value=_make_trade_result())
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock()
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=router,
+        deps_provider=provider,
+        redis_client=redis_client,
+        interval_s=1,
+    )
+
+    task = asyncio.create_task(loop.run())
+    for _ in range(20):
+        await asyncio.sleep(0)
+        if redis_client.client.lpush.call_count > 0:
+            break
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    redis_client.client.lpush.assert_called_once()

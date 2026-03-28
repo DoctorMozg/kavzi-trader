@@ -14,8 +14,6 @@ from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
 from kavzi_trader.spine.filters.funding import FundingRateFilter
 from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
-from kavzi_trader.spine.filters.news import NewsEventFilter
-from kavzi_trader.spine.filters.news_event_schema import NewsEventSchema
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -30,7 +28,6 @@ class PreTradeFilterChain:
     def __init__(
         self,
         volatility_detector: VolatilityRegimeDetector,
-        news_filter: NewsEventFilter,
         funding_filter: FundingRateFilter,
         movement_filter: MinimumMovementFilter,
         exposure_limiter: ExposureLimiter,
@@ -39,7 +36,6 @@ class PreTradeFilterChain:
         confluence_calculator: ConfluenceCalculator,
     ) -> None:
         self._volatility_detector = volatility_detector
-        self._news_filter = news_filter
         self._funding_filter = funding_filter
         self._movement_filter = movement_filter
         self._exposure_limiter = exposure_limiter
@@ -56,7 +52,6 @@ class PreTradeFilterChain:
         order_flow: OrderFlowSchema | None,
         positions: list[PositionSchema],
         atr_history: list[Decimal],
-        scheduled_events: list[NewsEventSchema] | None = None,
     ) -> FilterChainResultSchema:
         results: list[FilterResultSchema] = []
         size_multiplier = Decimal("1.0")
@@ -106,33 +101,6 @@ class PreTradeFilterChain:
             return FilterChainResultSchema(
                 is_allowed=False,
                 rejection_reason=volatility_result.reason,
-                size_multiplier=size_multiplier,
-                results=results,
-                confluence=None,
-                volatility_regime=regime.regime,
-                volatility_zscore=regime.atr_zscore,
-            )
-
-        news_result = self._news_filter.evaluate(
-            events=scheduled_events,
-        )
-        results.append(news_result)
-        logger.debug(
-            "Filter news: allowed=%s reason=%s",
-            news_result.is_allowed,
-            news_result.reason,
-        )
-        if not news_result.is_allowed:
-            logger.info(
-                "Filter chain REJECTED for %s %s by news: %s",
-                symbol,
-                side,
-                news_result.reason,
-                extra={"symbol": symbol, "side": side},
-            )
-            return FilterChainResultSchema(
-                is_allowed=False,
-                rejection_reason=news_result.reason,
                 size_multiplier=size_multiplier,
                 results=results,
                 confluence=None,

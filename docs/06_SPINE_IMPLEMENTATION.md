@@ -386,7 +386,6 @@ Algorithmic pre-filters that run before LLM decisions. Located in `spine/filters
 |-----------|------|---------|
 | `FilterConfigSchema` | `config.py` | Filter tuning and thresholds |
 | `LiquidityFilter` | `liquidity.py` | Session-based size adjustment |
-| `NewsEventFilter` | `news.py` | Block around event windows |
 | `FundingRateFilter` | `funding.py` | Block crowded funding |
 | `CorrelationFilter` | `correlation.py` | Reduce correlated exposure |
 | `MinimumMovementFilter` | `movement.py` | Skip low-body candles |

@@ -351,8 +351,6 @@ kavzi_trader/
 │       ├── liquidity.py         # Liquidity/time awareness
 │       ├── liquidity_period.py  # LiquidityPeriod enum
 │       ├── liquidity_session_schema.py
-│       ├── news.py              # News event filter
-│       ├── news_event_schema.py
 │       ├── funding.py           # Funding rate filter
 │       ├── correlation.py       # Correlation filter
 │       ├── movement.py          # Minimum movement filter
@@ -368,8 +366,7 @@ tests/
 │       ├── test_correlation.py
 │       ├── test_funding.py
 │       ├── test_liquidity.py
-│       ├── test_movement.py
-│       └── test_news.py
+│       └── test_movement.py
 ```
 
 #### Filter Priority Order

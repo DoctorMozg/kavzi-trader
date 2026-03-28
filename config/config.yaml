@@ -350,20 +350,6 @@ filters:
   #   0.5 = strict (requires strong directional candle)
   min_body_atr_ratio: 0.3
 
-  # Minutes BEFORE a scheduled economic event to block new trades.
-  # Prevents entries during pre-event uncertainty and widening spreads.
-  #   30  = short blackout
-  #   60  = default (1 hour before event)
-  #   120 = conservative (2 hours before)
-  news_block_before_min: 60
-
-  # Minutes AFTER a scheduled economic event to block new trades.
-  # Prevents entries during post-event volatility spike and whipsaw.
-  #   15 = short cooldown
-  #   30 = default
-  #   60 = conservative
-  news_block_after_min: 30
-
   # Position size multiplier for weekend trading (Saturday, Sunday before 20:00 UTC).
   # Crypto markets have lower liquidity on weekends — wider spreads, more slippage.
   #   0.25 = very conservative (quarter size)

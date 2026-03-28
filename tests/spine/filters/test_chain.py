@@ -8,7 +8,6 @@ from kavzi_trader.spine.filters.correlation import CorrelationFilter
 from kavzi_trader.spine.filters.funding import FundingRateFilter
 from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
-from kavzi_trader.spine.filters.news import NewsEventFilter
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 
@@ -22,7 +21,6 @@ async def test_chain_allows_and_returns_confluence(
 ) -> None:
     chain = PreTradeFilterChain(
         volatility_detector=VolatilityRegimeDetector(),
-        news_filter=NewsEventFilter(filter_config),
         funding_filter=FundingRateFilter(filter_config),
         movement_filter=MinimumMovementFilter(filter_config),
         exposure_limiter=ExposureLimiter(),
@@ -39,7 +37,6 @@ async def test_chain_allows_and_returns_confluence(
         order_flow=sample_order_flow,
         positions=[],
         atr_history=[Decimal(5)] * 10,
-        scheduled_events=None,
     )
 
     assert result.is_allowed is True, "Expected chain to allow trade"
@@ -56,7 +53,6 @@ async def test_chain_blocks_on_funding(
 ) -> None:
     chain = PreTradeFilterChain(
         volatility_detector=VolatilityRegimeDetector(),
-        news_filter=NewsEventFilter(filter_config),
         funding_filter=FundingRateFilter(filter_config),
         movement_filter=MinimumMovementFilter(filter_config),
         exposure_limiter=ExposureLimiter(),
@@ -76,7 +72,6 @@ async def test_chain_blocks_on_funding(
         order_flow=crowded,
         positions=[],
         atr_history=[Decimal(5)] * 10,
-        scheduled_events=None,
     )
 
     assert result.is_allowed is False, "Expected chain to block on funding"

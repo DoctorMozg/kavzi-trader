@@ -43,7 +43,12 @@ from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
+from kavzi_trader.spine.filters.chain import PreTradeFilterChain
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
+from kavzi_trader.spine.filters.correlation import CorrelationFilter
+from kavzi_trader.spine.filters.funding import FundingRateFilter
+from kavzi_trader.spine.filters.liquidity import LiquidityFilter
+from kavzi_trader.spine.filters.movement import MinimumMovementFilter
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.break_even import BreakEvenMover
@@ -51,6 +56,7 @@ from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.position.trailing import TrailingStopChecker
+from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
@@ -276,6 +282,17 @@ async def _start_orchestrator(
                 "Failed to initialize report populator, continuing without reporting",
             )
 
+    # --- Pre-trade filter chain ---
+    filter_chain = PreTradeFilterChain(
+        volatility_detector=VolatilityRegimeDetector(),
+        funding_filter=FundingRateFilter(app_config.filters),
+        movement_filter=MinimumMovementFilter(app_config.filters),
+        exposure_limiter=ExposureLimiter(),
+        liquidity_filter=LiquidityFilter(app_config.filters),
+        correlation_filter=CorrelationFilter(app_config.filters),
+        confluence_calculator=ConfluenceCalculator(),
+    )
+
     # --- Orchestrator ---
     logger.info("Assembling orchestrator with all loops")
     orchestrator = TradingOrchestrator(
@@ -296,6 +313,7 @@ async def _start_orchestrator(
             interval_s=app_config.orchestrator.reasoning_interval_s,
             report_populator=report_populator,
             state_manager=state_manager,
+            filter_chain=filter_chain,
         ),
         execution_loop=ExecutionLoop(
             redis_client=redis_client,

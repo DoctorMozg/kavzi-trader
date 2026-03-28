@@ -90,7 +90,4 @@ class FilterConfigSchema(BaseModel):
         Field(default=Decimal("0.5")),
     ] = Decimal("0.5")
 
-    news_block_before_min: Annotated[int, Field(default=60, ge=0)] = 60
-    news_block_after_min: Annotated[int, Field(default=30, ge=0)] = 30
-
     model_config = ConfigDict(frozen=True)

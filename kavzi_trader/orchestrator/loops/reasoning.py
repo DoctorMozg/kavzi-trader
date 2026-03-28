@@ -19,9 +19,16 @@ from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
+from kavzi_trader.spine.filters.chain import PreTradeFilterChain
+from kavzi_trader.spine.filters.filter_chain_result_schema import (
+    FilterChainResultSchema,
+)
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.redis_client import RedisStateClient
-from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
+from kavzi_trader.spine.state.schemas import (
+    PositionManagementConfigSchema,
+    PositionSchema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +53,7 @@ class ReasoningLoop:
         report_populator: TradeReportPopulator | None = None,
         state_manager: StateManager | None = None,
         analyst_cooldown_cycles: int = 3,
+        filter_chain: PreTradeFilterChain | None = None,
     ) -> None:
         self._symbols = symbols
         self._router = router
@@ -56,6 +64,7 @@ class ReasoningLoop:
         self._report_populator = report_populator
         self._state_manager = state_manager
         self._analyst_cooldown_cycles = analyst_cooldown_cycles
+        self._filter_chain = filter_chain
         self._cooldowns: dict[str, int] = {}
 
     async def run(self) -> None:
@@ -171,6 +180,16 @@ class ReasoningLoop:
 
         if not self._should_enqueue(result):
             return result.scout.verdict == "INTERESTING"
+
+        filter_result = await self._run_filter_chain(result)
+        if filter_result is not None and not filter_result.is_allowed:
+            await self._report_filter_rejection(
+                symbol,
+                result.trader.action if result.trader else "UNKNOWN",
+                filter_result,
+            )
+            return True
+
         self._cooldowns[symbol] = self._analyst_cooldown_cycles * 3
         await self._enqueue_decision(result)
         return True
@@ -200,6 +219,61 @@ class ReasoningLoop:
         if result.trader is None:
             return False
         return result.trader.action in {"LONG", "SHORT", "CLOSE"}
+
+    async def _run_filter_chain(
+        self,
+        result: PipelineResult,
+    ) -> FilterChainResultSchema | None:
+        if (
+            self._filter_chain is None
+            or result.trader is None
+            or result.trader_deps is None
+        ):
+            return None
+        if result.trader.action not in {"LONG", "SHORT"}:
+            return None
+        deps = result.trader_deps
+        positions = await self._get_open_positions()
+        return await self._filter_chain.evaluate(
+            symbol=deps.symbol,
+            side=cast("Literal['LONG', 'SHORT']", result.trader.action),
+            candle=deps.recent_candles[-1],
+            indicators=deps.indicators,
+            order_flow=deps.order_flow,
+            positions=positions,
+            atr_history=deps.atr_history,
+        )
+
+    async def _get_open_positions(self) -> list[PositionSchema]:
+        if self._state_manager is None:
+            return []
+        try:
+            return await self._state_manager.get_all_positions()
+        except Exception:
+            logger.exception("Failed to fetch positions for filter chain")
+            return []
+
+    async def _report_filter_rejection(
+        self,
+        symbol: str,
+        action: str,
+        filter_result: FilterChainResultSchema,
+    ) -> None:
+        logger.info(
+            "Filter chain REJECTED %s %s: %s",
+            symbol,
+            action,
+            filter_result.rejection_reason,
+            extra={"symbol": symbol, "action": action},
+        )
+        if self._report_populator is not None:
+            failed = [r.name for r in filter_result.results if not r.is_allowed]
+            await self._report_populator.record_action(
+                action_type="filter_rejection",
+                symbol=symbol,
+                summary=f"Blocked {action}: {filter_result.rejection_reason}",
+                details=f"Failed filters: {', '.join(failed)}",
+            )
 
     async def _enqueue_decision(
         self,

@@ -15,8 +15,6 @@ from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.liquidity_period import LiquidityPeriod
 from kavzi_trader.spine.filters.liquidity_session_schema import LiquiditySessionSchema
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
-from kavzi_trader.spine.filters.news import NewsEventFilter
-from kavzi_trader.spine.filters.news_event_schema import NewsEventSchema
 from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
 
 __all__ = [
@@ -32,8 +30,6 @@ __all__ = [
     "LiquidityPeriod",
     "LiquiditySessionSchema",
     "MinimumMovementFilter",
-    "NewsEventFilter",
-    "NewsEventSchema",
     "PreTradeFilterChain",
     "ScoutConfigSchema",
 ]
