@@ -13,14 +13,12 @@ from kavzi_trader.brain.context.market_snapshot import MarketSnapshotSchema
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
-    ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
 
 logger = logging.getLogger(__name__)
 
 MIN_CANDLES_EXPECTED = 5
-MIN_CANDLES_FOR_TREND = 2
 
 
 class ContextBuilder(BaseModel):
@@ -33,9 +31,7 @@ class ContextBuilder(BaseModel):
     def _warn_if_broken_data(
         self,
         symbol: str,
-        deps: ScoutDependenciesSchema
-        | AnalystDependenciesSchema
-        | TradingDependenciesSchema,
+        deps: AnalystDependenciesSchema | TradingDependenciesSchema,
     ) -> None:
         if deps.current_price == Decimal(0):
             logger.warning(
@@ -60,62 +56,6 @@ class ContextBuilder(BaseModel):
                 len(deps.recent_candles),
                 MIN_CANDLES_EXPECTED,
             )
-
-    def _compute_scout_trend_context(
-        self,
-        deps: ScoutDependenciesSchema,
-    ) -> dict[str, Any]:
-        candles = deps.recent_candles
-        if len(candles) < MIN_CANDLES_FOR_TREND:
-            return {}
-        first_close = candles[0].close_price
-        last_close = candles[-1].close_price
-        if first_close == Decimal(0):
-            return {}
-        pct = round(
-            float((last_close - first_close) / first_close * 100),
-            2,
-        )
-        ind = deps.indicators
-        alignment = "NEUTRAL"
-        if (
-            ind.ema_20 is not None
-            and ind.ema_50 is not None
-            and ind.ema_200 is not None
-        ):
-            if ind.ema_20 > ind.ema_50 > ind.ema_200:
-                alignment = "BULLISH"
-            elif ind.ema_20 < ind.ema_50 < ind.ema_200:
-                alignment = "BEARISH"
-        return {
-            "price_change_window_percent": pct,
-            "candle_window_size": len(candles),
-            "ema_alignment": alignment,
-        }
-
-    def build_scout_context(
-        self,
-        deps: ScoutDependenciesSchema,
-    ) -> dict[str, Any]:
-        self._warn_if_broken_data(deps.symbol, deps)
-        snapshot = MarketSnapshotSchema(
-            symbol=deps.symbol,
-            current_price=deps.current_price,
-            timeframe=deps.timeframe,
-            recent_candles=deps.recent_candles,
-            indicators=deps.indicators,
-            volatility_regime=deps.volatility_regime,
-        )
-        context: dict[str, Any] = {
-            "market_snapshot": snapshot.model_dump(),
-        }
-        context.update(self._compute_scout_trend_context(deps))
-        logger.debug(
-            "Built scout context for %s: context_keys=%d",
-            deps.symbol,
-            len(context),
-        )
-        return context
 
     def _build_market_context(
         self,

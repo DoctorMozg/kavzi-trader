@@ -26,24 +26,22 @@ class PromptLoader:
         )
         self._paths = PromptPathsSchema(
             system={
-                "scout": "system/agents/scout.j2",
                 "analyst": "system/agents/analyst.j2",
                 "trader": "system/agents/trader.j2",
             },
             user={
-                "scout_scan": "user/requests/scout_scan.j2",
                 "analyze_setup": "user/requests/analyze_setup.j2",
                 "make_decision": "user/requests/make_decision.j2",
             },
         )
 
-    def render_system_prompt(self, agent: Literal["scout", "analyst", "trader"]) -> str:
+    def render_system_prompt(self, agent: Literal["analyst", "trader"]) -> str:
         template_path = self._paths.system[agent]
         return cast("str", self._env.get_template(template_path).render())
 
     def render_user_prompt(
         self,
-        request: Literal["scout_scan", "analyze_setup", "make_decision"],
+        request: Literal["analyze_setup", "make_decision"],
         context: dict[str, Any],
     ) -> str:
         template_path = self._paths.user[request]

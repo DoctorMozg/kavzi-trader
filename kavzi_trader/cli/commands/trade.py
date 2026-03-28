@@ -13,7 +13,6 @@ from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
 from kavzi_trader.brain.agent.analyst import AnalystAgent
 from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.agent.router import AgentRouter
-from kavzi_trader.brain.agent.scout import ScoutAgent
 from kavzi_trader.brain.agent.trader import TraderAgent
 from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.prompts.loader import PromptLoader
@@ -45,6 +44,7 @@ from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
+from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.break_even import BreakEvenMover
 from kavzi_trader.spine.position.manager import PositionManager
@@ -224,16 +224,12 @@ async def _start_orchestrator(
 
     # --- Brain agents ---
     logger.info(
-        "Creating brain agents (Scout/Analyst/Trader) via OpenRouter",
+        "Creating brain agents (Analyst/Trader) via OpenRouter; Scout is algorithmic",
     )
     prompt_loader = PromptLoader()
     context_builder = ContextBuilder()
     factory = AgentFactory(app_config.brain, prompt_loader)
-    scout = ScoutAgent(
-        factory.create_scout_agent(),
-        prompt_loader,
-        context_builder,
-    )
+    scout = ScoutFilter(app_config.scout)
     analyst = AnalystAgent(
         factory.create_analyst_agent(),
         prompt_loader,

@@ -1,8 +1,6 @@
-import logging
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
@@ -10,50 +8,9 @@ from kavzi_trader.brain.schemas.analyst import (
 )
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
-    ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
-
-
-def test_context_builder_scout(candle, indicators, volatility_regime) -> None:
-    deps = ScoutDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(105),
-        timeframe="15m",
-        recent_candles=[candle],
-        indicators=indicators,
-        volatility_regime=volatility_regime,
-    )
-    builder = ContextBuilder()
-    context = builder.build_scout_context(deps)
-    assert "market_snapshot" in context, "Expected structured market snapshot dict."
-    assert "market_snapshot_json" not in context, "Scout should not include full JSON."
-    assert context["market_snapshot"]["symbol"] == "BTCUSDT"
-
-
-def test_context_builder_scout_logs_recent_candle_count(
-    caplog,
-    candle,
-    indicators,
-    volatility_regime,
-) -> None:
-    deps = ScoutDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(105),
-        timeframe="15m",
-        recent_candles=[candle],
-        indicators=indicators,
-        volatility_regime=volatility_regime,
-    )
-    builder = ContextBuilder()
-
-    with caplog.at_level(logging.DEBUG):
-        builder.build_scout_context(deps)
-
-    assert "Built scout context for BTCUSDT: context_keys=" in caplog.text
 
 
 def test_context_builder_analyst(
@@ -234,97 +191,3 @@ def test_trader_context_no_funding_without_order_flow(
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
     assert context["funding_rate_24h_percent"] is None
-
-
-def _make_candle(close_price: Decimal) -> CandlestickSchema:
-    now = utc_now()
-    return CandlestickSchema(
-        open_time=now,
-        open_price=Decimal(100),
-        high_price=close_price + 1,
-        low_price=close_price - 1,
-        close_price=close_price,
-        volume=Decimal(1000),
-        close_time=now,
-        quote_volume=Decimal(100000),
-        trades_count=100,
-        taker_buy_base_volume=Decimal(600),
-        taker_buy_quote_volume=Decimal(60000),
-        interval="1m",
-        symbol="BTCUSDT",
-    )
-
-
-def test_scout_context_includes_trend_context(
-    indicators,
-    volatility_regime,
-) -> None:
-    candles = [_make_candle(Decimal(100)), _make_candle(Decimal(105))]
-    deps = ScoutDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(105),
-        timeframe="1m",
-        recent_candles=candles,
-        indicators=indicators,
-        volatility_regime=volatility_regime,
-    )
-    builder = ContextBuilder()
-    context = builder.build_scout_context(deps)
-    assert "price_change_window_percent" in context
-    assert context["price_change_window_percent"] == 5.0
-    assert context["candle_window_size"] == 2
-    assert "ema_alignment" in context
-
-
-def test_scout_context_bullish_alignment(volatility_regime) -> None:
-    candles = [_make_candle(Decimal(100)), _make_candle(Decimal(105))]
-    indicators = TechnicalIndicatorsSchema(
-        ema_20=Decimal(110),
-        ema_50=Decimal(105),
-        ema_200=Decimal(90),
-        sma_20=Decimal(100),
-        rsi_14=Decimal(50),
-        macd=None,
-        bollinger=None,
-        atr_14=Decimal(5),
-        volume=None,
-        timestamp=utc_now(),
-    )
-    deps = ScoutDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(112),
-        timeframe="1m",
-        recent_candles=candles,
-        indicators=indicators,
-        volatility_regime=volatility_regime,
-    )
-    builder = ContextBuilder()
-    context = builder.build_scout_context(deps)
-    assert context["ema_alignment"] == "BULLISH"
-
-
-def test_scout_context_neutral_alignment(volatility_regime) -> None:
-    candles = [_make_candle(Decimal(100)), _make_candle(Decimal(102))]
-    indicators = TechnicalIndicatorsSchema(
-        ema_20=Decimal(110),
-        ema_50=Decimal(90),
-        ema_200=Decimal(105),
-        sma_20=Decimal(100),
-        rsi_14=Decimal(50),
-        macd=None,
-        bollinger=None,
-        atr_14=Decimal(5),
-        volume=None,
-        timestamp=utc_now(),
-    )
-    deps = ScoutDependenciesSchema(
-        symbol="BTCUSDT",
-        current_price=Decimal(102),
-        timeframe="1m",
-        recent_candles=candles,
-        indicators=indicators,
-        volatility_regime=volatility_regime,
-    )
-    builder = ContextBuilder()
-    context = builder.build_scout_context(deps)
-    assert context["ema_alignment"] == "NEUTRAL"

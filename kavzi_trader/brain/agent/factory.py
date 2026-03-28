@@ -2,7 +2,7 @@ import logging
 
 import httpx
 from openai import AsyncOpenAI
-from pydantic_ai import Agent, PromptedOutput
+from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
@@ -13,10 +13,8 @@ from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
-    ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 
 logger = logging.getLogger(__name__)
 
@@ -49,27 +47,6 @@ class AgentFactory:
                     "X-Title": "KavziTrader",
                 },
             ),
-        )
-
-    def create_scout_agent(
-        self,
-    ) -> Agent[ScoutDependenciesSchema, ScoutDecisionSchema]:
-        model = OpenAIChatModel(
-            self._config.scout.model_id,
-            provider=self._provider,
-        )
-        system_prompt = self._prompt_loader.render_system_prompt("scout")
-        logger.info(
-            "Creating scout agent with model %s",
-            self._config.scout.model_id,
-        )
-        return Agent(
-            model,
-            output_type=PromptedOutput(ScoutDecisionSchema),
-            deps_type=ScoutDependenciesSchema,
-            instructions=system_prompt,
-            model_settings=self._model_settings,
-            retries=self._config.scout.retries,
         )
 
     def create_analyst_agent(

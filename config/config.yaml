@@ -27,8 +27,8 @@ api:
 # Brain — LLM tier configuration via OpenRouter
 # See docs/RESEARCH_TRADE_MODELS.md for model selection rationale.
 #
-# Pipeline: Candle → Scout (filter) → Analyst (validate) → Trader (decision)
-# 90%+ of candles are filtered at the cheap Scout tier.
+# Pipeline: Candle → Scout (algorithmic filter) → Analyst (validate) → Trader (decision)
+# 90%+ of candles are filtered by the deterministic Scout in the scout: section below.
 # -----------------------------------------------------------------------------
 brain:
   openrouter_api_key: ""       # Override via KT_OPENROUTER_API_KEY env var
@@ -39,13 +39,6 @@ brain:
   #   120 = default
   #   300 = permissive (for heavy Opus-tier requests)
   request_timeout_s: 120.0
-
-  scout:
-    # Tier 1 — Pre-filter: cheap & fast ($0.065/$0.26 per M tokens, 1M ctx)
-    # Alternatives: deepseek/deepseek-v3.2, openai/gpt-4.1-nano
-    model_id: "deepseek/deepseek-chat-v3-0324"
-    retries: 2                 # Max retry attempts on transient API errors
-    temperature: 0.0           # 0.0 = deterministic output (recommended for trading)
 
   analyst:
     # Tier 2 — Financial reasoning: 88.23% accuracy ($1.25/$10.00 per M tokens)
@@ -62,6 +55,55 @@ brain:
     temperature: 0.0
 
 # -----------------------------------------------------------------------------
+# Scout — deterministic pattern filter (replaces former LLM Scout tier)
+# Runs before the Brain agents. Checks six technical criteria against
+# pre-computed indicators and returns INTERESTING or SKIP in < 1 ms.
+# -----------------------------------------------------------------------------
+scout:
+  # Volatility regimes that block trading outright (merged VolatilityGate).
+  # Any regime listed here causes an immediate SKIP.
+  #   ["LOW", "EXTREME"] = default (blocks very quiet and spiking markets)
+  #   ["EXTREME"]        = permissive (allows quiet markets)
+  blocked_regimes: ["LOW", "EXTREME"]
+
+  # Volume ratio below which SKIP is forced regardless of other signals.
+  #   0.2 = permissive    0.3 = default    0.5 = strict
+  vol_ratio_hard_skip: 0.3
+
+  # Volume ratio below which SKIP is favoured unless a criterion matches.
+  #   0.5 = permissive    0.8 = default    1.0 = strict
+  vol_ratio_soft_skip: 0.8
+
+  # Criterion 1 BREAKOUT — price beyond Bollinger Band with volume.
+  #   1.0 = permissive    1.2 = default    1.5 = strict
+  breakout_vol_ratio_min: 1.2
+
+  # Criterion 2 TREND CONTINUATION — EMA alignment + RSI mid-range + volume.
+  trend_rsi_low: 40            # 30 = wide, 40 = default, 45 = strict
+  trend_rsi_high: 60           # 70 = wide, 60 = default, 55 = strict
+  trend_vol_ratio_min: 1.0     # 0.8 = permissive, 1.0 = default, 1.2 = strict
+
+  # Criterion 3 REVERSAL — RSI extreme + price at BB boundary.
+  reversal_rsi_oversold: 30    # 25 = strict, 30 = default, 35 = permissive
+  reversal_rsi_overbought: 70  # 75 = strict, 70 = default, 65 = permissive
+  reversal_percent_b_lower: 0.1   # 0.05 = strict, 0.1 = default, 0.15 = permissive
+  reversal_percent_b_upper: 0.9   # 0.95 = strict, 0.9 = default, 0.85 = permissive
+
+  # Criterion 4 VOLUME SPIKE — large volume + large body + supporting signal.
+  volume_spike_ratio_min: 2.0       # 1.5 = permissive, 2.0 = default, 3.0 = strict
+  volume_spike_body_ratio_min: 0.5  # 0.3 = permissive, 0.5 = default, 0.7 = strict
+  volume_spike_rsi_low: 35          # 30 = permissive, 35 = default, 40 = strict
+  volume_spike_rsi_high: 65         # 70 = permissive, 65 = default, 60 = strict
+  volume_spike_percent_b_lower: 0.15  # 0.1 = strict, 0.15 = default, 0.2 = permissive
+  volume_spike_percent_b_upper: 0.85  # 0.9 = strict, 0.85 = default, 0.8 = permissive
+
+  # Criterion 5 MOMENTUM SHIFT — MACD histogram sign change.
+  momentum_min_candles: 2      # min candles needed to detect sign change
+
+  # Criterion 6 TREND WITH PULLBACK — EMA aligned + price movement.
+  pullback_price_change_min: 0.5  # 0.3 = permissive, 0.5 = default, 1.0 = strict
+
+# -----------------------------------------------------------------------------
 # Trading — symbols, timeframe, portfolio limits
 # -----------------------------------------------------------------------------
 trading:
@@ -76,6 +118,18 @@ trading:
     - TAOUSDT
     - SUIUSDT
     - ADAUSDT
+    # Wave 1 — high liquidity, strong diversification
+    - AVAXUSDT
+    - LINKUSDT
+    - LTCUSDT
+    - HYPEUSDT
+    - NEARUSDT
+    # Wave 2 — add after 2-3 weeks if wave 1 is stable
+    - INJUSDT
+    - WIFUSDT
+    - TONUSDT
+    - BCHUSDT
+    - AAVEUSDT
 
   # Candlestick interval for analysis
   # Valid: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 1d
@@ -114,6 +168,9 @@ futures:
   # Binance reduced max leverage to 20x in Aug 2024.
   symbol_leverage:
     TAOUSDT: 3
+    WIFUSDT: 3
+    HYPEUSDT: 3
+    TONUSDT: 3
 
   # Distance from liquidation price (%) at which position manager triggers
   # emergency exit as a safety net (in case SL order fails to fill).
@@ -330,8 +387,18 @@ filters:
   # Map of correlated pairs. If a correlated symbol already has an open position,
   # the new position's size is reduced to limit portfolio correlation risk.
   correlated_pairs:
-    BTCUSDT: ["ETHUSDT"]
-    ETHUSDT: ["BTCUSDT"]
+    BTCUSDT: ["ETHUSDT", "LTCUSDT", "BCHUSDT"]
+    ETHUSDT: ["BTCUSDT", "LINKUSDT"]
+    SOLUSDT: ["AVAXUSDT", "SUIUSDT", "NEARUSDT", "INJUSDT"]
+    SUIUSDT: ["SOLUSDT"]
+    LINKUSDT: ["ETHUSDT"]
+    AVAXUSDT: ["SOLUSDT"]
+    LTCUSDT: ["BTCUSDT"]
+    BCHUSDT: ["BTCUSDT"]
+    NEARUSDT: ["SOLUSDT"]
+    INJUSDT: ["SOLUSDT"]
+    WIFUSDT: ["SOLUSDT", "DOGEUSDT"]
+    DOGEUSDT: ["WIFUSDT"]
 
 # -----------------------------------------------------------------------------
 # Redis — event store and state management backend

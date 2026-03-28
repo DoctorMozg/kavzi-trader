@@ -9,20 +9,10 @@ from kavzi_trader.brain.prompts.loader import PromptLoader
 def _make_factory() -> AgentFactory:
     config = BrainConfigSchema(
         openrouter_api_key="test-key",
-        scout=AgentModelConfigSchema(model_id="test/scout"),
         analyst=AgentModelConfigSchema(model_id="test/analyst"),
         trader=AgentModelConfigSchema(model_id="test/trader", retries=2),
     )
     return AgentFactory(config, PromptLoader())
-
-
-def test_create_scout_agent() -> None:
-    factory = _make_factory()
-    agent = factory.create_scout_agent()
-
-    assert isinstance(agent, Agent)
-    assert isinstance(agent.model, OpenAIChatModel)
-    assert agent.model.model_name == "test/scout"
 
 
 def test_create_analyst_agent() -> None:
@@ -45,9 +35,9 @@ def test_create_trader_agent() -> None:
 
 def test_shared_openai_client() -> None:
     factory = _make_factory()
-    scout = factory.create_scout_agent()
     analyst = factory.create_analyst_agent()
+    trader = factory.create_trader_agent()
 
-    assert isinstance(scout.model, OpenAIChatModel)
     assert isinstance(analyst.model, OpenAIChatModel)
-    assert scout.model.client is analyst.model.client
+    assert isinstance(trader.model, OpenAIChatModel)
+    assert analyst.model.client is trader.model.client

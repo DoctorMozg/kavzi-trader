@@ -129,9 +129,6 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         def __init__(self, *_args) -> None:
             pass
 
-        def create_scout_agent(self) -> object:
-            return object()
-
         def create_analyst_agent(self) -> object:
             return object()
 
@@ -139,7 +136,7 @@ async def test_start_orchestrator_uses_configured_runtime_values(
             return object()
 
     monkeypatch.setattr(trade_module, "AgentFactory", FakeFactory)
-    monkeypatch.setattr(trade_module, "ScoutAgent", lambda *_: object())
+    monkeypatch.setattr(trade_module, "ScoutFilter", lambda *_: object())
     monkeypatch.setattr(trade_module, "AnalystAgent", lambda *_: object())
     monkeypatch.setattr(trade_module, "TraderAgent", lambda *_: object())
     monkeypatch.setattr(trade_module, "AgentRouter", lambda *_: object())

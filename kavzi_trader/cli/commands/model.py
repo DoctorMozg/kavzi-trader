@@ -30,7 +30,7 @@ def model_status(ctx: click.Context) -> None:
         return
 
     click.echo(f"OpenRouter base URL: {brain.openrouter_base_url}")
-    click.echo(f"Scout model:   {brain.scout.model_id}")
+    click.echo("Scout:         algorithmic (no LLM)")
     click.echo(f"Analyst model: {brain.analyst.model_id}")
     click.echo(f"Trader model:  {brain.trader.model_id}")
 

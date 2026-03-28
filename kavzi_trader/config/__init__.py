@@ -16,6 +16,7 @@ from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
 from kavzi_trader.paper.config import PaperTradingConfigSchema
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
 from kavzi_trader.spine.filters.config import FilterConfigSchema
+from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
 from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.state.config import RedisConfigSchema
 from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
@@ -125,6 +126,10 @@ class AppConfig(BaseModel):
     system: Annotated[SystemConfigSchema, Field(...)]
     api: Annotated[ApiConfigSchema, Field(...)]
     brain: Annotated[BrainConfigSchema, Field(default_factory=BrainConfigSchema)]
+    scout: Annotated[
+        ScoutConfigSchema,
+        Field(default_factory=ScoutConfigSchema),
+    ]
     trading: Annotated[TradingConfigSchema, Field(...)]
     risk: Annotated[RiskConfigSchema, Field(...)]
     futures: Annotated[

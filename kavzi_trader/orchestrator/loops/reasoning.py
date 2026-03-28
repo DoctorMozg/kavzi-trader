@@ -144,14 +144,6 @@ class ReasoningLoop:
             return False
 
         result = await self._router.run(symbol, self._deps_provider)
-        if result.stopped_by is not None:
-            try:
-                await self._report_volatility_gate(symbol, result.stopped_by)
-            except Exception:
-                logger.exception(
-                    "Failed to report volatility gate for %s",
-                    symbol,
-                )
         try:
             await self._report_decisions(
                 symbol,
@@ -219,20 +211,6 @@ class ReasoningLoop:
                 "decision_id": decision.decision_id,
                 "action": decision.action,
             },
-        )
-
-    async def _report_volatility_gate(
-        self,
-        symbol: str,
-        stopped_by: str,
-    ) -> None:
-        if self._report_populator is None:
-            return
-        _, _, regime = stopped_by.partition(":")
-        await self._report_populator.record_action(
-            action_type="volatility_gate",
-            symbol=symbol,
-            summary=f"Blocked — regime {regime} (not tradeable)",
         )
 
     async def _report_decisions(

@@ -10,7 +10,6 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +18,6 @@ SLOW_AGENT_THRESHOLD_S = 10.0
 _SKIP_ERROR = ScoutDecisionSchema(
     verdict="SKIP",
     reason="agent_error",
-    pattern_detected=None,
-)
-
-_SKIP_VOLATILITY_GATE = ScoutDecisionSchema(
-    verdict="SKIP",
-    reason="volatility_gate",
     pattern_detected=None,
 )
 
@@ -56,7 +49,7 @@ class DependenciesProvider(Protocol):
 
 
 class PipelineResult:
-    __slots__ = ("analyst", "scout", "stopped_by", "trader", "trader_deps")
+    __slots__ = ("analyst", "scout", "trader", "trader_deps")
 
     def __init__(
         self,
@@ -64,13 +57,11 @@ class PipelineResult:
         analyst: AnalystDecisionSchema | None = None,
         trader: TradeDecisionSchema | None = None,
         trader_deps: TradingDependenciesSchema | None = None,
-        stopped_by: str | None = None,
     ) -> None:
         self.scout = scout
         self.analyst = analyst
         self.trader = trader
         self.trader_deps = trader_deps
-        self.stopped_by = stopped_by
 
 
 class AgentRouter:
@@ -93,21 +84,6 @@ class AgentRouter:
         logger.info("Agent pipeline started for %s", symbol)
 
         scout_deps = await self._fetch_scout_deps(symbol, deps_provider)
-        regime = scout_deps.volatility_regime
-
-        # VolatilityGate: check BEFORE Scout LLM call
-        if regime in (VolatilityRegime.LOW, VolatilityRegime.EXTREME):
-            logger.info(
-                "VolatilityGate blocked %s: regime %s is not tradeable",
-                symbol,
-                regime.value,
-                extra={"symbol": symbol, "regime": regime.value},
-            )
-            self._log_stop("VolatilityGate", symbol, total_start)
-            return PipelineResult(
-                scout=_SKIP_VOLATILITY_GATE,
-                stopped_by=f"volatility_gate:{regime.value}",
-            )
 
         scout_result = await self._invoke_scout(symbol, scout_deps)
         if scout_result is None:

@@ -511,7 +511,8 @@ async def test_skip_symbol_with_open_position() -> None:
 
 
 @pytest.mark.asyncio
-async def test_volatility_gate_reports_action() -> None:
+async def test_volatility_gate_reports_as_scout_scan() -> None:
+    """Volatility-gated SKIP now appears as a scout_scan action."""
     deps = _build_deps()
     provider = DummyDepsProvider(deps)
     router = AsyncMock()
@@ -519,10 +520,9 @@ async def test_volatility_gate_reports_action() -> None:
         return_value=PipelineResult(
             scout=ScoutDecisionSchema(
                 verdict="SKIP",
-                reason="volatility_gate",
+                reason="Volatility regime LOW blocks trading",
                 pattern_detected=None,
             ),
-            stopped_by="volatility_gate:LOW",
         ),
     )
     redis_client = AsyncMock()
@@ -558,11 +558,11 @@ async def test_volatility_gate_reports_action() -> None:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    # Should have at least one record_action call with volatility_gate
-    gate_calls = [
+    scout_calls = [
         c
         for c in mock_populator.record_action.call_args_list
-        if c.kwargs.get("action_type") == "volatility_gate"
-        or (c.args and len(c.args) > 0 and c.args[0] == "volatility_gate")
+        if c.kwargs.get("action_type") == "scout_scan"
     ]
-    assert len(gate_calls) >= 1
+    assert len(scout_calls) >= 1
+    summary = scout_calls[0].kwargs.get("summary", "")
+    assert "Volatility regime LOW" in summary

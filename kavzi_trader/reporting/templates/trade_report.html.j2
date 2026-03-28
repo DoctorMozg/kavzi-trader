@@ -18,7 +18,6 @@
         .badge-trader { background-color: #c2795a; }
         .badge-execution { background-color: #9678a5; }
         .badge-position { background-color: #7a9bb5; }
-        .badge-gate { background-color: #d97706; }
         .stat-value {
             font-size: 1.5rem;
             font-weight: 700;
@@ -245,8 +244,6 @@
                                         <span class="badge badge-analyst">{{ action.action_type }}</span>
                                         {% elif "trader" in action.action_type %}
                                         <span class="badge badge-trader">{{ action.action_type }}</span>
-                                        {% elif "gate" in action.action_type %}
-                                        <span class="badge badge-gate">{{ action.action_type }}</span>
                                         {% elif action.action_type in ("order_created", "order_rejected", "order_filled") %}
                                         <span class="badge badge-execution">{{ action.action_type }}</span>
                                         {% else %}

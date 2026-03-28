@@ -17,6 +17,7 @@ from kavzi_trader.spine.filters.liquidity_session_schema import LiquiditySession
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
 from kavzi_trader.spine.filters.news import NewsEventFilter
 from kavzi_trader.spine.filters.news_event_schema import NewsEventSchema
+from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
 
 __all__ = [
     "AlgorithmConfluenceSchema",
@@ -34,4 +35,5 @@ __all__ = [
     "NewsEventFilter",
     "NewsEventSchema",
     "PreTradeFilterChain",
+    "ScoutConfigSchema",
 ]

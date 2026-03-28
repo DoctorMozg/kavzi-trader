@@ -25,15 +25,6 @@ class BrainConfigSchema(BaseModel):
         float,
         Field(default=120.0, ge=5.0, le=600.0),
     ]
-    scout: Annotated[
-        AgentModelConfigSchema,
-        Field(
-            default_factory=lambda: AgentModelConfigSchema(
-                model_id="qwen/qwen3.5-flash-02-23",
-                retries=3,
-            ),
-        ),
-    ]
     analyst: Annotated[
         AgentModelConfigSchema,
         Field(
