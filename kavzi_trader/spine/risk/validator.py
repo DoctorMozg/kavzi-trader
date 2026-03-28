@@ -12,6 +12,7 @@ from kavzi_trader.spine.risk.schemas import (
     VolatilityRegime,
     VolatilityRegimeSchema,
 )
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 
@@ -24,10 +25,15 @@ class DrawdownCheckResult(BaseModel):
 
 
 class DynamicRiskValidator:
-    def __init__(self, config: RiskConfigSchema | None = None) -> None:
+    def __init__(
+        self,
+        config: RiskConfigSchema | None = None,
+        tier_registry: SymbolTierRegistry | None = None,
+    ) -> None:
         self._config = config or RiskConfigSchema()
+        self._tier_registry = tier_registry
         self._volatility_detector = VolatilityRegimeDetector(self._config)
-        self._position_sizer = PositionSizer(self._config)
+        self._position_sizer = PositionSizer(self._config, tier_registry)
         self._exposure_limiter = ExposureLimiter(self._config)
 
     async def validate_trade(
@@ -41,6 +47,7 @@ class DynamicRiskValidator:
         atr_history: list[Decimal],
         state_manager: StateManager,
         leverage: int = 1,
+        confidence: Decimal | None = None,
     ) -> RiskValidationResultSchema:
         rejection_reasons: list[str] = []
         warnings: list[str] = []
@@ -117,6 +124,11 @@ class DynamicRiskValidator:
             rejection_reasons.append(margin_result)
         logger.debug("Margin ratio check: result=%s", margin_result)
 
+        confidence_result = self._check_tier_confidence(symbol, confidence)
+        if confidence_result:
+            rejection_reasons.append(confidence_result)
+        logger.debug("Tier confidence check: result=%s", confidence_result)
+
         recommended_size = Decimal(0)
         if not rejection_reasons:
             account = await state_manager.get_account_state()
@@ -132,6 +144,7 @@ class DynamicRiskValidator:
                     regime=regime,
                     entry_price=entry_price,
                     leverage=leverage,
+                    symbol=symbol,
                 )
                 recommended_size = size_result.adjusted_size
                 logger.debug(
@@ -320,6 +333,22 @@ class DynamicRiskValidator:
                 f"leverage: {leverage}x)"
             )
 
+        return None
+
+    def _check_tier_confidence(
+        self,
+        symbol: str,
+        confidence: Decimal | None,
+    ) -> str | None:
+        if self._tier_registry is None or confidence is None:
+            return None
+        tier_config = self._tier_registry.get_config(symbol)
+        if confidence < tier_config.min_confidence:
+            tier = self._tier_registry.get_tier(symbol)
+            return (
+                f"Confidence {confidence:.2f} below tier minimum "
+                f"{tier_config.min_confidence} ({tier.value})"
+            )
         return None
 
     async def _check_margin_ratio(

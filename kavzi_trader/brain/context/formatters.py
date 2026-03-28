@@ -61,6 +61,7 @@ def format_order_flow_compact(
     if order_flow is None:
         return None
     of = order_flow
+    div = of.oi_funding_divergence_direction or "none"
     return (
         f"funding={float(of.funding_rate):.4f}"
         f" zscore={_fmt_decimal(of.funding_zscore, 1)}"
@@ -70,6 +71,7 @@ def format_order_flow_compact(
         f" L/S={_fmt_decimal(of.long_short_ratio, 2)}"
         f" L%={_fmt_decimal(of.long_account_percent, 1)}"
         f" S%={_fmt_decimal(of.short_account_percent, 1)}"
+        f" div={div}"
     )
 
 

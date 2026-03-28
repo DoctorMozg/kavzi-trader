@@ -39,7 +39,7 @@ class ConfluenceCalculator:
             is_detected_side=(detected_side == "SHORT"),
         )
         logger.debug(
-            "Dual confluence: detected_side=%s long=%d/6 short=%d/6",
+            "Dual confluence: detected_side=%s long=%d/8 short=%d/8",
             detected_side,
             long.score,
             short.score,
@@ -65,6 +65,7 @@ class ConfluenceCalculator:
         price_at_bollinger = self._price_at_bollinger(candle, indicators, side)
         funding_favorable = self._funding_favorable(order_flow, side)
         oi_supports_direction = self._oi_supports_direction(order_flow, side)
+        oi_funding_divergence = self._oi_funding_divergence(order_flow, side)
         volume_spike = self._volume_spike(indicators)
 
         score = sum(
@@ -75,6 +76,7 @@ class ConfluenceCalculator:
                 price_at_bollinger,
                 funding_favorable,
                 oi_supports_direction,
+                oi_funding_divergence,
                 volume_spike,
             ],
         )
@@ -86,13 +88,15 @@ class ConfluenceCalculator:
                 side,
             )
         logger.debug(
-            "Confluence: ema=%s rsi=%s vol=%s boll=%s fund=%s oi=%s spike=%s score=%d",
+            "Confluence: ema=%s rsi=%s vol=%s boll=%s fund=%s oi=%s "
+            "div=%s spike=%s score=%d",
             ema_alignment,
             rsi_favorable,
             volume_above_average,
             price_at_bollinger,
             funding_favorable,
             oi_supports_direction,
+            oi_funding_divergence,
             volume_spike,
             int(score),
         )
@@ -104,6 +108,7 @@ class ConfluenceCalculator:
             price_at_bollinger=price_at_bollinger,
             funding_favorable=funding_favorable,
             oi_supports_direction=oi_supports_direction,
+            oi_funding_divergence=oi_funding_divergence,
             volume_spike=volume_spike,
             score=int(score),
         )
@@ -187,6 +192,17 @@ class ConfluenceCalculator:
         if side == "LONG":
             return order_flow.oi_change_1h_percent > Decimal(0)
         return order_flow.oi_change_1h_percent < Decimal(0)
+
+    def _oi_funding_divergence(
+        self,
+        order_flow: OrderFlowSchema | None,
+        side: Literal["LONG", "SHORT"],
+    ) -> bool:
+        if order_flow is None:
+            return False
+        if not order_flow.oi_funding_divergence:
+            return False
+        return order_flow.oi_funding_divergence_direction == side
 
     def _volume_spike(
         self,

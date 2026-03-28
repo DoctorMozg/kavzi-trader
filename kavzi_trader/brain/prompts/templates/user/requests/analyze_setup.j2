@@ -1,9 +1,10 @@
 Validate this potential setup on {{ market_snapshot.timeframe }} {{ market_snapshot.symbol }}.
+Symbol tier: {{ symbol_tier | default("TIER_2") }} | Min confidence: {{ tier_min_confidence | default("0.75") }}
 Leverage: {{ futures_leverage | default(3) }}x (liquidation ~{{ (100 / (futures_leverage | default(3))) | round(1) }}% from entry)
 
 STEP 1 — Review algorithm confluence signals for BOTH directions:
 {% include "user/context/algorithm_confluence.j2" %}
-Your confluence_score base MUST match the algorithm score for your chosen direction (LONG base={{ algorithm_confluence_long.score }}/7, SHORT base={{ algorithm_confluence_short.score }}/7).
+Your confluence_score base MUST match the algorithm score for your chosen direction (LONG base={{ algorithm_confluence_long.score }}/8, SHORT base={{ algorithm_confluence_short.score }}/8).
 You must add 0-4 discretionary points (order flow + price structure) to produce your final 0-11 confluence_score.
 
 STEP 2 — Analyze market data:

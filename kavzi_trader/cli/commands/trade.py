@@ -5,6 +5,7 @@ Trading commands for the KavziTrader CLI.
 import asyncio
 import logging
 from decimal import Decimal
+from pathlib import Path
 
 import click
 import httpx
@@ -52,6 +53,7 @@ from kavzi_trader.spine.execution.translator import DecisionTranslator
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.filters.correlation import CorrelationFilter
+from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
 from kavzi_trader.spine.filters.funding import FundingRateFilter
 from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
@@ -63,6 +65,7 @@ from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.position.trailing import TrailingStopChecker
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
@@ -117,6 +120,9 @@ async def _start_orchestrator(
         )
         app_config.validate_for_trading()
     rebuild_deferred_models()
+
+    # --- Symbol tier registry ---
+    tier_registry = SymbolTierRegistry.from_yaml(Path("config/tiers.yaml"))
 
     # --- Exchange client ---
     exchange: BinanceClient
@@ -275,6 +281,7 @@ async def _start_orchestrator(
         timeframe=app_config.trading.interval,
         futures_config=app_config.futures,
         external_cache=external_cache,
+        tier_registry=tier_registry,
     )
     atr_provider = LiveAtrProvider(cache)
 
@@ -283,7 +290,7 @@ async def _start_orchestrator(
     engine = ExecutionEngine(
         exchange=exchange,
         state_manager=state_manager,
-        risk_validator=DynamicRiskValidator(app_config.risk),
+        risk_validator=DynamicRiskValidator(app_config.risk, tier_registry),
         staleness_checker=StalenessChecker(app_config.execution),
         translator=DecisionTranslator(),
         monitor=OrderMonitor(exchange, app_config.execution.timeout_s),
@@ -346,14 +353,18 @@ async def _start_orchestrator(
             )
 
     # --- Pre-trade filter chain ---
+    fgi_gate: FearGreedGateFilter | None = None
+    if external_cache is not None:
+        fgi_gate = FearGreedGateFilter(external_cache, app_config.filters)
     filter_chain = PreTradeFilterChain(
         volatility_detector=VolatilityRegimeDetector(),
-        funding_filter=FundingRateFilter(app_config.filters),
+        funding_filter=FundingRateFilter(app_config.filters, tier_registry),
         movement_filter=MinimumMovementFilter(app_config.filters),
         exposure_limiter=ExposureLimiter(),
         liquidity_filter=LiquidityFilter(app_config.filters),
         correlation_filter=CorrelationFilter(app_config.filters),
         confluence_calculator=ConfluenceCalculator(),
+        fear_greed_gate=fgi_gate,
     )
 
     # --- Orchestrator ---

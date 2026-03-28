@@ -13,3 +13,7 @@ ORDER FLOW INTERPRETATION:
   - Falling OI + falling price = long liquidation (weak decline, not confirmed).
 - long_short_ratio: Ratio of long to short accounts. Values > 2.0 or < 0.5 suggest crowded positioning.
 - squeeze_alert: True when OI changes significantly (>5%) but price barely moves (<0.5%). Indicates potential squeeze incoming — be cautious entering in the crowded direction.
+- oi_funding_divergence: True when OI and funding move in opposite directions. This is a high-conviction contrarian signal.
+  - Rising OI + negative funding (div=LONG): Shorts entering aggressively but funding suggests long opportunity. Contrarian bullish.
+  - Falling OI + positive funding (div=SHORT): Longs exiting despite positive funding. Contrarian bearish.
+  - When divergence is present AND matches your intended direction, treat it as strong confirmation.

@@ -20,6 +20,7 @@ from kavzi_trader.spine.filters.algorithm_confluence_schema import (
 )
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.schemas import AccountStateSchema, PositionSchema
@@ -42,6 +43,7 @@ class LiveDependenciesProvider:
         timeframe: str,
         futures_config: FuturesConfigSchema | None = None,
         external_cache: ExternalDataCache | None = None,
+        tier_registry: SymbolTierRegistry | None = None,
     ) -> None:
         self._cache = cache
         self._confluence = confluence_calculator
@@ -52,12 +54,27 @@ class LiveDependenciesProvider:
         self._timeframe = timeframe
         self._futures_config = futures_config or FuturesConfigSchema.model_validate({})
         self._external_cache = external_cache
+        self._tier_registry = tier_registry
         self._cycle_cache: dict[str, Any] = {}
 
     def _get_leverage(self, symbol: str) -> int:
-        return self._futures_config.symbol_leverage.get(
+        configured = self._futures_config.symbol_leverage.get(
             symbol, self._futures_config.default_leverage
         )
+        if self._tier_registry is not None:
+            tier_config = self._tier_registry.get_config(symbol)
+            return min(configured, tier_config.max_leverage)
+        return configured
+
+    def _get_tier_kwargs(self, symbol: str) -> dict[str, Any]:
+        if self._tier_registry is None:
+            return {}
+        tier = self._tier_registry.get_tier(symbol)
+        tier_config = self._tier_registry.get_config(symbol)
+        return {
+            "symbol_tier": tier.value,
+            "tier_min_confidence": tier_config.min_confidence,
+        }
 
     def clear_cycle_cache(self) -> None:
         self._cycle_cache.clear()
@@ -93,7 +110,7 @@ class LiveDependenciesProvider:
             order_flow,
         )
         logger.debug(
-            "Dual confluence for %s: detected_side=%s long=%d/6 short=%d/6",
+            "Dual confluence for %s: detected_side=%s long=%d/8 short=%d/8",
             symbol,
             detected_side,
             dual.long.score,
@@ -157,6 +174,7 @@ class LiveDependenciesProvider:
             else None
         )
 
+        tier_kwargs = self._get_tier_kwargs(symbol)
         return AnalystDependenciesSchema(
             symbol=symbol,
             current_price=self._cache.get_current_price(symbol),
@@ -168,6 +186,7 @@ class LiveDependenciesProvider:
             volatility_regime=self._get_regime(symbol),
             leverage=self._get_leverage(symbol),
             sentiment_summary=sentiment,
+            **tier_kwargs,
         )
 
     async def get_trader(self, symbol: str) -> TradingDependenciesSchema:
@@ -198,6 +217,7 @@ class LiveDependenciesProvider:
             else None
         )
 
+        tier_kwargs = self._get_tier_kwargs(symbol)
         return TradingDependenciesSchema(
             symbol=symbol,
             current_price=self._cache.get_current_price(symbol),
@@ -214,6 +234,7 @@ class LiveDependenciesProvider:
             event_store=self._event_store,
             atr_history=self._cache.get_atr_history(symbol),
             sentiment_summary=sentiment,
+            **tier_kwargs,
         )
 
     async def _get_cached_account_state(self) -> AccountStateSchema:

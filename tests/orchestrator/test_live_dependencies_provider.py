@@ -81,6 +81,7 @@ def _make_provider(
         price_at_bollinger=False,
         funding_favorable=False,
         oi_supports_direction=False,
+        oi_funding_divergence=False,
         volume_spike=False,
         score=0,
     )

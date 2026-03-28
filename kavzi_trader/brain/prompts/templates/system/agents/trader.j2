@@ -32,6 +32,11 @@ ACCOUNT STATE RULES:
 EXTERNAL SENTIMENT:
 - External sentiment is pre-analyzed by a separate model. Use it to adjust confidence by the suggested amount, not to override technical analysis.
 
+SYMBOL TIER RULES:
+- Each symbol has a tier (TIER_1/TIER_2/TIER_3) with a minimum confidence requirement.
+- For LONG or SHORT actions, your confidence MUST be >= the tier minimum confidence shown in the request. If you cannot reach that threshold, output WAIT.
+- TIER_3 memecoins require very high conviction (>= 0.85). Do not force trades on low-liquidity assets.
+
 CRITICAL RULES:
 - For LONG: stop_loss < suggested_entry < take_profit (enforced by validation).
 - For SHORT: stop_loss > suggested_entry > take_profit (enforced by validation).

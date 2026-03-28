@@ -6,13 +6,19 @@ from kavzi_trader.spine.risk.schemas import (
     PositionSizeResultSchema,
     VolatilityRegimeSchema,
 )
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 
 logger = logging.getLogger(__name__)
 
 
 class PositionSizer:
-    def __init__(self, config: RiskConfigSchema | None = None) -> None:
+    def __init__(
+        self,
+        config: RiskConfigSchema | None = None,
+        tier_registry: SymbolTierRegistry | None = None,
+    ) -> None:
         self._config = config or RiskConfigSchema()
+        self._tier_registry = tier_registry
 
     def calculate_size(
         self,
@@ -23,6 +29,7 @@ class PositionSizer:
         entry_price: Decimal,
         leverage: int = 1,
         available_balance: Decimal | None = None,
+        symbol: str | None = None,
     ) -> PositionSizeResultSchema:
         if atr <= 0 or entry_price <= 0:
             logger.warning(
@@ -37,7 +44,15 @@ class PositionSizer:
                 risk_amount=Decimal(0),
             )
 
-        risk_amount = account_balance * (self._config.risk_per_trade_percent / 100)
+        # Tier-aware risk % and exposure cap
+        risk_pct = self._config.risk_per_trade_percent
+        max_exposure_pct = self._config.max_notional_percent
+        if self._tier_registry is not None and symbol is not None:
+            tier_config = self._tier_registry.get_config(symbol)
+            risk_pct = tier_config.risk_per_trade_percent
+            max_exposure_pct = tier_config.max_exposure_percent
+
+        risk_amount = account_balance * (risk_pct / 100)
         stop_distance = atr * stop_loss_atr_multiplier
 
         base_size = risk_amount / stop_distance
@@ -46,8 +61,8 @@ class PositionSizer:
         adjusted_size = base_size * size_multiplier
 
         # Notional cap: apply early so downstream clamps see a bounded size
-        if entry_price > 0 and self._config.max_notional_percent > 0:
-            max_notional = account_balance * (self._config.max_notional_percent / 100)
+        if entry_price > 0 and max_exposure_pct > 0:
+            max_notional = account_balance * (max_exposure_pct / 100)
             max_size_by_notional = max_notional / entry_price
             if adjusted_size > max_size_by_notional:
                 logger.info(
@@ -56,7 +71,7 @@ class PositionSizer:
                     adjusted_size,
                     max_size_by_notional,
                     account_balance,
-                    self._config.max_notional_percent,
+                    max_exposure_pct,
                     entry_price,
                 )
                 adjusted_size = max_size_by_notional

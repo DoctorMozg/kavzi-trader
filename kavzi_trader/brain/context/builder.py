@@ -106,6 +106,8 @@ class ContextBuilder(BaseModel):
                 "algorithm_confluence_short": dual.short.model_dump(),
                 "detected_side": dual.detected_side,
                 "futures_leverage": deps.leverage,
+                "symbol_tier": deps.symbol_tier,
+                "tier_min_confidence": str(deps.tier_min_confidence),
             }
         )
         self._add_sentiment_context(context, deps.sentiment_summary)
@@ -154,6 +156,8 @@ class ContextBuilder(BaseModel):
                 "open_positions_json": positions_text,
                 "funding_rate_24h_percent": funding_24h,
                 "scout_pattern": scout_pattern,
+                "symbol_tier": deps.symbol_tier,
+                "tier_min_confidence": str(deps.tier_min_confidence),
             }
         )
         self._add_sentiment_context(context, deps.sentiment_summary)

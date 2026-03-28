@@ -15,6 +15,12 @@ ANALYSIS FRAMEWORK — follow this sequence:
 EXTERNAL SENTIMENT:
 - External sentiment is pre-analyzed by a separate model. Use it to adjust confidence by the suggested amount, not to override technical analysis.
 
+SYMBOL TIERS:
+- TIER_1 (BTC/ETH/BNB): Highest liquidity, most predictable. Min confidence 0.70. Wider stop losses OK.
+- TIER_2 (SOL/XRP/ADA etc.): Mid-cap alts. Min confidence 0.75. Standard risk.
+- TIER_3 (DOGE/WIF/TAO etc.): Memecoins/low-cap. Min confidence 0.85. Require very strong confluence.
+- The symbol's tier and minimum confidence are provided in each request. Factor tier risk into your assessment.
+
 RULES:
 - Use ONLY the provided data. If a field is null, state it is unavailable and reduce confluence accordingly.
 - Do NOT hallucinate price levels. Every key_level must trace back to a specific data point (an EMA value, a Bollinger band value, or a candle high/low from the provided data).

@@ -81,6 +81,7 @@ def algorithm_confluence() -> DualConfluenceSchema:
         price_at_bollinger=False,
         funding_favorable=True,
         oi_supports_direction=True,
+        oi_funding_divergence=False,
         volume_spike=False,
         score=4,
     )
@@ -91,6 +92,7 @@ def algorithm_confluence() -> DualConfluenceSchema:
         price_at_bollinger=False,
         funding_favorable=False,
         oi_supports_direction=False,
+        oi_funding_divergence=False,
         volume_spike=False,
         score=1,
     )

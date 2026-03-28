@@ -90,4 +90,13 @@ class FilterConfigSchema(BaseModel):
         Field(default=Decimal("0.5")),
     ] = Decimal("0.5")
 
+    fgi_extreme_fear_threshold: Annotated[
+        int,
+        Field(default=10, ge=0, le=100),
+    ] = 10
+    fgi_extreme_greed_threshold: Annotated[
+        int,
+        Field(default=90, ge=0, le=100),
+    ] = 90
+
     model_config = ConfigDict(frozen=True)

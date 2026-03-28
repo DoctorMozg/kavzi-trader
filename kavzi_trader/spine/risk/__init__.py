@@ -8,6 +8,8 @@ from kavzi_trader.spine.risk.schemas import (
     VolatilityRegime,
     VolatilityRegimeSchema,
 )
+from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 
@@ -19,6 +21,9 @@ __all__ = [
     "PositionSizer",
     "RiskConfigSchema",
     "RiskValidationResultSchema",
+    "SymbolTier",
+    "SymbolTierConfigSchema",
+    "SymbolTierRegistry",
     "VolatilityRegime",
     "VolatilityRegimeDetector",
     "VolatilityRegimeSchema",

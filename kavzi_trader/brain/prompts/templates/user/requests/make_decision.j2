@@ -1,4 +1,5 @@
 Make a final trade decision for {{ market_snapshot.timeframe }} {{ market_snapshot.symbol }} at price {{ market_snapshot.current_price }}.
+Tier: {{ symbol_tier | default("TIER_2") }} | Min confidence for LONG/SHORT: {{ tier_min_confidence | default("0.75") }}
 
 {% include "user/context/analyst_result.j2" %}
 

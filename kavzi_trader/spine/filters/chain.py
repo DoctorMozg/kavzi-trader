@@ -7,6 +7,7 @@ from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.filters.correlation import CorrelationFilter
+from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
 from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
 )
@@ -34,6 +35,7 @@ class PreTradeFilterChain:
         liquidity_filter: LiquidityFilter,
         correlation_filter: CorrelationFilter,
         confluence_calculator: ConfluenceCalculator,
+        fear_greed_gate: FearGreedGateFilter | None = None,
     ) -> None:
         self._volatility_detector = volatility_detector
         self._funding_filter = funding_filter
@@ -42,6 +44,7 @@ class PreTradeFilterChain:
         self._liquidity_filter = liquidity_filter
         self._correlation_filter = correlation_filter
         self._confluence_calculator = confluence_calculator
+        self._fear_greed_gate = fear_greed_gate
 
     async def evaluate(
         self,
@@ -61,6 +64,28 @@ class PreTradeFilterChain:
             side,
             extra={"symbol": symbol, "side": side},
         )
+
+        # --- FGI extreme gate (market-wide circuit breaker) ---
+        if self._fear_greed_gate is not None:
+            fgi_result = self._fear_greed_gate.evaluate()
+            results.append(fgi_result)
+            if not fgi_result.is_allowed:
+                logger.info(
+                    "Filter chain REJECTED for %s %s by FGI gate: %s",
+                    symbol,
+                    side,
+                    fgi_result.reason,
+                    extra={"symbol": symbol, "side": side},
+                )
+                return FilterChainResultSchema(
+                    is_allowed=False,
+                    rejection_reason=fgi_result.reason,
+                    size_multiplier=size_multiplier,
+                    results=results,
+                    confluence=None,
+                    volatility_regime=None,
+                    volatility_zscore=None,
+                )
 
         current_atr = indicators.atr_14 or Decimal(0)
         if current_atr == Decimal(0):
@@ -111,6 +136,7 @@ class PreTradeFilterChain:
         funding_result = self._funding_filter.evaluate(
             side=side,
             order_flow=order_flow,
+            symbol=symbol,
         )
         results.append(funding_result)
         logger.debug(

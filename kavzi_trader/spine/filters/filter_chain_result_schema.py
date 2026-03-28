@@ -18,7 +18,7 @@ class FilterChainResultSchema(BaseModel):
     size_multiplier: Annotated[Decimal, Field(default=Decimal("1.0"))]
     results: Annotated[list[FilterResultSchema], Field(default_factory=list)]
     confluence: Annotated[AlgorithmConfluenceSchema | None, Field(default=None)]
-    volatility_regime: Annotated[VolatilityRegime, Field(...)]
-    volatility_zscore: Annotated[Decimal, Field(...)]
+    volatility_regime: Annotated[VolatilityRegime | None, Field(default=None)]
+    volatility_zscore: Annotated[Decimal | None, Field(default=None)]
 
     model_config = ConfigDict(frozen=True)
