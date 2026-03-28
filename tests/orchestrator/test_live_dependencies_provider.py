@@ -172,7 +172,6 @@ async def test_analyst_deps_include_sentiment_when_cache_set() -> None:
         summary="Fear in the market.",
         sentiment_bias="BEARISH",
         confidence_adjustment=Decimal("-0.05"),
-        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     ext_cache.set_sentiment_summary(summary)
     provider = _make_provider(external_cache=ext_cache)
@@ -188,7 +187,6 @@ async def test_trader_deps_include_sentiment_when_cache_set() -> None:
         summary="Market is neutral.",
         sentiment_bias="NEUTRAL",
         confidence_adjustment=Decimal("0.00"),
-        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     ext_cache.set_sentiment_summary(summary)
     provider = _make_provider(external_cache=ext_cache)

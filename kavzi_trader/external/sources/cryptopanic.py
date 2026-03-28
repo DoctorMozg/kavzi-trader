@@ -9,7 +9,7 @@ from kavzi_trader.external.schemas import CryptoPanicDataSchema
 
 logger = logging.getLogger(__name__)
 
-_CRYPTOPANIC_URL = "https://cryptopanic.com/api/v1/posts/"
+_CRYPTOPANIC_URL = "https://cryptopanic.com/api/developer/v2/posts/"
 _TIMEOUT_S = 10.0
 
 
@@ -32,24 +32,48 @@ class CryptoPanicSource(ExternalSource):
         return "cryptopanic"
 
     async def fetch(self) -> CryptoPanicDataSchema | None:
+        logger.info("Fetching CryptoPanic news sentiment")
         try:
             resp = await self._client.get(
                 _CRYPTOPANIC_URL,
                 params={
                     "auth_token": self._api_key,
                     "currencies": "BTC,ETH",
-                    "filter": "rising",
                     "kind": "news",
                     "public": "true",
                 },
             )
             resp.raise_for_status()
-            posts: list[dict[str, object]] = resp.json().get("results", [])
+            body = resp.json()
+            if body.get("status") == "api_error":
+                logger.warning(
+                    "CryptoPanic API error: %s",
+                    body.get("info", "unknown"),
+                )
+                return None
+            posts: list[dict[str, object]] = body.get("results", [])
             posts = posts[: self._max_results]
-            return self._parse_posts(posts)
         except Exception:
             logger.exception("CryptoPanic fetch failed")
             return None
+        else:
+            result = self._parse_posts(posts)
+            logger.info(
+                "CryptoPanic fetched: posts=%d bullish=%d bearish=%d "
+                "neutral=%d score=%.2f",
+                len(posts),
+                result.bullish_count,
+                result.bearish_count,
+                result.neutral_count,
+                result.sentiment_score,
+                extra={
+                    "posts_count": len(posts),
+                    "bullish": result.bullish_count,
+                    "bearish": result.bearish_count,
+                    "sentiment_score": float(result.sentiment_score),
+                },
+            )
+            return result
 
     def _parse_posts(
         self,

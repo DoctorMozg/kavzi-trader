@@ -224,7 +224,7 @@ async def _start_orchestrator(
             from pydantic_ai.models.openai import OpenAIChatModel
             from pydantic_ai.providers.openai import OpenAIProvider
 
-            from kavzi_trader.external.schemas import SentimentSummarySchema
+            from kavzi_trader.external.synthesizer import _SynthesizerOutputSchema
 
             synth_provider = OpenAIProvider(
                 openai_client=AsyncOpenAI(
@@ -242,9 +242,9 @@ async def _start_orchestrator(
                 provider=synth_provider,
             )
             synth_system_prompt = prompt_loader.render_system_prompt("synthesizer")
-            synth_agent: Agent[None, SentimentSummarySchema] = Agent(
+            synth_agent: Agent[None, _SynthesizerOutputSchema] = Agent(
                 synth_model,
-                output_type=SentimentSummarySchema,
+                output_type=_SynthesizerOutputSchema,
                 instructions=synth_system_prompt,
                 retries=synth_config.retries,
             )

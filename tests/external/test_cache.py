@@ -31,7 +31,6 @@ def _make_summary() -> SentimentSummarySchema:
         summary="Mild fear in the market with moderate options volatility.",
         sentiment_bias="BEARISH",
         confidence_adjustment=Decimal("-0.05"),
-        generated_at=datetime.now(UTC),
     )
 
 
@@ -79,7 +78,6 @@ def test_summary_overwrite() -> None:
         summary="Market is neutral.",
         sentiment_bias="NEUTRAL",
         confidence_adjustment=Decimal("0.00"),
-        generated_at=datetime.now(UTC),
     )
     cache.set_sentiment_summary(new_summary)
     retrieved = cache.get_sentiment_summary()

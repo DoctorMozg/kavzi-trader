@@ -107,7 +107,7 @@ The system tracks Binance funding. Adding Bybit + OKX + Hyperliquid creates a di
 ### 6. CryptoPanic News Sentiment
 
 ```
-GET https://cryptopanic.com/api/v1/posts/?auth_token=KEY&currencies=BTC,ETH&filter=rising
+GET https://cryptopanic.com/api/developer/v2/posts/?auth_token=KEY&currencies=BTC,ETH&filter=rising
 ```
 
 Free API key from cryptopanic.com/developers/api. ~200 req/hr. News from 100+ sources with community voting (bullish/bearish/important).

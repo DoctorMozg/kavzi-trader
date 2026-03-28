@@ -103,6 +103,5 @@ class SentimentSummarySchema(BaseModel):
             description="Suggested confidence adjustment for analyst/trader",
         ),
     ]
-    generated_at: Annotated[datetime, Field(...)]
 
     model_config = ConfigDict(frozen=True)

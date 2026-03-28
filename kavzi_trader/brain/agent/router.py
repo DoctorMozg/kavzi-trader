@@ -152,6 +152,7 @@ class AgentRouter:
         deps_provider: DependenciesProvider,
     ) -> AnalystDecisionSchema | None:
         deps = await deps_provider.get_analyst(symbol)
+        self._log_analyst_inputs(deps)
         t0 = time.monotonic()
         try:
             result = await self._analyst.run(deps)
@@ -170,6 +171,7 @@ class AgentRouter:
         scout_pattern: str | None = None,
     ) -> tuple[TradeDecisionSchema | None, TradingDependenciesSchema | None]:
         deps = await deps_provider.get_trader(symbol)
+        self._log_trader_inputs(deps, analyst_result, scout_pattern)
         t0 = time.monotonic()
         try:
             result = await self._trader.run(
@@ -183,6 +185,68 @@ class AgentRouter:
         ms = (time.monotonic() - t0) * 1000
         self._warn_slow("Trader", symbol, ms)
         return result, deps
+
+    @staticmethod
+    def _log_analyst_inputs(deps: AnalystDependenciesSchema) -> None:
+        ind = deps.indicators
+        of = deps.order_flow
+        conf = deps.algorithm_confluence
+        logger.info(
+            "Analyst inputs %s: price=%s regime=%s RSI=%s "
+            "MACD=%s BB%%b=%s vol=%s funding=%s OI_1h=%s "
+            "L/S=%s conf=%s/%s(%s) sent=%s '%s'",
+            deps.symbol,
+            deps.current_price,
+            deps.volatility_regime.value,
+            ind.rsi_14,
+            ind.macd.histogram if ind.macd else None,
+            ind.bollinger.percent_b if ind.bollinger else None,
+            ind.volume.volume_ratio if ind.volume else None,
+            of.funding_rate if of else None,
+            of.oi_change_1h_percent if of else None,
+            of.long_short_ratio if of else None,
+            conf.long.score,
+            conf.short.score,
+            conf.detected_side,
+            deps.sentiment_summary.sentiment_bias if deps.sentiment_summary else None,
+            deps.sentiment_summary.summary[:30] if deps.sentiment_summary else "",
+        )
+
+    @staticmethod
+    def _log_trader_inputs(
+        deps: TradingDependenciesSchema,
+        analyst_result: AnalystDecisionSchema,
+        scout_pattern: str | None,
+    ) -> None:
+        ind = deps.indicators
+        of = deps.order_flow
+        conf = deps.algorithm_confluence
+        logger.info(
+            "Trader inputs %s: price=%s regime=%s RSI=%s "
+            "MACD=%s BB%%b=%s vol=%s funding=%s OI_1h=%s "
+            "L/S=%s conf=%s/%s(%s) analyst=%s(%d) "
+            "pattern=%s pos=%d bal=%s sent=%s '%s'",
+            deps.symbol,
+            deps.current_price,
+            deps.volatility_regime.value,
+            ind.rsi_14,
+            ind.macd.histogram if ind.macd else None,
+            ind.bollinger.percent_b if ind.bollinger else None,
+            ind.volume.volume_ratio if ind.volume else None,
+            of.funding_rate if of else None,
+            of.oi_change_1h_percent if of else None,
+            of.long_short_ratio if of else None,
+            conf.long.score,
+            conf.short.score,
+            conf.detected_side,
+            analyst_result.direction,
+            analyst_result.confluence_score,
+            scout_pattern,
+            len(deps.open_positions),
+            deps.account_state.available_balance_usdt,
+            deps.sentiment_summary.sentiment_bias if deps.sentiment_summary else None,
+            deps.sentiment_summary.summary[:30] if deps.sentiment_summary else "",
+        )
 
     @staticmethod
     def _warn_slow(agent: str, symbol: str, ms: float) -> None:

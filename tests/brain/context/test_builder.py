@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
@@ -261,7 +260,6 @@ def test_analyst_context_with_sentiment(
         summary="Options show elevated IV. Fear index at extreme fear.",
         sentiment_bias="BEARISH",
         confidence_adjustment=Decimal("-0.05"),
-        generated_at=datetime.now(UTC),
     )
     deps = AnalystDependenciesSchema(
         symbol="BTCUSDT",
@@ -317,7 +315,6 @@ def test_trader_context_with_sentiment(
         summary="Market neutral with moderate volatility.",
         sentiment_bias="NEUTRAL",
         confidence_adjustment=Decimal("0.00"),
-        generated_at=datetime.now(UTC),
     )
     deps = TradingDependenciesSchema(
         symbol="BTCUSDT",

@@ -46,6 +46,12 @@ class ExternalSentimentLoop:
         self._cache = cache
         self._interval_s = interval_s
 
+    async def warm_up(self) -> None:
+        """Run a single fetch+synthesize cycle before the main loop starts."""
+        logger.info("ExternalSentimentLoop warming up (pre-fetching all sources)")
+        await self._cycle()
+        logger.info("ExternalSentimentLoop warm-up complete")
+
     async def run(self) -> None:
         logger.info(
             "ExternalSentimentLoop started with %d sources, interval=%ds",
@@ -97,6 +103,19 @@ class ExternalSentimentLoop:
                 )
             elif result is not None:
                 source_data[source.name] = result
+
+        fetched = sorted(source_data.keys())
+        failed = sorted(
+            source.name
+            for source, result in zip(self._sources, results, strict=True)
+            if isinstance(result, BaseException) or result is None
+        )
+        logger.info(
+            "External fetch complete: ok=%s failed=%s",
+            fetched or "none",
+            failed or "none",
+            extra={"fetched": fetched, "failed": failed},
+        )
 
         return ExternalDataSnapshotSchema(
             deribit_dvol=self._typed_get(

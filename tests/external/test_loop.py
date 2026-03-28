@@ -46,7 +46,6 @@ def _make_summary() -> SentimentSummarySchema:
         summary="Market shows fear with elevated volatility.",
         sentiment_bias="BEARISH",
         confidence_adjustment=Decimal("-0.05"),
-        generated_at=datetime.now(UTC),
     )
 
 

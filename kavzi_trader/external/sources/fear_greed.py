@@ -23,6 +23,7 @@ class FearGreedSource(ExternalSource):
         return "fear_greed"
 
     async def fetch(self) -> FearGreedDataSchema | None:
+        logger.info("Fetching Fear & Greed Index")
         try:
             resp = await self._client.get(
                 _FGI_URL,
@@ -34,9 +35,17 @@ class FearGreedSource(ExternalSource):
                 logger.warning("Fear & Greed API returned empty data array")
                 return None
             entry = data[0]
+            value = int(entry["value"])
+            classification = str(entry["value_classification"])
+            logger.info(
+                "Fear & Greed fetched: value=%d classification=%s",
+                value,
+                classification,
+                extra={"fgi_value": value, "fgi_classification": classification},
+            )
             return FearGreedDataSchema(
-                value=int(entry["value"]),
-                classification=str(entry["value_classification"]),
+                value=value,
+                classification=classification,
                 fetched_at=datetime.now(UTC),
             )
         except Exception:

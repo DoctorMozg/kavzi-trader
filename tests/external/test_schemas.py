@@ -56,7 +56,6 @@ def test_sentiment_summary_bias_literal() -> None:
             summary="test",
             sentiment_bias=bias,
             confidence_adjustment=Decimal("0.0"),
-            generated_at=datetime.now(UTC),
         )
         assert summary.sentiment_bias == bias
 
@@ -66,7 +65,6 @@ def test_sentiment_summary_frozen() -> None:
         summary="test",
         sentiment_bias="NEUTRAL",
         confidence_adjustment=Decimal("0.0"),
-        generated_at=datetime.now(UTC),
     )
     try:
         summary.summary = "changed"  # type: ignore[misc]

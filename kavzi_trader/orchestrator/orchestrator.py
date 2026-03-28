@@ -76,6 +76,8 @@ class TradingOrchestrator:
             logger.info("State store connected, beginning reconciliation")
             await self._state_manager.reconcile_with_exchange()
             logger.info("Reconciliation complete")
+        if self._external_sentiment_loop is not None:
+            await self._external_sentiment_loop.warm_up()
         logger.info("Launching async loops")
         self._loop_factories = {
             "ingest": self._ingest_loop.run,

@@ -27,9 +27,19 @@ class DeribitDvolSource(ExternalSource):
         return "deribit_dvol"
 
     async def fetch(self) -> DeribitDvolDataSchema | None:
+        logger.info("Fetching Deribit DVOL + put/call ratio")
         try:
             dvol_index = await self._fetch_dvol()
             btc_pc_ratio = await self._fetch_put_call_ratio()
+            logger.info(
+                "Deribit DVOL fetched: dvol=%.1f put_call_ratio=%.3f",
+                dvol_index,
+                btc_pc_ratio,
+                extra={
+                    "dvol_index": float(dvol_index),
+                    "btc_put_call_ratio": float(btc_pc_ratio),
+                },
+            )
             return DeribitDvolDataSchema(
                 dvol_index=dvol_index,
                 btc_put_call_ratio=btc_pc_ratio,

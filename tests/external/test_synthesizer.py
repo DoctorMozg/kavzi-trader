@@ -13,6 +13,7 @@ from kavzi_trader.external.schemas import (
 from kavzi_trader.external.synthesizer import (
     SentimentSynthesizer,
     _format_snapshot_for_prompt,
+    _SynthesizerOutputSchema,
 )
 
 
@@ -37,7 +38,6 @@ def _make_summary() -> SentimentSummarySchema:
         summary="Options volatility elevated. Fear & Greed at extreme fear.",
         sentiment_bias="BEARISH",
         confidence_adjustment=Decimal("-0.05"),
-        generated_at=datetime.now(UTC),
     )
 
 
@@ -72,9 +72,13 @@ async def test_synthesize_empty_snapshot_returns_neutral() -> None:
 
 @pytest.mark.asyncio
 async def test_synthesize_calls_agent() -> None:
-    summary = _make_summary()
+    llm_output = _SynthesizerOutputSchema(
+        summary="Options volatility elevated. Fear & Greed at extreme fear.",
+        sentiment_bias="BEARISH",
+        confidence_adjustment=-0.05,
+    )
     agent_result = Mock()
-    agent_result.output = summary
+    agent_result.output = llm_output
     agent = Mock()
     agent.run = AsyncMock(return_value=agent_result)
     prompt_loader = Mock()
