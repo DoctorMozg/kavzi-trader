@@ -410,7 +410,11 @@ def _make_analyst_result() -> PipelineResult:
 
 @pytest.mark.asyncio
 async def test_cooldown_after_analyst_skips_cycles() -> None:
-    """After Analyst is reached, symbol should be skipped for cooldown cycles."""
+    """After Analyst rejection, symbol should be skipped for graduated cooldown cycles.
+
+    With confluence_score=5 and analyst_cooldown_cycles=2, the graduated cooldown
+    sets cooldown = 2 * 3 = 6 cycles (medium tier: score 4-5).
+    """
     deps = _build_deps()
     provider = DummyDepsProvider(deps)
     router = AsyncMock()
@@ -438,17 +442,16 @@ async def test_cooldown_after_analyst_skips_cycles() -> None:
 
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
         task = asyncio.create_task(loop.run())
-        for _ in range(100):
+        for _ in range(200):
             await original_sleep(0)
-            if len(sleep_durations) >= 4:
+            if len(sleep_durations) >= 8:
                 break
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    # Cycle 1: router called (analyst reached)
-    # Cycle 2: cooldown=2, skip → router NOT called
-    # Cycle 3: cooldown=1, skip → router NOT called
-    # Cycle 4: cooldown=0 → router called again
+    # Cycle 1: router called (analyst reached, confluence=5 → cooldown=6)
+    # Cycles 2-7: cooldown counts down → router NOT called
+    # Cycle 8: cooldown=0 → router called again
     assert router.run.call_count == 2
 
 
@@ -569,3 +572,56 @@ async def test_volatility_gate_reports_as_scout_scan() -> None:
     assert len(scout_calls) >= 1
     summary = scout_calls[0].kwargs.get("summary", "")
     assert "Volatility regime LOW" in summary
+
+
+def _make_analyst_result_with_confluence(confluence_score: int) -> PipelineResult:
+    return PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING", reason="volume", pattern_detected=None
+        ),
+        analyst=AnalystDecisionSchema(
+            setup_valid=False,
+            direction="LONG",
+            confluence_score=confluence_score,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning=_ANALYST_REASONING,
+        ),
+    )
+
+
+def test_graduated_cooldown_low_confluence() -> None:
+    """Confluence <= 3 should produce 5x the base cooldown."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+    assert loop._compute_rejection_cooldown(2) == 15
+    assert loop._compute_rejection_cooldown(3) == 15
+
+
+def test_graduated_cooldown_medium_confluence() -> None:
+    """Confluence 4-5 should produce 3x the base cooldown."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+    assert loop._compute_rejection_cooldown(4) == 9
+    assert loop._compute_rejection_cooldown(5) == 9
+
+
+def test_graduated_cooldown_near_threshold() -> None:
+    """Confluence >= 6 should produce 1x the base cooldown (near threshold)."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+    assert loop._compute_rejection_cooldown(6) == 3

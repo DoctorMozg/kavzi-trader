@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -245,3 +246,83 @@ def test_volume_spike(
 
     assert result_spike.volume_spike is True, "Volume ratio 3.0 > 2.5"
     assert result_normal.volume_spike is False, "Volume ratio 2.0 not > 2.5"
+
+
+def test_no_warning_for_non_detected_side_zero_score(
+    sample_candle,
+    caplog,
+) -> None:
+    """When the non-detected side scores 0, no warning should be emitted."""
+    now = datetime.now(UTC)
+    # All None indicators → every signal returns False → score 0 for both sides
+    indicators = TechnicalIndicatorsSchema(
+        ema_20=None,
+        ema_50=None,
+        ema_200=None,
+        sma_20=None,
+        rsi_14=None,
+        macd=None,
+        bollinger=None,
+        atr_14=None,
+        volume=None,
+        timestamp=now,
+    )
+    calculator = ConfluenceCalculator()
+
+    with caplog.at_level(
+        logging.WARNING, logger="kavzi_trader.spine.filters.confluence"
+    ):
+        # Evaluate only the non-detected side (SHORT) when detected is LONG
+        calculator.evaluate(
+            "SHORT",
+            sample_candle,
+            indicators,
+            None,
+            is_detected_side=False,
+        )
+
+    warning_messages = [
+        r.message for r in caplog.records if r.levelno >= logging.WARNING
+    ]
+    assert not warning_messages, (
+        f"Expected no warning for non-detected side, got: {warning_messages}"
+    )
+
+
+def test_warning_for_detected_side_zero_score(
+    sample_candle,
+    caplog,
+) -> None:
+    """When the detected side scores 0, a warning should be emitted."""
+    now = datetime.now(UTC)
+    indicators = TechnicalIndicatorsSchema(
+        ema_20=None,
+        ema_50=None,
+        ema_200=None,
+        sma_20=None,
+        rsi_14=None,
+        macd=None,
+        bollinger=None,
+        atr_14=None,
+        volume=None,
+        timestamp=now,
+    )
+    calculator = ConfluenceCalculator()
+
+    with caplog.at_level(
+        logging.WARNING, logger="kavzi_trader.spine.filters.confluence"
+    ):
+        calculator.evaluate(
+            "LONG",
+            sample_candle,
+            indicators,
+            None,
+            is_detected_side=True,
+        )
+
+    warning_messages = [
+        r.message for r in caplog.records if r.levelno >= logging.WARNING
+    ]
+    assert any("detected side" in msg for msg in warning_messages), (
+        f"Expected warning for detected side with score 0, got: {warning_messages}"
+    )

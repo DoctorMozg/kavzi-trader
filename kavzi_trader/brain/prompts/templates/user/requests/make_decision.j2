@@ -25,6 +25,7 @@ OPEN POSITIONS:
 24h funding rate impact: {{ funding_rate_24h_percent }}
 {% endif %}
 
+Scout pattern: {{ scout_pattern or "None" }}
 ATR(14) for position sizing: {{ market_snapshot.indicators.atr_14 if market_snapshot.indicators.atr_14 is not none else "unavailable" }}
 
 Now follow your decision framework: assess direction, calculate entry/SL/TP using ATR, and set confidence.

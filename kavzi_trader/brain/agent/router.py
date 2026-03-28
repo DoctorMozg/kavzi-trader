@@ -35,6 +35,7 @@ class TraderRunner(Protocol):
         self,
         deps: TradingDependenciesSchema,
         analyst_result: AnalystDecisionSchema | None = None,
+        scout_pattern: str | None = None,
     ) -> TradeDecisionSchema: ...
 
 
@@ -105,6 +106,7 @@ class AgentRouter:
             symbol,
             deps_provider,
             analyst_result,
+            scout_pattern=scout_result.pattern_detected,
         )
         if trader_result is None:
             return PipelineResult(scout=scout_result, analyst=analyst_result)
@@ -165,11 +167,16 @@ class AgentRouter:
         symbol: str,
         deps_provider: DependenciesProvider,
         analyst_result: AnalystDecisionSchema,
+        scout_pattern: str | None = None,
     ) -> tuple[TradeDecisionSchema | None, TradingDependenciesSchema | None]:
         deps = await deps_provider.get_trader(symbol)
         t0 = time.monotonic()
         try:
-            result = await self._trader.run(deps, analyst_result=analyst_result)
+            result = await self._trader.run(
+                deps,
+                analyst_result=analyst_result,
+                scout_pattern=scout_pattern,
+            )
         except Exception:
             logger.exception("Trader agent failed for %s", symbol)
             return None, None

@@ -24,8 +24,20 @@ class ConfluenceCalculator:
         order_flow: OrderFlowSchema | None,
     ) -> DualConfluenceSchema:
         """Evaluate confluence for both LONG and SHORT directions."""
-        long = self.evaluate("LONG", candle, indicators, order_flow)
-        short = self.evaluate("SHORT", candle, indicators, order_flow)
+        long = self.evaluate(
+            "LONG",
+            candle,
+            indicators,
+            order_flow,
+            is_detected_side=(detected_side == "LONG"),
+        )
+        short = self.evaluate(
+            "SHORT",
+            candle,
+            indicators,
+            order_flow,
+            is_detected_side=(detected_side == "SHORT"),
+        )
         logger.debug(
             "Dual confluence: detected_side=%s long=%d/6 short=%d/6",
             detected_side,
@@ -44,6 +56,8 @@ class ConfluenceCalculator:
         candle: CandlestickSchema,
         indicators: TechnicalIndicatorsSchema,
         order_flow: OrderFlowSchema | None,
+        *,
+        is_detected_side: bool = True,
     ) -> AlgorithmConfluenceSchema:
         ema_alignment = self._ema_alignment(indicators, side)
         rsi_favorable = self._rsi_favorable(indicators, side)
@@ -65,10 +79,10 @@ class ConfluenceCalculator:
             ],
         )
 
-        if score == 0:
+        if score == 0 and is_detected_side:
             logger.warning(
-                "Confluence score is 0 for %s — all signals returned False,"
-                " indicators may be missing",
+                "Confluence score is 0 for %s (detected side) — all signals"
+                " returned False, indicators may be missing",
                 side,
             )
         logger.debug(

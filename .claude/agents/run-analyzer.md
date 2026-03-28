@@ -2,7 +2,7 @@
 name: run-analyzer
 description: Analyzes KavziTrader trading run logs to evaluate LLM decision quality, validate Scout/Analyst/Trader reasoning against market data, and propose pipeline improvements. Use when you need to review a trading session's performance.
 tools: Read, Bash, Grep, Glob, Agent(voltagent-research:search-specialist, voltagent-research:research-analyst), WebFetch, WebSearch, mcp__claude_ai_Crypto_com__get_candlestick, mcp__claude_ai_Crypto_com__get_ticker, mcp__claude_ai_Crypto_com__get_trades, mcp__claude_ai_Crypto_com__get_book, mcp__claude_ai_Crypto_com__get_tickers, mcp__claude_ai_Crypto_com__get_mark_price, mcp__claude_ai_Crypto_com__get_index_price
-model: opus
+model: sonnet
 effort: high
 ---
 

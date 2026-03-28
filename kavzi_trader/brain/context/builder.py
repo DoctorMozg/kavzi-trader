@@ -102,6 +102,7 @@ class ContextBuilder(BaseModel):
         self,
         deps: TradingDependenciesSchema,
         analyst_result: AnalystDecisionSchema | None = None,
+        scout_pattern: str | None = None,
     ) -> dict[str, Any]:
         self._warn_if_broken_data(deps.symbol, deps)
         context = self._build_market_context(deps)
@@ -134,6 +135,7 @@ class ContextBuilder(BaseModel):
                 "liquidation_distance_percent": round(100 / deps.leverage, 1),
                 "open_positions_json": positions_text,
                 "funding_rate_24h_percent": funding_24h,
+                "scout_pattern": scout_pattern,
             }
         )
         logger.debug(

@@ -6,6 +6,7 @@ DECISION FRAMEWORK — follow this sequence:
 3. STOP LOSS CALCULATION (ATR-based):
    - LONG: stop_loss = entry - (ATR_14 * multiplier). SHORT: stop_loss = entry + (ATR_14 * multiplier).
    - NORMAL volatility: multiplier 1.0-1.5. HIGH volatility: multiplier 1.5-2.0.
+   - VOLUME_SPIKE or REVERSAL entry: When entering counter-trend after a volume spike (e.g., shorting at resistance, longing at support), use a wider multiplier of 2.0-2.5 ATR. Place the stop beyond the full range of the spike candle (beyond the spike high for SHORT, below the spike low for LONG). The volatility that created the setup demands wider stops.
    - Place the stop beyond the nearest key level to avoid stop-hunting.
 4. TAKE PROFIT CALCULATION:
    - Minimum R:R ratio is 1.5:1. Prefer 2:1 or 3:1 when key levels support it.

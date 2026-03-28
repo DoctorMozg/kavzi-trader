@@ -32,11 +32,13 @@ class TraderAgent:
         self,
         deps: TradingDependenciesSchema,
         analyst_result: AnalystDecisionSchema | None = None,
+        scout_pattern: str | None = None,
     ) -> TradeDecisionSchema:
         logger.debug("Trader building context for %s", deps.symbol)
         context = self._context_builder.build_trader_context(
             deps,
             analyst_result=analyst_result,
+            scout_pattern=scout_pattern,
         )
         user_prompt = self._prompt_loader.render_user_prompt("make_decision", context)
         t0 = time.monotonic()

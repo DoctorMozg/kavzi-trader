@@ -191,3 +191,58 @@ def test_trader_context_no_funding_without_order_flow(
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
     assert context["funding_rate_24h_percent"] is None
+
+
+def test_trader_context_includes_scout_pattern(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+    account_state,
+) -> None:
+    deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+    builder = ContextBuilder()
+    context = builder.build_trader_context(
+        deps,
+        scout_pattern="VOLUME_SPIKE",
+    )
+    assert context["scout_pattern"] == "VOLUME_SPIKE"
+
+
+def test_trader_context_scout_pattern_defaults_to_none(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+    account_state,
+) -> None:
+    deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+    builder = ContextBuilder()
+    context = builder.build_trader_context(deps)
+    assert context["scout_pattern"] is None

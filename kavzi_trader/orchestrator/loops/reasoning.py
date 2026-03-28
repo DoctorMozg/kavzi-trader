@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 _BACKOFF_MULTIPLIER = 2.0
 _MAX_BACKOFF_FACTOR = 6.0
 
+_COOLDOWN_LOW_CONFLUENCE_THRESHOLD = 3
+_COOLDOWN_MEDIUM_CONFLUENCE_THRESHOLD = 5
+
 
 class ReasoningLoop:
     """Runs the agent router and enqueues trade decisions."""
@@ -161,14 +164,33 @@ class ReasoningLoop:
                 symbol,
             )
 
-        if result.analyst is not None:
-            self._cooldowns[symbol] = self._analyst_cooldown_cycles
+        if result.analyst is not None and not result.analyst.setup_valid:
+            self._cooldowns[symbol] = self._compute_rejection_cooldown(
+                result.analyst.confluence_score,
+            )
 
         if not self._should_enqueue(result):
             return result.scout.verdict == "INTERESTING"
         self._cooldowns[symbol] = self._analyst_cooldown_cycles * 3
         await self._enqueue_decision(result)
         return True
+
+    def _compute_rejection_cooldown(self, confluence_score: int) -> int:
+        """Scale cooldown based on how far below the threshold the rejection was."""
+        if confluence_score <= _COOLDOWN_LOW_CONFLUENCE_THRESHOLD:
+            multiplier = 5
+        elif confluence_score <= _COOLDOWN_MEDIUM_CONFLUENCE_THRESHOLD:
+            multiplier = 3
+        else:
+            multiplier = 1
+        cooldown = self._analyst_cooldown_cycles * multiplier
+        logger.debug(
+            "Rejection cooldown: confluence=%d multiplier=%d cooldown=%d cycles",
+            confluence_score,
+            multiplier,
+            cooldown,
+        )
+        return cooldown
 
     def _should_enqueue(self, result: PipelineResult) -> bool:
         if result.scout.verdict != "INTERESTING":
