@@ -273,6 +273,7 @@ async def _start_orchestrator(
                 synthesizer=synthesizer,
                 cache=external_cache,
                 interval_s=app_config.external_sources.run_interval_s,
+                circuit_breaker_config=app_config.external_sources.circuit_breaker,
             )
             logger.info(
                 "External sources enabled: %s",

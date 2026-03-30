@@ -78,6 +78,8 @@ class TradingOrchestrator:
             logger.info("Reconciliation complete")
         if self._external_sentiment_loop is not None:
             await self._external_sentiment_loop.warm_up()
+        logger.info("Warming up order flow data")
+        await self._order_flow_loop.warm_up()
         logger.info("Launching async loops")
         self._loop_factories = {
             "ingest": self._ingest_loop.run,

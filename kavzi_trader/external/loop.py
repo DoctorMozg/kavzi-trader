@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from kavzi_trader.external.base import ExternalSource
 from kavzi_trader.external.cache import ExternalDataCache
+from kavzi_trader.external.circuit_breaker import CircuitBreaker
+from kavzi_trader.external.config import CircuitBreakerConfigSchema
 from kavzi_trader.external.schemas import (
     CryptoPanicDataSchema,
     DeribitDvolDataSchema,
@@ -41,11 +43,21 @@ class ExternalSentimentLoop:
         synthesizer: SentimentSynthesizerProtocol | None,
         cache: ExternalDataCache,
         interval_s: int = 300,
+        circuit_breaker_config: CircuitBreakerConfigSchema | None = None,
     ) -> None:
         self._sources = sources
         self._synthesizer = synthesizer
         self._cache = cache
         self._interval_s = interval_s
+        cb_cfg = circuit_breaker_config or CircuitBreakerConfigSchema()
+        self._breakers: dict[str, CircuitBreaker] = {
+            s.name: CircuitBreaker(
+                failure_threshold=cb_cfg.failure_threshold,
+                cooldown_s=float(cb_cfg.cooldown_s),
+                max_cooldown_s=float(cb_cfg.max_cooldown_s),
+            )
+            for s in sources
+        }
 
     async def warm_up(self) -> None:
         """Run a single fetch+synthesize cycle before the main loop starts."""
@@ -157,14 +169,27 @@ class ExternalSentimentLoop:
         )
 
     async def _fetch_one(self, source: ExternalSource) -> BaseModel | None:
+        breaker = self._breakers.get(source.name)
+        if breaker is not None and not breaker.should_allow():
+            logger.debug(
+                "Circuit open for %s, skipping fetch",
+                source.name,
+            )
+            return None
         try:
-            return await source.fetch()
+            result = await source.fetch()
         except Exception:
             logger.exception(
                 "External source %s fetch failed",
                 source.name,
             )
-            return None
+            result = None
+        if breaker is not None:
+            if result is not None:
+                breaker.record_success()
+            else:
+                breaker.record_failure()
+        return result
 
     @staticmethod
     def _typed_get[T: BaseModel](

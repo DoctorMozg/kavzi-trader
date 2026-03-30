@@ -109,4 +109,13 @@ class FilterConfigSchema(BaseModel):
         Field(default=90, ge=0, le=100),
     ] = 90
 
+    fgi_fear_bypass_confluence_min: Annotated[
+        int,
+        Field(default=9, ge=0, le=11),
+    ] = 9
+    fgi_fear_bypass_size_multiplier: Annotated[
+        Decimal,
+        Field(default=Decimal("0.5")),
+    ] = Decimal("0.5")
+
     model_config = ConfigDict(frozen=True)

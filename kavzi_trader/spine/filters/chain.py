@@ -52,7 +52,7 @@ class PreTradeFilterChain:
         self._spike_cooldown_filter = spike_cooldown_filter
         self._config = config or FilterConfigSchema()
 
-    async def evaluate(  # noqa: PLR0911
+    async def evaluate(  # noqa: PLR0911, PLR0912
         self,
         symbol: str,
         side: Literal["LONG", "SHORT"],
@@ -78,22 +78,40 @@ class PreTradeFilterChain:
             fgi_result = self._fear_greed_gate.evaluate()
             results.append(fgi_result)
             if not fgi_result.is_allowed:
-                logger.info(
-                    "Filter chain REJECTED for %s %s by FGI gate: %s",
-                    symbol,
-                    side,
-                    fgi_result.reason,
-                    extra={"symbol": symbol, "side": side},
-                )
-                return FilterChainResultSchema(
-                    is_allowed=False,
-                    rejection_reason=fgi_result.reason,
-                    size_multiplier=size_multiplier,
-                    results=results,
-                    confluence=None,
-                    volatility_regime=None,
-                    volatility_zscore=None,
-                )
+                fgi_bypass = self._config.fgi_fear_bypass_confluence_min
+                if (
+                    analyst_confluence_score is not None
+                    and analyst_confluence_score >= fgi_bypass
+                ):
+                    fgi_mult = self._config.fgi_fear_bypass_size_multiplier
+                    size_multiplier *= fgi_mult
+                    logger.info(
+                        "FGI gate bypassed for %s %s: confluence=%d >= %d, "
+                        "size_multiplier reduced by %s",
+                        symbol,
+                        side,
+                        analyst_confluence_score,
+                        fgi_bypass,
+                        fgi_mult,
+                        extra={"symbol": symbol, "side": side},
+                    )
+                else:
+                    logger.info(
+                        "Filter chain REJECTED for %s %s by FGI gate: %s",
+                        symbol,
+                        side,
+                        fgi_result.reason,
+                        extra={"symbol": symbol, "side": side},
+                    )
+                    return FilterChainResultSchema(
+                        is_allowed=False,
+                        rejection_reason=fgi_result.reason,
+                        size_multiplier=size_multiplier,
+                        results=results,
+                        confluence=None,
+                        volatility_regime=None,
+                        volatility_zscore=None,
+                    )
 
         current_atr = indicators.atr_14 or Decimal(0)
         if current_atr == Decimal(0):

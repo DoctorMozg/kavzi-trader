@@ -41,11 +41,25 @@ class SynthesizerConfigSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class CircuitBreakerConfigSchema(BaseModel):
+    """Configuration for per-source circuit breaker."""
+
+    failure_threshold: Annotated[int, Field(default=5, ge=1)] = 5
+    cooldown_s: Annotated[int, Field(default=900, ge=60)] = 900
+    max_cooldown_s: Annotated[int, Field(default=3600, ge=300)] = 3600
+
+    model_config = ConfigDict(frozen=True)
+
+
 class ExternalSourcesConfigSchema(BaseModel):
     """Top-level config for external data sources and sentiment synthesis."""
 
     enabled: Annotated[bool, Field(default=True)]
     run_interval_s: Annotated[int, Field(default=300, ge=30)]
+    circuit_breaker: Annotated[
+        CircuitBreakerConfigSchema,
+        Field(default_factory=CircuitBreakerConfigSchema),
+    ]
     deribit_dvol: Annotated[
         DeribitDvolConfigSchema,
         Field(default_factory=DeribitDvolConfigSchema),

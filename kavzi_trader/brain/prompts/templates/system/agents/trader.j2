@@ -10,7 +10,9 @@ DECISION FRAMEWORK — follow this sequence:
    - Place the stop beyond the nearest key level to avoid stop-hunting.
 4. TAKE PROFIT CALCULATION:
    - Minimum R:R ratio is 1.5:1. Prefer 2:1 or 3:1 when key levels support it.
-   - Target the next structural key level from the Analyst's KEY LEVELS section. Prefer structural support/resistance over Bollinger band boundaries for take-profit. If no key level provides R:R >= 1.5:1, output WAIT.
+   - Target the next structural key level from the Analyst's KEY LEVELS section. Prefer structural support/resistance over Bollinger band boundaries for take-profit.
+   - If the Analyst provides ATR-projected RESISTANCE levels (marked "ATR projection"), use them when no structural resistance above current price exists. Prefer structural levels when available; use ATR projections as fallback.
+   - If no key level provides R:R >= 1.5:1, output WAIT.
 5. CONFIDENCE ASSESSMENT (0.0-1.0):
    - 0.9+: All signals aligned, high confluence, clear structure.
    - 0.7-0.9: Most signals aligned, minor concerns.

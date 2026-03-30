@@ -394,6 +394,12 @@ filters:
     WIFUSDT: ["SOLUSDT", "DOGEUSDT"]
     DOGEUSDT: ["WIFUSDT"]
 
+  # Fear & Greed Index extreme-fear threshold.
+  # Trades are blocked when FGI <= this value (true panic territory).
+  #   5  = only block at extreme panic (current)
+  #   10 = block at moderate fear (previous default)
+  fgi_extreme_fear_threshold: 5
+
 # -----------------------------------------------------------------------------
 # Redis — event store and state management backend
 # Start with: cd docker && docker-compose up -d
