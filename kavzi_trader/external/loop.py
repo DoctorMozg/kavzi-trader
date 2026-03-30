@@ -22,6 +22,7 @@ class SentimentSynthesizerProtocol(Protocol):
     async def synthesize(
         self,
         snapshot: ExternalDataSnapshotSchema,
+        sources_degraded: list[str],
     ) -> SentimentSummarySchema | None: ...
 
 
@@ -30,7 +31,7 @@ class ExternalSentimentLoop:
 
     Each cycle:
     1. Fetch all sources in parallel via asyncio.gather
-    2. Build snapshot and store in cache
+    2. Build snapshot (with stale fallback) and store in cache
     3. Synthesize via LLM and store summary in cache
     """
 
@@ -65,14 +66,15 @@ class ExternalSentimentLoop:
     async def _cycle(self) -> None:
         t0 = time.monotonic()
 
-        # 1. Fetch all sources in parallel
-        snapshot = await self._fetch_all()
+        # 1. Fetch all sources in parallel (with stale fallback)
+        snapshot, sources_degraded = await self._fetch_all()
         self._cache.set_snapshot(snapshot)
+        self._cache.set_sources_degraded(sources_degraded)
 
         # 2. Synthesize if enabled
         if self._synthesizer is not None and not snapshot.is_empty():
             try:
-                summary = await self._synthesizer.synthesize(snapshot)
+                summary = await self._synthesizer.synthesize(snapshot, sources_degraded)
                 if summary is not None:
                     self._cache.set_sentiment_summary(summary)
             except Exception:
@@ -87,13 +89,17 @@ class ExternalSentimentLoop:
             extra={"elapsed_ms": round(elapsed_ms, 1)},
         )
 
-    async def _fetch_all(self) -> ExternalDataSnapshotSchema:
+    async def _fetch_all(
+        self,
+    ) -> tuple[ExternalDataSnapshotSchema, list[str]]:
         results = await asyncio.gather(
             *(self._fetch_one(source) for source in self._sources),
             return_exceptions=True,
         )
 
         source_data: dict[str, BaseModel] = {}
+        sources_degraded: list[str] = []
+
         for source, result in zip(self._sources, results, strict=True):
             if isinstance(result, BaseException):
                 logger.exception(
@@ -101,30 +107,53 @@ class ExternalSentimentLoop:
                     source.name,
                     exc_info=result,
                 )
-            elif result is not None:
+                result = None  # noqa: PLW2901 — treat exception as missing
+            if result is not None:
+                # Fresh data — update last-successful cache
                 source_data[source.name] = result
+                self._cache.set_last_successful(source.name, result)
+            else:
+                # Fetch failed — try stale fallback
+                stale = self._cache.get_last_successful(source.name, BaseModel)
+                if stale is not None:
+                    source_data[source.name] = stale
+                    sources_degraded.append(source.name)
+                    logger.warning(
+                        "External source %s failed, using stale cached value",
+                        source.name,
+                    )
 
-        fetched = sorted(source_data.keys())
+        fetched_fresh = sorted(
+            name for name in source_data if name not in sources_degraded
+        )
         failed = sorted(
-            source.name
-            for source, result in zip(self._sources, results, strict=True)
-            if isinstance(result, BaseException) or result is None
+            source.name for source in self._sources if source.name not in source_data
         )
         logger.info(
-            "External fetch complete: ok=%s failed=%s",
-            fetched or "none",
+            "External fetch complete: fresh=%s stale=%s failed=%s",
+            fetched_fresh or "none",
+            sources_degraded or "none",
             failed or "none",
-            extra={"fetched": fetched, "failed": failed},
+            extra={
+                "fetched_fresh": fetched_fresh,
+                "stale": sources_degraded,
+                "failed": failed,
+            },
         )
 
-        return ExternalDataSnapshotSchema(
-            deribit_dvol=self._typed_get(
-                source_data, "deribit_dvol", DeribitDvolDataSchema
+        return (
+            ExternalDataSnapshotSchema(
+                deribit_dvol=self._typed_get(
+                    source_data, "deribit_dvol", DeribitDvolDataSchema
+                ),
+                fear_greed=self._typed_get(
+                    source_data, "fear_greed", FearGreedDataSchema
+                ),
+                cryptopanic=self._typed_get(
+                    source_data, "cryptopanic", CryptoPanicDataSchema
+                ),
             ),
-            fear_greed=self._typed_get(source_data, "fear_greed", FearGreedDataSchema),
-            cryptopanic=self._typed_get(
-                source_data, "cryptopanic", CryptoPanicDataSchema
-            ),
+            sources_degraded,
         )
 
     async def _fetch_one(self, source: ExternalSource) -> BaseModel | None:

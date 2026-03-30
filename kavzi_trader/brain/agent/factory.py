@@ -102,8 +102,11 @@ class AgentFactory:
         global_timeout_s: float,
     ) -> ModelSettings:
         effective_timeout = tier.timeout_s or global_timeout_s
+        extra_body: dict[str, object] = {"provider": {"sort": "latency"}}
+        if tier.seed is not None:
+            extra_body["seed"] = tier.seed
         return ModelSettings(
             temperature=tier.temperature,
             timeout=effective_timeout,
-            extra_body={"provider": {"sort": "latency"}},
+            extra_body=extra_body,
         )

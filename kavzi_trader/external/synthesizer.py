@@ -109,6 +109,7 @@ class SentimentSynthesizer:
     async def synthesize(
         self,
         snapshot: ExternalDataSnapshotSchema,
+        sources_degraded: list[str] | None = None,
     ) -> SentimentSummarySchema | None:
         if snapshot.is_empty():
             logger.debug("Empty snapshot, returning neutral summary")
@@ -116,11 +117,22 @@ class SentimentSynthesizer:
                 summary="No external data available. Treating sentiment as neutral.",
                 sentiment_bias="NEUTRAL",
                 confidence_adjustment=Decimal(0),
+                sources_degraded=sources_degraded or [],
+            )
+
+        degraded = sources_degraded or []
+        data_block = _format_snapshot_for_prompt(snapshot)
+        if degraded:
+            data_block += (
+                "\n\nDATA QUALITY WARNING: The following sources are using "
+                "stale cached data from a previous cycle: "
+                + ", ".join(degraded)
+                + ". Weight these signals with lower confidence."
             )
 
         user_prompt = self._prompt_loader.render_user_prompt(
             "synthesize_sentiment",
-            {"external_data_block": _format_snapshot_for_prompt(snapshot)},
+            {"external_data_block": data_block},
         )
 
         last_error: Exception | None = None
@@ -144,6 +156,7 @@ class SentimentSynthesizer:
                 summary=output.summary,
                 sentiment_bias=output.sentiment_bias,
                 confidence_adjustment=Decimal(str(output.confidence_adjustment)),
+                sources_degraded=degraded,
             )
             logger.info(
                 "Sentiment synthesized: bias=%s adjustment=%s summary=%s",

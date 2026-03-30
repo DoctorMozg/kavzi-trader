@@ -46,6 +46,7 @@ brain:
     model_id: "openai/gpt-5.4-mini"
     retries: 2
     temperature: 0.0
+    seed: 42
 
   trader:
     # Tier 3 — Final decision: 87.82% accuracy, most token-efficient ($5.00/$25.00 per M tokens)

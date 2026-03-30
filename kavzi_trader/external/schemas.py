@@ -103,5 +103,12 @@ class SentimentSummarySchema(BaseModel):
             description="Suggested confidence adjustment for analyst/trader",
         ),
     ]
+    sources_degraded: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            description="Sources using stale cached data this cycle",
+        ),
+    ]
 
     model_config = ConfigDict(frozen=True)

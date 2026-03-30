@@ -27,5 +27,6 @@ class DecisionMessageSchema(BaseModel):
     current_atr: Annotated[Decimal, Field(...)]
     atr_history: Annotated[list[Decimal], Field(default_factory=list)]
     leverage: Annotated[int, Field(default=3, ge=1, le=125)]
+    symbol_tier: Annotated[str, Field(default="TIER_2")]
 
     model_config = ConfigDict(frozen=True)

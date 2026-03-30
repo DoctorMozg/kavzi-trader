@@ -1,5 +1,4 @@
 import logging
-import time
 from decimal import Decimal
 from typing import Literal
 
@@ -42,17 +41,14 @@ class ScoutFilter:
     # ------------------------------------------------------------------
 
     async def run(self, deps: ScoutDependenciesSchema) -> ScoutDecisionSchema:
-        t0 = time.monotonic()
         result = self._evaluate(deps)
-        elapsed_ms = (time.monotonic() - t0) * 1000
         logger.info(
-            "Scout result for %s: verdict=%s reason=%s pattern=%s elapsed_ms=%.1f",
+            "Scout result for %s: verdict=%s reason=%s pattern=%s",
             deps.symbol,
             result.verdict,
             result.reason,
             result.pattern_detected,
-            elapsed_ms,
-            extra={"symbol": deps.symbol, "elapsed_ms": round(elapsed_ms, 1)},
+            extra={"symbol": deps.symbol},
         )
         return result
 
@@ -65,8 +61,9 @@ class ScoutFilter:
         ind = deps.indicators
         regime = deps.volatility_regime.value
 
-        # --- Volatility gate ---
-        if regime in cfg.blocked_regimes:
+        # --- Volatility gate (TIER_1 allowed through EXTREME with reduced size) ---
+        tier1_extreme = regime == "EXTREME" and deps.symbol_tier == "TIER_1"
+        if regime in cfg.blocked_regimes and not tier1_extreme:
             return ScoutDecisionSchema(
                 verdict="SKIP",
                 reason=f"Volatility regime {regime} blocks trading",

@@ -18,7 +18,7 @@ from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
 from kavzi_trader.spine.filters.spike_cooldown import SpikeCooldownFilter
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.spine.risk.schemas import get_regime_size_multiplier
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.schemas import PositionSchema
 
@@ -62,6 +62,7 @@ class PreTradeFilterChain:
         positions: list[PositionSchema],
         atr_history: list[Decimal],
         analyst_confluence_score: int | None = None,
+        symbol_tier: str = "TIER_2",
     ) -> FilterChainResultSchema:
         results: list[FilterResultSchema] = []
         size_multiplier = Decimal("1.0")
@@ -106,10 +107,8 @@ class PreTradeFilterChain:
                 symbol,
             )
         regime = self._volatility_detector.detect_regime(current_atr, atr_history)
-        volatility_allowed = regime.regime in {
-            VolatilityRegime.NORMAL,
-            VolatilityRegime.HIGH,
-        }
+        tier_multiplier = get_regime_size_multiplier(regime.regime, symbol_tier)
+        volatility_allowed = tier_multiplier > Decimal(0)
         volatility_result = FilterResultSchema(
             name="volatility",
             is_allowed=volatility_allowed,
@@ -117,10 +116,11 @@ class PreTradeFilterChain:
         )
         results.append(volatility_result)
         logger.debug(
-            "Filter volatility: allowed=%s regime=%s zscore=%s",
+            "Filter volatility: allowed=%s regime=%s zscore=%s tier=%s",
             volatility_allowed,
             regime.regime.value,
             regime.atr_zscore,
+            symbol_tier,
         )
         if not volatility_allowed:
             logger.info(
@@ -139,6 +139,8 @@ class PreTradeFilterChain:
                 volatility_regime=regime.regime,
                 volatility_zscore=regime.atr_zscore,
             )
+        # Apply tier-aware regime multiplier
+        size_multiplier *= tier_multiplier
 
         funding_result = self._funding_filter.evaluate(
             side=side,

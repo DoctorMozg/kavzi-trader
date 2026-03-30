@@ -48,6 +48,7 @@ class ScoutDependenciesSchema(BaseModel):
     recent_candles: Annotated[list[CandlestickSchema], Field(..., min_length=1)]
     indicators: Annotated[TechnicalIndicatorsSchema, Field(...)]
     volatility_regime: Annotated[VolatilityRegime, Field(...)]
+    symbol_tier: Annotated[str, Field(default="TIER_2")]
 
     model_config = ConfigDict(frozen=True)
 

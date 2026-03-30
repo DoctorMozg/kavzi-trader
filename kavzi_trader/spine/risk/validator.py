@@ -48,6 +48,7 @@ class DynamicRiskValidator:
         state_manager: StateManager,
         leverage: int = 1,
         confidence: Decimal | None = None,
+        symbol_tier: str = "TIER_2",
     ) -> RiskValidationResultSchema:
         rejection_reasons: list[str] = []
         warnings: list[str] = []
@@ -91,7 +92,7 @@ class DynamicRiskValidator:
             rejection_reasons.append(exposure_result)
         logger.debug("Exposure check: result=%s", exposure_result)
 
-        regime_result = self._check_volatility_regime(regime)
+        regime_result = self._check_volatility_regime(regime, symbol_tier)
         if regime_result:
             rejection_reasons.append(regime_result)
         logger.debug(
@@ -239,8 +240,11 @@ class DynamicRiskValidator:
     def _check_volatility_regime(
         self,
         regime: VolatilityRegimeSchema,
+        symbol_tier: str = "TIER_2",
     ) -> str | None:
         if regime.regime == VolatilityRegime.EXTREME:
+            if symbol_tier == "TIER_1":
+                return None  # TIER_1 allowed through EXTREME with reduced sizing
             return f"EXTREME volatility (Z-score: {regime.atr_zscore}) - blocked"
         if regime.regime == VolatilityRegime.LOW:
             return f"LOW volatility (Z-score: {regime.atr_zscore}) - no movement"

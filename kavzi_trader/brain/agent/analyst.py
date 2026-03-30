@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import time
 from typing import cast
@@ -31,19 +32,25 @@ class AnalystAgent:
         logger.debug("Analyst building context for %s", deps.symbol)
         context = self._context_builder.build_analyst_context(deps)
         user_prompt = self._prompt_loader.render_user_prompt("analyze_setup", context)
+        prompt_hash = hashlib.sha256(user_prompt.encode()).hexdigest()[:12]
         t0 = time.monotonic()
         result = await self._agent.run(user_prompt, deps=deps)
         elapsed_ms = (time.monotonic() - t0) * 1000
         output = cast("AnalystDecisionSchema", result.output)
         logger.info(
             "Analyst result for %s: setup_valid=%s direction=%s "
-            "confluence=%d elapsed_ms=%.1f",
+            "confluence=%d elapsed_ms=%.1f prompt_hash=%s",
             deps.symbol,
             output.setup_valid,
             output.direction,
             output.confluence_score,
             elapsed_ms,
-            extra={"symbol": deps.symbol, "elapsed_ms": round(elapsed_ms, 1)},
+            prompt_hash,
+            extra={
+                "symbol": deps.symbol,
+                "elapsed_ms": round(elapsed_ms, 1),
+                "prompt_hash": prompt_hash,
+            },
         )
         logger.debug(
             "Analyst reasoning for %s: %s",

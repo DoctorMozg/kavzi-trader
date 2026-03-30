@@ -264,6 +264,7 @@ class ReasoningLoop:
             positions=positions,
             atr_history=deps.atr_history,
             analyst_confluence_score=confluence_score,
+            symbol_tier=deps.symbol_tier,
         )
 
     async def _get_open_positions(self) -> list[PositionSchema]:
@@ -406,4 +407,5 @@ class ReasoningLoop:
             current_atr=atr,
             atr_history=deps.atr_history,
             leverage=deps.leverage,
+            symbol_tier=deps.symbol_tier,
         )

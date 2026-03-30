@@ -134,6 +134,11 @@ class LiveDependenciesProvider:
         """Check whether indicators have been computed for *symbol*."""
         return self._cache.get_indicators(symbol) is not None
 
+    def _get_symbol_tier(self, symbol: str) -> str:
+        if self._tier_registry is None:
+            return "TIER_2"
+        return self._tier_registry.get_tier(symbol).value
+
     async def get_scout(self, symbol: str) -> ScoutDependenciesSchema:
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:
@@ -147,6 +152,7 @@ class LiveDependenciesProvider:
             recent_candles=self._recent_candles(symbol),
             indicators=indicators,
             volatility_regime=self._get_regime(symbol),
+            symbol_tier=self._get_symbol_tier(symbol),
         )
 
     async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema:

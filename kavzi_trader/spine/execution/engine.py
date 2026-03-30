@@ -95,6 +95,7 @@ class ExecutionEngine:
             atr_history=decision.atr_history,
             state_manager=self._state_manager,
             leverage=self._leverage,
+            symbol_tier=decision.symbol_tier,
         )
 
         if not validation.is_valid:
