@@ -70,6 +70,20 @@ class ScoutFilter:
                 pattern_detected=None,
             )
 
+        # --- ATR compression gate ---
+        # Reject symbols where ATR is too small relative to price for viable
+        # stop-loss placement.  Saves Analyst/Trader API calls on range-bound
+        # instruments (see report_2026_03_31b Priority 2).
+        atr_pct = self._atr_pct(ind, deps.current_price)
+        if atr_pct is not None and atr_pct < cfg.atr_pct_min:
+            return ScoutDecisionSchema(
+                verdict="SKIP",
+                reason=(
+                    f"ATR compressed (atr_pct={atr_pct:.4f}%, min={cfg.atr_pct_min}%)"
+                ),
+                pattern_detected=None,
+            )
+
         # --- Volume gates ---
         vol_ratio = self._vol_ratio(ind)
         if vol_ratio is not None and vol_ratio < cfg.vol_ratio_hard_skip:
@@ -331,6 +345,12 @@ class ScoutFilter:
         if ind.ema_20 < ind.ema_50 < ind.ema_200:
             return "BEARISH"
         return "NEUTRAL"
+
+    @staticmethod
+    def _atr_pct(ind: TechnicalIndicatorsSchema, price: Decimal) -> Decimal | None:
+        if ind.atr_14 is None or price == _ZERO:
+            return None
+        return ind.atr_14 / price * 100
 
     @staticmethod
     def _vol_ratio(ind: TechnicalIndicatorsSchema) -> Decimal | None:

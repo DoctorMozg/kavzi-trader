@@ -85,10 +85,7 @@ async def test_headlines_capped_at_max_headlines() -> None:
     resp = Mock()
     resp.raise_for_status = Mock()
     resp.json.return_value = {
-        "Data": [
-            {"TITLE": f"Headline {i}", "SENTIMENT": "POSITIVE"}
-            for i in range(8)
-        ],
+        "Data": [{"TITLE": f"Headline {i}", "SENTIMENT": "POSITIVE"} for i in range(8)],
     }
     source._client = Mock()
     source._client.get = AsyncMock(return_value=resp)
@@ -103,10 +100,7 @@ async def test_custom_max_headlines() -> None:
     resp = Mock()
     resp.raise_for_status = Mock()
     resp.json.return_value = {
-        "Data": [
-            {"TITLE": f"Headline {i}", "SENTIMENT": "POSITIVE"}
-            for i in range(8)
-        ],
+        "Data": [{"TITLE": f"Headline {i}", "SENTIMENT": "POSITIVE"} for i in range(8)],
     }
     source._client = Mock()
     source._client.get = AsyncMock(return_value=resp)
@@ -154,5 +148,5 @@ async def test_empty_data_array() -> None:
     assert result.bullish_count == 0
     assert result.bearish_count == 0
     assert result.neutral_count == 0
-    assert result.sentiment_score == Decimal("0")
+    assert result.sentiment_score == Decimal(0)
     assert result.top_headlines == []

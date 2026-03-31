@@ -22,6 +22,18 @@ class ScoutConfigSchema(BaseModel):
         Field(default_factory=lambda: ["LOW", "EXTREME"]),
     ]
 
+    # --- ATR compression gate ---
+
+    # Minimum ATR as a percentage of current price.
+    # Below this threshold the market is too compressed for viable stop placement.
+    #   0.2 = permissive (allows tighter ranges)
+    #   0.3 = default (report-validated: TONUSDT ATR=0.0029 at price ~1.22 ≈ 0.24%)
+    #   0.5 = strict
+    atr_pct_min: Annotated[
+        Decimal,
+        Field(default=Decimal("0.3")),
+    ]
+
     # --- Volume gates ---
 
     # Volume ratio below which SKIP is forced regardless of other signals.

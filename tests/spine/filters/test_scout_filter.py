@@ -52,6 +52,7 @@ def _make_indicators(
     vol_ratio: Decimal | None = Decimal("1.0"),
     percent_b: Decimal | None = Decimal("0.5"),
     macd_histogram: Decimal | None = None,
+    atr_14: Decimal | None = Decimal(5),
 ) -> TechnicalIndicatorsSchema:
     volume = (
         VolumeAnalysisSchema(
@@ -91,7 +92,7 @@ def _make_indicators(
         rsi_14=rsi_14,
         macd=macd,
         bollinger=bollinger,
-        atr_14=Decimal(5),
+        atr_14=atr_14,
         volume=volume,
         timestamp=_NOW,
     )
@@ -155,6 +156,53 @@ async def test_high_regime_proceeds(scout: ScoutFilter) -> None:
     deps = _make_deps(_make_indicators(), regime=VolatilityRegime.HIGH)
     result = await scout.run(deps)
     assert "Volatility regime" not in result.reason
+
+
+# ------------------------------------------------------------------
+# ATR compression gate
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_atr_compressed_skip(scout: ScoutFilter) -> None:
+    """ATR < 0.3% of price → SKIP before any pattern check."""
+    ind = _make_indicators(atr_14=Decimal("0.003"))
+    deps = _make_deps(ind)  # current_price=105, atr_pct ≈ 0.0029%
+    result = await scout.run(deps)
+    assert result.verdict == "SKIP"
+    assert "ATR compressed" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_atr_at_threshold_passes(scout: ScoutFilter) -> None:
+    """ATR exactly at 0.3% of price should NOT be blocked."""
+    # 0.3% of 105 = 0.315
+    ind = _make_indicators(atr_14=Decimal("0.315"))
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert "ATR compressed" not in result.reason
+
+
+@pytest.mark.asyncio
+async def test_atr_none_passes(scout: ScoutFilter) -> None:
+    """Missing ATR should not block (gate is skipped)."""
+    ind = _make_indicators(atr_14=None)
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert "ATR compressed" not in result.reason
+
+
+@pytest.mark.asyncio
+async def test_atr_custom_threshold() -> None:
+    """Custom stricter ATR threshold blocks a marginal setup."""
+    cfg = ScoutConfigSchema(atr_pct_min=Decimal("1.0"))
+    scout = ScoutFilter(cfg)
+    # atr_pct = 0.5 / 105 * 100 ≈ 0.476%, below 1.0%
+    ind = _make_indicators(atr_14=Decimal("0.5"))
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert result.verdict == "SKIP"
+    assert "ATR compressed" in result.reason
 
 
 # ------------------------------------------------------------------
