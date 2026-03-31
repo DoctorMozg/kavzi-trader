@@ -5,69 +5,63 @@ from decimal import Decimal
 import httpx
 
 from kavzi_trader.external.base import ExternalSource
-from kavzi_trader.external.schemas import CryptoPanicDataSchema
+from kavzi_trader.external.schemas import CCDataNewsDataSchema
 
 logger = logging.getLogger(__name__)
 
-_CRYPTOPANIC_URL = "https://cryptopanic.com/api/developer/v2/posts/"
+_CCDATA_NEWS_URL = "https://data-api.ccdata.io/news/v1/article/list"
 _TIMEOUT_S = 10.0
 
 
-class CryptoPanicSource(ExternalSource):
-    """Fetches news sentiment from CryptoPanic API."""
+class CCDataNewsSource(ExternalSource):
+    """Fetches news sentiment from CCData (CryptoCompare successor) API.
+
+    No API key required. Each article includes a pre-computed SENTIMENT
+    field (POSITIVE/NEGATIVE/NEUTRAL) which we aggregate into counts.
+    """
 
     def __init__(
         self,
-        api_key: str,
         max_results: int = 20,
         max_headlines: int = 5,
     ) -> None:
-        self._api_key = api_key
         self._max_results = max_results
         self._max_headlines = max_headlines
         self._client = httpx.AsyncClient(timeout=_TIMEOUT_S)
 
     @property
     def name(self) -> str:
-        return "cryptopanic"
+        return "ccdata_news"
 
-    async def fetch(self) -> CryptoPanicDataSchema | None:
-        logger.info("Fetching CryptoPanic news sentiment")
+    async def fetch(self) -> CCDataNewsDataSchema | None:
+        logger.info("Fetching CCData news sentiment")
         try:
             resp = await self._client.get(
-                _CRYPTOPANIC_URL,
+                _CCDATA_NEWS_URL,
                 params={
-                    "auth_token": self._api_key,
-                    "currencies": "BTC,ETH",
-                    "kind": "news",
-                    "public": "true",
+                    "lang": "EN",
+                    "categories": "BTC,ETH",
+                    "limit": self._max_results,
                 },
             )
             resp.raise_for_status()
             body = resp.json()
-            if body.get("status") == "api_error":
-                logger.warning(
-                    "CryptoPanic API error: %s",
-                    body.get("info", "unknown"),
-                )
-                return None
-            posts: list[dict[str, object]] = body.get("results", [])
-            posts = posts[: self._max_results]
+            articles: list[dict[str, object]] = body.get("Data", [])
         except Exception:
-            logger.exception("CryptoPanic fetch failed")
+            logger.exception("CCData news fetch failed")
             return None
         else:
-            result = self._parse_posts(posts)
+            result = self._parse_articles(articles)
             logger.info(
-                "CryptoPanic fetched: posts=%d bullish=%d bearish=%d "
+                "CCData news fetched: articles=%d bullish=%d bearish=%d "
                 "neutral=%d score=%.2f",
-                len(posts),
+                len(articles),
                 result.bullish_count,
                 result.bearish_count,
                 result.neutral_count,
                 result.sentiment_score,
                 extra={
-                    "posts_count": len(posts),
+                    "articles_count": len(articles),
                     "bullish": result.bullish_count,
                     "bearish": result.bearish_count,
                     "sentiment_score": float(result.sentiment_score),
@@ -75,39 +69,32 @@ class CryptoPanicSource(ExternalSource):
             )
             return result
 
-    def _parse_posts(
+    def _parse_articles(
         self,
-        posts: list[dict[str, object]],
-    ) -> CryptoPanicDataSchema:
+        articles: list[dict[str, object]],
+    ) -> CCDataNewsDataSchema:
         bullish = 0
         bearish = 0
         neutral = 0
         headlines: list[str] = []
 
-        for post in posts:
-            title = str(post.get("title", ""))
+        for article in articles:
+            title = str(article.get("TITLE", ""))
             if title:
                 headlines.append(title)
 
-            votes = post.get("votes", {})
-            if not isinstance(votes, dict):
-                neutral += 1
-                continue
-
-            positive = int(votes.get("positive", 0))
-            negative = int(votes.get("negative", 0))
-
-            if positive > negative:
+            sentiment = str(article.get("SENTIMENT", "NEUTRAL")).upper()
+            if sentiment == "POSITIVE":
                 bullish += 1
-            elif negative > positive:
+            elif sentiment == "NEGATIVE":
                 bearish += 1
             else:
                 neutral += 1
 
-        total = max(len(posts), 1)
+        total = max(len(articles), 1)
         score = Decimal(str((bullish - bearish) / total))
 
-        return CryptoPanicDataSchema(
+        return CCDataNewsDataSchema(
             bullish_count=bullish,
             bearish_count=bearish,
             neutral_count=neutral,

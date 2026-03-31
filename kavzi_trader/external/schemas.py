@@ -38,8 +38,8 @@ class FearGreedDataSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-class CryptoPanicDataSchema(BaseModel):
-    """Aggregated news sentiment from CryptoPanic."""
+class CCDataNewsDataSchema(BaseModel):
+    """Aggregated news sentiment from CCData (CryptoCompare successor)."""
 
     bullish_count: Annotated[int, Field(default=0)]
     bearish_count: Annotated[int, Field(default=0)]
@@ -66,7 +66,7 @@ class ExternalDataSnapshotSchema(BaseModel):
 
     deribit_dvol: Annotated[DeribitDvolDataSchema | None, Field(default=None)]
     fear_greed: Annotated[FearGreedDataSchema | None, Field(default=None)]
-    cryptopanic: Annotated[CryptoPanicDataSchema | None, Field(default=None)]
+    ccdata_news: Annotated[CCDataNewsDataSchema | None, Field(default=None)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -75,7 +75,7 @@ class ExternalDataSnapshotSchema(BaseModel):
         return (
             self.deribit_dvol is None
             and self.fear_greed is None
-            and self.cryptopanic is None
+            and self.ccdata_news is None
         )
 
 

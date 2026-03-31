@@ -104,17 +104,17 @@ The system tracks Binance funding. Adding Bybit + OKX + Hyperliquid creates a di
 
 ---
 
-### 6. CryptoPanic News Sentiment
+### 6. CCData News Sentiment (CryptoCompare successor)
 
 ```
-GET https://cryptopanic.com/api/developer/v2/posts/?auth_token=KEY&currencies=BTC,ETH&filter=rising
+GET https://data-api.ccdata.io/news/v1/article/list?lang=EN&categories=BTC,ETH&limit=20
 ```
 
-Free API key from cryptopanic.com/developers/api. ~200 req/hr. News from 100+ sources with community voting (bullish/bearish/important).
+Free, no API key required. News from 200+ sources with pre-computed sentiment (POSITIVE/NEGATIVE/NEUTRAL) per article and community voting (upvotes/downvotes).
 
-**Signal**: Spike in bearish votes in the 5 min before candle close = strong skip signal. `filter=rising` surfaces rapidly-trending news 5-15 min before price reaction on average.
+**Signal**: Spike in negative sentiment articles in the 5 min before candle close = strong skip signal. Pre-computed sentiment per article eliminates need for vote-based inference.
 
-**Integration**: Async polling at 60-second intervals. Pass top-3 headlines with vote counts to Scout/Analyst context. Compute rolling `news_sentiment_score` from vote aggregation.
+**Integration**: Async polling at 300-second intervals. Pass top-5 headlines with sentiment counts to Analyst/Trader context via Sentiment Synthesizer. Compute `news_sentiment_score` from sentiment aggregation.
 
 ---
 
@@ -283,7 +283,7 @@ Group correlated signals into composite stacks:
 ### Staleness Handling
 
 Apply the same staleness validation pattern already in the execution engine:
-- If CryptoPanic hasn't updated in 15 min -> pass `news_data_stale: true`
+- If CCData news hasn't updated in 15 min -> pass `news_data_stale: true`
 - FRED daily data -> mark stale if significant macro event since last update
 - All external sources -> degrade gracefully to existing signals if external data unavailable
 
@@ -297,7 +297,7 @@ Apply the same staleness validation pattern already in the execution engine:
 | Bybit Liquidations | Liquidations | No | Unlimited (WS) | 500ms | Free |
 | Hyperliquid | Derivatives | No | Unlimited (WS) | Real-time | Free |
 | OKX Liquidations | Liquidations | No | 20 req/2s | Real-time | Free |
-| CryptoPanic | News/Sentiment | Yes (free) | ~200 req/hr | 1-5 min | Free |
+| CCData News | News/Sentiment | No | Generous | 1-5 min | Free |
 | Deribit DVOL | Options/IV | No | 20 req/s | Real-time | Free |
 | Deribit Put/Call | Options | No | 20 req/s | Real-time | Free |
 | DefiLlama | DeFi/Unlocks | No | Generous | Near-real-time | Free |
@@ -329,7 +329,7 @@ Apply the same staleness validation pattern already in the execution engine:
 4. DefiLlama token unlocks filter (daily check, Scout skip rule)
 
 **Week 2 — Low Effort, High Signal:**
-5. CryptoPanic news feed (async polling at 60s intervals, pass top-3 headlines to Scout context)
+5. CCData news feed (async polling at 300s intervals, pass top-5 headlines to Analyst/Trader context)
 6. Hyperliquid + Bybit + OKX funding rates (cross-exchange divergence score)
 7. FRED API for 10Y yield and DXY proxy (daily cache, Trader sizing multiplier)
 8. Mempool.space hash rate (weekly cache, BTC regime classification)
@@ -352,7 +352,7 @@ Apply the same staleness validation pattern already in the execution engine:
 
 ## References
 
-- [CryptoPanic API](https://cryptopanic.com/developers/api/)
+- [CCData News API](https://developers.ccdata.io/)
 - [Alternative.me Fear & Greed](https://alternative.me/crypto/fear-and-greed-index/)
 - [Deribit API](https://docs.deribit.com/)
 - [DefiLlama API](https://api-docs.defillama.com/)

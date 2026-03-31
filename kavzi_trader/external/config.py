@@ -19,10 +19,10 @@ class FearGreedConfigSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-class CryptoPanicConfigSchema(BaseModel):
-    """Configuration for CryptoPanic news sentiment source."""
+class CCDataNewsConfigSchema(BaseModel):
+    """Configuration for CCData news sentiment source (no API key required)."""
 
-    enabled: Annotated[bool, Field(default=False)]
+    enabled: Annotated[bool, Field(default=True)]
     max_results: Annotated[int, Field(default=20, ge=1, le=50)]
     max_headlines: Annotated[int, Field(default=5, ge=1, le=20)]
 
@@ -69,9 +69,9 @@ class ExternalSourcesConfigSchema(BaseModel):
         FearGreedConfigSchema,
         Field(default_factory=FearGreedConfigSchema),
     ]
-    cryptopanic: Annotated[
-        CryptoPanicConfigSchema,
-        Field(default_factory=CryptoPanicConfigSchema),
+    ccdata_news: Annotated[
+        CCDataNewsConfigSchema,
+        Field(default_factory=CCDataNewsConfigSchema),
     ]
     synthesizer: Annotated[
         SynthesizerConfigSchema,

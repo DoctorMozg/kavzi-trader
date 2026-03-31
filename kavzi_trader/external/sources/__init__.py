@@ -1,9 +1,8 @@
 import logging
-import os
 
 from kavzi_trader.external.base import ExternalSource
 from kavzi_trader.external.config import ExternalSourcesConfigSchema
-from kavzi_trader.external.sources.cryptopanic import CryptoPanicSource
+from kavzi_trader.external.sources.ccdata_news import CCDataNewsSource
 from kavzi_trader.external.sources.deribit_dvol import DeribitDvolSource
 from kavzi_trader.external.sources.fear_greed import FearGreedSource
 
@@ -24,20 +23,13 @@ def build_enabled_sources(
         sources.append(FearGreedSource())
         logger.info("External source enabled: fear_greed")
 
-    if config.cryptopanic.enabled:
-        api_key = os.getenv("KT_CRYPTOPANIC_API_KEY", "")
-        if api_key:
-            sources.append(
-                CryptoPanicSource(
-                    api_key=api_key,
-                    max_results=config.cryptopanic.max_results,
-                    max_headlines=config.cryptopanic.max_headlines,
-                ),
-            )
-            logger.info("External source enabled: cryptopanic")
-        else:
-            logger.warning(
-                "CryptoPanic enabled but KT_CRYPTOPANIC_API_KEY not set, skipping",
-            )
+    if config.ccdata_news.enabled:
+        sources.append(
+            CCDataNewsSource(
+                max_results=config.ccdata_news.max_results,
+                max_headlines=config.ccdata_news.max_headlines,
+            ),
+        )
+        logger.info("External source enabled: ccdata_news")
 
     return sources

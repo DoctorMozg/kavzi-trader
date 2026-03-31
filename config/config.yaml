@@ -602,9 +602,9 @@ external_sources:
   fear_greed:
     enabled: true
 
-  # CryptoPanic News Sentiment
-  # Requires KT_CRYPTOPANIC_API_KEY env var. ~200 req/hr.
-  cryptopanic:
+  # CCData News Sentiment (CryptoCompare successor)
+  # Free, no API key required.
+  ccdata_news:
     enabled: true
     max_results: 20
     max_headlines: 5

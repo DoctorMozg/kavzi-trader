@@ -10,7 +10,7 @@ from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.external.circuit_breaker import CircuitBreaker
 from kavzi_trader.external.config import CircuitBreakerConfigSchema
 from kavzi_trader.external.schemas import (
-    CryptoPanicDataSchema,
+    CCDataNewsDataSchema,
     DeribitDvolDataSchema,
     ExternalDataSnapshotSchema,
     FearGreedDataSchema,
@@ -162,8 +162,8 @@ class ExternalSentimentLoop:
                 fear_greed=self._typed_get(
                     source_data, "fear_greed", FearGreedDataSchema
                 ),
-                cryptopanic=self._typed_get(
-                    source_data, "cryptopanic", CryptoPanicDataSchema
+                ccdata_news=self._typed_get(
+                    source_data, "ccdata_news", CCDataNewsDataSchema
                 ),
             ),
             sources_degraded,

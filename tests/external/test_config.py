@@ -1,5 +1,5 @@
 from kavzi_trader.external.config import (
-    CryptoPanicConfigSchema,
+    CCDataNewsConfigSchema,
     DeribitDvolConfigSchema,
     ExternalSourcesConfigSchema,
     FearGreedConfigSchema,
@@ -13,7 +13,7 @@ def test_defaults() -> None:
     assert config.run_interval_s == 300
     assert config.deribit_dvol.enabled is True
     assert config.fear_greed.enabled is True
-    assert config.cryptopanic.enabled is False
+    assert config.ccdata_news.enabled is True
     assert config.synthesizer.enabled is True
 
 
@@ -27,9 +27,9 @@ def test_fear_greed_defaults() -> None:
     assert config.enabled is True
 
 
-def test_cryptopanic_defaults() -> None:
-    config = CryptoPanicConfigSchema()
-    assert config.enabled is False
+def test_ccdata_news_defaults() -> None:
+    config = CCDataNewsConfigSchema()
+    assert config.enabled is True
     assert config.max_results == 20
     assert config.max_headlines == 5
 
@@ -47,14 +47,14 @@ def test_custom_values() -> None:
         {
             "enabled": False,
             "run_interval_s": 600,
-            "cryptopanic": {"enabled": True, "max_results": 10},
+            "ccdata_news": {"enabled": False, "max_results": 10},
             "synthesizer": {"model_id": "custom/model", "retries": 3},
         },
     )
     assert config.enabled is False
     assert config.run_interval_s == 600
-    assert config.cryptopanic.enabled is True
-    assert config.cryptopanic.max_results == 10
+    assert config.ccdata_news.enabled is False
+    assert config.ccdata_news.max_results == 10
     assert config.synthesizer.model_id == "custom/model"
     assert config.synthesizer.retries == 3
 

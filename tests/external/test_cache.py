@@ -50,7 +50,7 @@ def test_set_and_get_snapshot() -> None:
     assert retrieved.deribit_dvol.dvol_index == Decimal("55.0")
     assert retrieved.fear_greed is not None
     assert retrieved.fear_greed.value == 35
-    assert retrieved.cryptopanic is None
+    assert retrieved.ccdata_news is None
 
 
 def test_set_and_get_sentiment_summary() -> None:

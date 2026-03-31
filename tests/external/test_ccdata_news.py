@@ -1,0 +1,158 @@
+from decimal import Decimal
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from kavzi_trader.external.sources.ccdata_news import CCDataNewsSource
+
+
+def _mock_response() -> Mock:
+    resp = Mock()
+    resp.raise_for_status = Mock()
+    resp.json.return_value = {
+        "Data": [
+            {
+                "TITLE": "Bitcoin surges past 100k",
+                "SENTIMENT": "POSITIVE",
+                "UPVOTES": 10,
+                "DOWNVOTES": 2,
+            },
+            {
+                "TITLE": "Ethereum upgrade delayed",
+                "SENTIMENT": "NEGATIVE",
+                "UPVOTES": 3,
+                "DOWNVOTES": 8,
+            },
+            {
+                "TITLE": "Market consolidation continues",
+                "SENTIMENT": "NEUTRAL",
+                "UPVOTES": 5,
+                "DOWNVOTES": 5,
+            },
+        ],
+    }
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_fetch_returns_parsed_data() -> None:
+    source = CCDataNewsSource(max_results=20)
+    source._client = Mock()
+    source._client.get = AsyncMock(return_value=_mock_response())
+    result = await source.fetch()
+    assert result is not None
+    assert result.bullish_count == 1
+    assert result.bearish_count == 1
+    assert result.neutral_count == 1
+    assert len(result.top_headlines) == 3
+    assert result.top_headlines[0] == "Bitcoin surges past 100k"
+    assert result.fetched_at is not None
+
+
+@pytest.mark.asyncio
+async def test_sentiment_score_calculation() -> None:
+    source = CCDataNewsSource()
+    source._client = Mock()
+    resp = Mock()
+    resp.raise_for_status = Mock()
+    resp.json.return_value = {
+        "Data": [
+            {"TITLE": "Bullish 1", "SENTIMENT": "POSITIVE"},
+            {"TITLE": "Bullish 2", "SENTIMENT": "POSITIVE"},
+            {"TITLE": "Bearish 1", "SENTIMENT": "NEGATIVE"},
+        ],
+    }
+    source._client.get = AsyncMock(return_value=resp)
+    result = await source.fetch()
+    assert result is not None
+    # 2 bullish - 1 bearish = 1, total = 3 -> score = 1/3
+    expected = Decimal(str(1 / 3))
+    assert result.sentiment_score == expected
+
+
+@pytest.mark.asyncio
+async def test_fetch_returns_none_on_error() -> None:
+    source = CCDataNewsSource()
+    source._client = Mock()
+    source._client.get = AsyncMock(side_effect=RuntimeError("API error"))
+    result = await source.fetch()
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_headlines_capped_at_max_headlines() -> None:
+    source = CCDataNewsSource(max_results=10, max_headlines=5)
+    resp = Mock()
+    resp.raise_for_status = Mock()
+    resp.json.return_value = {
+        "Data": [
+            {"TITLE": f"Headline {i}", "SENTIMENT": "POSITIVE"}
+            for i in range(8)
+        ],
+    }
+    source._client = Mock()
+    source._client.get = AsyncMock(return_value=resp)
+    result = await source.fetch()
+    assert result is not None
+    assert len(result.top_headlines) == 5
+
+
+@pytest.mark.asyncio
+async def test_custom_max_headlines() -> None:
+    source = CCDataNewsSource(max_results=10, max_headlines=3)
+    resp = Mock()
+    resp.raise_for_status = Mock()
+    resp.json.return_value = {
+        "Data": [
+            {"TITLE": f"Headline {i}", "SENTIMENT": "POSITIVE"}
+            for i in range(8)
+        ],
+    }
+    source._client = Mock()
+    source._client.get = AsyncMock(return_value=resp)
+    result = await source.fetch()
+    assert result is not None
+    assert len(result.top_headlines) == 3
+
+
+def test_source_name() -> None:
+    assert CCDataNewsSource().name == "ccdata_news"
+
+
+@pytest.mark.asyncio
+async def test_missing_sentiment_defaults_to_neutral() -> None:
+    """Articles without SENTIMENT field should count as neutral."""
+    source = CCDataNewsSource()
+    source._client = Mock()
+    resp = Mock()
+    resp.raise_for_status = Mock()
+    resp.json.return_value = {
+        "Data": [
+            {"TITLE": "No sentiment field"},
+            {"TITLE": "Also missing", "SENTIMENT": ""},
+        ],
+    }
+    source._client.get = AsyncMock(return_value=resp)
+    result = await source.fetch()
+    assert result is not None
+    assert result.neutral_count == 2
+    assert result.bullish_count == 0
+    assert result.bearish_count == 0
+
+
+@pytest.mark.asyncio
+async def test_empty_data_array() -> None:
+    """Empty Data array should return zero counts."""
+    source = CCDataNewsSource()
+    source._client = Mock()
+    resp = Mock()
+    resp.raise_for_status = Mock()
+    resp.json.return_value = {"Data": []}
+    source._client.get = AsyncMock(return_value=resp)
+    result = await source.fetch()
+    assert result is not None
+    assert result.bullish_count == 0
+    assert result.bearish_count == 0
+    assert result.neutral_count == 0
+    assert result.sentiment_score == Decimal("0")
+    assert result.top_headlines == []
