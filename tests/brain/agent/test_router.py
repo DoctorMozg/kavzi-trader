@@ -13,6 +13,10 @@ from kavzi_trader.brain.schemas.dependencies import (
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.spine.filters.algorithm_confluence_schema import (
+    AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
+)
 
 # NOTE: VolatilityRegime is still imported for fixture construction but the
 # volatility gate itself now lives inside ScoutFilter, not in the router.
@@ -305,3 +309,104 @@ async def test_scout_always_called(
     )
     await router.run("BTCUSDT", provider)
     assert spy_scout.call_count == 1
+
+
+class SpyAnalyst:
+    """Analyst that records whether it was called."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema:
+        self.call_count += 1
+        return AnalystDecisionSchema(
+            setup_valid=True,
+            direction="SHORT",
+            confluence_score=8,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning=_ANALYST_REASONING,
+        )
+
+
+def _make_low_confluence() -> DualConfluenceSchema:
+    """Both sides score below the default analyst gate threshold (4)."""
+    low = AlgorithmConfluenceSchema(
+        ema_alignment=True,
+        rsi_favorable=True,
+        volume_above_average=False,
+        price_at_bollinger=False,
+        funding_favorable=False,
+        oi_supports_direction=False,
+        oi_funding_divergence=False,
+        volume_spike=False,
+        score=2,
+    )
+    return DualConfluenceSchema(long=low, short=low, detected_side="SHORT")
+
+
+@pytest.mark.asyncio
+async def test_router_skips_analyst_on_low_confluence(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    account_state,
+    positions,
+) -> None:
+    """When max algorithm confluence < threshold, Analyst LLM is not called."""
+    spy_analyst = SpyAnalyst()
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        spy_analyst,
+        DummyTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        _make_low_confluence(),
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert spy_analyst.call_count == 0, "Analyst LLM should not be called"
+    assert result.analyst is not None
+    assert result.analyst.setup_valid is False
+    assert "skipped" in result.analyst.reasoning.lower()
+    assert result.trader is None
+
+
+@pytest.mark.asyncio
+async def test_router_calls_analyst_at_threshold(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """When max algo confluence == threshold, Analyst IS called (gate is <)."""
+    spy_analyst = SpyAnalyst()
+    # Default fixture has long.score=4, threshold default is 4 → not skipped
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        spy_analyst,
+        DummyTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert spy_analyst.call_count == 1, "Analyst should be called at threshold"
+    assert result.analyst is not None
+    assert result.analyst.setup_valid is True

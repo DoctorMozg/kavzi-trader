@@ -28,25 +28,26 @@ def _make_candle(
     )
 
 
-def test_spike_blocks_impulse_candle() -> None:
-    """Candle body > 1.5x ATR should be rejected."""
+def test_spike_blocks_chasing_long_after_bullish_spike() -> None:
+    """LONG after bullish spike (chasing) should be rejected."""
     config = FilterConfigSchema()
     f = SpikeCooldownFilter(config)
-    candle = _make_candle(Decimal(100), Decimal(120))  # body=20
+    candle = _make_candle(Decimal(100), Decimal(120))  # bullish, body=20
 
-    result = f.evaluate(candle=candle, atr=Decimal(10))  # ratio=2.0
+    result = f.evaluate(candle=candle, atr=Decimal(10), side="LONG")  # ratio=2.0
 
     assert result.is_allowed is False
     assert "spike_detected" in (result.reason or "")
+    assert "chasing LONG" in (result.reason or "")
 
 
 def test_spike_allows_normal_candle() -> None:
-    """Candle body < 1.5x ATR should pass."""
+    """Candle body < 1.5x ATR should pass regardless of side."""
     config = FilterConfigSchema()
     f = SpikeCooldownFilter(config)
     candle = _make_candle(Decimal(100), Decimal(105))  # body=5
 
-    result = f.evaluate(candle=candle, atr=Decimal(10))  # ratio=0.5
+    result = f.evaluate(candle=candle, atr=Decimal(10), side="LONG")  # ratio=0.5
 
     assert result.is_allowed is True
     assert result.reason is None
@@ -57,7 +58,7 @@ def test_spike_bypasses_when_atr_none() -> None:
     f = SpikeCooldownFilter(config)
     candle = _make_candle(Decimal(100), Decimal(120))
 
-    result = f.evaluate(candle=candle, atr=None)
+    result = f.evaluate(candle=candle, atr=None, side="LONG")
 
     assert result.is_allowed is True
 
@@ -67,7 +68,7 @@ def test_spike_bypasses_when_atr_zero() -> None:
     f = SpikeCooldownFilter(config)
     candle = _make_candle(Decimal(100), Decimal(120))
 
-    result = f.evaluate(candle=candle, atr=Decimal(0))
+    result = f.evaluate(candle=candle, atr=Decimal(0), side="LONG")
 
     assert result.is_allowed is True
 
@@ -78,6 +79,41 @@ def test_spike_exact_threshold_passes() -> None:
     f = SpikeCooldownFilter(config)
     candle = _make_candle(Decimal(100), Decimal(115))  # body=15
 
-    result = f.evaluate(candle=candle, atr=Decimal(10))  # ratio=1.5
+    result = f.evaluate(candle=candle, atr=Decimal(10), side="LONG")  # ratio=1.5
 
     assert result.is_allowed is True
+
+
+def test_spike_allows_reversal_short_after_bullish_spike() -> None:
+    """SHORT after bullish spike is a reversal — should be allowed."""
+    config = FilterConfigSchema()
+    f = SpikeCooldownFilter(config)
+    candle = _make_candle(Decimal(100), Decimal(120))  # bullish, body=20
+
+    result = f.evaluate(candle=candle, atr=Decimal(10), side="SHORT")  # ratio=2.0
+
+    assert result.is_allowed is True
+
+
+def test_spike_allows_reversal_long_after_bearish_spike() -> None:
+    """LONG after bearish spike is a reversal — should be allowed."""
+    config = FilterConfigSchema()
+    f = SpikeCooldownFilter(config)
+    candle = _make_candle(Decimal(120), Decimal(100))  # bearish, body=20
+
+    result = f.evaluate(candle=candle, atr=Decimal(10), side="LONG")  # ratio=2.0
+
+    assert result.is_allowed is True
+
+
+def test_spike_blocks_chasing_short_after_bearish_spike() -> None:
+    """SHORT after bearish spike (chasing) should be rejected."""
+    config = FilterConfigSchema()
+    f = SpikeCooldownFilter(config)
+    candle = _make_candle(Decimal(120), Decimal(100))  # bearish, body=20
+
+    result = f.evaluate(candle=candle, atr=Decimal(10), side="SHORT")  # ratio=2.0
+
+    assert result.is_allowed is False
+    assert "spike_detected" in (result.reason or "")
+    assert "chasing SHORT" in (result.reason or "")

@@ -5,7 +5,10 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
+from kavzi_trader.brain.schemas.analyst import (
+    AnalystDecisionSchema,
+    KeyLevelsSchema,
+)
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
@@ -76,16 +79,21 @@ class PipelineResult:
         self.trader_deps = trader_deps
 
 
+_DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 4
+
+
 class AgentRouter:
     def __init__(
         self,
         scout: ScoutRunner,
         analyst: AnalystRunner,
         trader: TraderRunner,
+        analyst_min_algo_confluence: int = _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE,
     ) -> None:
         self._scout = scout
         self._analyst = analyst
         self._trader = trader
+        self._analyst_min_algo_confluence = analyst_min_algo_confluence
 
     async def run(
         self,
@@ -162,6 +170,35 @@ class AgentRouter:
     ) -> AnalystDecisionSchema | None:
         deps = await deps_provider.get_analyst(symbol)
         self._log_analyst_inputs(deps)
+
+        # Gate: skip the LLM call when algorithm confluence is too low.
+        # The Analyst can add at most +3 points; if max algo < threshold,
+        # even the maximum boost cannot reach _MIN_CONFLUENCE_FOR_VALID.
+        conf = deps.algorithm_confluence
+        max_algo = max(conf.long.score, conf.short.score)
+        if max_algo < self._analyst_min_algo_confluence:
+            logger.info(
+                "Analyst skipped for %s: max algorithm confluence %d < %d"
+                " — insufficient for valid setup even with LLM bonus",
+                symbol,
+                max_algo,
+                self._analyst_min_algo_confluence,
+            )
+            return AnalystDecisionSchema(
+                setup_valid=False,
+                direction="NEUTRAL",
+                confluence_score=max_algo,
+                key_levels=KeyLevelsSchema(levels=[]),
+                reasoning=(
+                    f"Analyst LLM call skipped: maximum algorithm"
+                    f" confluence score {max_algo}/8 is below the"
+                    f" minimum threshold"
+                    f" {self._analyst_min_algo_confluence}. Even with"
+                    f" the maximum analyst bonus of +3, the total"
+                    f" cannot reach the required 7 for a valid setup."
+                ),
+            )
+
         t0 = time.monotonic()
         try:
             result = await self._analyst.run(deps)

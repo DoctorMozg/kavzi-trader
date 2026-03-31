@@ -154,12 +154,12 @@ class ScoutConfigSchema(BaseModel):
     # EMA alignment + meaningful price movement over recent candles.
 
     # Minimum price change (%) over the candle window to qualify.
-    #   0.3 = permissive
-    #   0.5 = default
-    #   1.0 = strict
+    #   0.5 = permissive
+    #   1.5 = default
+    #   2.5 = strict
     pullback_price_change_min: Annotated[
         Decimal,
-        Field(default=Decimal("0.5")),
+        Field(default=Decimal("1.5")),
     ]
 
     model_config = ConfigDict(frozen=True)

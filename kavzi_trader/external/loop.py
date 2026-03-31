@@ -55,6 +55,7 @@ class ExternalSentimentLoop:
                 failure_threshold=cb_cfg.failure_threshold,
                 cooldown_s=float(cb_cfg.cooldown_s),
                 max_cooldown_s=float(cb_cfg.max_cooldown_s),
+                max_reopen_count=cb_cfg.max_reopen_count,
             )
             for s in sources
         }

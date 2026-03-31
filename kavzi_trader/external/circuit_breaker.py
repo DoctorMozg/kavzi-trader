@@ -26,15 +26,19 @@ class CircuitBreaker:
         failure_threshold: int = 5,
         cooldown_s: float = 900.0,
         max_cooldown_s: float = 3600.0,
+        max_reopen_count: int = 3,
     ) -> None:
         self._failure_threshold = failure_threshold
         self._base_cooldown_s = cooldown_s
         self._max_cooldown_s = max_cooldown_s
+        self._max_reopen_count = max_reopen_count
 
         self._state = CircuitBreakerState.CLOSED
         self._failure_count = 0
         self._current_cooldown_s = cooldown_s
         self._opened_at: float = 0.0
+        self._reopen_count = 0
+        self._latched = False
 
     @property
     def state(self) -> CircuitBreakerState:
@@ -42,6 +46,9 @@ class CircuitBreaker:
 
     def should_allow(self) -> bool:
         """Return True if the request should proceed."""
+        if self._latched:
+            return False
+
         if self._state == CircuitBreakerState.CLOSED:
             return True
 
@@ -70,6 +77,8 @@ class CircuitBreaker:
         self._state = CircuitBreakerState.CLOSED
         self._failure_count = 0
         self._current_cooldown_s = self._base_cooldown_s
+        self._reopen_count = 0
+        self._latched = False
 
     def record_failure(self) -> None:
         """Record a failure. Opens circuit when threshold is reached."""
@@ -81,21 +90,32 @@ class CircuitBreaker:
                 self._current_cooldown_s * 2,
                 self._max_cooldown_s,
             )
+            self._reopen_count += 1
             self._state = CircuitBreakerState.OPEN
             self._opened_at = time.monotonic()
-            logger.warning(
-                "Circuit breaker re-OPENED after failed probe, "
-                "next cooldown=%.0fs",
-                self._current_cooldown_s,
-            )
+
+            if self._reopen_count >= self._max_reopen_count:
+                self._latched = True
+                logger.warning(
+                    "Circuit breaker LATCHED OPEN after %d consecutive"
+                    " probe failures — source disabled for this session",
+                    self._reopen_count,
+                )
+            else:
+                logger.warning(
+                    "Circuit breaker re-OPENED after failed probe"
+                    " (%d/%d), next cooldown=%.0fs",
+                    self._reopen_count,
+                    self._max_reopen_count,
+                    self._current_cooldown_s,
+                )
             return
 
         if self._failure_count >= self._failure_threshold:
             self._state = CircuitBreakerState.OPEN
             self._opened_at = time.monotonic()
             logger.warning(
-                "Circuit breaker OPENED after %d consecutive failures, "
-                "cooldown=%.0fs",
+                "Circuit breaker OPENED after %d consecutive failures, cooldown=%.0fs",
                 self._failure_count,
                 self._current_cooldown_s,
             )

@@ -47,6 +47,7 @@ class CircuitBreakerConfigSchema(BaseModel):
     failure_threshold: Annotated[int, Field(default=5, ge=1)] = 5
     cooldown_s: Annotated[int, Field(default=900, ge=60)] = 900
     max_cooldown_s: Annotated[int, Field(default=3600, ge=300)] = 3600
+    max_reopen_count: Annotated[int, Field(default=3, ge=1)] = 3
 
     model_config = ConfigDict(frozen=True)
 

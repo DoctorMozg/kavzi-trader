@@ -236,6 +236,7 @@ class PreTradeFilterChain:
             spike_result = self._spike_cooldown_filter.evaluate(
                 candle=candle,
                 atr=indicators.atr_14,
+                side=side,
             )
             results.append(spike_result)
             logger.debug(

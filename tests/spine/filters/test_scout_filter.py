@@ -452,7 +452,7 @@ async def test_trend_pullback_bullish(scout: ScoutFilter) -> None:
     )
     candles = [
         _make_candle(Decimal(100), offset_min=0),
-        _make_candle(Decimal(101), offset_min=5),
+        _make_candle(Decimal(102), offset_min=5),
     ]
     deps = _make_deps(ind, candles=candles)
     result = await scout.run(deps)
@@ -472,7 +472,7 @@ async def test_trend_pullback_bearish(scout: ScoutFilter) -> None:
     )
     candles = [
         _make_candle(Decimal(100), offset_min=0),
-        _make_candle(Decimal(99), offset_min=5),
+        _make_candle(Decimal(98), offset_min=5),
     ]
     deps = _make_deps(ind, candles=candles)
     result = await scout.run(deps)
@@ -483,7 +483,7 @@ async def test_trend_pullback_bearish(scout: ScoutFilter) -> None:
 
 @pytest.mark.asyncio
 async def test_trend_pullback_too_small(scout: ScoutFilter) -> None:
-    """Price change < 0.5% → no pullback criterion."""
+    """Price change < 1.5% → no pullback criterion."""
     ind = _make_indicators(
         ema_20=Decimal(110),
         ema_50=Decimal(105),
