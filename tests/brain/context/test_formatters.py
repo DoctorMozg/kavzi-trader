@@ -41,8 +41,8 @@ def _make_indicators(
             percent_b=Decimal("0.55"),
         ),
         volume=VolumeAnalysisSchema(
-            current_volume=Decimal("1000"),
-            average_volume=Decimal("1000"),
+            current_volume=Decimal(1000),
+            average_volume=Decimal(1000),
             volume_ratio=Decimal("1.2"),
             obv=None,
         ),
@@ -52,7 +52,7 @@ def _make_indicators(
 
 class TestPriceBasedPrecision:
     def test_high_price_returns_2(self) -> None:
-        assert _price_based_precision(Decimal("68000")) == 2
+        assert _price_based_precision(Decimal(68000)) == 2
 
     def test_mid_price_returns_4(self) -> None:
         assert _price_based_precision(Decimal("1.22")) == 4
@@ -61,10 +61,10 @@ class TestPriceBasedPrecision:
         assert _price_based_precision(Decimal("0.18")) == 6
 
     def test_boundary_1000_returns_2(self) -> None:
-        assert _price_based_precision(Decimal("1000")) == 2
+        assert _price_based_precision(Decimal(1000)) == 2
 
     def test_boundary_1_returns_4(self) -> None:
-        assert _price_based_precision(Decimal("1")) == 4
+        assert _price_based_precision(Decimal(1)) == 4
 
     def test_below_1_returns_6(self) -> None:
         assert _price_based_precision(Decimal("0.99")) == 6
@@ -79,15 +79,15 @@ class TestFormatIndicatorsCompact:
 
     def test_high_price_atr_uses_2_decimals(self) -> None:
         ind = TechnicalIndicatorsSchema(
-            ema_20=Decimal("68100"),
-            ema_50=Decimal("67500"),
-            ema_200=Decimal("60000"),
-            sma_20=Decimal("68000"),
+            ema_20=Decimal(68100),
+            ema_50=Decimal(67500),
+            ema_200=Decimal(60000),
+            sma_20=Decimal(68000),
             rsi_14=Decimal("55.0"),
             atr_14=Decimal("180.55"),
             timestamp=_NOW,
         )
-        result = format_indicators_compact(ind, reference_price=Decimal("68000"))
+        result = format_indicators_compact(ind, reference_price=Decimal(68000))
         assert "ATR=180.55" in result
 
     def test_mid_price_uses_4_decimals(self) -> None:
