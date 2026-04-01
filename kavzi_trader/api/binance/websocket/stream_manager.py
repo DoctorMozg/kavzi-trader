@@ -35,14 +35,12 @@ class StreamManager:
         self,
         api_key: str | None = None,
         api_secret: str | None = None,
-        testnet: bool = False,
         on_message: Callable[[dict[str, Any]], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
         on_close: Callable[[], None] | None = None,
     ) -> None:
         self.api_key = api_key
         self.api_secret = api_secret
-        self.testnet = testnet
 
         # Created lazily in start() — requires async AsyncClient.create()
         self._bsm: BinanceSocketManager | None = None
@@ -91,7 +89,6 @@ class StreamManager:
             self._async_client = await AsyncClient.create(
                 api_key=self.api_key,
                 api_secret=self.api_secret,
-                testnet=self.testnet,
             )
             self._bsm = BinanceSocketManager(self._async_client)
             self._is_running = True

@@ -26,7 +26,7 @@ class KeyLevelsSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-_MIN_CONFLUENCE_FOR_VALID = 7
+_MIN_CONFLUENCE_FOR_VALID = 6
 
 
 class AnalystDecisionSchema(BaseModel):

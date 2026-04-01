@@ -74,7 +74,7 @@ class PaperExchangeClient(BinanceClient):
         initial_balance_usdt: Decimal = Decimal(10000),
         commission_rate: Decimal = Decimal("0.001"),
     ) -> None:
-        super().__init__(api_key="", api_secret="", testnet=False)
+        super().__init__(api_key="", api_secret="")
         self._balance_usdt = initial_balance_usdt
         self._locked_usdt = Decimal(0)
         self._commission_rate = commission_rate

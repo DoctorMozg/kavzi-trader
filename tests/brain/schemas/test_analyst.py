@@ -53,6 +53,26 @@ class TestAnalystDecisionSchemaValidator:
         )
         assert result.setup_valid is True
 
+    def test_boundary_score_6_forces_valid(self) -> None:
+        result = AnalystDecisionSchema(
+            setup_valid=False,
+            direction="LONG",
+            confluence_score=6,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning=_make_reasoning(),
+        )
+        assert result.setup_valid is True
+
+    def test_boundary_score_5_keeps_invalid(self) -> None:
+        result = AnalystDecisionSchema(
+            setup_valid=False,
+            direction="SHORT",
+            confluence_score=5,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning=_make_reasoning(),
+        )
+        assert result.setup_valid is False
+
     def test_high_confluence_with_valid_true_unchanged(self) -> None:
         result = AnalystDecisionSchema(
             setup_valid=True,

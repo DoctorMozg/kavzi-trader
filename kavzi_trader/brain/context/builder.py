@@ -76,7 +76,9 @@ class ContextBuilder(BaseModel):
         return MarketContextDict(
             market_snapshot=snapshot.model_dump(),
             candles_table=format_candles_table(deps.recent_candles),
-            indicators_compact=format_indicators_compact(deps.indicators),
+            indicators_compact=format_indicators_compact(
+                deps.indicators, reference_price=deps.current_price
+            ),
         )
 
     def build_analyst_context(

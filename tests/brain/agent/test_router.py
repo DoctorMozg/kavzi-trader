@@ -329,7 +329,7 @@ class SpyAnalyst:
 
 
 def _make_low_confluence() -> DualConfluenceSchema:
-    """Both sides score below the default analyst gate threshold (4)."""
+    """Both sides score below the default analyst gate threshold (3)."""
     low = AlgorithmConfluenceSchema(
         ema_alignment=True,
         rsi_favorable=True,
@@ -390,7 +390,7 @@ async def test_router_calls_analyst_at_threshold(
 ) -> None:
     """When max algo confluence == threshold, Analyst IS called (gate is <)."""
     spy_analyst = SpyAnalyst()
-    # Default fixture has long.score=4, threshold default is 4 → not skipped
+    # Default fixture has long.score=4, threshold default is 3 → not skipped
     router = AgentRouter(
         DummyScout("INTERESTING"),
         spy_analyst,

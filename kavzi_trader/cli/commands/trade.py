@@ -95,7 +95,6 @@ def _build_exchange(app_config: AppConfig) -> BinanceClient:
     return BinanceClient(
         api_key=app_config.api.binance.api_key,
         api_secret=app_config.api.binance.api_secret,
-        testnet=app_config.api.binance.testnet,
     )
 
 
@@ -114,10 +113,9 @@ async def _start_orchestrator(
         app_config.validate_for_paper_trading()
     else:
         logger.info(
-            "Starting orchestrator for symbols=%s interval=%s testnet=%s",
+            "Starting orchestrator for symbols=%s interval=%s",
             app_config.trading.symbols,
             app_config.trading.interval,
-            app_config.api.binance.testnet,
         )
         app_config.validate_for_trading()
     rebuild_deferred_models()
@@ -201,7 +199,6 @@ async def _start_orchestrator(
     ws_client = BinanceWebsocketClient(
         api_key=app_config.api.binance.api_key if not is_paper else None,
         api_secret=app_config.api.binance.api_secret if not is_paper else None,
-        testnet=app_config.api.binance.testnet if not is_paper else False,
     )
     stream_manager = LiveStreamManager(
         ws_client=ws_client,

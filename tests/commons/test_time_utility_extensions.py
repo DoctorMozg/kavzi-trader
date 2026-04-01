@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kavzi_trader.commons.time_utility import parse_date_range, parse_date_string
+from kavzi_trader.commons.time_utility import parse_date_string
 
 
 class TestTimeUtilityExtensions:
@@ -42,42 +42,3 @@ class TestTimeUtilityExtensions:
             parse_date_string(date_str)
 
         assert "Could not parse date" in str(excinfo.value)
-
-    @patch("kavzi_trader.commons.time_utility.parse_date_string")
-    def test_parse_date_range(self, mock_parse_date_string: MagicMock) -> None:
-        """Test parsing a date range."""
-        # Setup
-        start_date = "2023-01-01"
-        end_date = "2023-01-31"
-
-        mock_parse_date_string.side_effect = [
-            datetime(2023, 1, 1, tzinfo=UTC),
-            datetime(2023, 1, 31, tzinfo=UTC),
-        ]
-
-        # Execute
-        result = parse_date_range(start_date, end_date)
-
-        # Assert
-        assert mock_parse_date_string.call_count == 2
-        assert result.start == datetime(2023, 1, 1, tzinfo=UTC)
-        assert result.end == datetime(2023, 1, 31, tzinfo=UTC)
-
-    @patch("kavzi_trader.commons.time_utility.parse_date_string")
-    def test_parse_date_range_no_end_date(
-        self,
-        mock_parse_date_string: MagicMock,
-    ) -> None:
-        """Test parsing a date range with no end date."""
-        # Setup
-        start_date = "2023-01-01"
-
-        mock_parse_date_string.return_value = datetime(2023, 1, 1, tzinfo=UTC)
-
-        # Execute
-        result = parse_date_range(start_date)
-
-        # Assert
-        mock_parse_date_string.assert_called_once_with(start_date)
-        assert result.start == datetime(2023, 1, 1, tzinfo=UTC)
-        assert result.end is None

@@ -308,13 +308,11 @@ def test_stream_manager_init() -> None:
     manager = StreamManager(
         api_key="test_key",
         api_secret="test_secret",
-        testnet=True,
     )
 
     # Verify the manager's properties
     assert manager.api_key == "test_key"
     assert manager.api_secret == "test_secret"  # noqa: S105
-    assert manager.testnet is True
     assert manager.active_streams == {}
     assert manager.stream_callbacks == {}
     assert manager._is_running is False

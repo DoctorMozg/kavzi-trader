@@ -622,3 +622,96 @@ async def test_custom_breakout_threshold() -> None:
     deps = _make_deps(ind)
     result = await scout.run(deps)
     assert result.pattern_detected != "BREAKOUT"
+
+
+# ------------------------------------------------------------------
+# TREND_PULLBACK momentum confirmation
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_trend_pullback_rejected_when_recent_candles_decline(
+    scout: ScoutFilter,
+) -> None:
+    """BULLISH EMA alignment but last 3 candles declining → no TREND_PULLBACK.
+
+    Prevents false positives like AVAXUSDT where EMA200<EMA50<EMA20 is stale
+    but the asset is actually in a short-term downtrend.
+    """
+    ind = _make_indicators(
+        ema_20=Decimal(110),
+        ema_50=Decimal(105),
+        ema_200=Decimal(90),
+        rsi_14=Decimal(65),
+        vol_ratio=Decimal("0.9"),
+    )
+    # Overall change is +2% (100→102) but last 3 candles decline: 106→104→102
+    candles = [
+        _make_candle(Decimal(100), offset_min=0),
+        _make_candle(Decimal(106), offset_min=5),
+        _make_candle(Decimal(104), offset_min=10),
+        _make_candle(Decimal(102), offset_min=15),
+    ]
+    deps = _make_deps(ind, candles=candles)
+    result = await scout.run(deps)
+    assert result.pattern_detected != "TREND_PULLBACK"
+
+
+@pytest.mark.asyncio
+async def test_trend_pullback_passes_with_confirming_momentum(
+    scout: ScoutFilter,
+) -> None:
+    """BULLISH EMA + last 3 candles rising → TREND_PULLBACK fires."""
+    ind = _make_indicators(
+        ema_20=Decimal(110),
+        ema_50=Decimal(105),
+        ema_200=Decimal(90),
+        rsi_14=Decimal(65),
+        vol_ratio=Decimal("0.9"),
+    )
+    candles = [
+        _make_candle(Decimal(100), offset_min=0),
+        _make_candle(Decimal(101), offset_min=5),
+        _make_candle(Decimal("101.5"), offset_min=10),
+        _make_candle(Decimal(102), offset_min=15),
+    ]
+    deps = _make_deps(ind, candles=candles)
+    result = await scout.run(deps)
+    assert result.verdict == "INTERESTING"
+    assert result.pattern_detected == "TREND_PULLBACK"
+
+
+def test_short_term_momentum_confirms_bullish() -> None:
+    candles = [
+        _make_candle(Decimal(100), offset_min=0),
+        _make_candle(Decimal(101), offset_min=5),
+        _make_candle(Decimal(102), offset_min=10),
+    ]
+    assert ScoutFilter._short_term_momentum_confirms(candles, "BULLISH") is True
+
+
+def test_short_term_momentum_rejects_declining_bullish() -> None:
+    candles = [
+        _make_candle(Decimal(106), offset_min=0),
+        _make_candle(Decimal(104), offset_min=5),
+        _make_candle(Decimal(102), offset_min=10),
+    ]
+    assert ScoutFilter._short_term_momentum_confirms(candles, "BULLISH") is False
+
+
+def test_short_term_momentum_confirms_bearish() -> None:
+    candles = [
+        _make_candle(Decimal(102), offset_min=0),
+        _make_candle(Decimal(101), offset_min=5),
+        _make_candle(Decimal(100), offset_min=10),
+    ]
+    assert ScoutFilter._short_term_momentum_confirms(candles, "BEARISH") is True
+
+
+def test_short_term_momentum_few_candles_allows() -> None:
+    """With < 3 candles, momentum check is permissive."""
+    candles = [
+        _make_candle(Decimal(100), offset_min=0),
+        _make_candle(Decimal(98), offset_min=5),
+    ]
+    assert ScoutFilter._short_term_momentum_confirms(candles, "BULLISH") is True

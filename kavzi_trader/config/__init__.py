@@ -28,7 +28,6 @@ class BinanceApiConfigSchema(BaseModel):
 
     api_key: Annotated[str, Field(default="")]
     api_secret: Annotated[str, Field(default="")]
-    testnet: Annotated[bool, Field(default=True)]
     use_proxy: Annotated[bool, Field(default=False)]
 
     model_config = ConfigDict(frozen=True)
@@ -215,13 +214,10 @@ class AppConfig(BaseModel):
         binance = cast("dict[str, object]", api.setdefault("binance", {}))
         env_api_key = os.getenv("KT_BINANCE_API_KEY")
         env_api_secret = os.getenv("KT_BINANCE_API_SECRET")
-        env_testnet = os.getenv("KT_BINANCE_TESTNET")
         if env_api_key is not None:
             binance["api_key"] = env_api_key
         if env_api_secret is not None:
             binance["api_secret"] = env_api_secret
-        if env_testnet is not None:
-            binance["testnet"] = env_testnet.lower() == "true"
 
         brain = cast("dict[str, object]", data.setdefault("brain", {}))
         env_openrouter_key = os.getenv("KT_OPENROUTER_API_KEY")

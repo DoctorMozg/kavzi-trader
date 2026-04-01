@@ -79,7 +79,7 @@ class PipelineResult:
         self.trader_deps = trader_deps
 
 
-_DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 4
+_DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 3
 
 
 class AgentRouter:
@@ -195,7 +195,7 @@ class AgentRouter:
                     f" minimum threshold"
                     f" {self._analyst_min_algo_confluence}. Even with"
                     f" the maximum analyst bonus of +3, the total"
-                    f" cannot reach the required 7 for a valid setup."
+                    f" cannot reach the required 6 for a valid setup."
                 ),
             )
 

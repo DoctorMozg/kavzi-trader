@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 _ZERO = Decimal(0)
 _MIN_CANDLES_FOR_CHANGE = 2
+_MOMENTUM_MIN_CANDLES = 3
+_MOMENTUM_MIN_CONFIRMING = 2
 
 
 class _ScoutCriterionResult(BaseModel):
@@ -310,7 +312,7 @@ class ScoutFilter:
         candles: list[CandlestickSchema],
         alignment: str,
     ) -> _ScoutCriterionResult:
-        """Criterion 6: EMA aligned + meaningful price change."""
+        """Criterion 6: EMA aligned + meaningful price change + short-term momentum."""
         cfg = self._cfg
         if alignment == "NEUTRAL":
             return _CRITERION_SKIP
@@ -322,15 +324,21 @@ class ScoutFilter:
         trending = (alignment == "BULLISH" and pct > _ZERO) or (
             alignment == "BEARISH" and pct < _ZERO
         )
-        if trending and abs(pct) >= cfg.pullback_price_change_min:
-            return _ScoutCriterionResult(
-                verdict="INTERESTING",
-                reason=(
-                    f"Criterion 6 TREND_PULLBACK: {alignment} alignment, change={pct}%"
-                ),
-                pattern_detected="TREND_PULLBACK",
-            )
-        return _CRITERION_SKIP
+        if not trending or abs(pct) < cfg.pullback_price_change_min:
+            return _CRITERION_SKIP
+
+        # Verify recent candles confirm the trend direction to avoid
+        # false positives where EMA alignment is stale but price is reversing.
+        if not self._short_term_momentum_confirms(candles, alignment):
+            return _CRITERION_SKIP
+
+        return _ScoutCriterionResult(
+            verdict="INTERESTING",
+            reason=(
+                f"Criterion 6 TREND_PULLBACK: {alignment} alignment, change={pct}%"
+            ),
+            pattern_detected="TREND_PULLBACK",
+        )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -345,6 +353,27 @@ class ScoutFilter:
         if ind.ema_20 < ind.ema_50 < ind.ema_200:
             return "BEARISH"
         return "NEUTRAL"
+
+    @staticmethod
+    def _short_term_momentum_confirms(
+        candles: list[CandlestickSchema],
+        alignment: str,
+    ) -> bool:
+        """Check that at least 2 of the last 3 close-to-close moves confirm trend."""
+        if len(candles) < _MOMENTUM_MIN_CANDLES:
+            return True
+        recent = candles[-_MOMENTUM_MIN_CANDLES:]
+        confirming = 0
+        for i in range(1, len(recent)):
+            if (
+                alignment == "BULLISH"
+                and recent[i].close_price >= recent[i - 1].close_price
+            ) or (
+                alignment == "BEARISH"
+                and recent[i].close_price <= recent[i - 1].close_price
+            ):
+                confirming += 1
+        return confirming >= _MOMENTUM_MIN_CONFIRMING
 
     @staticmethod
     def _atr_pct(ind: TechnicalIndicatorsSchema, price: Decimal) -> Decimal | None:

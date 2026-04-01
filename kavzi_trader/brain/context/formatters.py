@@ -27,27 +27,47 @@ def _fmt_decimal(value: Decimal | None, precision: int = 2) -> str:
     return f"{float(value):.{precision}f}"
 
 
-def format_indicators_compact(indicators: TechnicalIndicatorsSchema) -> str:
+def _price_based_precision(reference_price: Decimal) -> int:
+    """Dynamic precision based on asset price magnitude.
+
+    Prevents low-price assets (e.g. WIF at $0.18) from having their
+    ATR/EMA/MACD values rounded to 0.00.
+    """
+    price = float(reference_price)
+    if price >= _HIGH_PRICE_THRESHOLD:
+        return 2
+    if price >= _MID_PRICE_THRESHOLD:
+        return 4
+    return 6
+
+
+def format_indicators_compact(
+    indicators: TechnicalIndicatorsSchema,
+    reference_price: Decimal | None = None,
+) -> str:
     """One-line key=value format for LLM consumption (~80 tokens vs ~600)."""
+    # Price-based precision for price-scale indicators (ATR, EMA, MACD, BB bands)
+    pp = _price_based_precision(reference_price) if reference_price else 2
+
     parts: list[str] = []
     parts.append(f"RSI={_fmt_decimal(indicators.rsi_14, 1)}")
-    parts.append(f"EMA20={_fmt_decimal(indicators.ema_20)}")
-    parts.append(f"EMA50={_fmt_decimal(indicators.ema_50)}")
-    parts.append(f"EMA200={_fmt_decimal(indicators.ema_200)}")
-    parts.append(f"SMA20={_fmt_decimal(indicators.sma_20)}")
-    parts.append(f"ATR={_fmt_decimal(indicators.atr_14)}")
+    parts.append(f"EMA20={_fmt_decimal(indicators.ema_20, pp)}")
+    parts.append(f"EMA50={_fmt_decimal(indicators.ema_50, pp)}")
+    parts.append(f"EMA200={_fmt_decimal(indicators.ema_200, pp)}")
+    parts.append(f"SMA20={_fmt_decimal(indicators.sma_20, pp)}")
+    parts.append(f"ATR={_fmt_decimal(indicators.atr_14, pp)}")
     if indicators.macd is not None:
         m = indicators.macd
         parts.append(
-            f"MACD={_fmt_decimal(m.macd_line)}"
-            f"/{_fmt_decimal(m.signal_line)}"
-            f"/{_fmt_decimal(m.histogram)}"
+            f"MACD={_fmt_decimal(m.macd_line, pp)}"
+            f"/{_fmt_decimal(m.signal_line, pp)}"
+            f"/{_fmt_decimal(m.histogram, pp)}"
         )
     if indicators.bollinger is not None:
         b = indicators.bollinger
         parts.append(
-            f"BB={_fmt_decimal(b.upper)}/{_fmt_decimal(b.lower)}"
-            f"/%B={_fmt_decimal(b.percent_b)}/w={_fmt_decimal(b.width, 1)}"
+            f"BB={_fmt_decimal(b.upper, pp)}/{_fmt_decimal(b.lower, pp)}"
+            f"/%B={_fmt_decimal(b.percent_b)}/w={_fmt_decimal(b.width, 4)}"
         )
     if indicators.volume is not None:
         parts.append(f"vol_ratio={_fmt_decimal(indicators.volume.volume_ratio, 1)}")

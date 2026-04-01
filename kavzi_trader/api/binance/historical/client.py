@@ -40,7 +40,6 @@ class BinanceHistoricalDataClient:
         self,
         api_key: str | None = None,
         api_secret: str | None = None,
-        testnet: bool = False,
         timeout: int = 60,
         max_workers: int = 4,
         batch_size: int = 1000,
@@ -51,7 +50,6 @@ class BinanceHistoricalDataClient:
         Args:
             api_key: Binance API key (optional)
             api_secret: Binance API secret (optional)
-            testnet: Whether to use testnet
             timeout: Request timeout in seconds
             max_workers: Maximum number of concurrent download workers
             batch_size: Default size of each download batch
@@ -59,7 +57,6 @@ class BinanceHistoricalDataClient:
         self.client = BinanceClient(
             api_key=api_key,
             api_secret=api_secret,
-            testnet=testnet,
             timeout=timeout,
         )
         self.max_workers = max_workers

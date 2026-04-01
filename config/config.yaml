@@ -20,7 +20,6 @@ api:
   binance:
     api_key: ""
     api_secret: ""
-    testnet: true              # true = route orders to Binance Testnet, not live
     use_proxy: false           # true = route traffic through a configured HTTP proxy
 
 # -----------------------------------------------------------------------------
@@ -619,15 +618,14 @@ external_sources:
     retries: 1
 
 # -----------------------------------------------------------------------------
-# Paper Trading — local simulation and Binance Testnet configuration
+# Paper Trading — local simulation configuration
 # -----------------------------------------------------------------------------
 paper:
   # Trading mode — controls where orders are routed.
   #   "PAPER"    = simulated execution with in-memory balance (no exchange needed)
-  #   "TESTNET"  = execute against Binance Testnet (no real money; default)
   #   "LIVE"     = execute against live Binance Futures (real money!)
   #   "DISABLED" = disable all execution (analysis-only / dry-run mode)
-  mode: "TESTNET"
+  mode: "PAPER"
 
   # Paper trading initial USDT balance (used with --paper CLI flag).
   #   5000   = small account
@@ -640,11 +638,3 @@ paper:
   #   0.001  = default (0.1% — Binance spot/futures taker fee)
   #   0.002  = conservative (accounts for slippage)
   commission_rate: 0.001
-
-  # Binance Testnet API credentials (override via env vars for security)
-  testnet_api_key: ""
-  testnet_api_secret: ""
-
-  # Testnet endpoint URLs (Binance Futures testnet)
-  testnet_base_url: "https://testnet.binancefuture.com"
-  testnet_ws_url: "wss://stream.binancefuture.com/ws"

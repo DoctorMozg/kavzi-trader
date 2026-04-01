@@ -45,7 +45,6 @@ class BinanceWebsocketClient:
         self,
         api_key: str | None = None,
         api_secret: str | None = None,
-        testnet: bool = False,
         on_message: Callable[[dict[str, Any]], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
         on_close: Callable[[], None] | None = None,
@@ -56,7 +55,6 @@ class BinanceWebsocketClient:
         Args:
             api_key: Binance API key
             api_secret: Binance API secret
-            testnet: Whether to use testnet
             on_message: Callback for all messages
             on_error: Callback for WebSocket errors
             on_close: Callback for WebSocket close
@@ -65,7 +63,6 @@ class BinanceWebsocketClient:
         self.stream_manager = StreamManager(
             api_key=api_key,
             api_secret=api_secret,
-            testnet=testnet,
             on_message=on_message,
             on_error=on_error,
             on_close=on_close,

@@ -419,7 +419,7 @@ async def test_cooldown_after_analyst_skips_cycles() -> None:
     """After Analyst rejection, symbol should be skipped for graduated cooldown cycles.
 
     With confluence_score=5 and analyst_cooldown_cycles=2, the graduated cooldown
-    sets cooldown = 2 * 3 = 6 cycles (medium tier: score 4-5).
+    sets cooldown = 2 * 2 = 4 cycles (medium tier: score 4-5).
     """
     deps = _build_deps()
     provider = DummyDepsProvider(deps)
@@ -450,14 +450,14 @@ async def test_cooldown_after_analyst_skips_cycles() -> None:
         task = asyncio.create_task(loop.run())
         for _ in range(200):
             await original_sleep(0)
-            if len(sleep_durations) >= 8:
+            if len(sleep_durations) >= 6:
                 break
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    # Cycle 1: router called (analyst reached, confluence=5 → cooldown=6)
-    # Cycles 2-7: cooldown counts down → router NOT called
-    # Cycle 8: cooldown=0 → router called again
+    # Cycle 1: router called (analyst reached, confluence=5 → cooldown=4)
+    # Cycles 2-5: cooldown counts down → router NOT called
+    # Cycle 6: cooldown=0 → router called again
     assert router.run.call_count == 2
 
 
@@ -596,7 +596,7 @@ def _make_analyst_result_with_confluence(confluence_score: int) -> PipelineResul
 
 
 def test_graduated_cooldown_low_confluence() -> None:
-    """Confluence <= 3 should produce 5x the base cooldown."""
+    """Confluence <= 3 should produce 3x the base cooldown."""
     loop = ReasoningLoop(
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -604,12 +604,12 @@ def test_graduated_cooldown_low_confluence() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
-    assert loop._compute_rejection_cooldown(2) == 15
-    assert loop._compute_rejection_cooldown(3) == 15
+    assert loop._compute_rejection_cooldown(2) == 9
+    assert loop._compute_rejection_cooldown(3) == 9
 
 
 def test_graduated_cooldown_medium_confluence() -> None:
-    """Confluence 4-5 should produce 3x the base cooldown."""
+    """Confluence 4-5 should produce 2x the base cooldown."""
     loop = ReasoningLoop(
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -617,8 +617,8 @@ def test_graduated_cooldown_medium_confluence() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
-    assert loop._compute_rejection_cooldown(4) == 9
-    assert loop._compute_rejection_cooldown(5) == 9
+    assert loop._compute_rejection_cooldown(4) == 6
+    assert loop._compute_rejection_cooldown(5) == 6
 
 
 def test_graduated_cooldown_near_threshold() -> None:
@@ -801,26 +801,26 @@ def test_consecutive_rejections_escalate_cooldown() -> None:
         max_consecutive_rejection_multiplier=5,
     )
 
-    # First rejection: confluence=2 → base=15, multiplier=min(1,5)=1
+    # First rejection: confluence=2 → base=9, multiplier=min(1,5)=1
     count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
     loop._consecutive_rejections["BTCUSDT"] = count
     base = loop._compute_rejection_cooldown(2)
     multiplier = min(count, loop._max_rejection_multiplier)
-    assert base == 15
-    assert base * multiplier == 15  # 15 * 1
+    assert base == 9
+    assert base * multiplier == 9  # 9 * 1
 
     # Second rejection: multiplier=min(2,5)=2
     count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
     loop._consecutive_rejections["BTCUSDT"] = count
     multiplier = min(count, loop._max_rejection_multiplier)
-    assert base * multiplier == 30  # 15 * 2
+    assert base * multiplier == 18  # 9 * 2
 
     # Sixth rejection: capped at 5
     loop._consecutive_rejections["BTCUSDT"] = 5
     count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
     loop._consecutive_rejections["BTCUSDT"] = count
     multiplier = min(count, loop._max_rejection_multiplier)
-    assert base * multiplier == 75  # 15 * 5 (capped)
+    assert base * multiplier == 45  # 9 * 5 (capped)
 
 
 def test_consecutive_rejections_reset_on_valid_analyst() -> None:
@@ -846,4 +846,4 @@ def test_consecutive_rejections_reset_on_valid_analyst() -> None:
     base = loop._compute_rejection_cooldown(2)
     multiplier = min(count, loop._max_rejection_multiplier)
     assert multiplier == 1
-    assert base * multiplier == 15
+    assert base * multiplier == 9

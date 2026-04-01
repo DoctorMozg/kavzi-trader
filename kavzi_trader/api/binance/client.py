@@ -17,8 +17,6 @@ from binance.async_client import AsyncClient as BinanceAPIClient
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 
 from kavzi_trader.api.binance.constants import (
-    BINANCE_API_TESTNET_URL,
-    BINANCE_API_URL,
     ERROR_CODE_INVALID_API_KEY,
     ERROR_CODE_MARGIN_TYPE_ALREADY_SET,
     ERROR_CODE_RATE_LIMIT_EXCEEDED,
@@ -93,7 +91,6 @@ class BinanceClient:
         self,
         api_key: str | None = None,
         api_secret: str | None = None,
-        testnet: bool = False,
         timeout: int = 30,
         proxies: dict[str, str] | None = None,
         show_limit_usage: bool = False,
@@ -104,17 +101,14 @@ class BinanceClient:
         Args:
             api_key: API key for authenticated endpoints
             api_secret: API secret for authenticated endpoints
-            testnet: Whether to use the testnet
             timeout: Request timeout in seconds
             proxies: Proxy configuration for requests
             show_limit_usage: Whether to log rate limit usage
         """
         self.api_key = api_key
         self.api_secret = api_secret
-        self.testnet = testnet
         self.timeout = timeout
         self.show_limit_usage = show_limit_usage
-        self.base_url = BINANCE_API_TESTNET_URL if testnet else BINANCE_API_URL
 
         # Initialize the python-binance client
         # Note: python-binance Client doesn't accept 'timeout' directly
@@ -127,15 +121,10 @@ class BinanceClient:
         self.client = BinanceAPIClient(
             api_key=api_key,
             api_secret=api_secret,
-            testnet=testnet,
             requests_params=requests_params or None,
         )
 
-        logger.info(
-            "Initialized Binance client with testnet=%s, timeout=%s",
-            testnet,
-            timeout,
-        )
+        logger.info("Initialized Binance client, timeout=%s", timeout)
 
     def _handle_error(self, error: Exception) -> None:
         """

@@ -28,11 +28,16 @@ skip_integration = pytest.mark.skipif(
 @pytest_asyncio.fixture()
 async def binance_testnet_client() -> BinanceClient:
     """
-    Create a Binance testnet client for testing.
+    Create a Binance client for integration testing.
 
-    This client uses the testnet environment and doesn't require API keys.
+    Skips automatically when Binance is unreachable.
     """
-    return BinanceClient(testnet=True)
+    client = BinanceClient()
+    try:
+        await client.ping()
+    except Exception:
+        pytest.skip("Binance unreachable")
+    return client
 
 
 @pytest_asyncio.fixture()
@@ -51,7 +56,6 @@ async def binance_client() -> BinanceClient:
     return BinanceClient(
         api_key=api_key,
         api_secret=api_secret,
-        testnet=True,
     )
 
 
@@ -93,7 +97,6 @@ async def historical_client(
         return_value=mock_binance_client,
     ):
         client = BinanceHistoricalDataClient(
-            testnet=True,
             max_workers=2,
             batch_size=100,
         )
@@ -107,7 +110,7 @@ def websocket_client(mock_stream_manager: MagicMock) -> BinanceWebsocketClient:
         "kavzi_trader.api.binance.websocket.client.StreamManager",
         return_value=mock_stream_manager,
     ):
-        return BinanceWebsocketClient(testnet=True)
+        return BinanceWebsocketClient()
 
 
 @pytest.fixture

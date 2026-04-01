@@ -38,6 +38,9 @@ _MAX_BACKOFF_FACTOR = 6.0
 _COOLDOWN_LOW_CONFLUENCE_THRESHOLD = 3
 _COOLDOWN_MEDIUM_CONFLUENCE_THRESHOLD = 5
 
+_SKIP_SUSPENSION_THRESHOLD = 20
+_MAX_SKIP_EVAL_INTERVAL = 16
+
 
 class ReasoningLoop:
     """Runs the agent router and enqueues trade decisions."""
@@ -54,7 +57,7 @@ class ReasoningLoop:
         state_manager: StateManager | None = None,
         analyst_cooldown_cycles: int = 3,
         filter_chain: PreTradeFilterChain | None = None,
-        max_consecutive_rejection_multiplier: int = 5,
+        max_consecutive_rejection_multiplier: int = 3,
     ) -> None:
         self._symbols = symbols
         self._router = router
@@ -69,6 +72,8 @@ class ReasoningLoop:
         self._max_rejection_multiplier = max_consecutive_rejection_multiplier
         self._cooldowns: dict[str, int] = {}
         self._consecutive_rejections: dict[str, int] = {}
+        self._consecutive_skips: dict[str, int] = {}
+        self._skip_eval_interval: dict[str, int] = {}
 
     async def run(self) -> None:
         logger.info(
@@ -142,24 +147,53 @@ class ReasoningLoop:
             logger.exception("Failed to fetch open positions for skip check")
             return set()
 
-    async def _handle_symbol(self, symbol: str) -> bool:
+    def _is_suspended(self, symbol: str) -> bool:
+        """Check if a symbol is dynamically suspended due to consecutive SKIPs."""
+        skip_interval = self._skip_eval_interval.get(symbol, 0)
+        if skip_interval <= 0:
+            return False
+        skip_count = self._consecutive_skips.get(symbol, 0)
+        if skip_count % skip_interval != 0:
+            self._consecutive_skips[symbol] = skip_count + 1
+            return True
+        return False
+
+    def _track_skip_suspension(self, symbol: str, verdict: str) -> None:
+        """Update dynamic suspension state based on scout verdict."""
+        if verdict == "SKIP":
+            count = self._consecutive_skips.get(symbol, 0) + 1
+            self._consecutive_skips[symbol] = count
+            if count >= _SKIP_SUSPENSION_THRESHOLD:
+                new_interval = min(
+                    max(self._skip_eval_interval.get(symbol, 1) * 2, 2),
+                    _MAX_SKIP_EVAL_INTERVAL,
+                )
+                self._skip_eval_interval[symbol] = new_interval
+                logger.info(
+                    "Symbol %s suspended: %d consecutive SKIPs, eval every %d cycles",
+                    symbol,
+                    count,
+                    new_interval,
+                    extra={"symbol": symbol},
+                )
+        else:
+            self._consecutive_skips.pop(symbol, None)
+            self._skip_eval_interval.pop(symbol, None)
+
+    async def _should_skip_symbol(self, symbol: str) -> bool:
         remaining = self._cooldowns.get(symbol, 0)
         if remaining > 0:
             self._cooldowns[symbol] = remaining - 1
-            logger.debug(
-                "Skipping %s: cooldown remaining %d cycles",
-                symbol,
-                remaining - 1,
-            )
-            return False
-
+            return True
+        if self._is_suspended(symbol):
+            return True
         if not self._deps_provider.indicators_available(symbol):
-            logger.debug("Skipping %s: indicators not yet available", symbol)
-            return False
-
+            return True
         open_symbols = await self._get_open_position_symbols()
-        if symbol in open_symbols:
-            logger.debug("Skipping %s: open position exists", symbol)
+        return symbol in open_symbols
+
+    async def _handle_symbol(self, symbol: str) -> bool:
+        if await self._should_skip_symbol(symbol):
             return False
 
         result = await self._router.run(symbol, self._deps_provider)
@@ -175,6 +209,8 @@ class ReasoningLoop:
                 "Failed to report decisions for %s",
                 symbol,
             )
+
+        self._track_skip_suspension(symbol, result.scout.verdict)
 
         if result.analyst is not None and not result.analyst.setup_valid:
             count = self._consecutive_rejections.get(symbol, 0) + 1
@@ -215,9 +251,9 @@ class ReasoningLoop:
     def _compute_rejection_cooldown(self, confluence_score: int) -> int:
         """Scale cooldown based on how far below the threshold the rejection was."""
         if confluence_score <= _COOLDOWN_LOW_CONFLUENCE_THRESHOLD:
-            multiplier = 5
-        elif confluence_score <= _COOLDOWN_MEDIUM_CONFLUENCE_THRESHOLD:
             multiplier = 3
+        elif confluence_score <= _COOLDOWN_MEDIUM_CONFLUENCE_THRESHOLD:
+            multiplier = 2
         else:
             multiplier = 1
         cooldown = self._analyst_cooldown_cycles * multiplier
