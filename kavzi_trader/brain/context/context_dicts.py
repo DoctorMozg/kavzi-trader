@@ -45,3 +45,4 @@ class TraderContextDict(MarketContextDict):
     sentiment_summary: str | None
     sentiment_bias: str | None
     sentiment_confidence_adjustment: str | None
+    atr_fallback_targets: list[dict[str, str]]

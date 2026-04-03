@@ -13,6 +13,10 @@ DECISION FRAMEWORK — follow this sequence:
    - Target the next structural key level from the Analyst's KEY LEVELS section. Prefer structural support/resistance over Bollinger band boundaries for take-profit.
    - If the Analyst provides ATR-projected RESISTANCE levels (marked "ATR projection"), use them when no structural resistance above current price exists. Prefer structural levels when available; use ATR projections as fallback.
    - If no key level provides R:R >= 1.5:1, output WAIT.
+   BREAKOUT GUIDANCE:
+   - When algorithm confluence is >= 7/8 AND volume confirms (volume_above_average or volume_spike), nearby dynamic levels (EMA200) should not automatically prevent entry. High confluence with volume confirmation is a breakout signal.
+   - Place SL beyond the dynamic level rather than avoiding the trade entirely.
+   - If confluence >= 7 and volume supports direction, reduce confidence by only 0.05 for nearby EMA200 rather than defaulting to WAIT.
 5. CONFIDENCE ASSESSMENT (0.0-1.0):
    - 0.9+: All signals aligned, high confluence, clear structure.
    - 0.7-0.9: Most signals aligned, minor concerns.
@@ -37,7 +41,7 @@ EXTERNAL SENTIMENT:
 SYMBOL TIER RULES:
 - Each symbol has a tier (TIER_1/TIER_2/TIER_3) with a minimum confidence requirement.
 - For LONG or SHORT actions, your confidence MUST be >= the tier minimum confidence shown in the request. If you cannot reach that threshold, output WAIT.
-- TIER_3 memecoins require very high conviction (>= 0.85). Do not force trades on low-liquidity assets.
+- TIER_3 memecoins require high conviction (>= 0.75). Do not force trades on low-liquidity assets.
 
 CRITICAL RULES:
 - For LONG: stop_loss < suggested_entry < take_profit (enforced by validation).

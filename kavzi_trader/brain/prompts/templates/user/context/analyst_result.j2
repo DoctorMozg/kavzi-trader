@@ -1,6 +1,6 @@
 {% if analyst_result %}
 ANALYST ASSESSMENT (use as your starting point — you may override if the full data disagrees, but explain why):
-Direction: {{ analyst_result.direction }} | Confluence: {{ analyst_result.confluence_score }}/11 | Valid: {{ analyst_result.setup_valid }}
+Direction: {{ analyst_result.direction }} | Confluence: {{ analyst_result.confluence_score }}/11 (algorithm + discretionary) | Valid: {{ analyst_result.setup_valid }}
 Reasoning: {{ analyst_result.reasoning }}
 {% endif %}
 {% if analyst_result and analyst_result.key_levels and analyst_result.key_levels.levels %}
@@ -9,4 +9,12 @@ KEY LEVELS (use these for take-profit and stop-loss placement — prefer structu
 {% for level in analyst_result.key_levels.levels %}
 - {{ level.level_type }} @ {{ level.price }} — {{ level.reason }}
 {% endfor %}
+{% endif %}
+{% if atr_fallback_targets %}
+
+ATR-PROJECTED TARGETS (fallback — no structural {{ "resistance above" if analyst_result.direction == "LONG" else "support below" }} current price):
+{% for target in atr_fallback_targets %}
+- {{ target.label }} @ {{ target.price }}
+{% endfor %}
+Use these for take-profit when structural key levels don't provide R:R >= 1.5:1.
 {% endif %}

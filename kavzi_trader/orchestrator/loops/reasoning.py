@@ -41,6 +41,10 @@ _COOLDOWN_MEDIUM_CONFLUENCE_THRESHOLD = 5
 _SKIP_SUSPENSION_THRESHOLD = 20
 _MAX_SKIP_EVAL_INTERVAL = 16
 
+_WAIT_COOLDOWN_THRESHOLD = 3
+_WAIT_COOLDOWN_BASE_CYCLES = 3
+_WAIT_MAX_COOLDOWN_CYCLES = 12
+
 
 class ReasoningLoop:
     """Runs the agent router and enqueues trade decisions."""
@@ -70,8 +74,9 @@ class ReasoningLoop:
         self._analyst_cooldown_cycles = analyst_cooldown_cycles
         self._filter_chain = filter_chain
         self._max_rejection_multiplier = max_consecutive_rejection_multiplier
-        self._cooldowns: dict[str, int] = {}
-        self._consecutive_rejections: dict[str, int] = {}
+        self._cooldowns: dict[tuple[str, str], int] = {}  # (symbol, direction)
+        self._consecutive_rejections: dict[tuple[str, str], int] = {}
+        self._consecutive_waits: dict[tuple[str, str], int] = {}
         self._consecutive_skips: dict[str, int] = {}
         self._skip_eval_interval: dict[str, int] = {}
 
@@ -180,10 +185,21 @@ class ReasoningLoop:
             self._consecutive_skips.pop(symbol, None)
             self._skip_eval_interval.pop(symbol, None)
 
+    def _tick_cooldowns(self, symbol: str) -> bool:
+        """Decrement direction cooldowns. Return True if ALL directions are blocked."""
+        long_cd = self._cooldowns.get((symbol, "LONG"), 0)
+        short_cd = self._cooldowns.get((symbol, "SHORT"), 0)
+
+        if long_cd > 0:
+            self._cooldowns[(symbol, "LONG")] = long_cd - 1
+        if short_cd > 0:
+            self._cooldowns[(symbol, "SHORT")] = short_cd - 1
+
+        # Only skip when both directions are on cooldown
+        return long_cd > 0 and short_cd > 0
+
     async def _should_skip_symbol(self, symbol: str) -> bool:
-        remaining = self._cooldowns.get(symbol, 0)
-        if remaining > 0:
-            self._cooldowns[symbol] = remaining - 1
+        if self._tick_cooldowns(symbol):
             return True
         if self._is_suspended(symbol):
             return True
@@ -213,26 +229,37 @@ class ReasoningLoop:
         self._track_skip_suspension(symbol, result.scout.verdict)
 
         if result.analyst is not None and not result.analyst.setup_valid:
-            count = self._consecutive_rejections.get(symbol, 0) + 1
-            self._consecutive_rejections[symbol] = count
-            base_cooldown = self._compute_rejection_cooldown(
-                result.analyst.confluence_score,
-            )
-            multiplier = min(count, self._max_rejection_multiplier)
-            self._cooldowns[symbol] = base_cooldown * multiplier
-            logger.debug(
-                "Consecutive rejection %d for %s: cooldown=%d (base=%d x %d)",
-                count,
-                symbol,
-                base_cooldown * multiplier,
-                base_cooldown,
-                multiplier,
-            )
+            direction = result.analyst.direction
+            cooldown_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
+            for d in cooldown_dirs:
+                key = (symbol, d)
+                count = self._consecutive_rejections.get(key, 0) + 1
+                self._consecutive_rejections[key] = count
+                base_cooldown = self._compute_rejection_cooldown(
+                    result.analyst.confluence_score,
+                )
+                multiplier = min(count, self._max_rejection_multiplier)
+                self._cooldowns[key] = base_cooldown * multiplier
+                logger.debug(
+                    "Consecutive rejection %d for %s %s: cooldown=%d (base=%d x %d)",
+                    count,
+                    symbol,
+                    d,
+                    base_cooldown * multiplier,
+                    base_cooldown,
+                    multiplier,
+                )
 
         if result.analyst is not None and result.analyst.setup_valid:
-            self._consecutive_rejections.pop(symbol, None)
+            direction = result.analyst.direction
+            if direction == "NEUTRAL":
+                self._consecutive_rejections.pop((symbol, "LONG"), None)
+                self._consecutive_rejections.pop((symbol, "SHORT"), None)
+            else:
+                self._consecutive_rejections.pop((symbol, direction), None)
 
         if not self._should_enqueue(result):
+            self._track_consecutive_waits(symbol, result)
             return result.scout.verdict == "INTERESTING"
 
         filter_result = await self._run_filter_chain(result)
@@ -244,7 +271,12 @@ class ReasoningLoop:
             )
             return True
 
-        self._cooldowns[symbol] = self._analyst_cooldown_cycles * 3
+        # After trade enqueue, cool down both directions and reset WAIT counters
+        post_trade_cd = self._analyst_cooldown_cycles * 3
+        self._cooldowns[(symbol, "LONG")] = post_trade_cd
+        self._cooldowns[(symbol, "SHORT")] = post_trade_cd
+        self._consecutive_waits.pop((symbol, "LONG"), None)
+        self._consecutive_waits.pop((symbol, "SHORT"), None)
         await self._enqueue_decision(result)
         return True
 
@@ -264,6 +296,37 @@ class ReasoningLoop:
             cooldown,
         )
         return cooldown
+
+    def _track_consecutive_waits(
+        self,
+        symbol: str,
+        result: PipelineResult,
+    ) -> None:
+        """Apply escalating cooldown after repeated Trader WAITs."""
+        if result.trader is None or result.trader.action != "WAIT":
+            return
+        direction = (
+            result.analyst.direction if result.analyst is not None else "NEUTRAL"
+        )
+        wait_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
+        for d in wait_dirs:
+            key = (symbol, d)
+            count = self._consecutive_waits.get(key, 0) + 1
+            self._consecutive_waits[key] = count
+            if count >= _WAIT_COOLDOWN_THRESHOLD:
+                excess = count - _WAIT_COOLDOWN_THRESHOLD + 1
+                cooldown = min(
+                    _WAIT_COOLDOWN_BASE_CYCLES * excess,
+                    _WAIT_MAX_COOLDOWN_CYCLES,
+                )
+                self._cooldowns[key] = cooldown
+                logger.info(
+                    "Consecutive WAIT %d for %s %s: cooldown=%d cycles",
+                    count,
+                    symbol,
+                    d,
+                    cooldown,
+                )
 
     def _should_enqueue(self, result: PipelineResult) -> bool:
         if result.scout.verdict != "INTERESTING":
@@ -406,6 +469,19 @@ class ReasoningLoop:
                     f"Confidence: {trader.confidence * 100:.0f}%"
                 ),
                 details=trader.reasoning,
+            )
+        if analyst is not None and trader is not None:
+            await self._report_populator.record_action(
+                action_type="pipeline_complete",
+                symbol=symbol,
+                summary=(
+                    f"Scout={scout.verdict} "
+                    f"Analyst={analyst.direction}"
+                    f"(conf={analyst.confluence_score}) "
+                    f"Trader={trader.action}"
+                    f"(conf={trader.confidence * 100:.0f}%)"
+                ),
+                details=None,
             )
 
     def _build_decision_message(

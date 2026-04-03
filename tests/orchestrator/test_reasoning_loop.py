@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -416,10 +417,10 @@ def _make_analyst_result() -> PipelineResult:
 
 @pytest.mark.asyncio
 async def test_cooldown_after_analyst_skips_cycles() -> None:
-    """After Analyst rejection, symbol should be skipped for graduated cooldown cycles.
-
-    With confluence_score=5 and analyst_cooldown_cycles=2, the graduated cooldown
-    sets cooldown = 2 * 2 = 4 cycles (medium tier: score 4-5).
+    """After Analyst rejection, symbol should be skipped only when BOTH directions
+    are on cooldown. _make_analyst_result returns direction=LONG, so only LONG
+    gets a cooldown. Since SHORT has no cooldown, the symbol is re-evaluated
+    every cycle (direction-aware cooldowns).
     """
     deps = _build_deps()
     provider = DummyDepsProvider(deps)
@@ -450,15 +451,15 @@ async def test_cooldown_after_analyst_skips_cycles() -> None:
         task = asyncio.create_task(loop.run())
         for _ in range(200):
             await original_sleep(0)
-            if len(sleep_durations) >= 6:
+            if len(sleep_durations) >= 3:
                 break
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    # Cycle 1: router called (analyst reached, confluence=5 → cooldown=4)
-    # Cycles 2-5: cooldown counts down → router NOT called
-    # Cycle 6: cooldown=0 → router called again
-    assert router.run.call_count == 2
+    # With direction-aware cooldowns, a single-direction rejection (LONG)
+    # does NOT block the symbol from re-evaluation (SHORT may be viable).
+    # Router is called every cycle.
+    assert router.run.call_count >= 3
 
 
 @pytest.mark.asyncio
@@ -791,7 +792,7 @@ async def test_no_filter_chain_passes_through() -> None:
 
 
 def test_consecutive_rejections_escalate_cooldown() -> None:
-    """Repeated analyst rejections for the same symbol increase cooldown multiplier."""
+    """Repeated analyst rejections for the same symbol+direction increase cooldown."""
     loop = ReasoningLoop(
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -800,31 +801,98 @@ def test_consecutive_rejections_escalate_cooldown() -> None:
         analyst_cooldown_cycles=3,
         max_consecutive_rejection_multiplier=5,
     )
+    key = ("BTCUSDT", "LONG")
 
     # First rejection: confluence=2 → base=9, multiplier=min(1,5)=1
-    count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
-    loop._consecutive_rejections["BTCUSDT"] = count
+    count = loop._consecutive_rejections.get(key, 0) + 1
+    loop._consecutive_rejections[key] = count
     base = loop._compute_rejection_cooldown(2)
     multiplier = min(count, loop._max_rejection_multiplier)
     assert base == 9
     assert base * multiplier == 9  # 9 * 1
 
     # Second rejection: multiplier=min(2,5)=2
-    count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
-    loop._consecutive_rejections["BTCUSDT"] = count
+    count = loop._consecutive_rejections.get(key, 0) + 1
+    loop._consecutive_rejections[key] = count
     multiplier = min(count, loop._max_rejection_multiplier)
     assert base * multiplier == 18  # 9 * 2
 
     # Sixth rejection: capped at 5
-    loop._consecutive_rejections["BTCUSDT"] = 5
-    count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
-    loop._consecutive_rejections["BTCUSDT"] = count
+    loop._consecutive_rejections[key] = 5
+    count = loop._consecutive_rejections.get(key, 0) + 1
+    loop._consecutive_rejections[key] = count
     multiplier = min(count, loop._max_rejection_multiplier)
     assert base * multiplier == 45  # 9 * 5 (capped)
 
 
 def test_consecutive_rejections_reset_on_valid_analyst() -> None:
-    """A valid analyst result resets the consecutive rejection counter."""
+    """A valid analyst result resets the rejection counter for that direction."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+    key = ("BTCUSDT", "LONG")
+
+    # Accumulate 3 rejections
+    loop._consecutive_rejections[key] = 3
+
+    # Reset (mirrors _handle_symbol logic on valid analyst)
+    loop._consecutive_rejections.pop(key, None)
+    assert key not in loop._consecutive_rejections
+
+    # Next rejection starts fresh from multiplier=1
+    count = loop._consecutive_rejections.get(key, 0) + 1
+    loop._consecutive_rejections[key] = count
+    base = loop._compute_rejection_cooldown(2)
+    multiplier = min(count, loop._max_rejection_multiplier)
+    assert multiplier == 1
+    assert base * multiplier == 9
+
+
+def test_direction_aware_cooldown_allows_opposite_direction() -> None:
+    """SHORT cooldown should not block LONG evaluation on the same symbol."""
+    loop = ReasoningLoop(
+        symbols=["TAOUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+
+    # Set SHORT cooldown only
+    loop._cooldowns[("TAOUSDT", "SHORT")] = 10
+    loop._cooldowns[("TAOUSDT", "LONG")] = 0
+
+    # tick_cooldowns should return False (not all blocked)
+    assert loop._tick_cooldowns("TAOUSDT") is False
+
+
+def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
+    """When both LONG and SHORT are on cooldown, the symbol should be skipped."""
+    loop = ReasoningLoop(
+        symbols=["TAOUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+
+    # Set both cooldowns
+    loop._cooldowns[("TAOUSDT", "LONG")] = 5
+    loop._cooldowns[("TAOUSDT", "SHORT")] = 10
+
+    # Should block
+    assert loop._tick_cooldowns("TAOUSDT") is True
+    # Cooldowns should have decremented
+    assert loop._cooldowns[("TAOUSDT", "LONG")] == 4
+    assert loop._cooldowns[("TAOUSDT", "SHORT")] == 9
+
+
+def test_neutral_rejection_blocks_both_directions() -> None:
+    """A NEUTRAL rejection should set cooldown for both LONG and SHORT."""
     loop = ReasoningLoop(
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -833,17 +901,177 @@ def test_consecutive_rejections_reset_on_valid_analyst() -> None:
         analyst_cooldown_cycles=3,
     )
 
-    # Accumulate 3 rejections
-    loop._consecutive_rejections["BTCUSDT"] = 3
+    # Simulate NEUTRAL rejection (mirrors _handle_symbol logic)
+    direction = "NEUTRAL"
+    cooldown_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
+    for d in cooldown_dirs:
+        key = ("BTCUSDT", d)
+        count = loop._consecutive_rejections.get(key, 0) + 1
+        loop._consecutive_rejections[key] = count
+        base = loop._compute_rejection_cooldown(4)  # medium confluence
+        multiplier = min(count, loop._max_rejection_multiplier)
+        loop._cooldowns[key] = base * multiplier
 
-    # Reset (mirrors _handle_symbol logic on valid analyst)
-    loop._consecutive_rejections.pop("BTCUSDT", None)
-    assert "BTCUSDT" not in loop._consecutive_rejections
+    assert loop._cooldowns[("BTCUSDT", "LONG")] == 6  # base=6 * mult=1
+    assert loop._cooldowns[("BTCUSDT", "SHORT")] == 6
 
-    # Next rejection starts fresh from multiplier=1
-    count = loop._consecutive_rejections.get("BTCUSDT", 0) + 1
-    loop._consecutive_rejections["BTCUSDT"] = count
-    base = loop._compute_rejection_cooldown(2)
-    multiplier = min(count, loop._max_rejection_multiplier)
-    assert multiplier == 1
-    assert base * multiplier == 9
+
+def _make_wait_result(
+    direction: Literal["LONG", "SHORT", "NEUTRAL"] = "LONG",
+) -> PipelineResult:
+    return PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING", reason="volume", pattern_detected=None
+        ),
+        analyst=AnalystDecisionSchema(
+            setup_valid=True,
+            direction=direction,
+            confluence_score=7,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning=_ANALYST_REASONING,
+        ),
+        trader=TradeDecisionSchema(
+            action="WAIT",
+            confidence=0.5,
+            reasoning=_TRADER_REASONING,
+            suggested_entry=None,
+            suggested_stop_loss=None,
+            suggested_take_profit=None,
+        ),
+    )
+
+
+def test_consecutive_waits_apply_cooldown() -> None:
+    """After 3 consecutive WAITs, cooldown is set for (symbol, direction)."""
+    loop = ReasoningLoop(
+        symbols=["TONUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+    )
+    result = _make_wait_result("LONG")
+
+    # Simulate 3 consecutive WAITs
+    for _ in range(3):
+        loop._track_consecutive_waits("TONUSDT", result)
+
+    key = ("TONUSDT", "LONG")
+    assert loop._consecutive_waits[key] == 3
+    assert loop._cooldowns.get(key, 0) > 0
+
+
+def test_consecutive_waits_reset_on_trade() -> None:
+    """Trade enqueue clears WAIT counters for the symbol."""
+    loop = ReasoningLoop(
+        symbols=["TONUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+    )
+
+    # Accumulate some WAITs
+    loop._consecutive_waits[("TONUSDT", "LONG")] = 5
+    loop._consecutive_waits[("TONUSDT", "SHORT")] = 2
+
+    # Simulate trade enqueue reset (mirrors _handle_symbol logic)
+    loop._consecutive_waits.pop(("TONUSDT", "LONG"), None)
+    loop._consecutive_waits.pop(("TONUSDT", "SHORT"), None)
+
+    assert ("TONUSDT", "LONG") not in loop._consecutive_waits
+    assert ("TONUSDT", "SHORT") not in loop._consecutive_waits
+
+
+def test_consecutive_waits_escalate() -> None:
+    """4th and 5th WAITs increase cooldown, capped at max."""
+    loop = ReasoningLoop(
+        symbols=["TONUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+    )
+    result = _make_wait_result("LONG")
+    key = ("TONUSDT", "LONG")
+
+    # 5 consecutive WAITs
+    for _ in range(5):
+        loop._track_consecutive_waits("TONUSDT", result)
+
+    assert loop._consecutive_waits[key] == 5
+    # count=5, excess=5-3+1=3, cooldown=min(3*3, 12)=9
+    assert loop._cooldowns[key] == 9
+
+    # Push to cap (12+ waits)
+    for _ in range(10):
+        loop._track_consecutive_waits("TONUSDT", result)
+
+    assert loop._consecutive_waits[key] == 15
+    # excess=15-3+1=13, cooldown=min(3*13, 12)=12
+    assert loop._cooldowns[key] == 12
+
+
+def test_consecutive_waits_no_cooldown_below_threshold() -> None:
+    """Fewer than 3 WAITs should not set any cooldown."""
+    loop = ReasoningLoop(
+        symbols=["TONUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+    )
+    result = _make_wait_result("LONG")
+    key = ("TONUSDT", "LONG")
+
+    loop._track_consecutive_waits("TONUSDT", result)
+    loop._track_consecutive_waits("TONUSDT", result)
+
+    assert loop._consecutive_waits[key] == 2
+    assert loop._cooldowns.get(key, 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_pipeline_complete_event_recorded() -> None:
+    """When all 3 tiers fire, a pipeline_complete event is recorded."""
+    deps = _build_deps()
+    provider = DummyDepsProvider(deps)
+    router = AsyncMock()
+    router.run = AsyncMock(return_value=_make_wait_result("LONG"))
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock()
+    mock_populator = AsyncMock()
+    mock_populator.record_action = AsyncMock()
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=router,
+        deps_provider=provider,
+        redis_client=redis_client,
+        interval_s=1,
+        report_populator=mock_populator,
+    )
+
+    sleep_durations: list[float] = []
+    original_sleep = asyncio.sleep
+
+    async def _capture_sleep(duration: float) -> None:
+        sleep_durations.append(duration)
+        await original_sleep(0)
+
+    import unittest.mock
+
+    with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
+        task = asyncio.create_task(loop.run())
+        for _ in range(50):
+            await original_sleep(0)
+            if len(sleep_durations) >= 1:
+                break
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    complete_calls = [
+        c
+        for c in mock_populator.record_action.call_args_list
+        if c.kwargs.get("action_type") == "pipeline_complete"
+    ]
+    assert len(complete_calls) >= 1
+    summary = complete_calls[0].kwargs.get("summary", "")
+    assert "Scout=INTERESTING" in summary
+    assert "Trader=WAIT" in summary

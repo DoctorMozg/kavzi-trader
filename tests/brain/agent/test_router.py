@@ -410,3 +410,97 @@ async def test_router_calls_analyst_at_threshold(
     assert spy_analyst.call_count == 1, "Analyst should be called at threshold"
     assert result.analyst is not None
     assert result.analyst.setup_valid is True
+
+
+def _make_detected_side_zero() -> DualConfluenceSchema:
+    """Detected side (LONG) scores 0; opposite side scores above threshold."""
+    zero = AlgorithmConfluenceSchema(
+        ema_alignment=False,
+        rsi_favorable=False,
+        volume_above_average=False,
+        price_at_bollinger=False,
+        funding_favorable=False,
+        oi_supports_direction=False,
+        oi_funding_divergence=False,
+        volume_spike=False,
+        score=0,
+    )
+    high = AlgorithmConfluenceSchema(
+        ema_alignment=True,
+        rsi_favorable=True,
+        volume_above_average=True,
+        price_at_bollinger=True,
+        funding_favorable=True,
+        oi_supports_direction=False,
+        oi_funding_divergence=False,
+        volume_spike=False,
+        score=5,
+    )
+    return DualConfluenceSchema(long=zero, short=high, detected_side="LONG")
+
+
+@pytest.mark.asyncio
+async def test_router_skips_analyst_when_detected_side_zero(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    account_state,
+    positions,
+) -> None:
+    """When detected side has confluence 0/8, Analyst LLM is not called."""
+    spy_analyst = SpyAnalyst()
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        spy_analyst,
+        DummyTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        _make_detected_side_zero(),
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert spy_analyst.call_count == 0, "Analyst should be skipped"
+    assert result.analyst is not None
+    assert result.analyst.setup_valid is False
+    assert result.analyst.confluence_score == 0
+    assert "stale" in result.analyst.reasoning.lower()
+
+
+@pytest.mark.asyncio
+async def test_router_calls_analyst_when_detected_side_nonzero(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """When detected side has score >= 1, gate 2 does not block."""
+    spy_analyst = SpyAnalyst()
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        spy_analyst,
+        DummyTrader(),
+    )
+    # Default fixture has long.score=4, detected_side="LONG" → nonzero
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert spy_analyst.call_count == 1
+    assert result.analyst is not None

@@ -20,9 +20,10 @@ def test_break_even_moves_stop_loss_for_long(position_factory) -> None:
         current_atr=Decimal(10),
     )
 
+    # entry=100, buffer=0.3*10=3 → SL = 100 - 3 = 97
     assert action is not None
     assert action.action == PositionActionType.MOVE_STOP_LOSS
-    assert action.new_stop_loss == position.entry_price
+    assert action.new_stop_loss == Decimal(97)
     assert action.reason == "break_even"
 
 
@@ -69,9 +70,10 @@ def test_break_even_moves_stop_loss_for_short(position_factory) -> None:
         current_atr=Decimal(10),
     )
 
+    # entry=100, buffer=0.3*10=3 → SL = 100 + 3 = 103
     assert action is not None
     assert action.action == PositionActionType.MOVE_STOP_LOSS
-    assert action.new_stop_loss == position.entry_price
+    assert action.new_stop_loss == Decimal(103)
 
 
 def test_break_even_skips_when_position_too_young(position_factory) -> None:
@@ -105,9 +107,10 @@ def test_break_even_activates_when_position_old_enough(position_factory) -> None
         current_atr=Decimal(10),
     )
 
+    # entry=100, buffer=0.3*10=3 → SL = 100 - 3 = 97
     assert action is not None
     assert action.action == PositionActionType.MOVE_STOP_LOSS
-    assert action.new_stop_loss == position.entry_price
+    assert action.new_stop_loss == Decimal(97)
 
 
 def test_break_even_skips_time_guard_when_disabled(position_factory) -> None:
@@ -128,3 +131,78 @@ def test_break_even_skips_time_guard_when_disabled(position_factory) -> None:
 
     assert action is not None
     assert action.action == PositionActionType.MOVE_STOP_LOSS
+    assert action.new_stop_loss == Decimal(97)
+
+
+def test_break_even_long_applies_buffer(position_factory) -> None:
+    """Buffer places SL below entry for LONG: entry - buffer*ATR."""
+    opened_at = datetime.now(UTC) - timedelta(seconds=1200)
+    config = PositionManagementConfigSchema(
+        break_even_buffer_atr=Decimal("0.5"),
+    )
+    position = position_factory(
+        current_stop_loss=Decimal(90),
+        opened_at=opened_at,
+        management_config=config,
+    )
+    mover = BreakEvenMover()
+
+    action = mover.evaluate(
+        position=position,
+        current_price=Decimal(115),
+        current_atr=Decimal(10),
+    )
+
+    # entry=100, buffer=0.5*10=5 → SL = 100 - 5 = 95
+    assert action is not None
+    assert action.new_stop_loss == Decimal(95)
+
+
+def test_break_even_short_applies_buffer(position_factory) -> None:
+    """Buffer places SL above entry for SHORT: entry + buffer*ATR."""
+    opened_at = datetime.now(UTC) - timedelta(seconds=1200)
+    config = PositionManagementConfigSchema(
+        break_even_buffer_atr=Decimal("0.5"),
+    )
+    position = position_factory(
+        side="SHORT",
+        stop_loss=Decimal(110),
+        current_stop_loss=Decimal(110),
+        take_profit=Decimal(80),
+        opened_at=opened_at,
+        management_config=config,
+    )
+    mover = BreakEvenMover()
+
+    action = mover.evaluate(
+        position=position,
+        current_price=Decimal(85),
+        current_atr=Decimal(10),
+    )
+
+    # entry=100, buffer=0.5*10=5 → SL = 100 + 5 = 105
+    assert action is not None
+    assert action.new_stop_loss == Decimal(105)
+
+
+def test_break_even_zero_buffer_matches_entry(position_factory) -> None:
+    """With buffer=0.0, SL is placed at exact entry (backward compat)."""
+    opened_at = datetime.now(UTC) - timedelta(seconds=1200)
+    config = PositionManagementConfigSchema(
+        break_even_buffer_atr=Decimal(0),
+    )
+    position = position_factory(
+        current_stop_loss=Decimal(90),
+        opened_at=opened_at,
+        management_config=config,
+    )
+    mover = BreakEvenMover()
+
+    action = mover.evaluate(
+        position=position,
+        current_price=Decimal(115),
+        current_atr=Decimal(10),
+    )
+
+    assert action is not None
+    assert action.new_stop_loss == position.entry_price

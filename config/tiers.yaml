@@ -34,7 +34,7 @@ tiers:
     risk_per_trade_percent: "1.0"
     max_leverage: 2
     max_exposure_percent: "3.0"
-    min_confidence: "0.85"
+    min_confidence: "0.75"
     crowded_long_zscore: "3.5"
     crowded_short_zscore: "-3.5"
     symbols:

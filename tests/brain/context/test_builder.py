@@ -1,9 +1,11 @@
 from decimal import Decimal
+from typing import Literal
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
+    KeyLevelSchema,
     KeyLevelsSchema,
 )
 from kavzi_trader.brain.schemas.dependencies import (
@@ -335,3 +337,180 @@ def test_trader_context_with_sentiment(
     context = builder.build_trader_context(deps)
     assert context["sentiment_summary"] == summary.summary
     assert context["sentiment_bias"] == "NEUTRAL"
+
+
+# --- ATR fallback target tests ---
+
+
+def _make_analyst(
+    direction: Literal["LONG", "SHORT", "NEUTRAL"],
+    levels: list[KeyLevelSchema] | None = None,
+) -> AnalystDecisionSchema:
+    return AnalystDecisionSchema(
+        setup_valid=True,
+        direction=direction,
+        confluence_score=8,
+        key_levels=KeyLevelsSchema(levels=levels or []),
+        reasoning=(
+            "EMA alignment is bullish with EMA20 above EMA50 above EMA200. RSI at 55"
+            " supports continuation. Volume confirms the breakout."
+        ),
+    )
+
+
+def test_atr_fallback_long_no_resistance_above() -> None:
+    """LONG with all RESISTANCE below current_price -> fallback targets generated."""
+    builder = ContextBuilder()
+    analyst = _make_analyst(
+        "LONG",
+        [
+            KeyLevelSchema(
+                price=Decimal(100), level_type="RESISTANCE", reason="swing high"
+            )
+        ],
+    )
+    targets = builder._compute_atr_fallback_targets(
+        analyst_result=analyst,
+        current_price=Decimal(105),
+        atr=Decimal(2),
+    )
+    assert len(targets) == 2
+    assert Decimal(targets[0]["price"]) == Decimal(108)  # 105 + 1.5*2
+    assert Decimal(targets[1]["price"]) == Decimal(110)  # 105 + 2.5*2
+
+
+def test_atr_fallback_long_has_resistance_above() -> None:
+    """LONG with RESISTANCE above current_price -> no fallback."""
+    builder = ContextBuilder()
+    analyst = _make_analyst(
+        "LONG",
+        [
+            KeyLevelSchema(
+                price=Decimal(110), level_type="RESISTANCE", reason="swing high"
+            )
+        ],
+    )
+    targets = builder._compute_atr_fallback_targets(
+        analyst_result=analyst,
+        current_price=Decimal(105),
+        atr=Decimal(2),
+    )
+    assert targets == []
+
+
+def test_atr_fallback_short_no_support_below() -> None:
+    """SHORT with no SUPPORT below current_price -> fallback targets generated."""
+    builder = ContextBuilder()
+    analyst = _make_analyst(
+        "SHORT",
+        [KeyLevelSchema(price=Decimal(110), level_type="SUPPORT", reason="old low")],
+    )
+    targets = builder._compute_atr_fallback_targets(
+        analyst_result=analyst,
+        current_price=Decimal(105),
+        atr=Decimal(2),
+    )
+    assert len(targets) == 2
+    assert Decimal(targets[0]["price"]) == Decimal(102)  # 105 - 1.5*2
+    assert Decimal(targets[1]["price"]) == Decimal(100)  # 105 - 2.5*2
+
+
+def test_atr_fallback_short_has_support_below() -> None:
+    """SHORT with SUPPORT below current_price -> no fallback."""
+    builder = ContextBuilder()
+    analyst = _make_analyst(
+        "SHORT",
+        [KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="swing low")],
+    )
+    targets = builder._compute_atr_fallback_targets(
+        analyst_result=analyst,
+        current_price=Decimal(105),
+        atr=Decimal(2),
+    )
+    assert targets == []
+
+
+def test_atr_fallback_neutral_returns_empty() -> None:
+    """NEUTRAL direction -> no fallback targets."""
+    builder = ContextBuilder()
+    analyst = _make_analyst("NEUTRAL")
+    targets = builder._compute_atr_fallback_targets(
+        analyst_result=analyst,
+        current_price=Decimal(105),
+        atr=Decimal(2),
+    )
+    assert targets == []
+
+
+def test_atr_fallback_none_analyst_returns_empty() -> None:
+    """No analyst result -> no fallback targets."""
+    builder = ContextBuilder()
+    targets = builder._compute_atr_fallback_targets(
+        analyst_result=None,
+        current_price=Decimal(105),
+        atr=Decimal(2),
+    )
+    assert targets == []
+
+
+def test_atr_fallback_none_atr_returns_empty() -> None:
+    """ATR is None -> no fallback targets."""
+    builder = ContextBuilder()
+    analyst = _make_analyst("LONG")
+    targets = builder._compute_atr_fallback_targets(
+        analyst_result=analyst,
+        current_price=Decimal(105),
+        atr=None,
+    )
+    assert targets == []
+
+
+def test_atr_fallback_zero_atr_returns_empty() -> None:
+    """ATR is zero -> no fallback targets."""
+    builder = ContextBuilder()
+    analyst = _make_analyst("LONG")
+    targets = builder._compute_atr_fallback_targets(
+        analyst_result=analyst,
+        current_price=Decimal(105),
+        atr=Decimal(0),
+    )
+    assert targets == []
+
+
+def test_atr_fallback_injected_in_trader_context(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+    account_state,
+) -> None:
+    """Full integration: fallback targets appear in trader context when needed."""
+    deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        open_positions=[],
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+    # Analyst with LONG direction but all resistance levels below current_price
+    analyst = _make_analyst(
+        "LONG",
+        [
+            KeyLevelSchema(
+                price=Decimal(100), level_type="RESISTANCE", reason="old high"
+            )
+        ],
+    )
+    builder = ContextBuilder()
+    context = builder.build_trader_context(deps, analyst_result=analyst)
+    fallback = context["atr_fallback_targets"]
+    assert len(fallback) == 2
+    assert "ATR projection" in fallback[0]["label"]

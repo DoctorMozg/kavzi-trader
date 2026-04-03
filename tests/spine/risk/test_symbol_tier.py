@@ -39,7 +39,7 @@ def tier_configs() -> dict[SymbolTier, SymbolTierConfigSchema]:
                 "risk_per_trade_percent": "1.0",
                 "max_leverage": 2,
                 "max_exposure_percent": "3.0",
-                "min_confidence": "0.85",
+                "min_confidence": "0.75",
                 "crowded_long_zscore": "3.5",
                 "crowded_short_zscore": "-3.5",
             },
@@ -98,7 +98,7 @@ def test_get_config_unknown_symbol_returns_tier3_config(
     config = registry.get_config("RANDOMUSDT")
     assert config.risk_per_trade_percent == Decimal("1.0")
     assert config.max_leverage == 2
-    assert config.min_confidence == Decimal("0.85")
+    assert config.min_confidence == Decimal("0.75")
 
 
 def test_from_yaml(tmp_path: Path) -> None:
@@ -129,7 +129,7 @@ tiers:
     risk_per_trade_percent: "1.0"
     max_leverage: 2
     max_exposure_percent: "3.0"
-    min_confidence: "0.85"
+    min_confidence: "0.75"
     crowded_long_zscore: "3.5"
     crowded_short_zscore: "-3.5"
     symbols:
@@ -175,7 +175,7 @@ def test_tier_config_is_frozen() -> None:
             "risk_per_trade_percent": "1.0",
             "max_leverage": 2,
             "max_exposure_percent": "3.0",
-            "min_confidence": "0.85",
+            "min_confidence": "0.75",
             "crowded_long_zscore": "3.5",
             "crowded_short_zscore": "-3.5",
         },

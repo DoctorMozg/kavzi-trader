@@ -19,8 +19,6 @@ from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 
 logger = logging.getLogger(__name__)
 
-SLOW_AGENT_THRESHOLD_S = 10.0
-
 _SKIP_ERROR = ScoutDecisionSchema(
     verdict="SKIP",
     reason="agent_error",
@@ -153,14 +151,11 @@ class AgentRouter:
         symbol: str,
         deps: ScoutDependenciesSchema,
     ) -> ScoutDecisionSchema | None:
-        t0 = time.monotonic()
         try:
             result = await self._scout.run(deps)
         except Exception:
             logger.exception("Scout agent failed for %s", symbol)
             return None
-        ms = (time.monotonic() - t0) * 1000
-        self._warn_slow("Scout", symbol, ms)
         return result
 
     async def _run_analyst(
@@ -199,14 +194,35 @@ class AgentRouter:
                 ),
             )
 
-        t0 = time.monotonic()
+        # Gate 2: detected side has zero confluence — indicators likely stale.
+        detected_score = (
+            conf.long.score if conf.detected_side == "LONG" else conf.short.score
+        )
+        if detected_score == 0:
+            logger.info(
+                "Analyst skipped for %s: detected side %s has confluence"
+                " 0/8 — indicators may be stale",
+                symbol,
+                conf.detected_side,
+            )
+            return AnalystDecisionSchema(
+                setup_valid=False,
+                direction="NEUTRAL",
+                confluence_score=0,
+                key_levels=KeyLevelsSchema(levels=[]),
+                reasoning=(
+                    f"Analyst LLM call skipped: detected side"
+                    f" {conf.detected_side} has algorithm confluence"
+                    f" 0/8, indicating all indicators returned False"
+                    f" (possibly stale data)."
+                ),
+            )
+
         try:
             result = await self._analyst.run(deps)
         except Exception:
             logger.exception("Analyst agent failed for %s", symbol)
             return None
-        ms = (time.monotonic() - t0) * 1000
-        self._warn_slow("Analyst", symbol, ms)
         return result
 
     async def _run_trader(
@@ -249,8 +265,6 @@ class AgentRouter:
         except Exception:
             logger.exception("Trader agent failed for %s", symbol)
             return _TraderRunResult()
-        ms = (time.monotonic() - t0) * 1000
-        self._warn_slow("Trader", symbol, ms)
         return _TraderRunResult(decision=result, deps=deps)
 
     @staticmethod
@@ -314,16 +328,6 @@ class AgentRouter:
             deps.sentiment_summary.sentiment_bias if deps.sentiment_summary else None,
             deps.sentiment_summary.summary[:30] if deps.sentiment_summary else "",
         )
-
-    @staticmethod
-    def _warn_slow(agent: str, symbol: str, ms: float) -> None:
-        if ms / 1000 > SLOW_AGENT_THRESHOLD_S:
-            logger.warning(
-                "%s agent slow for %s: %.1fs",
-                agent,
-                symbol,
-                ms / 1000,
-            )
 
     @staticmethod
     def _log_stop(agent: str, symbol: str, start: float) -> None:

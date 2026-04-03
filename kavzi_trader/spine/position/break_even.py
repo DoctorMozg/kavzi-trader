@@ -54,18 +54,26 @@ class BreakEvenMover:
         if profit_atr < trigger_atr:
             return None
 
-        new_stop_loss = position.entry_price
+        buffer = current_atr * position.management_config.break_even_buffer_atr
+        if position.side == "LONG":
+            new_stop_loss = position.entry_price - buffer
+        else:
+            new_stop_loss = position.entry_price + buffer
+
         if position.side == "LONG" and new_stop_loss <= position.current_stop_loss:
             return None
         if position.side == "SHORT" and new_stop_loss >= position.current_stop_loss:
             return None
 
         logger.debug(
-            "Break-even triggered for %s: profit_atr=%s trigger=%s new_sl=%s",
+            "Break-even triggered for %s: profit_atr=%s trigger=%s "
+            "new_sl=%s (entry=%s buffer=%s)",
             position.symbol,
             profit_atr,
             trigger_atr,
             new_stop_loss,
+            position.entry_price,
+            buffer,
         )
         return PositionActionSchema(
             action=PositionActionType.MOVE_STOP_LOSS,

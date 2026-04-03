@@ -298,6 +298,13 @@ position_management:
   #   2.0 = patient (waits for larger move)
   break_even_trigger_atr: 1.5
 
+  # Buffer (in ATR multiples) added to break-even SL to avoid noise stops.
+  # For LONG: SL = entry - buffer*ATR. For SHORT: SL = entry + buffer*ATR.
+  #   0.0  = no buffer (SL at exact entry — old behavior)
+  #   0.3  = default (tolerates normal 1-2 tick noise)
+  #   0.5  = wide buffer
+  break_even_buffer_atr: 0.3
+
   # Minimum seconds a position must be held before break-even can activate.
   # Prevents premature BE-SL on normal retraces after initial favorable move.
   #   300  = 5 min (aggressive — early BE)

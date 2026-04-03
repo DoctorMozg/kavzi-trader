@@ -113,6 +113,56 @@ class ContextBuilder(BaseModel):
         )
         return context
 
+    @staticmethod
+    def _compute_atr_fallback_targets(
+        analyst_result: AnalystDecisionSchema | None,
+        current_price: Decimal,
+        atr: Decimal | None,
+    ) -> list[dict[str, str]]:
+        """Inject ATR-projected TP targets when Analyst key_levels lack coverage."""
+        if analyst_result is None or atr is None or atr == Decimal(0):
+            return []
+
+        direction = analyst_result.direction
+        if direction == "NEUTRAL":
+            return []
+
+        levels = analyst_result.key_levels.levels
+        if direction == "LONG":
+            # Check if any RESISTANCE level is above current price
+            has_viable_target = any(
+                lvl.level_type == "RESISTANCE" and lvl.price > current_price
+                for lvl in levels
+            )
+        else:
+            # SHORT: check if any SUPPORT level is below current price
+            has_viable_target = any(
+                lvl.level_type == "SUPPORT" and lvl.price < current_price
+                for lvl in levels
+            )
+
+        if has_viable_target:
+            return []
+
+        # Compute ATR-projected targets
+        multipliers = [Decimal("1.5"), Decimal("2.5")]
+        targets: list[dict[str, str]] = []
+        for mult in multipliers:
+            if direction == "LONG":
+                price = current_price + mult * atr
+            else:
+                price = current_price - mult * atr
+            targets.append({"price": str(price), "label": f"ATR projection {mult}x"})
+
+        logger.info(
+            "ATR fallback targets for %s %s: %s (no viable %s in analyst levels)",
+            analyst_result.direction,
+            current_price,
+            [t["price"] for t in targets],
+            "resistance" if direction == "LONG" else "support",
+        )
+        return targets
+
     def build_trader_context(
         self,
         deps: TradingDependenciesSchema,
@@ -139,6 +189,11 @@ class ContextBuilder(BaseModel):
 
         dual = deps.algorithm_confluence
         sentiment = deps.sentiment_summary
+        atr_fallback = self._compute_atr_fallback_targets(
+            analyst_result=analyst_result,
+            current_price=deps.current_price,
+            atr=deps.indicators.atr_14,
+        )
         context = TraderContextDict(
             market_snapshot=market["market_snapshot"],
             candles_table=market["candles_table"],
@@ -161,6 +216,7 @@ class ContextBuilder(BaseModel):
             sentiment_confidence_adjustment=(
                 str(sentiment.confidence_adjustment) if sentiment else None
             ),
+            atr_fallback_targets=atr_fallback,
         )
         logger.debug(
             "Built trader context for %s: %d keys",
