@@ -72,19 +72,24 @@ class ScoutFilter:
                 pattern_detected=None,
             )
 
-        # --- ATR compression gate ---
+        # --- ATR compression gate (adaptive per-symbol) ---
         # Reject symbols where ATR is too small relative to price for viable
-        # stop-loss placement.  Saves Analyst/Trader API calls on range-bound
-        # instruments (see report_2026_03_31b Priority 2).
+        # stop-loss placement.  Threshold is max(floor, percentile of the
+        # symbol's own ATR% history) so quiet large-caps are not
+        # categorically blocked at a fixed global floor
+        # (see report_2026_04_05 Priority 3).
         atr_pct = self._atr_pct(ind, deps.current_price)
-        if atr_pct is not None and atr_pct < cfg.atr_pct_min:
-            return ScoutDecisionSchema(
-                verdict="SKIP",
-                reason=(
-                    f"ATR compressed (atr_pct={atr_pct:.4f}%, min={cfg.atr_pct_min}%)"
-                ),
-                pattern_detected=None,
-            )
+        if atr_pct is not None:
+            threshold = self._effective_atr_threshold(deps.atr_pct_history)
+            if atr_pct < threshold:
+                return ScoutDecisionSchema(
+                    verdict="SKIP",
+                    reason=(
+                        f"ATR compressed (atr_pct={atr_pct:.4f}%,"
+                        f" threshold={threshold:.4f}%)"
+                    ),
+                    pattern_detected=None,
+                )
 
         # --- Volume gates ---
         vol_ratio = self._vol_ratio(ind)
@@ -380,6 +385,24 @@ class ScoutFilter:
         if ind.atr_14 is None or price == _ZERO:
             return None
         return ind.atr_14 / price * 100
+
+    def _effective_atr_threshold(self, history: list[Decimal]) -> Decimal:
+        """Return the adaptive ATR% threshold for the compression gate.
+
+        Uses max(hard floor, configured percentile of the symbol's own
+        recent ATR% history).  Falls back to the floor alone until the
+        history reaches ``atr_pct_percentile_min_samples``.
+        """
+        cfg = self._cfg
+        floor = cfg.atr_pct_min
+        if len(history) < cfg.atr_pct_percentile_min_samples:
+            return floor
+        sorted_vals = sorted(history)
+        # Percentile index: 0-indexed, clamped to the last sample.
+        idx = int(len(sorted_vals) * cfg.atr_pct_percentile / Decimal(100))
+        idx = min(idx, len(sorted_vals) - 1)
+        percentile_val = sorted_vals[idx]
+        return max(floor, percentile_val)
 
     @staticmethod
     def _vol_ratio(ind: TechnicalIndicatorsSchema) -> Decimal | None:

@@ -49,6 +49,8 @@ class ScoutDependenciesSchema(BaseModel):
     indicators: Annotated[TechnicalIndicatorsSchema, Field(...)]
     volatility_regime: Annotated[VolatilityRegime, Field(...)]
     symbol_tier: Annotated[str, Field(default="TIER_2")]
+    # Rolling window of ATR% of price, used by the adaptive compression gate.
+    atr_pct_history: Annotated[list[Decimal], Field(default_factory=list)]
 
     model_config = ConfigDict(frozen=True)
 

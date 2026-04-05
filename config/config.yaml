@@ -67,6 +67,16 @@ scout:
   #   ["EXTREME"]        = permissive (allows quiet markets)
   blocked_regimes: ["LOW", "EXTREME"]
 
+  # ATR compression gate (adaptive per-symbol percentile).
+  # Effective threshold = max(atr_pct_min, percentile(symbol atr_pct history)).
+  # Keeps a global sanity floor AND respects each symbol's own volatility.
+  #   atr_pct_min                       — hard floor (% of price)
+  #   atr_pct_percentile                — percentile of own history (0-100)
+  #   atr_pct_percentile_min_samples    — min history length before percentile applies
+  atr_pct_min: 0.15
+  atr_pct_percentile: 25
+  atr_pct_percentile_min_samples: 20
+
   # Volume ratio below which SKIP is forced regardless of other signals.
   #   0.2 = permissive    0.3 = default    0.5 = strict
   vol_ratio_hard_skip: 0.3

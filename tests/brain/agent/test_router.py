@@ -1,8 +1,10 @@
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.agent.router import AgentRouter
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema, KeyLevelsSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
@@ -44,14 +46,17 @@ class DummyScout:
 
 
 class DummyAnalyst:
-    def __init__(self, setup_valid: bool) -> None:
+    def __init__(self, setup_valid: bool, confluence_score: int = 5) -> None:
         self._setup_valid = setup_valid
+        self._confluence_score = confluence_score
+        self.call_count = 0
 
     async def run(self, deps):
+        self.call_count += 1
         return AnalystDecisionSchema(
             setup_valid=self._setup_valid,
             direction="NEUTRAL",
-            confluence_score=5,
+            confluence_score=self._confluence_score,
             key_levels=KeyLevelsSchema(levels=[]),
             reasoning=_ANALYST_REASONING,
         )
@@ -215,7 +220,11 @@ async def test_router_runs_trader_on_valid_setup(
     account_state,
     positions,
 ) -> None:
-    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        DummyTrader(),
+    )
     provider = _make_provider(
         candle,
         indicators,
@@ -252,7 +261,7 @@ async def test_router_returns_wait_on_trader_timeout(
 ) -> None:
     router = AgentRouter(
         DummyScout("INTERESTING"),
-        DummyAnalyst(True),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
         TimeoutTrader(),
     )
     provider = _make_provider(
@@ -297,7 +306,11 @@ async def test_scout_always_called(
 ) -> None:
     """Router always invokes scout (volatility gate is inside scout now)."""
     spy_scout = SpyScout()
-    router = AgentRouter(spy_scout, DummyAnalyst(True), DummyTrader())
+    router = AgentRouter(
+        spy_scout,
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        DummyTrader(),
+    )
     provider = _make_provider(
         candle,
         indicators,
@@ -504,3 +517,249 @@ async def test_router_calls_analyst_when_detected_side_nonzero(
 
     assert spy_analyst.call_count == 1
     assert result.analyst is not None
+
+
+# ---------------------------------------------------------------------------
+# Bar-close dedup: the router must memoize the Analyst result per
+# (symbol, candle.close_time). Repeat calls within the same bar return the
+# cached result without invoking the LLM a second time.
+# ---------------------------------------------------------------------------
+
+
+def _candle_with_close_time(
+    base: CandlestickSchema, offset_s: int
+) -> CandlestickSchema:
+    return CandlestickSchema(
+        open_time=base.open_time + timedelta(seconds=offset_s),
+        close_time=base.close_time + timedelta(seconds=offset_s),
+        open_price=base.open_price,
+        high_price=base.high_price,
+        low_price=base.low_price,
+        close_price=base.close_price,
+        volume=base.volume,
+        quote_volume=base.quote_volume,
+        trades_count=base.trades_count,
+        taker_buy_base_volume=base.taker_buy_base_volume,
+        taker_buy_quote_volume=base.taker_buy_quote_volume,
+        interval=base.interval,
+        symbol=base.symbol,
+    )
+
+
+def _rebuild_provider_with_candle(
+    provider: FakeDepsProvider,
+    new_candle: CandlestickSchema,
+) -> None:
+    """Swap in deps whose recent_candles[-1] is the new candle."""
+    provider._scout_deps = provider._scout_deps.model_copy(
+        update={"recent_candles": [new_candle]},
+    )
+    provider._analyst_deps = provider._analyst_deps.model_copy(
+        update={"recent_candles": [new_candle]},
+    )
+    provider._trader_deps = provider._trader_deps.model_copy(
+        update={"recent_candles": [new_candle]},
+    )
+
+
+@pytest.mark.asyncio
+async def test_router_dedups_analyst_within_same_bar(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Repeat run() calls with the same candle.close_time hit the memo once."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=8)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    first = await router.run("BTCUSDT", provider)
+    second = await router.run("BTCUSDT", provider)
+
+    assert analyst.call_count == 1, (
+        "Analyst LLM must only be called once for the same bar"
+    )
+    assert first.analyst is not None
+    assert second.analyst is not None
+    # Memo returns the same schema object, preserving conf / valid / reasoning.
+    assert second.analyst.confluence_score == first.analyst.confluence_score
+    assert second.analyst.setup_valid == first.analyst.setup_valid
+
+
+@pytest.mark.asyncio
+async def test_router_reinvokes_analyst_on_new_bar(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """When close_time advances, the Analyst LLM is called again."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=8)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    await router.run("BTCUSDT", provider)
+    assert analyst.call_count == 1
+
+    # Simulate a new 5-minute candle closing.
+    new_candle = _candle_with_close_time(candle, 300)
+    _rebuild_provider_with_candle(provider, new_candle)
+
+    await router.run("BTCUSDT", provider)
+    assert analyst.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_router_dedups_per_symbol_independently(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Dedup state is keyed by symbol — two symbols must not share a memo."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=8)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, DummyTrader())
+    provider_btc = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    provider_eth = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    await router.run("BTCUSDT", provider_btc)
+    await router.run("ETHUSDT", provider_eth)
+
+    assert analyst.call_count == 2, "Each symbol gets its own first call"
+
+
+# ---------------------------------------------------------------------------
+# Confluence entry gate: setup_valid alone is not enough — confluence must
+# also be >= 7. Scores 5-6 with setup_valid=True short-circuit before Trader.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_router_blocks_trader_when_confluence_below_entry_gate(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """confluence=5 + setup_valid=True must NOT reach the Trader tier."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=5)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert result.analyst is not None
+    assert result.analyst.setup_valid is True
+    assert result.analyst.confluence_score == 5
+    assert result.trader is None
+    assert provider.trader_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_router_enters_trader_at_confluence_entry_gate(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """confluence=6 + setup_valid=True is the minimum to reach Trader."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=6)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert result.trader is not None
+    assert provider.trader_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_router_blocks_trader_when_llm_rejects_high_confluence(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """confluence=9 but setup_valid=False must NOT reach Trader (trust the LLM)."""
+    analyst = DummyAnalyst(setup_valid=False, confluence_score=9)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert result.analyst is not None
+    assert result.analyst.setup_valid is False
+    assert result.trader is None
+    assert provider.trader_calls == 0

@@ -597,7 +597,7 @@ def _make_analyst_result_with_confluence(confluence_score: int) -> PipelineResul
 
 
 def test_graduated_cooldown_low_confluence() -> None:
-    """Confluence <= 3 should produce 3x the base cooldown."""
+    """Confluence <= 2 should produce 3x the base cooldown."""
     loop = ReasoningLoop(
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -605,12 +605,12 @@ def test_graduated_cooldown_low_confluence() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
+    assert loop._compute_rejection_cooldown(1) == 9
     assert loop._compute_rejection_cooldown(2) == 9
-    assert loop._compute_rejection_cooldown(3) == 9
 
 
-def test_graduated_cooldown_medium_confluence() -> None:
-    """Confluence 4-5 should produce 2x the base cooldown."""
+def test_graduated_cooldown_reject_band_high_side() -> None:
+    """Confluence 3 (top of reject band) should produce 2x the base cooldown."""
     loop = ReasoningLoop(
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -618,12 +618,26 @@ def test_graduated_cooldown_medium_confluence() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
-    assert loop._compute_rejection_cooldown(4) == 6
-    assert loop._compute_rejection_cooldown(5) == 6
+    assert loop._compute_rejection_cooldown(3) == 6
 
 
-def test_graduated_cooldown_near_threshold() -> None:
-    """Confluence >= 6 should produce 1x the base cooldown (near threshold)."""
+def _make_analyst_decision(
+    *,
+    setup_valid: bool,
+    direction: Literal["LONG", "SHORT", "NEUTRAL"],
+    confluence_score: int,
+) -> AnalystDecisionSchema:
+    return AnalystDecisionSchema(
+        setup_valid=setup_valid,
+        direction=direction,
+        confluence_score=confluence_score,
+        key_levels=KeyLevelsSchema(levels=[]),
+        reasoning=_ANALYST_REASONING,
+    )
+
+
+def test_analyst_cooldown_reject_band_escalates() -> None:
+    """Score <= 3 + invalid increments rejection counter and uses base*multiplier."""
     loop = ReasoningLoop(
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -631,7 +645,130 @@ def test_graduated_cooldown_near_threshold() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
-    assert loop._compute_rejection_cooldown(6) == 3
+    analyst = _make_analyst_decision(
+        setup_valid=False,
+        direction="LONG",
+        confluence_score=2,
+    )
+
+    loop._apply_analyst_cooldown("BTCUSDT", analyst)
+    key = ("BTCUSDT", "LONG")
+    assert loop._consecutive_rejections[key] == 1
+    assert loop._cooldowns[key] == 9  # base=9 * mult=1
+
+    loop._apply_analyst_cooldown("BTCUSDT", analyst)
+    assert loop._consecutive_rejections[key] == 2
+    assert loop._cooldowns[key] == 18  # base=9 * mult=2
+
+
+def test_analyst_cooldown_borderline_band_no_escalation() -> None:
+    """Score 4-5 + invalid gets a light cooldown and does NOT escalate counts."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+    key = ("BTCUSDT", "LONG")
+
+    for score in (4, 5):
+        analyst = _make_analyst_decision(
+            setup_valid=False,
+            direction="LONG",
+            confluence_score=score,
+        )
+        loop._apply_analyst_cooldown("BTCUSDT", analyst)
+        assert key not in loop._consecutive_rejections
+        assert loop._cooldowns[key] == 1  # _BORDERLINE_COOLDOWN_CYCLES
+
+
+def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
+    """Score >= 6 but setup_valid=False also lands in the light-cooldown branch."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+    analyst = _make_analyst_decision(
+        setup_valid=False,
+        direction="LONG",
+        confluence_score=9,
+    )
+    loop._apply_analyst_cooldown("BTCUSDT", analyst)
+
+    key = ("BTCUSDT", "LONG")
+    assert key not in loop._consecutive_rejections
+    assert loop._cooldowns[key] == 1
+
+
+def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
+    """A valid setup at/above the entry gate resets rejection counters."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+    loop._consecutive_rejections[("BTCUSDT", "LONG")] = 3
+
+    analyst = _make_analyst_decision(
+        setup_valid=True,
+        direction="LONG",
+        confluence_score=7,
+    )
+    loop._apply_analyst_cooldown("BTCUSDT", analyst)
+
+    assert ("BTCUSDT", "LONG") not in loop._consecutive_rejections
+
+
+def test_should_enqueue_requires_confluence_entry_gate() -> None:
+    """_should_enqueue must block scores below the entry gate even if valid."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+    )
+    deps = _build_deps()
+
+    borderline = PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING",
+            reason="ok",
+            pattern_detected=None,
+        ),
+        analyst=_make_analyst_decision(
+            setup_valid=True,
+            direction="LONG",
+            confluence_score=5,
+        ),
+        trader=TradeDecisionSchema(
+            action="LONG",
+            confidence=0.8,
+            reasoning=_TRADER_REASONING,
+            suggested_entry=Decimal(105),
+            suggested_stop_loss=Decimal(95),
+            suggested_take_profit=Decimal(120),
+        ),
+        trader_deps=deps,
+    )
+    assert loop._should_enqueue(borderline) is False
+
+    at_gate = PipelineResult(
+        scout=borderline.scout,
+        analyst=_make_analyst_decision(
+            setup_valid=True,
+            direction="LONG",
+            confluence_score=6,
+        ),
+        trader=borderline.trader,
+        trader_deps=deps,
+    )
+    assert loop._should_enqueue(at_gate) is True
 
 
 def _make_trade_result() -> PipelineResult:
@@ -908,7 +1045,7 @@ def test_neutral_rejection_blocks_both_directions() -> None:
         key = ("BTCUSDT", d)
         count = loop._consecutive_rejections.get(key, 0) + 1
         loop._consecutive_rejections[key] = count
-        base = loop._compute_rejection_cooldown(4)  # medium confluence
+        base = loop._compute_rejection_cooldown(3)  # top of reject band
         multiplier = min(count, loop._max_rejection_multiplier)
         loop._cooldowns[key] = base * multiplier
 

@@ -22,16 +22,35 @@ class ScoutConfigSchema(BaseModel):
         Field(default_factory=lambda: ["LOW", "EXTREME"]),
     ]
 
-    # --- ATR compression gate ---
+    # --- ATR compression gate (adaptive per-symbol) ---
 
-    # Minimum ATR as a percentage of current price.
-    # Below this threshold the market is too compressed for viable stop placement.
-    #   0.2 = permissive (allows tighter ranges)
-    #   0.3 = default (report-validated: TONUSDT ATR=0.0029 at price ~1.22 ≈ 0.24%)
-    #   0.5 = strict
+    # Hard floor on ATR as a percentage of current price.  The effective
+    # threshold is ``max(atr_pct_min, percentile(atr_pct_history))`` so
+    # each symbol is judged against its own recent volatility without
+    # letting large-caps slip below a sanity floor.
+    #   0.10 = very permissive (quiet large-caps in NORMAL regime)
+    #   0.15 = default (report-validated: BTC/ETH often sit at 0.06-0.09%)
+    #   0.30 = legacy strict (categorically blocked large-caps in 2026-04)
     atr_pct_min: Annotated[
         Decimal,
-        Field(default=Decimal("0.3")),
+        Field(default=Decimal("0.15")),
+    ]
+
+    # Percentile of the per-symbol ATR% history that current ATR% must
+    # exceed for the compression gate to pass.  Combined with the hard
+    # floor via ``max(...)`` so both a global sanity floor AND the
+    # symbol's own distribution matter.
+    #   10 = very permissive    25 = default    50 = strict (median)
+    atr_pct_percentile: Annotated[
+        Decimal,
+        Field(default=Decimal(25), ge=Decimal(0), le=Decimal(100)),
+    ]
+
+    # Minimum number of history samples required before the percentile
+    # branch activates.  Below this count only the floor applies.
+    atr_pct_percentile_min_samples: Annotated[
+        int,
+        Field(default=20, ge=1),
     ]
 
     # --- Volume gates ---

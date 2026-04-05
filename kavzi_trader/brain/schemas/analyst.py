@@ -1,7 +1,7 @@
 from decimal import Decimal
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class KeyLevelSchema(BaseModel):
@@ -26,15 +26,17 @@ class KeyLevelsSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-_MIN_CONFLUENCE_FOR_VALID = 6
-
-
 class AnalystDecisionSchema(BaseModel):
     """
     Detailed analysis result that confirms whether a setup is valid.
 
     The Analyst agent checks market structure, trend context, and confluence
     signals to decide if the setup is worth a final trading decision.
+
+    ``setup_valid`` is the LLM's own boolean judgment. ``confluence_score``
+    is a parallel integer signal (0-11). The router applies a hysteresis
+    gate on confluence to avoid flipping on near-threshold sampling noise;
+    see ``AgentRouter._ANALYST_CONFLUENCE_ENTER``.
     """
 
     setup_valid: Annotated[bool, Field(...)]
@@ -44,13 +46,3 @@ class AnalystDecisionSchema(BaseModel):
     reasoning: Annotated[str, Field(..., min_length=80, max_length=1500)]
 
     model_config = ConfigDict(frozen=True)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _enforce_setup_valid_from_confluence(
-        cls, data: dict[str, Any]
-    ) -> dict[str, Any]:
-        score = data.get("confluence_score")
-        if isinstance(score, int) and score >= _MIN_CONFLUENCE_FOR_VALID:
-            data["setup_valid"] = True
-        return data

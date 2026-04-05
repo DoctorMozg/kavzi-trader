@@ -153,6 +153,7 @@ class LiveDependenciesProvider:
             indicators=indicators,
             volatility_regime=self._get_regime(symbol),
             symbol_tier=self._get_symbol_tier(symbol),
+            atr_pct_history=self._cache.get_atr_pct_history(symbol),
         )
 
     async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema:

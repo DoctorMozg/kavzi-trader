@@ -12,8 +12,15 @@ def _make_reasoning() -> str:
     )
 
 
-class TestAnalystDecisionSchemaValidator:
-    def test_high_confluence_forces_setup_valid(self) -> None:
+class TestAnalystDecisionSchema:
+    """The schema no longer mutates setup_valid based on confluence_score.
+
+    setup_valid is the LLM's own boolean output. confluence_score is an
+    independent 0-11 signal. The hysteresis gate lives in AgentRouter, not
+    in the schema, so the two fields must round-trip unchanged.
+    """
+
+    def test_high_confluence_with_false_setup_valid_preserved(self) -> None:
         result = AnalystDecisionSchema(
             setup_valid=False,
             direction="SHORT",
@@ -21,7 +28,8 @@ class TestAnalystDecisionSchemaValidator:
             key_levels=KeyLevelsSchema(levels=[]),
             reasoning=_make_reasoning(),
         )
-        assert result.setup_valid is True
+        assert result.setup_valid is False
+        assert result.confluence_score == 8
 
     def test_low_confluence_keeps_setup_invalid(self) -> None:
         result = AnalystDecisionSchema(
@@ -33,17 +41,7 @@ class TestAnalystDecisionSchemaValidator:
         )
         assert result.setup_valid is False
 
-    def test_boundary_score_7_forces_valid(self) -> None:
-        result = AnalystDecisionSchema(
-            setup_valid=False,
-            direction="LONG",
-            confluence_score=7,
-            key_levels=KeyLevelsSchema(levels=[]),
-            reasoning=_make_reasoning(),
-        )
-        assert result.setup_valid is True
-
-    def test_boundary_score_6_keeps_original(self) -> None:
+    def test_mid_confluence_with_true_setup_valid_preserved(self) -> None:
         result = AnalystDecisionSchema(
             setup_valid=True,
             direction="LONG",
@@ -52,26 +50,7 @@ class TestAnalystDecisionSchemaValidator:
             reasoning=_make_reasoning(),
         )
         assert result.setup_valid is True
-
-    def test_boundary_score_6_forces_valid(self) -> None:
-        result = AnalystDecisionSchema(
-            setup_valid=False,
-            direction="LONG",
-            confluence_score=6,
-            key_levels=KeyLevelsSchema(levels=[]),
-            reasoning=_make_reasoning(),
-        )
-        assert result.setup_valid is True
-
-    def test_boundary_score_5_keeps_invalid(self) -> None:
-        result = AnalystDecisionSchema(
-            setup_valid=False,
-            direction="SHORT",
-            confluence_score=5,
-            key_levels=KeyLevelsSchema(levels=[]),
-            reasoning=_make_reasoning(),
-        )
-        assert result.setup_valid is False
+        assert result.confluence_score == 6
 
     def test_high_confluence_with_valid_true_unchanged(self) -> None:
         result = AnalystDecisionSchema(
@@ -82,3 +61,14 @@ class TestAnalystDecisionSchemaValidator:
             reasoning=_make_reasoning(),
         )
         assert result.setup_valid is True
+
+    def test_zero_confluence_with_false_setup_valid(self) -> None:
+        result = AnalystDecisionSchema(
+            setup_valid=False,
+            direction="NEUTRAL",
+            confluence_score=0,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning=_make_reasoning(),
+        )
+        assert result.setup_valid is False
+        assert result.confluence_score == 0

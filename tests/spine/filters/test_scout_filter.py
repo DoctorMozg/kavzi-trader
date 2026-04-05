@@ -102,6 +102,7 @@ def _make_deps(
     indicators: TechnicalIndicatorsSchema,
     regime: VolatilityRegime = VolatilityRegime.NORMAL,
     candles: list[CandlestickSchema] | None = None,
+    atr_pct_history: list[Decimal] | None = None,
 ) -> ScoutDependenciesSchema:
     return ScoutDependenciesSchema(
         symbol="BTCUSDT",
@@ -110,6 +111,7 @@ def _make_deps(
         recent_candles=candles or [_make_candle(Decimal(105))],
         indicators=indicators,
         volatility_regime=regime,
+        atr_pct_history=atr_pct_history or [],
     )
 
 
@@ -165,7 +167,7 @@ async def test_high_regime_proceeds(scout: ScoutFilter) -> None:
 
 @pytest.mark.asyncio
 async def test_atr_compressed_skip(scout: ScoutFilter) -> None:
-    """ATR < 0.3% of price → SKIP before any pattern check."""
+    """ATR well below the 0.15% floor → SKIP before any pattern check."""
     ind = _make_indicators(atr_14=Decimal("0.003"))
     deps = _make_deps(ind)  # current_price=105, atr_pct ≈ 0.0029%
     result = await scout.run(deps)
@@ -174,10 +176,10 @@ async def test_atr_compressed_skip(scout: ScoutFilter) -> None:
 
 
 @pytest.mark.asyncio
-async def test_atr_at_threshold_passes(scout: ScoutFilter) -> None:
-    """ATR exactly at 0.3% of price should NOT be blocked."""
-    # 0.3% of 105 = 0.315
-    ind = _make_indicators(atr_14=Decimal("0.315"))
+async def test_atr_at_floor_passes(scout: ScoutFilter) -> None:
+    """ATR at exactly the 0.15% floor should not be blocked."""
+    # 0.15% of 105 = 0.1575
+    ind = _make_indicators(atr_14=Decimal("0.1575"))
     deps = _make_deps(ind)
     result = await scout.run(deps)
     assert "ATR compressed" not in result.reason
@@ -203,6 +205,85 @@ async def test_atr_custom_threshold() -> None:
     result = await scout.run(deps)
     assert result.verdict == "SKIP"
     assert "ATR compressed" in result.reason
+
+
+# ------------------------------------------------------------------
+# Adaptive ATR percentile gate
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_atr_adaptive_insufficient_history_falls_back_to_floor(
+    scout: ScoutFilter,
+) -> None:
+    """Short history (< min_samples) ignores percentile and uses floor only."""
+    # atr_pct = 0.2 / 105 * 100 ≈ 0.19% > floor 0.15%
+    ind = _make_indicators(atr_14=Decimal("0.2"))
+    # 5 samples < default min_samples of 20 → falls back to floor
+    deps = _make_deps(ind, atr_pct_history=[Decimal(5)] * 5)
+    result = await scout.run(deps)
+    # Despite history showing very high volatility, the percentile branch
+    # is inactive and only the 0.15% floor matters; 0.19% clears it.
+    assert "ATR compressed" not in result.reason
+
+
+@pytest.mark.asyncio
+async def test_atr_adaptive_percentile_above_floor_wins() -> None:
+    """When the percentile exceeds the floor, percentile becomes the threshold."""
+    cfg = ScoutConfigSchema(
+        atr_pct_min=Decimal("0.10"),
+        atr_pct_percentile=Decimal(50),
+        atr_pct_percentile_min_samples=5,
+    )
+    scout = ScoutFilter(cfg)
+    # atr_pct of the current candle ≈ 0.286%
+    ind = _make_indicators(atr_14=Decimal("0.3"))
+    # Median of history = 0.5% > current 0.286% → block
+    history = [Decimal("0.5")] * 10
+    deps = _make_deps(ind, atr_pct_history=history)
+    result = await scout.run(deps)
+    assert result.verdict == "SKIP"
+    assert "ATR compressed" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_atr_adaptive_floor_above_percentile_wins() -> None:
+    """When the percentile sits under the floor, the floor is the threshold."""
+    cfg = ScoutConfigSchema(
+        atr_pct_min=Decimal("0.5"),
+        atr_pct_percentile=Decimal(25),
+        atr_pct_percentile_min_samples=5,
+    )
+    scout = ScoutFilter(cfg)
+    # atr_pct ≈ 0.381% — above the quiet percentile but below the 0.5% floor
+    ind = _make_indicators(atr_14=Decimal("0.4"))
+    history = [Decimal("0.1")] * 20
+    deps = _make_deps(ind, atr_pct_history=history)
+    result = await scout.run(deps)
+    assert result.verdict == "SKIP"
+    assert "ATR compressed" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_atr_adaptive_btc_quiet_regime_passes() -> None:
+    """BTC-style quiet market passes once the symbol's own history is flat.
+
+    Regression test for report_2026_04_05: fixed 0.3% floor categorically
+    blocked BTC/ETH on 5m candles with ATR% ≈ 0.08%.  The adaptive gate
+    now judges each symbol against its own distribution.
+    """
+    cfg = ScoutConfigSchema(
+        atr_pct_min=Decimal("0.05"),
+        atr_pct_percentile=Decimal(25),
+        atr_pct_percentile_min_samples=20,
+    )
+    scout = ScoutFilter(cfg)
+    # atr_pct = 0.084 / 105 * 100 = 0.08% — at the quiet regime level
+    ind = _make_indicators(atr_14=Decimal("0.084"))
+    history = [Decimal("0.08")] * 60
+    deps = _make_deps(ind, atr_pct_history=history)
+    result = await scout.run(deps)
+    assert "ATR compressed" not in result.reason
 
 
 # ------------------------------------------------------------------

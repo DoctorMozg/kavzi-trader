@@ -72,6 +72,7 @@ def _make_provider(
     cache.get_indicators.return_value = indicators
     cache.get_current_price.return_value = Decimal(100)
     cache.get_atr_history.return_value = [Decimal(1), Decimal("1.1")]
+    cache.get_atr_pct_history.return_value = [Decimal("1.0"), Decimal("1.1")]
     cache.get_order_flow.return_value = None
     confluence_calc = Mock()
     single_conf = AlgorithmConfluenceSchema(

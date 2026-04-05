@@ -35,8 +35,27 @@ logger = logging.getLogger(__name__)
 _BACKOFF_MULTIPLIER = 2.0
 _MAX_BACKOFF_FACTOR = 6.0
 
-_COOLDOWN_LOW_CONFLUENCE_THRESHOLD = 3
-_COOLDOWN_MEDIUM_CONFLUENCE_THRESHOLD = 5
+# Confluence hysteresis bands for Analyst verdicts.
+#
+# The old schema validator forced setup_valid=True whenever confluence >= 6,
+# which meant a 1-point sampling swing at the cutoff (5↔6) could flip the
+# entire pipeline. The router now requires confluence >= 6 to escalate to
+# the Trader tier — matching the Analyst prompt's own rubric — and the
+# reasoning loop treats scores in the borderline band (4-5) as "wait for a
+# new bar" rather than "aggressive rejection". Bar-close dedup in the router
+# prevents flip-flop by memoizing the Analyst verdict within the same bar.
+_CONFLUENCE_REJECT_MAX = 3  # score <= 3 → escalating rejection cooldown
+_CONFLUENCE_ENTER_MIN = 6  # score >= 6 required (combined with setup_valid)
+# Scores in the range [_CONFLUENCE_REJECT_MAX + 1, _CONFLUENCE_ENTER_MIN) form
+# the borderline band: light cooldown, no counter escalation.
+
+# Cooldown (cycles) for borderline/LLM-reject bands. Short enough that the
+# next bar-close will naturally retrigger the Analyst, but long enough to
+# avoid tight retries within the same bar.
+_BORDERLINE_COOLDOWN_CYCLES = 1
+
+# Multipliers inside the aggressive rejection band (score <= 3).
+_COOLDOWN_LOW_CONFLUENCE_THRESHOLD = 2  # score <= 2 → highest multiplier
 
 _SKIP_SUSPENSION_THRESHOLD = 20
 _MAX_SKIP_EVAL_INTERVAL = 16
@@ -228,35 +247,8 @@ class ReasoningLoop:
 
         self._track_skip_suspension(symbol, result.scout.verdict)
 
-        if result.analyst is not None and not result.analyst.setup_valid:
-            direction = result.analyst.direction
-            cooldown_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
-            for d in cooldown_dirs:
-                key = (symbol, d)
-                count = self._consecutive_rejections.get(key, 0) + 1
-                self._consecutive_rejections[key] = count
-                base_cooldown = self._compute_rejection_cooldown(
-                    result.analyst.confluence_score,
-                )
-                multiplier = min(count, self._max_rejection_multiplier)
-                self._cooldowns[key] = base_cooldown * multiplier
-                logger.debug(
-                    "Consecutive rejection %d for %s %s: cooldown=%d (base=%d x %d)",
-                    count,
-                    symbol,
-                    d,
-                    base_cooldown * multiplier,
-                    base_cooldown,
-                    multiplier,
-                )
-
-        if result.analyst is not None and result.analyst.setup_valid:
-            direction = result.analyst.direction
-            if direction == "NEUTRAL":
-                self._consecutive_rejections.pop((symbol, "LONG"), None)
-                self._consecutive_rejections.pop((symbol, "SHORT"), None)
-            else:
-                self._consecutive_rejections.pop((symbol, direction), None)
+        if result.analyst is not None:
+            self._apply_analyst_cooldown(symbol, result.analyst)
 
         if not self._should_enqueue(result):
             self._track_consecutive_waits(symbol, result)
@@ -280,14 +272,70 @@ class ReasoningLoop:
         await self._enqueue_decision(result)
         return True
 
-    def _compute_rejection_cooldown(self, confluence_score: int) -> int:
-        """Scale cooldown based on how far below the threshold the rejection was."""
-        if confluence_score <= _COOLDOWN_LOW_CONFLUENCE_THRESHOLD:
-            multiplier = 3
-        elif confluence_score <= _COOLDOWN_MEDIUM_CONFLUENCE_THRESHOLD:
-            multiplier = 2
+    def _apply_analyst_cooldown(
+        self,
+        symbol: str,
+        analyst: AnalystDecisionSchema,
+    ) -> None:
+        """Apply hysteresis-banded cooldown based on Analyst verdict.
+
+        Three bands avoid flip-flopping at the old hard cutoff:
+          * score <= 4 + invalid → escalating multiplier, counts toward
+            _consecutive_rejections.
+          * borderline (5-6) or LLM rejects high confluence (>=7 + invalid) →
+            light single-cycle cooldown, no counter escalation. The next bar
+            close naturally retriggers the Analyst.
+          * valid setup at/above entry gate → clear lingering rejection counts.
+        """
+        score = analyst.confluence_score
+        setup_valid = analyst.setup_valid
+        direction = analyst.direction
+        cooldown_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
+
+        if not setup_valid and score <= _CONFLUENCE_REJECT_MAX:
+            for d in cooldown_dirs:
+                key = (symbol, d)
+                count = self._consecutive_rejections.get(key, 0) + 1
+                self._consecutive_rejections[key] = count
+                base_cooldown = self._compute_rejection_cooldown(score)
+                multiplier = min(count, self._max_rejection_multiplier)
+                self._cooldowns[key] = base_cooldown * multiplier
+                logger.debug(
+                    "Consecutive rejection %d for %s %s: cooldown=%d (base=%d x %d)",
+                    count,
+                    symbol,
+                    d,
+                    base_cooldown * multiplier,
+                    base_cooldown,
+                    multiplier,
+                )
+            return
+
+        if not setup_valid or score < _CONFLUENCE_ENTER_MIN:
+            for d in cooldown_dirs:
+                key = (symbol, d)
+                existing = self._cooldowns.get(key, 0)
+                self._cooldowns[key] = max(existing, _BORDERLINE_COOLDOWN_CYCLES)
+            logger.debug(
+                "Borderline analyst %s direction=%s score=%d setup_valid=%s"
+                " → cooldown=%d (no escalation)",
+                symbol,
+                direction,
+                score,
+                setup_valid,
+                _BORDERLINE_COOLDOWN_CYCLES,
+            )
+            return
+
+        if direction == "NEUTRAL":
+            self._consecutive_rejections.pop((symbol, "LONG"), None)
+            self._consecutive_rejections.pop((symbol, "SHORT"), None)
         else:
-            multiplier = 1
+            self._consecutive_rejections.pop((symbol, direction), None)
+
+    def _compute_rejection_cooldown(self, confluence_score: int) -> int:
+        """Scale rejection cooldown within the aggressive band (score <= 4)."""
+        multiplier = 3 if confluence_score <= _COOLDOWN_LOW_CONFLUENCE_THRESHOLD else 2
         cooldown = self._analyst_cooldown_cycles * multiplier
         logger.debug(
             "Rejection cooldown: confluence=%d multiplier=%d cooldown=%d cycles",
@@ -332,6 +380,8 @@ class ReasoningLoop:
         if result.scout.verdict != "INTERESTING":
             return False
         if result.analyst is None or not result.analyst.setup_valid:
+            return False
+        if result.analyst.confluence_score < _CONFLUENCE_ENTER_MIN:
             return False
         if result.trader is None:
             return False
@@ -456,7 +506,7 @@ class ReasoningLoop:
                 symbol=symbol,
                 summary=(
                     f"Valid: {analyst.setup_valid}, Direction: {analyst.direction}, "
-                    f"Confluence: {analyst.confluence_score}/10"
+                    f"Confluence: {analyst.confluence_score}/11"
                 ),
                 details=analyst.reasoning,
             )

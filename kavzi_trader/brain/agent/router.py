@@ -1,5 +1,6 @@
 import logging
 import time
+from datetime import datetime
 from typing import Protocol
 
 import httpx
@@ -79,6 +80,15 @@ class PipelineResult:
 
 _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 3
 
+# Minimum Analyst confluence_score required to escalate to the Trader tier.
+# Combined with the LLM's own setup_valid flag, this forms a hysteresis gate:
+# scores 4-5 are treated as "borderline WAIT" in the reasoning loop so that
+# LLM sampling noise cannot flip the pipeline between enter and reject on
+# identical inputs. The threshold is aligned with the prompt's own "mark
+# setup_valid=true iff confluence >= 6" rubric, and bar-close dedup in the
+# router prevents intra-bar re-analysis.
+_ANALYST_CONFLUENCE_ENTER = 6
+
 
 class AgentRouter:
     def __init__(
@@ -92,6 +102,11 @@ class AgentRouter:
         self._analyst = analyst
         self._trader = trader
         self._analyst_min_algo_confluence = analyst_min_algo_confluence
+        # Per-symbol bar-close dedup: if the latest candle's close_time has
+        # not advanced since the previous Analyst invocation, return the
+        # memoized result instead of burning another expensive LLM call.
+        self._last_analyzed_bar_close: dict[str, datetime] = {}
+        self._last_analyst_result: dict[str, AnalystDecisionSchema] = {}
 
     async def run(
         self,
@@ -113,7 +128,10 @@ class AgentRouter:
         analyst_result = await self._run_analyst(symbol, deps_provider)
         if analyst_result is None:
             return PipelineResult(scout=scout_result)
-        if not analyst_result.setup_valid:
+        if (
+            not analyst_result.setup_valid
+            or analyst_result.confluence_score < _ANALYST_CONFLUENCE_ENTER
+        ):
             self._log_stop("Analyst", symbol, total_start)
             return PipelineResult(scout=scout_result, analyst=analyst_result)
 
@@ -168,7 +186,7 @@ class AgentRouter:
 
         # Gate: skip the LLM call when algorithm confluence is too low.
         # The Analyst can add at most +3 points; if max algo < threshold,
-        # even the maximum boost cannot reach _MIN_CONFLUENCE_FOR_VALID.
+        # even the maximum boost cannot reach the confluence entry gate.
         conf = deps.algorithm_confluence
         max_algo = max(conf.long.score, conf.short.score)
         if max_algo < self._analyst_min_algo_confluence:
@@ -189,8 +207,10 @@ class AgentRouter:
                     f" confluence score {max_algo}/8 is below the"
                     f" minimum threshold"
                     f" {self._analyst_min_algo_confluence}. Even with"
-                    f" the maximum analyst bonus of +3, the total"
-                    f" cannot reach the required 6 for a valid setup."
+                    f" the maximum analyst bonus of +3, the total cannot"
+                    f" reach the confluence entry gate"
+                    f" ({_ANALYST_CONFLUENCE_ENTER}) required to run"
+                    f" the Trader tier."
                 ),
             )
 
@@ -218,11 +238,35 @@ class AgentRouter:
                 ),
             )
 
+        # Bar-close dedup: if the latest closed candle hasn't changed since
+        # the previous Analyst call for this symbol, reuse the memoized
+        # result. Skips redundant LLM calls inside the same 5-minute bar
+        # when the ReasoningLoop cooldown expires mid-bar.
+        current_bar = deps.recent_candles[-1].close_time
+        prev_bar = self._last_analyzed_bar_close.get(symbol)
+        if prev_bar is not None and current_bar == prev_bar:
+            cached = self._last_analyst_result.get(symbol)
+            if cached is not None:
+                logger.info(
+                    "Analyst dedup hit for %s: bar close_time=%s already"
+                    " analyzed (cached conf=%d, valid=%s)",
+                    symbol,
+                    current_bar,
+                    cached.confluence_score,
+                    cached.setup_valid,
+                )
+                return cached
+
         try:
             result = await self._analyst.run(deps)
         except Exception:
             logger.exception("Analyst agent failed for %s", symbol)
             return None
+
+        # Record the bar we just analyzed so subsequent cycles within the
+        # same candle can short-circuit via the dedup hit above.
+        self._last_analyzed_bar_close[symbol] = current_bar
+        self._last_analyst_result[symbol] = result
         return result
 
     async def _run_trader(
