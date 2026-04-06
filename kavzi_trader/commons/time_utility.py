@@ -90,16 +90,7 @@ def date_to_milliseconds(date_str: str) -> int:
     Returns:
         Milliseconds since epoch
     """
-    # Parse the date with dateparser
-    parsed_date = dateparser.parse(
-        date_str,
-        settings={"TIMEZONE": "UTC", "RETURN_AS_TIMEZONE_AWARE": True},
-    )
-    if not parsed_date:
-        raise ValueError(f"Could not parse date string: {date_str}")
-
-    # Return timestamp in milliseconds
-    return int(parsed_date.timestamp() * MILLISECONDS_IN_SECOND)
+    return int(parse_date_string(date_str).timestamp() * MILLISECONDS_IN_SECOND)
 
 
 def milliseconds_to_datetime(milliseconds: int) -> datetime:

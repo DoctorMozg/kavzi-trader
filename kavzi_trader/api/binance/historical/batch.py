@@ -4,7 +4,7 @@ Batch processing utilities for historical data downloads.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, TypeVar
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -12,8 +12,6 @@ from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.commons.time_utility import MILLISECONDS_IN_SECOND
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T", bound=BaseModel)
 
 
 class DownloadBatchConfigSchema(BaseModel):

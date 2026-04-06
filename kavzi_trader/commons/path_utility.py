@@ -8,7 +8,6 @@ the KavziTrader platform, ensuring consistent path handling.
 import logging
 from pathlib import Path
 
-# Initialize logger
 logger = logging.getLogger(__name__)
 
 

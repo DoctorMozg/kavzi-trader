@@ -167,17 +167,9 @@ async def _start_orchestrator(
     # --- Reset paper state and seed fresh balance ---
     if is_paper and isinstance(exchange, PaperExchangeClient):
         await state_manager.connect()
-        paper_initial = (
-            Decimal(str(paper_balance))
-            if paper_balance is not None
-            else app_config.paper.initial_balance_usdt
-        )
-        await state_manager.reset_for_paper(paper_initial)
+        await state_manager.reset_for_paper(balance)
         exchange.set_account_store(state_manager.account)
-        logger.info(
-            "Paper state reset in Redis: %s USDT",
-            paper_initial,
-        )
+        logger.info("Paper state reset in Redis: %s USDT", balance)
 
     event_store = RedisEventStore(redis_client, app_config.events)
 
@@ -475,10 +467,8 @@ def start(
 
 
 @trade.command()
-@click.pass_context
-def stop(ctx: click.Context) -> None:
+def stop() -> None:
     """Stop the trading orchestrator."""
-    _ = ctx
     click.echo("Stop requested. Use CTRL+C to terminate running process.")
 
 

@@ -9,17 +9,12 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from kavzi_trader.api.binance.websocket.handlers.base import BaseStreamHandler
-from kavzi_trader.api.binance.websocket.stream_manager import StreamManager
 
 logger = logging.getLogger(__name__)
 
 
 class UserDataStreamHandler(BaseStreamHandler[dict[str, Any]]):
     """Handler for user data WebSocket streams."""
-
-    def __init__(self, stream_manager: StreamManager) -> None:
-        """Initialize the UserDataStreamHandler."""
-        super().__init__(stream_manager)
 
     async def subscribe(
         self,

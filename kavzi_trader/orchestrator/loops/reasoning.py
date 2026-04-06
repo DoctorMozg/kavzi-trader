@@ -280,9 +280,9 @@ class ReasoningLoop:
         """Apply hysteresis-banded cooldown based on Analyst verdict.
 
         Three bands avoid flip-flopping at the old hard cutoff:
-          * score <= 4 + invalid → escalating multiplier, counts toward
+          * score <= 3 + invalid → escalating multiplier, counts toward
             _consecutive_rejections.
-          * borderline (5-6) or LLM rejects high confluence (>=7 + invalid) →
+          * borderline (4-5) or LLM rejects high confluence (>=6 + invalid) →
             light single-cycle cooldown, no counter escalation. The next bar
             close naturally retriggers the Analyst.
           * valid setup at/above entry gate → clear lingering rejection counts.
@@ -334,7 +334,7 @@ class ReasoningLoop:
             self._consecutive_rejections.pop((symbol, direction), None)
 
     def _compute_rejection_cooldown(self, confluence_score: int) -> int:
-        """Scale rejection cooldown within the aggressive band (score <= 4)."""
+        """Scale rejection cooldown within the aggressive band (score <= 3)."""
         multiplier = 3 if confluence_score <= _COOLDOWN_LOW_CONFLUENCE_THRESHOLD else 2
         cooldown = self._analyst_cooldown_cycles * multiplier
         logger.debug(

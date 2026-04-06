@@ -2,7 +2,7 @@ import logging
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 class DrawdownCheckResult(BaseModel):
     rejections: list[str]
     should_close_all: bool
+
+    model_config = ConfigDict(frozen=True)
 
 
 class DynamicRiskValidator:

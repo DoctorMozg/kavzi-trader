@@ -4,16 +4,12 @@ from typing import Any
 
 from kavzi_trader.api.binance.schemas.data_dicts import MarkPriceData
 from kavzi_trader.api.binance.websocket.handlers.base import BaseStreamHandler
-from kavzi_trader.api.binance.websocket.stream_manager import StreamManager
 
 logger = logging.getLogger(__name__)
 
 
 class MarkPriceStreamHandler(BaseStreamHandler[MarkPriceData]):
     """Handler for Futures mark price WebSocket streams (includes funding rate)."""
-
-    def __init__(self, stream_manager: StreamManager) -> None:
-        super().__init__(stream_manager)
 
     async def subscribe(
         self,

@@ -6,7 +6,6 @@ import asyncio
 import logging
 from datetime import datetime
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.historical.batch import (
     BatchProcessor,
     SymbolicDownloadBatchConfigSchema,
@@ -20,10 +19,6 @@ logger = logging.getLogger(__name__)
 
 class TradesDownloader(BaseDownloader[TradeSchema]):
     """Downloader for historical trades data."""
-
-    def __init__(self, client: BinanceClient) -> None:
-        """Initialize the TradesDownloader."""
-        super().__init__(client)
 
     async def download(
         self,

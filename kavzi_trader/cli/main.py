@@ -4,7 +4,6 @@ KavziTrader - Neural Network-Based Crypto Trading Platform.
 This module serves as the main entry point for the KavziTrader CLI.
 """
 
-import logging
 import sys
 from pathlib import Path
 
@@ -13,18 +12,12 @@ import click
 # Add src to path to allow imports from src package
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-# Import core CLI functionality
 from kavzi_trader.cli.commands.config import config_command
-
-# Import command groups
 from kavzi_trader.cli.commands.data import data
 from kavzi_trader.cli.commands.model import model
 from kavzi_trader.cli.commands.system import system
 from kavzi_trader.cli.commands.trade import trade
 from kavzi_trader.cli.core import setup_cli_environment
-
-# Initialize logger
-logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -40,7 +33,6 @@ def cli(
 
     You can pass hydra configuration overrides as key=value pairs after the command.
     """
-    # Set up the CLI environment
     setup_cli_environment(ctx, verbose)
 
 

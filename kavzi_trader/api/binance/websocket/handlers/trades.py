@@ -10,17 +10,12 @@ from typing import Any
 
 from kavzi_trader.api.binance.schemas.data_dicts import TradeData
 from kavzi_trader.api.binance.websocket.handlers.base import BaseStreamHandler
-from kavzi_trader.api.binance.websocket.stream_manager import StreamManager
 
 logger = logging.getLogger(__name__)
 
 
 class TradeStreamHandler(BaseStreamHandler[TradeData]):
     """Handler for trade WebSocket streams."""
-
-    def __init__(self, stream_manager: StreamManager) -> None:
-        """Initialize the TradeStreamHandler."""
-        super().__init__(stream_manager)
 
     async def subscribe(
         self,

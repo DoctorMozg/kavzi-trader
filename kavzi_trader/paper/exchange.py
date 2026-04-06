@@ -407,23 +407,12 @@ class PaperExchangeClient(BinanceClient):
             order_id=order_id,
             client_order_id=client_order_id,
         )
-        cancelled = OrderResponseSchema(
-            symbol=existing.symbol,
-            order_id=existing.order_id,
-            client_order_id=existing.client_order_id,
-            transact_time=existing.transact_time,
-            price=existing.price,
-            orig_qty=existing.orig_qty,
-            executed_qty=existing.executed_qty,
-            status=OrderStatus.CANCELED,
-            time_in_force=existing.time_in_force,
-            type=existing.type,
-            side=existing.side,
-            stop_price=existing.stop_price,
-            time=existing.time,
-            update_time=utc_now(),
-            is_working=False,
-            reduce_only=existing.reduce_only,
+        cancelled = existing.model_copy(
+            update={
+                "status": OrderStatus.CANCELED,
+                "update_time": utc_now(),
+                "is_working": False,
+            },
         )
         self._orders[existing.order_id] = cancelled
         logger.debug("Paper order %s cancelled", existing.order_id)

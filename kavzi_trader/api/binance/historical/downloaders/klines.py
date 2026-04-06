@@ -5,7 +5,6 @@ Klines downloader for historical data.
 import logging
 from datetime import datetime
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.historical.batch import (
     BatchProcessor,
     SymbolicDownloadBatchConfigSchema,
@@ -20,10 +19,6 @@ logger = logging.getLogger(__name__)
 
 class KlinesDownloader(BaseDownloader[CandlestickSchema]):
     """Downloader for historical klines data."""
-
-    def __init__(self, client: BinanceClient) -> None:
-        """Initialize the KlinesDownloader."""
-        super().__init__(client)
 
     async def download(
         self,

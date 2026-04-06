@@ -11,17 +11,12 @@ from typing import Any, cast
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.binance.schemas.data_dicts import KlineData
 from kavzi_trader.api.binance.websocket.handlers.base import BaseStreamHandler
-from kavzi_trader.api.binance.websocket.stream_manager import StreamManager
 
 logger = logging.getLogger(__name__)
 
 
 class KlineStreamHandler(BaseStreamHandler[KlineData]):
     """Handler for kline/candlestick WebSocket streams."""
-
-    def __init__(self, stream_manager: StreamManager) -> None:
-        """Initialize the KlineStreamHandler."""
-        super().__init__(stream_manager)
 
     async def subscribe(
         self,

@@ -22,3 +22,4 @@ wheels/
 
 # Tests
 test_output/
+.mz/

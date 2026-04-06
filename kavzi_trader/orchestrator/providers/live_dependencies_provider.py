@@ -12,6 +12,7 @@ from kavzi_trader.brain.schemas.dependencies import (
 from kavzi_trader.config import FuturesConfigSchema
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.external.cache import ExternalDataCache
+from kavzi_trader.external.schemas import SentimentSummarySchema
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
@@ -156,7 +157,15 @@ class LiveDependenciesProvider:
             atr_pct_history=self._cache.get_atr_pct_history(symbol),
         )
 
-    async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema:
+    def _resolve_analysis_context(
+        self,
+        symbol: str,
+    ) -> tuple[
+        TechnicalIndicatorsSchema,
+        list[CandlestickSchema],
+        OrderFlowSchema | None,
+        DualConfluenceSchema,
+    ]:
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:
             msg = f"Indicators not yet available for {symbol}"
@@ -174,13 +183,17 @@ class LiveDependenciesProvider:
             indicators,
             order_flow,
         )
+        return indicators, candles, order_flow, confluence
 
-        sentiment = (
-            self._external_cache.get_sentiment_summary()
-            if self._external_cache is not None
-            else None
+    def _get_sentiment(self) -> SentimentSummarySchema | None:
+        if self._external_cache is None:
+            return None
+        return self._external_cache.get_sentiment_summary()
+
+    async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema:
+        indicators, candles, order_flow, confluence = self._resolve_analysis_context(
+            symbol
         )
-
         tier_kwargs = self._get_tier_kwargs(symbol)
         return AnalystDependenciesSchema(
             symbol=symbol,
@@ -192,37 +205,16 @@ class LiveDependenciesProvider:
             algorithm_confluence=confluence,
             volatility_regime=self._get_regime(symbol),
             leverage=self._get_leverage(symbol),
-            sentiment_summary=sentiment,
+            sentiment_summary=self._get_sentiment(),
             **tier_kwargs,
         )
 
     async def get_trader(self, symbol: str) -> TradingDependenciesSchema:
-        indicators = self._cache.get_indicators(symbol)
-        if indicators is None:
-            msg = f"Indicators not yet available for {symbol}"
-            raise RuntimeError(msg)
-
-        candles = self._cache.get_candles(symbol)
-        if not candles:
-            msg = f"No candles available for {symbol}"
-            raise RuntimeError(msg)
-
-        order_flow = self._cache.get_order_flow(symbol)
-        confluence = self._evaluate_dual_confluence(
-            symbol,
-            candles[-1],
-            indicators,
-            order_flow,
+        indicators, candles, order_flow, confluence = self._resolve_analysis_context(
+            symbol
         )
-
         account_state = await self._get_cached_account_state()
         open_positions = await self._get_cached_positions()
-
-        sentiment = (
-            self._external_cache.get_sentiment_summary()
-            if self._external_cache is not None
-            else None
-        )
 
         tier_kwargs = self._get_tier_kwargs(symbol)
         return TradingDependenciesSchema(
@@ -240,7 +232,7 @@ class LiveDependenciesProvider:
             exchange_client=self._exchange,
             event_store=self._event_store,
             atr_history=self._cache.get_atr_history(symbol),
-            sentiment_summary=sentiment,
+            sentiment_summary=self._get_sentiment(),
             **tier_kwargs,
         )
 

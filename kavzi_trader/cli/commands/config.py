@@ -2,12 +2,7 @@
 Configuration commands for the KavziTrader CLI.
 """
 
-import logging
-
 import click
-
-# Initialize logger
-logger = logging.getLogger(__name__)
 
 
 @click.command("config")
@@ -18,14 +13,7 @@ logger = logging.getLogger(__name__)
 )
 @click.pass_context
 def config_command(ctx: click.Context, validate: bool) -> None:
-    """
-    Show or validate the current configuration.
-
-    Args:
-        show: Whether to show the configuration
-        validate: Whether to validate the configuration
-    """
-    # Access the configuration from the context
+    """Show or validate the current configuration."""
     app_config = ctx.obj.get("app_config")
 
     if validate:

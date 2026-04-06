@@ -162,15 +162,6 @@ class BinanceClient:
 
         raise APIError(f"Unexpected error: {message}")
 
-    def _get_timestamp_ms(self) -> int:
-        """
-        Get current timestamp in milliseconds.
-
-        Returns:
-            Current timestamp in milliseconds
-        """
-        return int(time.time() * MILLISECONDS_IN_SECOND)
-
     @handle_api_errors
     async def ping(self) -> bool:
         """

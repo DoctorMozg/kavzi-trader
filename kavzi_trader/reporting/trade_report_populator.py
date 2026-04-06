@@ -7,6 +7,7 @@ from typing import Literal
 
 import aiofiles
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
+from pydantic import BaseModel
 
 from kavzi_trader.commons.path_utility import ensure_directory_exists
 from kavzi_trader.commons.time_utility import timestamp_path, utc_now
@@ -80,6 +81,26 @@ class TradeReportPopulator:
     def state(self) -> ReportStateSchema:
         return self._state
 
+    async def _append_and_render(
+        self,
+        field: str,
+        entry: BaseModel,
+        max_entries: int,
+    ) -> None:
+        """Append an entry to a list field, trim to max, bump version, render."""
+        async with self._lock:
+            items = [*getattr(self._state, field), entry]
+            if len(items) > max_entries:
+                items = items[-max_entries:]
+            self._state = self._state.model_copy(
+                update={
+                    field: items,
+                    "last_updated_at": utc_now(),
+                    "version": self._state.version + 1,
+                },
+            )
+            await self._render()
+
     async def record_action(
         self,
         action_type: str,
@@ -96,18 +117,11 @@ class TradeReportPopulator:
                 summary=summary,
                 details=details,
             )
-            async with self._lock:
-                actions = [*self._state.actions, entry]
-                if len(actions) > self._max_action_entries:
-                    actions = actions[-self._max_action_entries :]
-                self._state = self._state.model_copy(
-                    update={
-                        "actions": actions,
-                        "last_updated_at": utc_now(),
-                        "version": self._state.version + 1,
-                    },
-                )
-                await self._render()
+            await self._append_and_render(
+                "actions",
+                entry,
+                self._max_action_entries,
+            )
         except Exception:
             logger.exception(
                 "Failed to record action %s for %s",
@@ -141,18 +155,11 @@ class TradeReportPopulator:
                 confidence=confidence,
                 reasoning=reasoning,
             )
-            async with self._lock:
-                trades = [*self._state.trades, entry]
-                if len(trades) > self._max_trade_entries:
-                    trades = trades[-self._max_trade_entries :]
-                self._state = self._state.model_copy(
-                    update={
-                        "trades": trades,
-                        "last_updated_at": utc_now(),
-                        "version": self._state.version + 1,
-                    },
-                )
-                await self._render()
+            await self._append_and_render(
+                "trades",
+                entry,
+                self._max_trade_entries,
+            )
         except Exception:
             logger.exception(
                 "Failed to record trade %s for %s",
@@ -193,18 +200,11 @@ class TradeReportPopulator:
                 opened_at=opened_at,
                 closed_at=utc_now(),
             )
-            async with self._lock:
-                closed = [*self._state.closed_positions, entry]
-                if len(closed) > self._max_closed_position_entries:
-                    closed = closed[-self._max_closed_position_entries :]
-                self._state = self._state.model_copy(
-                    update={
-                        "closed_positions": closed,
-                        "last_updated_at": utc_now(),
-                        "version": self._state.version + 1,
-                    },
-                )
-                await self._render()
+            await self._append_and_render(
+                "closed_positions",
+                entry,
+                self._max_closed_position_entries,
+            )
         except Exception:
             logger.exception(
                 "Failed to record position close for %s",

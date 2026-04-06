@@ -124,20 +124,19 @@ class TradingOrchestrator:
                         name,
                         exc_info=exc,
                     )
-                    factory = self._loop_factories.get(name)
-                    if factory is not None:
-                        new_task = asyncio.create_task(factory(), name=name)
-                        self._tasks.add(new_task)
-                        logger.info("Task %s restarted", name)
                 else:
                     logger.warning(
                         "Task %s exited cleanly (unexpected), restarting",
                         name,
                     )
-                    factory = self._loop_factories.get(name)
-                    if factory is not None:
-                        new_task = asyncio.create_task(factory(), name=name)
-                        self._tasks.add(new_task)
+                self._restart_task(name)
+
+    def _restart_task(self, name: str) -> None:
+        factory = self._loop_factories.get(name)
+        if factory is not None:
+            new_task = asyncio.create_task(factory(), name=name)
+            self._tasks.add(new_task)
+            logger.info("Task %s restarted", name)
 
     async def shutdown(self) -> None:
         logger.info(

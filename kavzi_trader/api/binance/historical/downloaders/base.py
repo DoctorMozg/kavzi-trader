@@ -5,14 +5,11 @@ Base downloader for historical data.
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from typing import Any, NamedTuple
 
-import dateparser
 from pydantic import BaseModel
 
 from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.commons.time_utility import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -35,34 +32,6 @@ class BaseDownloader[T: BaseModel]:
             client: BinanceClient instance
         """
         self.client = client
-
-    def parse_time(
-        self,
-        time_value: str | datetime | None,
-        default: datetime | None = None,
-    ) -> datetime:
-        """
-        Parse a time value to datetime.
-
-        Args:
-            time_value: Time value to parse
-            default: Default value if time_value is None
-
-        Returns:
-            Parsed datetime
-        """
-        if time_value is None:
-            if default is None:
-                return utc_now()
-            return default
-
-        if isinstance(time_value, datetime):
-            return time_value
-
-        parsed_time = dateparser.parse(time_value)
-        if not parsed_time:
-            raise ValueError(f"Could not parse time: {time_value}")
-        return parsed_time
 
     async def execute_parallel_downloads(
         self,
