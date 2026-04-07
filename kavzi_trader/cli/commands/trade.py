@@ -301,7 +301,13 @@ async def _start_orchestrator(
         context_builder,
     )
 
-    router = AgentRouter(scout, analyst, trader)
+    # FGI gate must be created before the router so it can serve as the
+    # confluence override provider during elevated-fear conditions.
+    fgi_gate: FearGreedGateFilter | None = None
+    if external_cache is not None:
+        fgi_gate = FearGreedGateFilter(external_cache, app_config.filters)
+
+    router = AgentRouter(scout, analyst, trader, confluence_override=fgi_gate)
     logger.info("Brain agents created")
 
     position_manager = PositionManager(
@@ -353,9 +359,6 @@ async def _start_orchestrator(
     )
 
     # --- Pre-trade filter chain ---
-    fgi_gate: FearGreedGateFilter | None = None
-    if external_cache is not None:
-        fgi_gate = FearGreedGateFilter(external_cache, app_config.filters)
     filter_chain = PreTradeFilterChain(
         volatility_detector=VolatilityRegimeDetector(),
         funding_filter=FundingRateFilter(app_config.filters, tier_registry),

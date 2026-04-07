@@ -109,6 +109,15 @@ class FilterConfigSchema(BaseModel):
         Field(default=90, ge=0, le=100),
     ] = 90
 
+    fgi_elevated_fear_threshold: Annotated[
+        int,
+        Field(default=25, ge=0, le=100),
+    ] = 25
+    fgi_elevated_fear_confluence_min: Annotated[
+        int,
+        Field(default=8, ge=0, le=11),
+    ] = 8
+
     fgi_fear_bypass_confluence_min: Annotated[
         int,
         Field(default=9, ge=0, le=11),

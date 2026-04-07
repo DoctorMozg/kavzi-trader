@@ -120,3 +120,78 @@ def test_no_fgi_data_allows(
 def test_filter_name(gate: FearGreedGateFilter) -> None:
     result = gate.evaluate()
     assert result.name == "fear_greed_gate"
+
+
+# ---------------------------------------------------------------------------
+# Confluence override (elevated fear zone)
+# ---------------------------------------------------------------------------
+
+
+def test_confluence_override_extreme_fear_no_override(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """FGI=5 (extreme fear, <= threshold) → no override (blocked by gate)."""
+    _set_fgi(cache, 5)
+    assert gate.get_confluence_override() is None
+
+
+def test_confluence_override_at_fear_boundary_no_override(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """FGI=10 (== extreme fear threshold) → no override."""
+    _set_fgi(cache, 10)
+    assert gate.get_confluence_override() is None
+
+
+def test_confluence_override_just_above_fear(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """FGI=11 (just above extreme fear) → returns elevated confluence min."""
+    _set_fgi(cache, 11)
+    assert gate.get_confluence_override() == 8
+
+
+def test_confluence_override_mid_elevated_fear(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """FGI=15 (middle of elevated fear zone) → returns 8."""
+    _set_fgi(cache, 15)
+    assert gate.get_confluence_override() == 8
+
+
+def test_confluence_override_at_elevated_boundary(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """FGI=25 (== elevated fear threshold) → returns 8."""
+    _set_fgi(cache, 25)
+    assert gate.get_confluence_override() == 8
+
+
+def test_confluence_override_above_elevated_zone(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """FGI=26 (above elevated fear zone) → no override."""
+    _set_fgi(cache, 26)
+    assert gate.get_confluence_override() is None
+
+
+def test_confluence_override_normal_range(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """FGI=50 (normal range) → no override."""
+    _set_fgi(cache, 50)
+    assert gate.get_confluence_override() is None
+
+
+def test_confluence_override_no_data(
+    gate: FearGreedGateFilter,
+) -> None:
+    """No FGI data → no override (fail open)."""
+    assert gate.get_confluence_override() is None

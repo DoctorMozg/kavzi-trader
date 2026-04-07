@@ -19,6 +19,6 @@ def test_orchestrator_config_defaults() -> None:
 def test_app_config_from_env_timing_defaults() -> None:
     config = AppConfig.from_env()
 
-    assert config.trading.interval == "5m"
+    assert config.trading.interval == "15m"
     assert config.trading.history_candles == 1000
-    assert config.orchestrator.reasoning_interval_s == 60
+    assert config.orchestrator.reasoning_interval_s == 180

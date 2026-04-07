@@ -1,6 +1,7 @@
 import logging
 import time
 from datetime import datetime
+from decimal import Decimal
 from typing import Protocol
 
 import httpx
@@ -8,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
+    KeyLevelSchema,
     KeyLevelsSchema,
 )
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
@@ -42,6 +44,10 @@ class TraderRunner(Protocol):
         analyst_result: AnalystDecisionSchema | None = None,
         scout_pattern: str | None = None,
     ) -> TradeDecisionSchema: ...
+
+
+class ConfluenceOverrideProvider(Protocol):
+    def get_confluence_override(self) -> int | None: ...
 
 
 class DependenciesProvider(Protocol):
@@ -89,6 +95,10 @@ _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 3
 # router prevents intra-bar re-analysis.
 _ANALYST_CONFLUENCE_ENTER = 6
 
+# Pre-Trader deterministic gates
+_BREAKOUT_OVEREXTENDED_B = Decimal("1.20")
+_RR_MIN_PRESCREEN = Decimal("1.2")
+
 
 class AgentRouter:
     def __init__(
@@ -97,14 +107,18 @@ class AgentRouter:
         analyst: AnalystRunner,
         trader: TraderRunner,
         analyst_min_algo_confluence: int = _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE,
+        confluence_override: ConfluenceOverrideProvider | None = None,
     ) -> None:
         self._scout = scout
         self._analyst = analyst
         self._trader = trader
         self._analyst_min_algo_confluence = analyst_min_algo_confluence
-        # Per-symbol bar-close dedup: if the latest candle's close_time has
-        # not advanced since the previous Analyst invocation, return the
-        # memoized result instead of burning another expensive LLM call.
+        self._confluence_override = confluence_override
+        # Per-symbol bar-close dedup for Scout (deterministic — safe to cache
+        # both INTERESTING and SKIP within the same candle).
+        self._last_scout_bar_close: dict[str, datetime] = {}
+        self._last_scout_result: dict[str, ScoutDecisionSchema] = {}
+        # Per-symbol bar-close dedup for Analyst (LLM-based).
         self._last_analyzed_bar_close: dict[str, datetime] = {}
         self._last_analyst_result: dict[str, AnalystDecisionSchema] = {}
 
@@ -118,9 +132,30 @@ class AgentRouter:
 
         scout_deps = await self._fetch_scout_deps(symbol, deps_provider)
 
-        scout_result = await self._invoke_scout(symbol, scout_deps)
-        if scout_result is None:
-            scout_result = _SKIP_ERROR
+        # Scout bar-close dedup: deterministic filter produces the same
+        # verdict for the same candle, so cache both INTERESTING and SKIP.
+        current_scout_bar = scout_deps.recent_candles[-1].close_time
+        prev_scout_bar = self._last_scout_bar_close.get(symbol)
+        cached_scout = (
+            self._last_scout_result.get(symbol)
+            if prev_scout_bar is not None and current_scout_bar == prev_scout_bar
+            else None
+        )
+        if cached_scout is not None:
+            logger.info(
+                "Scout dedup hit for %s: bar close_time=%s already"
+                " evaluated (cached verdict=%s)",
+                symbol,
+                current_scout_bar,
+                cached_scout.verdict,
+            )
+            scout_result: ScoutDecisionSchema = cached_scout
+        else:
+            raw = await self._invoke_scout(symbol, scout_deps)
+            scout_result = raw if raw is not None else _SKIP_ERROR
+            self._last_scout_bar_close[symbol] = current_scout_bar
+            self._last_scout_result[symbol] = scout_result
+
         if scout_result.verdict != "INTERESTING":
             self._log_stop("Scout", symbol, total_start)
             return PipelineResult(scout=scout_result)
@@ -128,9 +163,18 @@ class AgentRouter:
         analyst_result = await self._run_analyst(symbol, deps_provider)
         if analyst_result is None:
             return PipelineResult(scout=scout_result)
+
+        # FGI elevated-fear confluence override: raise the entry gate when
+        # market fear is elevated but not extreme (already blocked by FGI gate).
+        confluence_gate = _ANALYST_CONFLUENCE_ENTER
+        if self._confluence_override is not None:
+            override = self._confluence_override.get_confluence_override()
+            if override is not None:
+                confluence_gate = max(confluence_gate, override)
+
         if (
             not analyst_result.setup_valid
-            or analyst_result.confluence_score < _ANALYST_CONFLUENCE_ENTER
+            or analyst_result.confluence_score < confluence_gate
         ):
             self._log_stop("Analyst", symbol, total_start)
             return PipelineResult(scout=scout_result, analyst=analyst_result)
@@ -278,6 +322,26 @@ class AgentRouter:
     ) -> _TraderRunResult:
         deps = await deps_provider.get_trader(symbol)
         self._log_trader_inputs(deps, analyst_result, scout_pattern)
+
+        # Deterministic pre-Trader gate: reject BREAKOUT at overextended %B
+        breakout_reject = self._pre_trader_breakout_check(
+            symbol,
+            scout_pattern,
+            deps,
+        )
+        if breakout_reject is not None:
+            return _TraderRunResult(decision=breakout_reject, deps=deps)
+
+        # Deterministic pre-Trader gate: reject poor estimated R/R
+        rr_reject = self._pre_trader_rr_check(
+            symbol,
+            analyst_result,
+            deps.current_price,
+            deps.indicators.atr_14,
+        )
+        if rr_reject is not None:
+            return _TraderRunResult(decision=rr_reject, deps=deps)
+
         t0 = time.monotonic()
         try:
             result = await self._trader.run(
@@ -372,6 +436,123 @@ class AgentRouter:
             deps.sentiment_summary.sentiment_bias if deps.sentiment_summary else None,
             deps.sentiment_summary.summary[:30] if deps.sentiment_summary else "",
         )
+
+    @staticmethod
+    def _pre_trader_breakout_check(
+        symbol: str,
+        scout_pattern: str | None,
+        deps: TradingDependenciesSchema,
+    ) -> TradeDecisionSchema | None:
+        """Reject BREAKOUT entries when %B indicates overextension."""
+        if scout_pattern != "BREAKOUT":
+            return None
+        bb = deps.indicators.bollinger
+        if bb is None:
+            return None
+        percent_b = bb.percent_b
+        if percent_b > _BREAKOUT_OVEREXTENDED_B:
+            logger.info(
+                "Pre-Trader BREAKOUT reject for %s: %%B=%.2f > %.2f"
+                " — price overextended beyond upper Bollinger Band",
+                symbol,
+                float(percent_b),
+                float(_BREAKOUT_OVEREXTENDED_B),
+            )
+            return TradeDecisionSchema(
+                action="WAIT",
+                confidence=0.0,
+                reasoning=(
+                    f"Deterministic pre-Trader reject: BREAKOUT pattern with"
+                    f" Bollinger %%B={float(percent_b):.2f} exceeds"
+                    f" {float(_BREAKOUT_OVEREXTENDED_B):.2f} overextension"
+                    f" threshold. Price is too far beyond the upper band for"
+                    f" a sustainable breakout entry."
+                ),
+                suggested_entry=None,
+                suggested_stop_loss=None,
+                suggested_take_profit=None,
+            )
+        if percent_b > Decimal("1.10"):
+            logger.warning(
+                "BREAKOUT caution for %s: %%B=%.2f in 1.10-1.20 zone",
+                symbol,
+                float(percent_b),
+            )
+        return None
+
+    @staticmethod
+    def _estimate_rr(
+        direction: str,
+        current_price: Decimal,
+        key_levels: list[KeyLevelSchema],
+        atr: Decimal | None,
+    ) -> Decimal | None:
+        """Estimate risk/reward from key levels with ATR fallback."""
+        if atr is None or atr == 0:
+            return None
+        if direction == "NEUTRAL":
+            return None
+
+        supports = [lv.price for lv in key_levels if lv.level_type == "SUPPORT"]
+        resistances = [lv.price for lv in key_levels if lv.level_type == "RESISTANCE"]
+
+        if direction == "LONG":
+            sl_candidates = [p for p in supports if p < current_price]
+            tp_candidates = [p for p in resistances if p > current_price]
+            sl = max(sl_candidates) if sl_candidates else current_price - atr
+            tp = min(tp_candidates) if tp_candidates else current_price + 2 * atr
+        else:  # SHORT
+            sl_candidates = [p for p in resistances if p > current_price]
+            tp_candidates = [p for p in supports if p < current_price]
+            sl = min(sl_candidates) if sl_candidates else current_price + atr
+            tp = max(tp_candidates) if tp_candidates else current_price - 2 * atr
+
+        risk = abs(current_price - sl)
+        reward = abs(tp - current_price)
+        if risk == 0:
+            return None
+        return reward / risk
+
+    @staticmethod
+    def _pre_trader_rr_check(
+        symbol: str,
+        analyst_result: AnalystDecisionSchema,
+        current_price: Decimal,
+        atr: Decimal | None,
+    ) -> TradeDecisionSchema | None:
+        """Reject when estimated R/R is below the pre-screen threshold."""
+        if analyst_result.direction == "NEUTRAL":
+            return None
+        estimated_rr = AgentRouter._estimate_rr(
+            analyst_result.direction,
+            current_price,
+            analyst_result.key_levels.levels,
+            atr,
+        )
+        if estimated_rr is None:
+            return None  # Fail open when we cannot estimate
+        if estimated_rr < _RR_MIN_PRESCREEN:
+            logger.info(
+                "Pre-Trader R/R reject for %s: estimated R/R=%.2f < %.1f",
+                symbol,
+                float(estimated_rr),
+                float(_RR_MIN_PRESCREEN),
+            )
+            return TradeDecisionSchema(
+                action="WAIT",
+                confidence=0.0,
+                reasoning=(
+                    f"Deterministic pre-Trader reject: estimated"
+                    f" risk/reward ratio {float(estimated_rr):.2f} is below"
+                    f" the minimum pre-screen threshold of"
+                    f" {float(_RR_MIN_PRESCREEN):.1f}. Key levels do not"
+                    f" support a favorable entry at current price."
+                ),
+                suggested_entry=None,
+                suggested_stop_loss=None,
+                suggested_take_profit=None,
+            )
+        return None
 
     @staticmethod
     def _log_stop(agent: str, symbol: str, start: float) -> None:

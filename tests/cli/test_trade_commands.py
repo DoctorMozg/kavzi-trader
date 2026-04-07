@@ -139,7 +139,7 @@ async def test_start_orchestrator_uses_configured_runtime_values(
     monkeypatch.setattr(trade_module, "ScoutFilter", lambda *_: object())
     monkeypatch.setattr(trade_module, "AnalystAgent", lambda *_: object())
     monkeypatch.setattr(trade_module, "TraderAgent", lambda *_: object())
-    monkeypatch.setattr(trade_module, "AgentRouter", lambda *_: object())
+    monkeypatch.setattr(trade_module, "AgentRouter", lambda *_a, **_kw: object())
     monkeypatch.setattr(trade_module, "PositionManager", lambda **_: object())
     monkeypatch.setattr(trade_module, "DataIngestLoop", lambda *_: object())
 

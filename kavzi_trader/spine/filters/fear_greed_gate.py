@@ -22,6 +22,8 @@ class FearGreedGateFilter:
         self._cache = external_cache
         self._fear_threshold = config.fgi_extreme_fear_threshold
         self._greed_threshold = config.fgi_extreme_greed_threshold
+        self._elevated_fear_threshold = config.fgi_elevated_fear_threshold
+        self._elevated_fear_confluence_min = config.fgi_elevated_fear_confluence_min
 
     def evaluate(self) -> FilterResultSchema:
         snapshot = self._cache.get_snapshot()
@@ -73,3 +75,18 @@ class FearGreedGateFilter:
             is_allowed=True,
             reason=f"FGI={value} (normal range)",
         )
+
+    def get_confluence_override(self) -> int | None:
+        """Return raised confluence gate when FGI is in the elevated fear zone.
+
+        Returns the elevated confluence minimum when FGI is in range
+        (extreme_fear_threshold, elevated_fear_threshold], else None.
+        """
+        snapshot = self._cache.get_snapshot()
+        fgi = snapshot.fear_greed
+        if fgi is None:
+            return None
+        value = fgi.value
+        if self._fear_threshold < value <= self._elevated_fear_threshold:
+            return self._elevated_fear_confluence_min
+        return None

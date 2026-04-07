@@ -1,12 +1,17 @@
 from datetime import timedelta
 from decimal import Decimal
+from typing import Literal
 
 import pytest
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.agent.router import AgentRouter
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema, KeyLevelsSchema
+from kavzi_trader.brain.schemas.analyst import (
+    AnalystDecisionSchema,
+    KeyLevelSchema,
+    KeyLevelsSchema,
+)
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
@@ -15,6 +20,10 @@ from kavzi_trader.brain.schemas.dependencies import (
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.indicators.schemas import (
+    BollingerBandsSchema,
+    TechnicalIndicatorsSchema,
+)
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
@@ -763,3 +772,631 @@ async def test_router_blocks_trader_when_llm_rejects_high_confluence(
     assert result.analyst.setup_valid is False
     assert result.trader is None
     assert provider.trader_calls == 0
+
+
+# ---------------------------------------------------------------------------
+# Scout bar-close dedup: the router must memoize the Scout result per
+# (symbol, candle.close_time). Repeat calls within the same bar return the
+# cached result without invoking Scout a second time.
+# ---------------------------------------------------------------------------
+
+
+class SpyScoutSkip:
+    """Scout that records call count and always returns SKIP."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def run(self, deps: ScoutDependenciesSchema) -> ScoutDecisionSchema:
+        self.call_count += 1
+        return ScoutDecisionSchema(
+            verdict="SKIP",
+            reason="Test skip",
+            pattern_detected=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_router_dedups_scout_within_same_bar(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Repeat run() calls with the same candle.close_time hit scout once."""
+    spy_scout = SpyScout()
+    router = AgentRouter(spy_scout, DummyAnalyst(True, 8), DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    await router.run("BTCUSDT", provider)
+    await router.run("BTCUSDT", provider)
+
+    assert spy_scout.call_count == 1, "Scout must only be called once for the same bar"
+
+
+@pytest.mark.asyncio
+async def test_router_reinvokes_scout_on_new_bar(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """When close_time advances, Scout is called again."""
+    spy_scout = SpyScout()
+    router = AgentRouter(spy_scout, DummyAnalyst(True, 8), DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    await router.run("BTCUSDT", provider)
+    assert spy_scout.call_count == 1
+
+    new_candle = _candle_with_close_time(candle, 300)
+    _rebuild_provider_with_candle(provider, new_candle)
+
+    await router.run("BTCUSDT", provider)
+    assert spy_scout.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_router_dedups_scout_per_symbol_independently(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Dedup state is keyed by symbol — two symbols get separate calls."""
+    spy_scout = SpyScout()
+    router = AgentRouter(spy_scout, DummyAnalyst(True, 8), DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    await router.run("BTCUSDT", provider)
+    await router.run("ETHUSDT", provider)
+
+    assert spy_scout.call_count == 2, "Each symbol gets its own first call"
+
+
+@pytest.mark.asyncio
+async def test_router_scout_dedup_returns_cached_skip(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Cached SKIP verdicts are returned without re-invoking Scout."""
+    spy_skip = SpyScoutSkip()
+    router = AgentRouter(spy_skip, DummyAnalyst(True, 8), DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    first = await router.run("BTCUSDT", provider)
+    second = await router.run("BTCUSDT", provider)
+
+    assert spy_skip.call_count == 1
+    assert first.scout.verdict == "SKIP"
+    assert second.scout.verdict == "SKIP"
+
+
+# ---------------------------------------------------------------------------
+# FGI elevated-fear confluence override
+# ---------------------------------------------------------------------------
+
+
+class FakeConfluenceOverride:
+    """Returns a fixed confluence override value."""
+
+    def __init__(self, override: int | None) -> None:
+        self._override = override
+
+    def get_confluence_override(self) -> int | None:
+        return self._override
+
+
+@pytest.mark.asyncio
+async def test_router_raises_confluence_gate_during_elevated_fear(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """confluence=7 + override=8 → Trader NOT reached (7 < 8)."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=7)
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        analyst,
+        DummyTrader(),
+        confluence_override=FakeConfluenceOverride(8),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert result.trader is None
+    assert provider.trader_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_router_passes_confluence_gate_at_override_threshold(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """confluence=8 + override=8 → Trader IS reached (8 >= 8)."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=8)
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        analyst,
+        DummyTrader(),
+        confluence_override=FakeConfluenceOverride(8),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert result.trader is not None
+    assert provider.trader_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_router_no_override_uses_default_gate(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """override=None → default gate (6) applies; confluence=6 passes."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=6)
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        analyst,
+        DummyTrader(),
+        confluence_override=FakeConfluenceOverride(None),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert result.trader is not None
+
+
+# ---------------------------------------------------------------------------
+# Breakout overextension gate
+# ---------------------------------------------------------------------------
+
+
+def _indicators_with_bollinger(
+    indicators: TechnicalIndicatorsSchema,
+    percent_b: Decimal,
+) -> TechnicalIndicatorsSchema:
+    """Return indicators with a Bollinger Bands schema injected."""
+    return TechnicalIndicatorsSchema(
+        ema_20=indicators.ema_20,
+        ema_50=indicators.ema_50,
+        ema_200=indicators.ema_200,
+        sma_20=indicators.sma_20,
+        rsi_14=indicators.rsi_14,
+        macd=indicators.macd,
+        bollinger=BollingerBandsSchema(
+            upper=Decimal(110),
+            middle=Decimal(100),
+            lower=Decimal(90),
+            width=Decimal("0.2"),
+            percent_b=percent_b,
+        ),
+        atr_14=indicators.atr_14,
+        volume=indicators.volume,
+        timestamp=indicators.timestamp,
+    )
+
+
+class DummyScoutWithPattern:
+    """Scout that returns INTERESTING with a specific pattern."""
+
+    def __init__(self, pattern: str) -> None:
+        self._pattern = pattern
+
+    async def run(self, deps: ScoutDependenciesSchema) -> ScoutDecisionSchema:
+        return ScoutDecisionSchema(
+            verdict="INTERESTING",
+            reason="Test",
+            pattern_detected=self._pattern,
+        )
+
+
+class SpyTrader:
+    """Trader that records whether it was called."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def run(
+        self,
+        deps: TradingDependenciesSchema,
+        analyst_result: AnalystDecisionSchema | None = None,
+        scout_pattern: str | None = None,
+    ) -> TradeDecisionSchema:
+        self.call_count += 1
+        return TradeDecisionSchema(
+            action="WAIT",
+            confidence=0.5,
+            reasoning=_TRADER_REASONING,
+            suggested_entry=None,
+            suggested_stop_loss=None,
+            suggested_take_profit=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_router_rejects_breakout_overextended_b(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """%B=1.35 + BREAKOUT → Trader NOT called, WAIT returned."""
+    bb_indicators = _indicators_with_bollinger(indicators, Decimal("1.35"))
+    spy_trader = SpyTrader()
+    router = AgentRouter(
+        DummyScoutWithPattern("BREAKOUT"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        spy_trader,
+    )
+    provider = _make_provider(
+        candle,
+        bb_indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 0, "Trader should NOT be called"
+    assert result.trader is not None
+    assert result.trader.action == "WAIT"
+    assert "overextension" in result.trader.reasoning.lower()
+
+
+@pytest.mark.asyncio
+async def test_router_allows_breakout_normal_b(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """%B=0.95 + BREAKOUT → Trader IS called."""
+    bb_indicators = _indicators_with_bollinger(indicators, Decimal("0.95"))
+    spy_trader = SpyTrader()
+    router = AgentRouter(
+        DummyScoutWithPattern("BREAKOUT"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        spy_trader,
+    )
+    provider = _make_provider(
+        candle,
+        bb_indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_router_allows_non_breakout_high_b(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """%B=1.35 + TREND_CONTINUATION → Trader IS called (gate is BREAKOUT-only)."""
+    bb_indicators = _indicators_with_bollinger(indicators, Decimal("1.35"))
+    spy_trader = SpyTrader()
+    router = AgentRouter(
+        DummyScoutWithPattern("TREND_CONTINUATION"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        spy_trader,
+    )
+    provider = _make_provider(
+        candle,
+        bb_indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_router_allows_breakout_borderline_b(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """%B=1.15 + BREAKOUT → Trader IS called (caution zone, not reject)."""
+    bb_indicators = _indicators_with_bollinger(indicators, Decimal("1.15"))
+    spy_trader = SpyTrader()
+    router = AgentRouter(
+        DummyScoutWithPattern("BREAKOUT"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        spy_trader,
+    )
+    provider = _make_provider(
+        candle,
+        bb_indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# R/R pre-screen: deterministic estimate of risk/reward from key levels + ATR
+# ---------------------------------------------------------------------------
+
+
+def test_estimate_rr_long_with_key_levels() -> None:
+    """Support=95, resistance=115, price=100 → R/R=3.0."""
+    levels = [
+        KeyLevelSchema(price=Decimal(95), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(115), level_type="RESISTANCE", reason="test"),
+    ]
+    rr = AgentRouter._estimate_rr("LONG", Decimal(100), levels, Decimal(5))
+    assert rr is not None
+    assert float(rr) == 3.0
+
+
+def test_estimate_rr_long_atr_fallback() -> None:
+    """No key levels, ATR=5, price=100 → SL=95, TP=110 → R/R=2.0."""
+    rr = AgentRouter._estimate_rr("LONG", Decimal(100), [], Decimal(5))
+    assert rr is not None
+    assert float(rr) == 2.0
+
+
+def test_estimate_rr_short_with_key_levels() -> None:
+    """Resistance=105, support=90, price=100 → R/R=2.0."""
+    levels = [
+        KeyLevelSchema(price=Decimal(105), level_type="RESISTANCE", reason="test"),
+        KeyLevelSchema(price=Decimal(90), level_type="SUPPORT", reason="test"),
+    ]
+    rr = AgentRouter._estimate_rr("SHORT", Decimal(100), levels, Decimal(5))
+    assert rr is not None
+    assert float(rr) == 2.0
+
+
+def test_estimate_rr_returns_none_no_atr() -> None:
+    """ATR=None → cannot estimate."""
+    rr = AgentRouter._estimate_rr("LONG", Decimal(100), [], None)
+    assert rr is None
+
+
+def test_estimate_rr_returns_none_zero_atr() -> None:
+    """ATR=0 → cannot estimate."""
+    rr = AgentRouter._estimate_rr("LONG", Decimal(100), [], Decimal(0))
+    assert rr is None
+
+
+def test_estimate_rr_returns_none_neutral() -> None:
+    """Direction=NEUTRAL → no estimate."""
+    rr = AgentRouter._estimate_rr("NEUTRAL", Decimal(100), [], Decimal(5))
+    assert rr is None
+
+
+class DummyAnalystWithLevels:
+    """Analyst that returns a result with specific key levels and direction."""
+
+    def __init__(
+        self,
+        direction: Literal["LONG", "SHORT", "NEUTRAL"],
+        levels: list[KeyLevelSchema],
+        confluence_score: int = 8,
+    ) -> None:
+        self._direction = direction
+        self._levels = levels
+        self._confluence_score = confluence_score
+
+    async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema:
+        return AnalystDecisionSchema(
+            setup_valid=True,
+            direction=self._direction,
+            confluence_score=self._confluence_score,
+            key_levels=KeyLevelsSchema(levels=self._levels),
+            reasoning=_ANALYST_REASONING,
+        )
+
+
+@pytest.mark.asyncio
+async def test_router_skips_trader_on_rr_reject(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """When estimated R/R < 1.2, Trader is NOT called."""
+    # Support=104, resistance=106 at price=105 → Risk=1, Reward=1, R/R=1.0
+    levels = [
+        KeyLevelSchema(price=Decimal(104), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
+    ]
+    spy_trader = SpyTrader()
+    analyst = DummyAnalystWithLevels("LONG", levels)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 0
+    assert result.trader is not None
+    assert result.trader.action == "WAIT"
+
+
+@pytest.mark.asyncio
+async def test_router_passes_trader_on_adequate_rr(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """When estimated R/R >= 1.2, Trader IS called."""
+    # Support=100, resistance=120 at price=105 → Risk=5, Reward=15, R/R=3.0
+    levels = [
+        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(120), level_type="RESISTANCE", reason="test"),
+    ]
+    spy_trader = SpyTrader()
+    analyst = DummyAnalystWithLevels("LONG", levels)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_router_passes_trader_on_neutral_direction(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Direction=NEUTRAL → R/R check is skipped (fail open)."""
+    spy_trader = SpyTrader()
+    analyst = DummyAnalystWithLevels("NEUTRAL", [], confluence_score=8)
+    # NEUTRAL + setup_valid=True + confluence=8 will still reach Trader
+    # because the confluence gate passes, and R/R fails open on NEUTRAL
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 1

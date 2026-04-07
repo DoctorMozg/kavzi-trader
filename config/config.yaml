@@ -118,33 +118,25 @@ scout:
 # Trading — symbols, timeframe, portfolio limits
 # -----------------------------------------------------------------------------
 trading:
-  # Binance Futures symbols to monitor and trade
+  # Binance Futures symbols to monitor and trade.
+  # Reduced to 8 high-liquidity symbols — micro account ($100) cannot
+  # afford the spread/slippage costs of low-cap alts.
   symbols:
     - BTCUSDT
     - ETHUSDT
     - SOLUSDT
     - XRPUSDT
-    - DOGEUSDT
     - BNBUSDT
-    - TAOUSDT
-    - SUIUSDT
     - ADAUSDT
-    - AVAXUSDT
     - LINKUSDT
-    - LTCUSDT
-    - NEARUSDT
-    - INJUSDT
-    - WIFUSDT
-    - TONUSDT
-    - BCHUSDT
-    - AAVEUSDT
+    - AVAXUSDT
 
-  # Candlestick interval for analysis
-  # Valid: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 1d
-  interval: "5m"
+  # 15m candles produce 3x larger ATR than 5m — larger absolute moves
+  # per trade, fewer noise stop-outs, better profit/commission ratio.
+  interval: "15m"
 
   # How many candles to backfill into the in-memory cache at startup.
-  # This improves indicator warmup without increasing Brain prompt size.
+  # 1000 × 15m ≈ 10.4 days — sufficient for indicator warmup.
   history_candles: 1000
 
   # Max concurrent positions is configured in risk.max_positions
@@ -172,13 +164,8 @@ futures:
 
   # Per-symbol leverage overrides (symbol → leverage).
   # If a symbol is not listed here, default_leverage is used.
-  # TAO kept at 3x: extreme vol (90-160% annualized), thin liquidity,
-  # Binance reduced max leverage to 20x in Aug 2024.
-  symbol_leverage:
-    TAOUSDT: 3
-    WIFUSDT: 3
-    HYPEUSDT: 3
-    TONUSDT: 3
+  # No overrides needed — removed high-vol alts from the symbol list.
+  symbol_leverage: {}
 
   # Distance from liquidation price (%) at which position manager triggers
   # emergency exit as a safety net (in case SL order fails to fill).
@@ -196,26 +183,18 @@ futures:
 # -----------------------------------------------------------------------------
 risk:
   # Percentage of total account balance risked on a single trade.
-  # risk_amount = account_balance * (risk_per_trade_percent / 100)
-  # Then position size = risk_amount / stop_loss_distance.
-  #   0.5  = conservative (small positions)
-  #   1.0  = moderate (default)
-  #   2.0  = aggressive (larger positions, higher drawdown risk)
-  risk_per_trade_percent: 1.0
+  # On a $100 micro account, 3% = $3 risk. Combined with R/R 2.0, a
+  # winner yields $6 — enough to meaningfully outweigh the ~$0.20
+  # round-trip commission on a $100-500 notional position.
+  risk_per_trade_percent: 3.0
 
-  # Maximum concurrent open positions (rejects new trades when reached).
-  #   1 = single-position mode (simplest)
-  #   2 = default (one per symbol)
-  #   3+ = multi-pair portfolio
-  max_positions: 6
+  # With $100, spread across 2 positions max. More positions = each one
+  # too small to overcome minimum order sizes and commission friction.
+  max_positions: 2
 
-  # Minimum risk:reward ratio required to accept a trade.
-  # Calculated as: (distance to TP) / (distance to SL) >= min_rr_ratio
-  #   1.0 = breakeven expectancy (not recommended)
-  #   1.5 = default — need $1.50 reward for every $1 risked
-  #   2.0 = conservative (fewer but higher-quality setups)
-  #   3.0 = very selective
-  min_rr_ratio: 1.5
+  # Raised from 1.5 to 2.0. On a micro account, commissions consume a
+  # larger share of profit — need larger winners to stay net positive.
+  min_rr_ratio: 2.0
 
   # Account drawdown (%) at which NEW trades are paused (existing positions stay open).
   # Calculated from peak account balance.
@@ -286,68 +265,37 @@ risk:
 # These checks run every position_check_interval_s seconds.
 # -----------------------------------------------------------------------------
 position_management:
-  # Trailing stop distance in ATR multiples.
-  # Once trade is 2+ ATR in profit, SL trails at this distance below price (LONG)
-  # or above price (SHORT).
-  #   1.0 = tight trail (locks profit fast, more likely to be stopped)
-  #   1.5 = default
-  #   2.0 = wide trail (gives more room, but gives back more profit on reversal)
-  trailing_stop_atr_multiplier: 1.5
+  # Wider trail gives winning trades room to breathe. On 15m candles,
+  # 2.0 ATR ≈ 1-2% for BTC — survives normal pullbacks within a trend.
+  trailing_stop_atr_multiplier: 2.0
 
-  # Profit threshold (in ATR multiples) to activate trailing stop.
-  # Must be greater than break_even_trigger_atr.
-  #   1.5 = aggressive trailing (locks profit early)
-  #   2.0 = default
-  #   3.0 = patient (waits for large move)
-  trailing_stop_trigger_atr: 2.0
+  # Don't start trailing until a substantial move has developed.
+  # 3.0 ATR on 15m ≈ 1.5-3% — ensures the trend is real, not noise.
+  trailing_stop_trigger_atr: 3.0
 
-  # Profit threshold (in ATR multiples) to move SL to entry price (break-even).
-  # Eliminates downside risk after initial favorable move.
-  #   1.0 = aggressive (move to BE early)
-  #   1.5 = default (1.5 ATR of profit before BE)
-  #   2.0 = patient (waits for larger move)
-  break_even_trigger_atr: 1.5
+  # Patience before break-even. On 15m, the first 2 candles often retrace.
+  # 2.0 ATR lets the move establish before protecting capital.
+  break_even_trigger_atr: 2.0
 
-  # Buffer (in ATR multiples) added to break-even SL to avoid noise stops.
-  # For LONG: SL = entry - buffer*ATR. For SHORT: SL = entry + buffer*ATR.
-  #   0.0  = no buffer (SL at exact entry — old behavior)
-  #   0.3  = default (tolerates normal 1-2 tick noise)
-  #   0.5  = wide buffer
+  # Buffer to avoid noise stops at break-even.
   break_even_buffer_atr: 0.3
 
-  # Minimum seconds a position must be held before break-even can activate.
-  # Prevents premature BE-SL on normal retraces after initial favorable move.
-  #   300  = 5 min (aggressive — early BE)
-  #   900  = default (15 min — allows normal pullbacks)
-  #   1800 = 30 min (patient)
-  break_even_min_hold_s: 900
+  # 30 min = 2 candles on 15m. Prevents premature BE on normal pullbacks.
+  break_even_min_hold_s: 1800
 
-  # Progress toward take-profit (0.0–1.0) at which to take partial profit.
-  # 0.65 means "when price reaches 65% of the way from entry to TP".
-  #   0.5  = early partial (locks profit sooner)
-  #   0.65 = default (two-thirds to TP)
-  #   0.75 = late partial (lets more of the move play out)
-  partial_exit_at_percent: 0.65
+  # Let 80% of the move play out before taking partial.
+  # On a $100 account, each dollar of captured profit matters.
+  partial_exit_at_percent: 0.80
 
-  # Fraction of position size (0.0–1.0) to close on partial exit.
-  #   0.25 = exit quarter of position
-  #   0.3  = default (exit 30%)
-  #   0.5  = exit half of position
-  partial_exit_size: 0.3
+  # Take 25% off (not 30%) — keep more of the position running.
+  partial_exit_size: 0.25
 
-  # Minimum profit in ATR multiples before partial exit is allowed.
-  # Prevents micro-profit partial exits where commission > captured profit.
-  #   0.5 = permissive
-  #   1.0 = default
-  #   1.5 = strict (only partial exit on strong moves)
-  partial_exit_min_profit_atr: 1.0
+  # Only partial-exit if the move is at least 1.5 ATR in profit.
+  # Prevents tiny partial exits where commission > captured profit.
+  partial_exit_min_profit_atr: 1.5
 
-  # Maximum hours a position can stay open before force-close.
-  # Prevents capital from being tied up in stale, non-moving trades.
-  #   12 = aggressive (half-day max)
-  #   24 = default (one day)
-  #   48 = patient (two days)
-  max_hold_time_hours: 24
+  # 48 hours max hold. 15m candles = slower setups = need more time.
+  max_hold_time_hours: 48
 
 # -----------------------------------------------------------------------------
 # Order Flow — funding rate and open interest monitoring
@@ -397,18 +345,11 @@ filters:
   # Map of correlated pairs. If a correlated symbol already has an open position,
   # the new position's size is reduced to limit portfolio correlation risk.
   correlated_pairs:
-    BTCUSDT: ["ETHUSDT", "LTCUSDT", "BCHUSDT"]
+    BTCUSDT: ["ETHUSDT"]
     ETHUSDT: ["BTCUSDT", "LINKUSDT"]
-    SOLUSDT: ["AVAXUSDT", "SUIUSDT", "NEARUSDT", "INJUSDT"]
-    SUIUSDT: ["SOLUSDT"]
+    SOLUSDT: ["AVAXUSDT"]
     LINKUSDT: ["ETHUSDT"]
     AVAXUSDT: ["SOLUSDT"]
-    LTCUSDT: ["BTCUSDT"]
-    BCHUSDT: ["BTCUSDT"]
-    NEARUSDT: ["SOLUSDT"]
-    INJUSDT: ["SOLUSDT"]
-    WIFUSDT: ["SOLUSDT", "DOGEUSDT"]
-    DOGEUSDT: ["WIFUSDT"]
 
   # Fear & Greed Index extreme-fear threshold.
   # Trades are blocked when FGI <= this value (true panic territory).
@@ -517,11 +458,9 @@ orchestrator:
   order_flow_fetch_interval_s: 300
 
   # How often (seconds) the ReasoningLoop scans symbols and asks the Brain
-  # for new trade decisions.
-  #   30 = aggressive
-  #   60 = default for 5m candles
-  #   120 = conservative
-  reasoning_interval_s: 60
+  # for new trade decisions. 180s for 15m candles — no point scanning more
+  # often than ~1/5 of the candle period.
+  reasoning_interval_s: 180
 
   # How often (seconds) PositionManagementLoop evaluates open positions
   # for trailing stop, break-even, partial exit, and time exit actions.
@@ -644,11 +583,9 @@ paper:
   #   "DISABLED" = disable all execution (analysis-only / dry-run mode)
   mode: "PAPER"
 
-  # Paper trading initial USDT balance (used with --paper CLI flag).
-  #   5000   = small account
-  #   10000  = default
-  #   100000 = large paper account
-  initial_balance_usdt: 10000
+  # Paper trading initial USDT balance — matches real account for realistic
+  # position sizing and commission impact.
+  initial_balance_usdt: 100
 
   # Simulated commission rate per trade (0.001 = 0.1%, Binance standard).
   #   0.0    = no commission (optimistic)

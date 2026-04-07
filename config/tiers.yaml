@@ -1,9 +1,9 @@
 tiers:
   TIER_1:
-    risk_per_trade_percent: "2.0"
+    risk_per_trade_percent: "4.0"
     max_leverage: 5
-    max_exposure_percent: "15.0"
-    min_confidence: "0.70"
+    max_exposure_percent: "30.0"
+    min_confidence: "0.75"
     crowded_long_zscore: "2.0"
     crowded_short_zscore: "-2.0"
     symbols:
@@ -12,10 +12,10 @@ tiers:
       - BNBUSDT
 
   TIER_2:
-    risk_per_trade_percent: "1.5"
+    risk_per_trade_percent: "3.0"
     max_leverage: 3
-    max_exposure_percent: "8.0"
-    min_confidence: "0.75"
+    max_exposure_percent: "20.0"
+    min_confidence: "0.80"
     crowded_long_zscore: "2.5"
     crowded_short_zscore: "-2.5"
     symbols:
@@ -24,22 +24,12 @@ tiers:
       - ADAUSDT
       - AVAXUSDT
       - LINKUSDT
-      - LTCUSDT
-      - BCHUSDT
-      - TONUSDT
-      - NEARUSDT
-      - AAVEUSDT
 
   TIER_3:
-    risk_per_trade_percent: "1.0"
+    risk_per_trade_percent: "2.0"
     max_leverage: 2
-    max_exposure_percent: "3.0"
-    min_confidence: "0.75"
-    crowded_long_zscore: "3.5"
-    crowded_short_zscore: "-3.5"
-    symbols:
-      - DOGEUSDT
-      - WIFUSDT
-      - TAOUSDT
-      - SUIUSDT
-      - INJUSDT
+    max_exposure_percent: "10.0"
+    min_confidence: "0.85"
+    crowded_long_zscore: "3.0"
+    crowded_short_zscore: "-3.0"
+    symbols: []
