@@ -22,6 +22,10 @@ class ScoutConfigSchema(BaseModel):
         Field(default_factory=lambda: ["LOW", "EXTREME"]),
     ]
 
+    # Patterns allowed through EXTREME regime (non-TIER_1 symbols).
+    # Empty = block all in EXTREME (backward compat).
+    extreme_allowed_patterns: Annotated[list[str], Field(default_factory=list)]
+
     # --- ATR compression gate (adaptive per-symbol) ---
 
     # Hard floor on ATR as a percentage of current price.  The effective
@@ -80,12 +84,20 @@ class ScoutConfigSchema(BaseModel):
 
     # Minimum volume ratio to confirm a breakout candle.
     #   1.0 = permissive
-    #   1.2 = default
-    #   1.5 = strict
+    #   1.5 = default
+    #   2.0 = strict
     breakout_vol_ratio_min: Annotated[
         Decimal,
-        Field(default=Decimal("1.2")),
+        Field(default=Decimal("1.5")),
     ]
+
+    # Minimum EMA20-vs-EMA200 spread (%) for alignment to count.
+    #   0.05 = permissive    0.10 = default    0.20 = strict
+    ema_spread_min_pct: Annotated[Decimal, Field(default=Decimal("0.10"))]
+
+    # Minimum %B margin beyond band edge for breakout detection.
+    #   0.02 = permissive    0.05 = default    0.10 = strict
+    breakout_percent_b_margin_min: Annotated[Decimal, Field(default=Decimal("0.05"))]
 
     # --- Criterion 2: TREND CONTINUATION ---
     # EMA alignment + RSI mid-range + volume above average.

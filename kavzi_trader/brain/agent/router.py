@@ -6,6 +6,7 @@ from typing import Protocol
 
 import httpx
 from pydantic import BaseModel, ConfigDict
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
@@ -97,6 +98,7 @@ _ANALYST_CONFLUENCE_ENTER = 6
 
 # Pre-Trader deterministic gates
 _BREAKOUT_OVEREXTENDED_B = Decimal("1.20")
+_BREAKOUT_OVEREXTENDED_B_SHORT = Decimal("-0.20")
 _RR_MIN_PRESCREEN = Decimal("1.2")
 
 
@@ -328,6 +330,7 @@ class AgentRouter:
             symbol,
             scout_pattern,
             deps,
+            analyst_direction=analyst_result.direction,
         )
         if breakout_reject is not None:
             return _TraderRunResult(decision=breakout_reject, deps=deps)
@@ -368,6 +371,30 @@ class AgentRouter:
                 suggested_entry=None,
                 suggested_stop_loss=None,
                 suggested_take_profit=None,
+            )
+            return _TraderRunResult(decision=wait, deps=deps)
+        except UnexpectedModelBehavior as exc:
+            ms = (time.monotonic() - t0) * 1000
+            logger.exception(
+                "Trader returned unexpected output for %s after %.1fs: %s",
+                symbol,
+                ms / 1000,
+                exc.message,
+                extra={"raw_body": exc.body, "symbol": symbol},
+            )
+            wait = TradeDecisionSchema.model_validate(
+                {
+                    "action": "WAIT",
+                    "confidence": 0,
+                    "reasoning": (
+                        f"Trader model returned unparseable output after"
+                        f" {ms / 1000:.1f}s. Raw body logged for debugging."
+                        f" Returning WAIT to avoid acting on malformed data."
+                    ),
+                    "suggested_entry": None,
+                    "suggested_stop_loss": None,
+                    "suggested_take_profit": None,
+                }
             )
             return _TraderRunResult(decision=wait, deps=deps)
         except Exception:
@@ -442,6 +469,8 @@ class AgentRouter:
         symbol: str,
         scout_pattern: str | None,
         deps: TradingDependenciesSchema,
+        *,
+        analyst_direction: str,
     ) -> TradeDecisionSchema | None:
         """Reject BREAKOUT entries when %B indicates overextension."""
         if scout_pattern != "BREAKOUT":
@@ -450,13 +479,27 @@ class AgentRouter:
         if bb is None:
             return None
         percent_b = bb.percent_b
-        if percent_b > _BREAKOUT_OVEREXTENDED_B:
+
+        is_short = analyst_direction == "SHORT"
+        if is_short:
+            overextended = percent_b < _BREAKOUT_OVEREXTENDED_B_SHORT
+        else:
+            overextended = percent_b > _BREAKOUT_OVEREXTENDED_B
+
+        if overextended:
+            if is_short:
+                threshold = _BREAKOUT_OVEREXTENDED_B_SHORT
+                band_desc = "below the lower band"
+            else:
+                threshold = _BREAKOUT_OVEREXTENDED_B
+                band_desc = "beyond the upper band"
             logger.info(
-                "Pre-Trader BREAKOUT reject for %s: %%B=%.2f > %.2f"
-                " — price overextended beyond upper Bollinger Band",
+                "Pre-Trader BREAKOUT reject for %s: %%B=%.2f,"
+                " direction=%s — price overextended %s",
                 symbol,
                 float(percent_b),
-                float(_BREAKOUT_OVEREXTENDED_B),
+                analyst_direction,
+                band_desc,
             )
             return TradeDecisionSchema(
                 action="WAIT",
@@ -464,19 +507,31 @@ class AgentRouter:
                 reasoning=(
                     f"Deterministic pre-Trader reject: BREAKOUT pattern with"
                     f" Bollinger %%B={float(percent_b):.2f} exceeds"
-                    f" {float(_BREAKOUT_OVEREXTENDED_B):.2f} overextension"
-                    f" threshold. Price is too far beyond the upper band for"
+                    f" {float(threshold):.2f} overextension"
+                    f" threshold. Price is too far {band_desc} for"
                     f" a sustainable breakout entry."
                 ),
                 suggested_entry=None,
                 suggested_stop_loss=None,
                 suggested_take_profit=None,
             )
-        if percent_b > Decimal("1.10"):
+
+        if is_short:
+            in_caution = (
+                percent_b < Decimal("-0.10")
+                and percent_b >= _BREAKOUT_OVEREXTENDED_B_SHORT
+            )
+        else:
+            in_caution = (
+                percent_b > Decimal("1.10") and percent_b <= _BREAKOUT_OVEREXTENDED_B
+            )
+        if in_caution:
             logger.warning(
-                "BREAKOUT caution for %s: %%B=%.2f in 1.10-1.20 zone",
+                "BREAKOUT caution for %s: %%B=%.2f, direction=%s"
+                " — approaching overextension zone",
                 symbol,
                 float(percent_b),
+                analyst_direction,
             )
         return None
 

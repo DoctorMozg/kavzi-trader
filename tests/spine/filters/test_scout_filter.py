@@ -103,6 +103,7 @@ def _make_deps(
     regime: VolatilityRegime = VolatilityRegime.NORMAL,
     candles: list[CandlestickSchema] | None = None,
     atr_pct_history: list[Decimal] | None = None,
+    symbol_tier: str = "TIER_2",
 ) -> ScoutDependenciesSchema:
     return ScoutDependenciesSchema(
         symbol="BTCUSDT",
@@ -112,6 +113,7 @@ def _make_deps(
         indicators=indicators,
         volatility_regime=regime,
         atr_pct_history=atr_pct_history or [],
+        symbol_tier=symbol_tier,
     )
 
 
@@ -327,7 +329,7 @@ async def test_breakout_upper(scout: ScoutFilter) -> None:
 
 @pytest.mark.asyncio
 async def test_breakout_lower(scout: ScoutFilter) -> None:
-    ind = _make_indicators(percent_b=Decimal("-0.05"), vol_ratio=Decimal("1.3"))
+    ind = _make_indicators(percent_b=Decimal("-0.10"), vol_ratio=Decimal("1.6"))
     deps = _make_deps(ind)
     result = await scout.run(deps)
     assert result.verdict == "INTERESTING"
@@ -339,7 +341,7 @@ async def test_breakout_insufficient_volume(scout: ScoutFilter) -> None:
     ind = _make_indicators(percent_b=Decimal("1.1"), vol_ratio=Decimal("1.0"))
     deps = _make_deps(ind)
     result = await scout.run(deps)
-    # vol_ratio=1.0 < breakout_vol_ratio_min=1.2, so breakout fails
+    # vol_ratio=1.0 < breakout_vol_ratio_min=1.5, so breakout fails
     assert result.pattern_detected != "BREAKOUT"
 
 
@@ -796,3 +798,146 @@ def test_short_term_momentum_few_candles_allows() -> None:
         _make_candle(Decimal(98), offset_min=5),
     ]
     assert ScoutFilter._short_term_momentum_confirms(candles, "BULLISH") is True
+
+
+# ------------------------------------------------------------------
+# Breakout %B margin and vol_ratio threshold
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_breakout_requires_margin_beyond_band(scout: ScoutFilter) -> None:
+    """%B=1.01 is inside the margin (default 0.05) — no breakout."""
+    ind = _make_indicators(percent_b=Decimal("1.01"), vol_ratio=Decimal("1.6"))
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert result.pattern_detected != "BREAKOUT"
+
+
+@pytest.mark.asyncio
+async def test_breakout_fires_with_margin(scout: ScoutFilter) -> None:
+    """%B=1.06 exceeds the 1.05 threshold, vol_ratio=1.5 meets the new default."""
+    ind = _make_indicators(percent_b=Decimal("1.06"), vol_ratio=Decimal("1.5"))
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert result.verdict == "INTERESTING"
+    assert result.pattern_detected == "BREAKOUT"
+
+
+@pytest.mark.asyncio
+async def test_ema_alignment_requires_spread(scout: ScoutFilter) -> None:
+    """EMAs ordered (20>50>200) but spread 0.02% < 0.10% → NEUTRAL alignment.
+
+    TREND_CONTINUATION depends on non-NEUTRAL alignment, so it returns SKIP.
+    """
+    ind = _make_indicators(
+        ema_20=Decimal("100.01"),
+        ema_50=Decimal("100.00"),
+        ema_200=Decimal("99.99"),
+        rsi_14=Decimal(50),
+        vol_ratio=Decimal("1.5"),
+    )
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert result.pattern_detected != "TREND_CONTINUATION"
+
+
+@pytest.mark.asyncio
+async def test_ema_alignment_passes_with_spread(scout: ScoutFilter) -> None:
+    """EMAs ordered with ~11% spread → alignment counts, TREND_CONTINUATION fires."""
+    ind = _make_indicators(
+        ema_20=Decimal(100),
+        ema_50=Decimal(98),
+        ema_200=Decimal(90),
+        rsi_14=Decimal(50),
+        vol_ratio=Decimal("1.2"),
+    )
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert result.verdict == "INTERESTING"
+    assert result.pattern_detected == "TREND_CONTINUATION"
+
+
+@pytest.mark.asyncio
+async def test_breakout_vol_ratio_raised(scout: ScoutFilter) -> None:
+    """%B=1.10 is a genuine breakout but vol_ratio=1.3 < new 1.5 default → SKIP."""
+    ind = _make_indicators(percent_b=Decimal("1.10"), vol_ratio=Decimal("1.3"))
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert result.pattern_detected != "BREAKOUT"
+
+
+# ------------------------------------------------------------------
+# EXTREME regime pattern gate
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extreme_blocks_non_allowed_pattern() -> None:
+    """EXTREME regime, TIER_2, REVERSAL pattern — not in allowed list → SKIP."""
+    cfg = ScoutConfigSchema(
+        extreme_allowed_patterns=["TREND_CONTINUATION", "BREAKOUT"],
+    )
+    scout = ScoutFilter(cfg)
+    # Indicators that trigger REVERSAL (criterion 3): RSI oversold + %B at lower band
+    ind = _make_indicators(
+        rsi_14=Decimal(25),
+        percent_b=Decimal("0.05"),
+        vol_ratio=Decimal("1.0"),
+    )
+    deps = _make_deps(ind, regime=VolatilityRegime.EXTREME, symbol_tier="TIER_2")
+    result = await scout.run(deps)
+    assert result.verdict == "SKIP"
+
+
+@pytest.mark.asyncio
+async def test_extreme_allows_configured_pattern() -> None:
+    """EXTREME regime, TIER_2, BREAKOUT pattern — in allowed list → INTERESTING."""
+    cfg = ScoutConfigSchema(
+        extreme_allowed_patterns=["BREAKOUT"],
+    )
+    scout = ScoutFilter(cfg)
+    ind = _make_indicators(
+        percent_b=Decimal("1.06"),
+        vol_ratio=Decimal("1.5"),
+    )
+    deps = _make_deps(ind, regime=VolatilityRegime.EXTREME, symbol_tier="TIER_2")
+    result = await scout.run(deps)
+    assert result.verdict == "INTERESTING"
+    assert result.pattern_detected == "BREAKOUT"
+
+
+@pytest.mark.asyncio
+async def test_extreme_empty_allowed_blocks_all() -> None:
+    """EXTREME regime, TIER_2, empty allowed list → SKIP (backward compat)."""
+    cfg = ScoutConfigSchema(
+        extreme_allowed_patterns=[],
+    )
+    scout = ScoutFilter(cfg)
+    ind = _make_indicators(
+        percent_b=Decimal("1.06"),
+        vol_ratio=Decimal("1.5"),
+    )
+    deps = _make_deps(ind, regime=VolatilityRegime.EXTREME, symbol_tier="TIER_2")
+    result = await scout.run(deps)
+    assert result.verdict == "SKIP"
+    assert "Volatility regime EXTREME" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_extreme_tier1_still_exempt() -> None:
+    """EXTREME regime, TIER_1 — exempted regardless of extreme_allowed_patterns."""
+    cfg = ScoutConfigSchema(
+        extreme_allowed_patterns=["BREAKOUT"],
+    )
+    scout = ScoutFilter(cfg)
+    # REVERSAL pattern — not in allowed list, but TIER_1 bypasses the gate entirely
+    ind = _make_indicators(
+        rsi_14=Decimal(25),
+        percent_b=Decimal("0.05"),
+        vol_ratio=Decimal("1.0"),
+    )
+    deps = _make_deps(ind, regime=VolatilityRegime.EXTREME, symbol_tier="TIER_1")
+    result = await scout.run(deps)
+    assert result.verdict == "INTERESTING"
+    assert result.pattern_detected == "REVERSAL"

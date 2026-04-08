@@ -46,6 +46,7 @@ brain:
     retries: 2
     temperature: 0.0
     seed: 42
+    timeout_s: 12
 
   trader:
     # Tier 3 — Final decision: 87.82% accuracy, most token-efficient ($5.00/$25.00 per M tokens)
@@ -67,6 +68,12 @@ scout:
   #   ["EXTREME"]        = permissive (allows quiet markets)
   blocked_regimes: ["LOW", "EXTREME"]
 
+  # Patterns allowed through EXTREME volatility regime (non-TIER_1 symbols).
+  # Empty list = block all patterns in EXTREME (backward compatible default).
+  #   []                                = strictest (block all)
+  #   ["TREND_CONTINUATION", "BREAKOUT"] = production default
+  extreme_allowed_patterns: ["TREND_CONTINUATION", "BREAKOUT"]
+
   # ATR compression gate (adaptive per-symbol percentile).
   # Effective threshold = max(atr_pct_min, percentile(symbol atr_pct history)).
   # Keeps a global sanity floor AND respects each symbol's own volatility.
@@ -86,8 +93,16 @@ scout:
   vol_ratio_soft_skip: 0.8
 
   # Criterion 1 BREAKOUT — price beyond Bollinger Band with volume.
-  #   1.0 = permissive    1.2 = default    1.5 = strict
-  breakout_vol_ratio_min: 1.2
+  #   1.0 = permissive    1.5 = default    2.0 = strict
+  breakout_vol_ratio_min: 1.5
+
+  # Minimum EMA20-vs-EMA200 spread (%) for alignment to count.
+  #   0.05 = permissive    0.10 = default    0.20 = strict
+  ema_spread_min_pct: 0.10
+
+  # Minimum %B margin beyond band edge for breakout detection.
+  #   0.02 = permissive    0.05 = default    0.10 = strict
+  breakout_percent_b_margin_min: 0.05
 
   # Criterion 2 TREND CONTINUATION — EMA alignment + RSI mid-range + volume.
   trend_rsi_low: 40            # 30 = wide, 40 = default, 45 = strict

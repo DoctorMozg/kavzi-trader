@@ -65,7 +65,14 @@ class ScoutFilter:
 
         # --- Volatility gate (TIER_1 allowed through EXTREME with reduced size) ---
         tier1_extreme = regime == "EXTREME" and deps.symbol_tier == "TIER_1"
-        if regime in cfg.blocked_regimes and not tier1_extreme:
+        blocked = regime in cfg.blocked_regimes and not tier1_extreme
+        extreme_pattern_gate = (
+            blocked and regime == "EXTREME" and bool(cfg.extreme_allowed_patterns)
+        )
+
+        # Non-EXTREME blocked regimes (LOW) short-circuit immediately.
+        # EXTREME with allowed_patterns falls through to criteria checks.
+        if blocked and not extreme_pattern_gate:
             return ScoutDecisionSchema(
                 verdict="SKIP",
                 reason=f"Volatility regime {regime} blocks trading",
@@ -118,6 +125,11 @@ class ScoutFilter:
 
         for check in checks:
             if check.verdict == "INTERESTING":
+                if (
+                    extreme_pattern_gate
+                    and check.pattern_detected not in cfg.extreme_allowed_patterns
+                ):
+                    continue
                 return ScoutDecisionSchema(
                     verdict="INTERESTING",
                     reason=check.reason,
@@ -158,7 +170,8 @@ class ScoutFilter:
             return _CRITERION_SKIP
         if vol_ratio < cfg.breakout_vol_ratio_min:
             return _CRITERION_SKIP
-        if bb.percent_b >= Decimal(1) or bb.percent_b <= _ZERO:
+        margin = cfg.breakout_percent_b_margin_min
+        if bb.percent_b >= (Decimal(1) + margin) or bb.percent_b <= (_ZERO - margin):
             return _ScoutCriterionResult(
                 verdict="INTERESTING",
                 reason=(
@@ -349,15 +362,19 @@ class ScoutFilter:
     # Helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _ema_alignment(ind: TechnicalIndicatorsSchema) -> str:
+    def _ema_alignment(self, ind: TechnicalIndicatorsSchema) -> str:
         if ind.ema_20 is None or ind.ema_50 is None or ind.ema_200 is None:
             return "NEUTRAL"
         if ind.ema_20 > ind.ema_50 > ind.ema_200:
-            return "BULLISH"
-        if ind.ema_20 < ind.ema_50 < ind.ema_200:
-            return "BEARISH"
-        return "NEUTRAL"
+            direction = "BULLISH"
+        elif ind.ema_20 < ind.ema_50 < ind.ema_200:
+            direction = "BEARISH"
+        else:
+            return "NEUTRAL"
+        spread = abs(ind.ema_20 - ind.ema_200) / ind.ema_200 * 100
+        if spread < self._cfg.ema_spread_min_pct:
+            return "NEUTRAL"
+        return direction
 
     @staticmethod
     def _short_term_momentum_confirms(

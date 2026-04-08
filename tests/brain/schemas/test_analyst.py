@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
     KeyLevelsSchema,
@@ -72,3 +75,23 @@ class TestAnalystDecisionSchema:
         )
         assert result.setup_valid is False
         assert result.confluence_score == 0
+
+    def test_reasoning_rejects_over_800_chars(self) -> None:
+        with pytest.raises(ValidationError):
+            AnalystDecisionSchema(
+                setup_valid=True,
+                direction="LONG",
+                confluence_score=7,
+                key_levels=KeyLevelsSchema(levels=[]),
+                reasoning="x" * 801,
+            )
+
+    def test_reasoning_accepts_at_800_chars(self) -> None:
+        result = AnalystDecisionSchema(
+            setup_valid=True,
+            direction="LONG",
+            confluence_score=7,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning="x" * 800,
+        )
+        assert len(result.reasoning) == 800

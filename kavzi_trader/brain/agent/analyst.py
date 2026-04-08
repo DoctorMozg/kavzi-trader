@@ -37,18 +37,33 @@ class AnalystAgent:
         result = await self._agent.run(user_prompt, deps=deps)
         elapsed_ms = (time.monotonic() - t0) * 1000
         output = cast("AnalystDecisionSchema", result.output)
+        usage = result.usage()
+        logger.info(
+            "Analyst usage for %s: request_tokens=%d response_tokens=%d "
+            "total_tokens=%d elapsed_ms=%.1f",
+            deps.symbol,
+            usage.request_tokens or 0,
+            usage.response_tokens or 0,
+            usage.total_tokens or 0,
+            elapsed_ms,
+            extra={
+                "symbol": deps.symbol,
+                "request_tokens": usage.request_tokens,
+                "response_tokens": usage.response_tokens,
+                "total_tokens": usage.total_tokens,
+                "elapsed_ms": round(elapsed_ms, 1),
+            },
+        )
         logger.info(
             "Analyst result for %s: setup_valid=%s direction=%s "
-            "confluence=%d elapsed_ms=%.1f prompt_hash=%s",
+            "confluence=%d prompt_hash=%s",
             deps.symbol,
             output.setup_valid,
             output.direction,
             output.confluence_score,
-            elapsed_ms,
             prompt_hash,
             extra={
                 "symbol": deps.symbol,
-                "elapsed_ms": round(elapsed_ms, 1),
                 "prompt_hash": prompt_hash,
             },
         )

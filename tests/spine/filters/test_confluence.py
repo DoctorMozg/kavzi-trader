@@ -326,3 +326,120 @@ def test_warning_for_detected_side_zero_score(
     assert any("detected side" in msg for msg in warning_messages), (
         f"Expected warning for detected side with score 0, got: {warning_messages}"
     )
+
+
+def test_volume_spike_suppresses_volume_above_average(
+    sample_candle,
+    sample_order_flow,
+) -> None:
+    """When volume_spike fires, volume_above_average must be suppressed."""
+    now = datetime.now(UTC)
+    indicators = TechnicalIndicatorsSchema(
+        ema_20=Decimal(101),
+        ema_50=Decimal(100),
+        ema_200=Decimal(98),
+        sma_20=Decimal(100),
+        rsi_14=Decimal(50),
+        macd=None,
+        bollinger=None,
+        atr_14=Decimal(5),
+        volume=VolumeAnalysisSchema(
+            current_volume=Decimal(3000),
+            average_volume=Decimal(1000),
+            volume_ratio=Decimal("3.0"),
+            obv=None,
+        ),
+        timestamp=now,
+    )
+    calculator = ConfluenceCalculator()
+
+    result = calculator.evaluate(
+        side="LONG",
+        candle=sample_candle,
+        indicators=indicators,
+        order_flow=sample_order_flow,
+    )
+
+    assert result.volume_spike is True, "Volume ratio 3.0 > 2.5 triggers spike"
+    assert result.volume_above_average is False, (
+        "volume_above_average must be suppressed when volume_spike is active"
+    )
+
+
+def test_volume_above_average_fires_without_spike(
+    sample_candle,
+    sample_order_flow,
+) -> None:
+    """volume_above_average fires normally when volume is below spike threshold."""
+    now = datetime.now(UTC)
+    indicators = TechnicalIndicatorsSchema(
+        ema_20=Decimal(101),
+        ema_50=Decimal(100),
+        ema_200=Decimal(98),
+        sma_20=Decimal(100),
+        rsi_14=Decimal(50),
+        macd=None,
+        bollinger=None,
+        atr_14=Decimal(5),
+        volume=VolumeAnalysisSchema(
+            current_volume=Decimal(1500),
+            average_volume=Decimal(1000),
+            volume_ratio=Decimal("1.5"),
+            obv=None,
+        ),
+        timestamp=now,
+    )
+    calculator = ConfluenceCalculator()
+
+    result = calculator.evaluate(
+        side="LONG",
+        candle=sample_candle,
+        indicators=indicators,
+        order_flow=sample_order_flow,
+    )
+
+    assert result.volume_spike is False, "Volume ratio 1.5 not > 2.5"
+    assert result.volume_above_average is True, (
+        "volume_above_average should fire when spike is not active"
+    )
+
+
+def test_no_volume_double_counting_in_score(
+    sample_candle,
+) -> None:
+    """With a volume spike, total score must not double-count volume signals."""
+    now = datetime.now(UTC)
+    indicators = TechnicalIndicatorsSchema(
+        ema_20=Decimal(101),
+        ema_50=Decimal(100),
+        ema_200=Decimal(98),
+        sma_20=Decimal(100),
+        rsi_14=Decimal(55),
+        macd=None,
+        bollinger=None,
+        atr_14=Decimal(5),
+        volume=VolumeAnalysisSchema(
+            current_volume=Decimal(3000),
+            average_volume=Decimal(1000),
+            volume_ratio=Decimal("3.0"),
+            obv=None,
+        ),
+        timestamp=now,
+    )
+    calculator = ConfluenceCalculator()
+
+    result = calculator.evaluate(
+        side="LONG",
+        candle=sample_candle,
+        indicators=indicators,
+        order_flow=None,
+    )
+
+    # ema_alignment=True, rsi_favorable=True (55 in 50-70 trend-mode),
+    # volume_spike=True, volume_above_average=False (suppressed),
+    # all others False (no bollinger, no order_flow)
+    assert result.volume_spike is True
+    assert result.volume_above_average is False
+    assert result.score == 3, (
+        f"Expected score=3 (ema + rsi + spike), got {result.score}"
+    )

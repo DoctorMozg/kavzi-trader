@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from decimal import Decimal
 from typing import Literal
@@ -24,9 +25,15 @@ from kavzi_trader.indicators.schemas import (
     BollingerBandsSchema,
     TechnicalIndicatorsSchema,
 )
+from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
+)
+from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.spine.state.schemas import (
+    AccountStateSchema,
+    PositionSchema,
 )
 
 # NOTE: VolatilityRegime is still imported for fixture construction but the
@@ -1230,6 +1237,223 @@ async def test_router_allows_breakout_borderline_b(
 
 
 # ---------------------------------------------------------------------------
+# Directional breakout %B gate (static method tests)
+# ---------------------------------------------------------------------------
+
+
+def _make_trader_deps_with_bb(
+    candle: CandlestickSchema,
+    indicators: TechnicalIndicatorsSchema,
+    percent_b: Decimal,
+    volatility_regime: VolatilityRegime,
+    order_flow: OrderFlowSchema,
+    algorithm_confluence: DualConfluenceSchema,
+    account_state: AccountStateSchema,
+    positions: list[PositionSchema],
+) -> TradingDependenciesSchema:
+    """Build a TradingDependenciesSchema with a specific %B for static tests."""
+    bb_indicators = _indicators_with_bollinger(indicators, percent_b)
+    return TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=bb_indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        open_positions=positions,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+
+
+def test_pre_trader_breakout_rejects_long_overextended(
+    candle: CandlestickSchema,
+    indicators: TechnicalIndicatorsSchema,
+    volatility_regime: VolatilityRegime,
+    order_flow: OrderFlowSchema,
+    algorithm_confluence: DualConfluenceSchema,
+    account_state: AccountStateSchema,
+    positions: list[PositionSchema],
+) -> None:
+    """%B=1.25, direction=LONG → WAIT (upper overextension)."""
+    deps = _make_trader_deps_with_bb(
+        candle,
+        indicators,
+        Decimal("1.25"),
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = AgentRouter._pre_trader_breakout_check(
+        "BTCUSDT",
+        "BREAKOUT",
+        deps,
+        analyst_direction="LONG",
+    )
+    assert result is not None
+    assert result.action == "WAIT"
+    assert "upper band" in result.reasoning.lower()
+
+
+def test_pre_trader_breakout_allows_short_at_high_b(
+    candle: CandlestickSchema,
+    indicators: TechnicalIndicatorsSchema,
+    volatility_regime: VolatilityRegime,
+    order_flow: OrderFlowSchema,
+    algorithm_confluence: DualConfluenceSchema,
+    account_state: AccountStateSchema,
+    positions: list[PositionSchema],
+) -> None:
+    """%B=1.25, direction=SHORT → None (high %B is fine for shorts)."""
+    deps = _make_trader_deps_with_bb(
+        candle,
+        indicators,
+        Decimal("1.25"),
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = AgentRouter._pre_trader_breakout_check(
+        "BTCUSDT",
+        "BREAKOUT",
+        deps,
+        analyst_direction="SHORT",
+    )
+    assert result is None
+
+
+def test_pre_trader_breakout_rejects_short_overextended(
+    candle: CandlestickSchema,
+    indicators: TechnicalIndicatorsSchema,
+    volatility_regime: VolatilityRegime,
+    order_flow: OrderFlowSchema,
+    algorithm_confluence: DualConfluenceSchema,
+    account_state: AccountStateSchema,
+    positions: list[PositionSchema],
+) -> None:
+    """%B=-0.25, direction=SHORT → WAIT (lower overextension)."""
+    deps = _make_trader_deps_with_bb(
+        candle,
+        indicators,
+        Decimal("-0.25"),
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = AgentRouter._pre_trader_breakout_check(
+        "BTCUSDT",
+        "BREAKOUT",
+        deps,
+        analyst_direction="SHORT",
+    )
+    assert result is not None
+    assert result.action == "WAIT"
+    assert "lower band" in result.reasoning.lower()
+
+
+def test_pre_trader_breakout_allows_long_at_low_b(
+    candle: CandlestickSchema,
+    indicators: TechnicalIndicatorsSchema,
+    volatility_regime: VolatilityRegime,
+    order_flow: OrderFlowSchema,
+    algorithm_confluence: DualConfluenceSchema,
+    account_state: AccountStateSchema,
+    positions: list[PositionSchema],
+) -> None:
+    """%B=-0.25, direction=LONG → None (low %B is fine for longs)."""
+    deps = _make_trader_deps_with_bb(
+        candle,
+        indicators,
+        Decimal("-0.25"),
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = AgentRouter._pre_trader_breakout_check(
+        "BTCUSDT",
+        "BREAKOUT",
+        deps,
+        analyst_direction="LONG",
+    )
+    assert result is None
+
+
+def test_pre_trader_breakout_caution_long_zone(
+    candle: CandlestickSchema,
+    indicators: TechnicalIndicatorsSchema,
+    volatility_regime: VolatilityRegime,
+    order_flow: OrderFlowSchema,
+    algorithm_confluence: DualConfluenceSchema,
+    account_state: AccountStateSchema,
+    positions: list[PositionSchema],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """%B=1.15, direction=LONG → None but logs caution warning."""
+    deps = _make_trader_deps_with_bb(
+        candle,
+        indicators,
+        Decimal("1.15"),
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    with caplog.at_level(logging.WARNING):
+        result = AgentRouter._pre_trader_breakout_check(
+            "BTCUSDT",
+            "BREAKOUT",
+            deps,
+            analyst_direction="LONG",
+        )
+    assert result is None
+    assert any("caution" in r.message.lower() for r in caplog.records)
+
+
+def test_pre_trader_breakout_caution_short_zone(
+    candle: CandlestickSchema,
+    indicators: TechnicalIndicatorsSchema,
+    volatility_regime: VolatilityRegime,
+    order_flow: OrderFlowSchema,
+    algorithm_confluence: DualConfluenceSchema,
+    account_state: AccountStateSchema,
+    positions: list[PositionSchema],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """%B=-0.15, direction=SHORT → None but logs caution warning."""
+    deps = _make_trader_deps_with_bb(
+        candle,
+        indicators,
+        Decimal("-0.15"),
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    with caplog.at_level(logging.WARNING):
+        result = AgentRouter._pre_trader_breakout_check(
+            "BTCUSDT",
+            "BREAKOUT",
+            deps,
+            analyst_direction="SHORT",
+        )
+    assert result is None
+    assert any("caution" in r.message.lower() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
 # R/R pre-screen: deterministic estimate of risk/reward from key levels + ATR
 # ---------------------------------------------------------------------------
 
@@ -1400,3 +1624,87 @@ async def test_router_passes_trader_on_neutral_direction(
     await router.run("BTCUSDT", provider)
 
     assert spy_trader.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# UnexpectedModelBehavior: Trader returns unparseable output
+# ---------------------------------------------------------------------------
+
+
+class UnexpectedModelTrader:
+    """Simulates a Trader that returns malformed output."""
+
+    async def run(self, deps, analyst_result=None, scout_pattern=None):
+        from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+        raise UnexpectedModelBehavior("Bad output", body="raw json garbage")
+
+
+@pytest.mark.asyncio
+async def test_router_returns_wait_on_unexpected_model_behavior(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        UnexpectedModelTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert result.trader is not None
+    assert result.trader.action == "WAIT"
+    assert result.trader.confidence == 0.0
+    assert "unparseable" in result.trader.reasoning.lower()
+    assert result.trader_deps is not None
+
+
+@pytest.mark.asyncio
+async def test_router_logs_raw_body_on_unexpected_model(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        UnexpectedModelTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    with caplog.at_level(logging.ERROR):
+        await router.run("BTCUSDT", provider)
+
+    matching = [
+        r for r in caplog.records if "Trader returned unexpected output" in r.message
+    ]
+    assert len(matching) >= 1
+    record = matching[0]
+    assert record.raw_body == "raw json garbage"
+    assert record.symbol == "BTCUSDT"

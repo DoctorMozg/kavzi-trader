@@ -119,7 +119,7 @@ class ContextBuilder(BaseModel):
         current_price: Decimal,
         atr: Decimal | None,
     ) -> list[dict[str, str]]:
-        """Inject ATR-projected TP targets when Analyst key_levels lack coverage."""
+        """Inject ATR-projected TP targets alongside analyst key_levels."""
         if analyst_result is None or atr is None or atr == Decimal(0):
             return []
 
@@ -127,25 +127,7 @@ class ContextBuilder(BaseModel):
         if direction == "NEUTRAL":
             return []
 
-        levels = analyst_result.key_levels.levels
-        if direction == "LONG":
-            # Check if any RESISTANCE level is above current price
-            has_viable_target = any(
-                lvl.level_type == "RESISTANCE" and lvl.price > current_price
-                for lvl in levels
-            )
-        else:
-            # SHORT: check if any SUPPORT level is below current price
-            has_viable_target = any(
-                lvl.level_type == "SUPPORT" and lvl.price < current_price
-                for lvl in levels
-            )
-
-        if has_viable_target:
-            return []
-
-        # Compute ATR-projected targets
-        multipliers = [Decimal("1.5"), Decimal("2.5")]
+        multipliers = [Decimal("2.0"), Decimal("3.0")]
         targets: list[dict[str, str]] = []
         for mult in multipliers:
             if direction == "LONG":
@@ -155,11 +137,10 @@ class ContextBuilder(BaseModel):
             targets.append({"price": str(price), "label": f"ATR projection {mult}x"})
 
         logger.info(
-            "ATR fallback targets for %s %s: %s (no viable %s in analyst levels)",
+            "ATR projection targets for %s %s: %s",
             analyst_result.direction,
             current_price,
             [t["price"] for t in targets],
-            "resistance" if direction == "LONG" else "support",
         )
         return targets
 

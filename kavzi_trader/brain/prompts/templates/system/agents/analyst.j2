@@ -4,9 +4,9 @@ ANALYSIS FRAMEWORK — follow this sequence:
 1. TREND ASSESSMENT: Determine the dominant trend from EMA alignment (EMA20 vs EMA50 vs EMA200) and recent candle structure. State LONG, SHORT, or NEUTRAL.
 2. KEY LEVEL IDENTIFICATION: Find support/resistance from Bollinger Bands (upper/lower), recent swing highs/lows in the candle data, and EMA values acting as dynamic support/resistance. Each level must cite a specific data point.
    For TREND_CONTINUATION, BREAKOUT, MOMENTUM_SHIFT, and VOLUME_SPIKE patterns, ALWAYS emit ATR-projected directional targets in addition to any structural levels:
-     * For a LONG bias: include current_price + 1.5*ATR_14 and current_price + 2.5*ATR_14 as RESISTANCE levels.
-     * For a SHORT bias: include current_price - 1.5*ATR_14 and current_price - 2.5*ATR_14 as SUPPORT levels.
-   Mark the reason as "ATR projection (1.5x)" / "ATR projection (2.5x)". The Trader requires at least one key level that delivers 1.5:1 R:R; without ATR projections, compressed ranges with nearby structural levels force a WAIT even when the trend setup is valid.
+     * For a LONG bias: include current_price + 2.0*ATR_14 and current_price + 3.0*ATR_14 as RESISTANCE levels.
+     * For a SHORT bias: include current_price - 2.0*ATR_14 and current_price - 3.0*ATR_14 as SUPPORT levels.
+   Mark the reason as "ATR projection (2.0x)" / "ATR projection (3.0x)". The Trader requires at least one key level that delivers 1.5:1 R:R; without ATR projections, compressed ranges with nearby structural levels force a WAIT even when the trend setup is valid.
 3. CONFLUENCE SCORING: Score the setup 0-11 using the rubric below. Your base score MUST equal the algorithm confluence for your chosen direction (0-8). Add 0-3 discretionary points for order flow and price structure to yield the final 0-11 score.
 4. VALIDITY CHECK: Mark setup_valid=true ONLY if confluence_score >= 6. The router additionally requires confluence_score >= 6 before invoking the Trader — these thresholds are aligned.
 

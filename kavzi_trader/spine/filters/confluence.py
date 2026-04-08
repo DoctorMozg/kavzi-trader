@@ -61,12 +61,15 @@ class ConfluenceCalculator:
     ) -> AlgorithmConfluenceSchema:
         ema_alignment = self._ema_alignment(indicators, side)
         rsi_favorable = self._rsi_favorable(indicators, side)
-        volume_above_average = self._volume_above_average(indicators)
+        volume_spike = self._volume_spike(indicators)
+        volume_above_average = self._volume_above_average(
+            indicators,
+            volume_spike_active=volume_spike,
+        )
         price_at_bollinger = self._price_at_bollinger(candle, indicators, side)
         funding_favorable = self._funding_favorable(order_flow, side)
         oi_supports_direction = self._oi_supports_direction(order_flow, side)
         oi_funding_divergence = self._oi_funding_divergence(order_flow, side)
-        volume_spike = self._volume_spike(indicators)
 
         score = sum(
             [
@@ -88,16 +91,16 @@ class ConfluenceCalculator:
                 side,
             )
         logger.debug(
-            "Confluence: ema=%s rsi=%s vol=%s boll=%s fund=%s oi=%s "
-            "div=%s spike=%s score=%d",
+            "Confluence: ema=%s rsi=%s spike=%s vol=%s boll=%s fund=%s oi=%s "
+            "div=%s score=%d",
             ema_alignment,
             rsi_favorable,
+            volume_spike,
             volume_above_average,
             price_at_bollinger,
             funding_favorable,
             oi_supports_direction,
             oi_funding_divergence,
-            volume_spike,
             int(score),
         )
 
@@ -147,7 +150,11 @@ class ConfluenceCalculator:
     def _volume_above_average(
         self,
         indicators: TechnicalIndicatorsSchema,
+        *,
+        volume_spike_active: bool = False,
     ) -> bool:
+        if volume_spike_active:
+            return False
         volume = indicators.volume
         if volume is None:
             return False

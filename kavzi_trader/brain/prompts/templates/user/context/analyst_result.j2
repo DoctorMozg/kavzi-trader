@@ -12,9 +12,9 @@ KEY LEVELS (use these for take-profit and stop-loss placement — prefer structu
 {% endif %}
 {% if atr_fallback_targets %}
 
-ATR-PROJECTED TARGETS (fallback — no structural {{ "resistance above" if analyst_result.direction == "LONG" else "support below" }} current price):
+ATR-PROJECTED TARGETS (use alongside structural levels for deeper targets at high confluence):
 {% for target in atr_fallback_targets %}
 - {{ target.label }} @ {{ target.price }}
 {% endfor %}
-Use these for take-profit when structural key levels don't provide R:R >= 1.5:1.
+Use these for take-profit when structural key levels don't provide R:R >= 1.5:1, or as deeper targets for high-confluence setups.
 {% endif %}
