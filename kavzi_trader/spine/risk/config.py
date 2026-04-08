@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 class RiskConfigSchema(BaseModel):
     risk_per_trade_percent: Decimal = Decimal("1.0")
     max_positions: int = 2
-    min_rr_ratio: Decimal = Decimal("1.5")
+    min_rr_ratio: Decimal = Decimal("2.0")
 
     drawdown_pause_percent: Decimal = Decimal("3.0")
     drawdown_close_all_percent: Decimal = Decimal("5.0")

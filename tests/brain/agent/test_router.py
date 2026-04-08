@@ -1529,7 +1529,7 @@ class DummyAnalystWithLevels:
 
 
 @pytest.mark.asyncio
-async def test_router_skips_trader_on_rr_reject(
+async def test_router_warns_but_proceeds_on_low_rr(
     candle,
     indicators,
     volatility_regime,
@@ -1538,7 +1538,7 @@ async def test_router_skips_trader_on_rr_reject(
     account_state,
     positions,
 ) -> None:
-    """When estimated R/R < 1.2, Trader is NOT called."""
+    """When estimated R/R < 1.2, Trader IS still called (soft warning)."""
     # Support=104, resistance=106 at price=105 → Risk=1, Reward=1, R/R=1.0
     levels = [
         KeyLevelSchema(price=Decimal(104), level_type="SUPPORT", reason="test"),
@@ -1556,11 +1556,9 @@ async def test_router_skips_trader_on_rr_reject(
         account_state,
         positions,
     )
-    result = await router.run("BTCUSDT", provider)
+    await router.run("BTCUSDT", provider)
 
-    assert spy_trader.call_count == 0
-    assert result.trader is not None
-    assert result.trader.action == "WAIT"
+    assert spy_trader.call_count == 1
 
 
 @pytest.mark.asyncio

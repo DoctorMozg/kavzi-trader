@@ -36,18 +36,27 @@ def calculate_rsi(series: pd.Series, period: int = 14) -> Decimal | None:
     gain = delta.where(delta > 0, 0.0)
     loss = (-delta).where(delta < 0, 0.0)
 
-    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    # Drop leading NaN from diff()
+    gain_vals = gain.dropna().to_numpy()
+    loss_vals = loss.dropna().to_numpy()
 
-    last_avg_loss = avg_loss.iloc[-1]
-    last_avg_gain = avg_gain.iloc[-1]
-    if last_avg_loss == 0 or pd.isna(last_avg_loss):
-        return Decimal(100) if last_avg_gain > 0 else Decimal(0)
+    alpha = 1.0 / period
+
+    # Wilder smoothing: seed with SMA of first `period` values
+    avg_gain = float(gain_vals[:period].mean())
+    avg_loss = float(loss_vals[:period].mean())
+
+    for i in range(period, len(gain_vals)):
+        avg_gain = avg_gain * (1 - alpha) + float(gain_vals[i]) * alpha
+        avg_loss = avg_loss * (1 - alpha) + float(loss_vals[i]) * alpha
+
+    if avg_loss == 0:
+        return Decimal(100) if avg_gain > 0 else Decimal(0)
 
     rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
+    rsi = 100.0 - (100.0 / (1.0 + rs))
 
-    return Decimal(str(round(rsi.iloc[-1], 2)))
+    return Decimal(str(round(rsi, 2)))
 
 
 def calculate_macd(

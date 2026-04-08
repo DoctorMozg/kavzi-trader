@@ -215,7 +215,7 @@ system/
   agents/trader.j2        # Trader system prompt (entry/SL/TP framework, safety rules)
   base/risk_framework.j2  # Shared risk rules
   guides/volatility_regimes.j2
-  guides/position_mgmt_guide.j2
+
 user/
   requests/analyze_setup.j2   # Analyst user prompt (market data + confluence)
   requests/make_decision.j2   # Trader user prompt (analyst result + account state)

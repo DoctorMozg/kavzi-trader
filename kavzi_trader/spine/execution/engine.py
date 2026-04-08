@@ -19,9 +19,18 @@ from kavzi_trader.spine.execution.execution_result_schema import ExecutionResult
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
+from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
+from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.schemas import OpenOrderSchema, PositionSchema
+
+_REGIME_SEVERITY = [
+    VolatilityRegime.LOW,
+    VolatilityRegime.NORMAL,
+    VolatilityRegime.HIGH,
+    VolatilityRegime.EXTREME,
+]
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +49,7 @@ class ExecutionEngine:
         event_store: RedisEventStore | None = None,
         leverage: int = 3,
         report_populator: TradeReportPopulator | None = None,
+        volatility_detector: VolatilityRegimeDetector | None = None,
     ) -> None:
         self._exchange = exchange
         self._state_manager = state_manager
@@ -50,6 +60,7 @@ class ExecutionEngine:
         self._event_store = event_store
         self._leverage = leverage
         self._report_populator = report_populator
+        self._volatility_detector = volatility_detector
 
     async def execute(self, decision: DecisionMessageSchema) -> ExecutionResultSchema:
         logger.info(
@@ -62,9 +73,27 @@ class ExecutionEngine:
                 "symbol": decision.symbol,
             },
         )
+        staleness_regime = decision.volatility_regime
+        if self._volatility_detector is not None:
+            detected = self._volatility_detector.detect_regime(
+                decision.current_atr,
+                decision.atr_history,
+            )
+            if detected.regime != decision.volatility_regime:
+                logger.info(
+                    "Regime drift for %s: decision=%s detected=%s, using stricter",
+                    decision.symbol,
+                    decision.volatility_regime.value,
+                    detected.regime.value,
+                )
+                staleness_regime = max(
+                    decision.volatility_regime,
+                    detected.regime,
+                    key=lambda r: _REGIME_SEVERITY.index(r),
+                )
         if self._staleness_checker.is_stale(
             decision.created_at_ms,
-            decision.volatility_regime,
+            staleness_regime,
         ):
             logger.info(
                 "Decision %s EXPIRED for %s",

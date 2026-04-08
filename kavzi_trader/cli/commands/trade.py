@@ -348,6 +348,7 @@ async def _start_orchestrator(
 
     # --- Execution engine ---
     logger.info("Creating execution engine")
+    volatility_detector = VolatilityRegimeDetector(app_config.risk)
     engine = ExecutionEngine(
         exchange=exchange,
         state_manager=state_manager,
@@ -358,11 +359,12 @@ async def _start_orchestrator(
         event_store=event_store,
         leverage=app_config.futures.default_leverage,
         report_populator=report_populator,
+        volatility_detector=volatility_detector,
     )
 
     # --- Pre-trade filter chain ---
     filter_chain = PreTradeFilterChain(
-        volatility_detector=VolatilityRegimeDetector(),
+        volatility_detector=volatility_detector,
         funding_filter=FundingRateFilter(app_config.filters, tier_registry),
         movement_filter=MinimumMovementFilter(app_config.filters),
         exposure_limiter=ExposureLimiter(app_config.risk),

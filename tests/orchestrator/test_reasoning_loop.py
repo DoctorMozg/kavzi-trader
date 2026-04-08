@@ -43,7 +43,7 @@ _ANALYST_REASONING = (
 _TRADER_REASONING = (
     "Agree with Analyst direction LONG. Confluence score 4/6 with EMA alignment and"
     " volume supporting. Entry at 105 near current price, SL at 95 below key support,"
-    " TP at 120 at next resistance. R:R is 1.5:1 which meets minimum threshold."
+    " TP at 125 at next resistance. R:R is 2.0:1 which meets minimum threshold."
 )
 
 
@@ -202,7 +202,7 @@ async def test_reasoning_loop_enqueues_decision() -> None:
                 reasoning=_TRADER_REASONING,
                 suggested_entry=Decimal(105),
                 suggested_stop_loss=Decimal(95),
-                suggested_take_profit=Decimal(120),
+                suggested_take_profit=Decimal(125),
             ),
             trader_deps=deps,
         ),
@@ -254,7 +254,7 @@ async def test_decision_message_includes_leverage() -> None:
                 reasoning=_TRADER_REASONING,
                 suggested_entry=Decimal(105),
                 suggested_stop_loss=Decimal(95),
-                suggested_take_profit=Decimal(120),
+                suggested_take_profit=Decimal(125),
             ),
             trader_deps=deps,
         ),
@@ -752,7 +752,7 @@ def test_should_enqueue_requires_confluence_entry_gate() -> None:
             reasoning=_TRADER_REASONING,
             suggested_entry=Decimal(105),
             suggested_stop_loss=Decimal(95),
-            suggested_take_profit=Decimal(120),
+            suggested_take_profit=Decimal(125),
         ),
         trader_deps=deps,
     )
@@ -790,7 +790,7 @@ def _make_trade_result() -> PipelineResult:
             reasoning=_TRADER_REASONING,
             suggested_entry=Decimal(105),
             suggested_stop_loss=Decimal(95),
-            suggested_take_profit=Decimal(120),
+            suggested_take_profit=Decimal(125),
         ),
         trader_deps=deps,
     )

@@ -575,7 +575,12 @@ class AgentRouter:
         current_price: Decimal,
         atr: Decimal | None,
     ) -> TradeDecisionSchema | None:
-        """Reject when estimated R/R is below the pre-screen threshold."""
+        """Warn when estimated R/R is below the pre-screen threshold.
+
+        Returns None always — the Trader makes the final call with its own
+        ATR-based stop-loss, and the Spine's risk validator enforces the real
+        min_rr_ratio on the Trader's output.
+        """
         if analyst_result.direction == "NEUTRAL":
             return None
         estimated_rr = AgentRouter._estimate_rr(
@@ -587,25 +592,12 @@ class AgentRouter:
         if estimated_rr is None:
             return None  # Fail open when we cannot estimate
         if estimated_rr < _RR_MIN_PRESCREEN:
-            logger.info(
-                "Pre-Trader R/R reject for %s: estimated R/R=%.2f < %.1f",
+            logger.warning(
+                "Pre-Trader R/R warning for %s: estimated R/R=%.2f < %.1f"
+                " — proceeding to Trader for final assessment",
                 symbol,
                 float(estimated_rr),
                 float(_RR_MIN_PRESCREEN),
-            )
-            return TradeDecisionSchema(
-                action="WAIT",
-                confidence=0.0,
-                reasoning=(
-                    f"Deterministic pre-Trader reject: estimated"
-                    f" risk/reward ratio {float(estimated_rr):.2f} is below"
-                    f" the minimum pre-screen threshold of"
-                    f" {float(_RR_MIN_PRESCREEN):.1f}. Key levels do not"
-                    f" support a favorable entry at current price."
-                ),
-                suggested_entry=None,
-                suggested_stop_loss=None,
-                suggested_take_profit=None,
             )
         return None
 

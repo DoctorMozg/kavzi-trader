@@ -80,6 +80,9 @@ def format_order_flow_compact(
         f" L%={_fmt_decimal(of.long_account_percent, 1)}"
         f" S%={_fmt_decimal(of.short_account_percent, 1)}"
         f" div={div}"
+        f" squeeze={of.squeeze_alert}"
+        f" crowded_l={of.is_crowded_long}"
+        f" crowded_s={of.is_crowded_short}"
     )
 
 

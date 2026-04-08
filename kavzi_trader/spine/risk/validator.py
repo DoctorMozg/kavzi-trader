@@ -142,6 +142,7 @@ class DynamicRiskValidator:
                 )
                 size_result = self._position_sizer.calculate_size(
                     account_balance=account.total_balance_usdt,
+                    available_balance=account.available_balance_usdt,
                     atr=current_atr,
                     stop_loss_atr_multiplier=sl_atr_mult,
                     regime=regime,

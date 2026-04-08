@@ -19,6 +19,84 @@ def test_calculate_atr_insufficient_data() -> None:
     assert result is None
 
 
+def test_atr_wilder_smoothing_seed_from_sma() -> None:
+    """Verify ATR uses Wilder's smoothing with SMA seed (not pandas ewm).
+
+    16 bars of known OHLC data. Manual computation:
+      - 15 True Range values (first dropped due to shift)
+      - SMA of first 14 TRs = 0.55428571
+      - 1 Wilder-smoothed step: ATR(15) = 0.59326531, ATR(16) = 0.58517493
+    An ewm-based ATR would give a different value, catching regressions.
+    """
+    high = pd.Series(
+        [
+            48.70,
+            48.72,
+            48.90,
+            48.87,
+            48.82,
+            49.05,
+            49.20,
+            49.35,
+            49.92,
+            50.19,
+            50.12,
+            49.66,
+            49.88,
+            50.19,
+            50.36,
+            50.57,
+        ]
+    )
+    low = pd.Series(
+        [
+            47.79,
+            48.14,
+            48.39,
+            48.37,
+            48.24,
+            48.64,
+            48.94,
+            48.86,
+            49.50,
+            49.87,
+            49.20,
+            48.90,
+            49.43,
+            49.73,
+            49.26,
+            50.09,
+        ]
+    )
+    close = pd.Series(
+        [
+            48.16,
+            48.61,
+            48.75,
+            48.63,
+            48.74,
+            49.03,
+            49.07,
+            49.32,
+            49.91,
+            50.13,
+            49.53,
+            49.50,
+            49.75,
+            50.03,
+            50.31,
+            50.52,
+        ]
+    )
+
+    result = calculate_atr(high, low, close, period=14)
+
+    assert result is not None
+    expected = Decimal("0.58517493")
+    tolerance = expected * Decimal("0.0001")  # 0.01% tolerance
+    assert abs(result - expected) <= tolerance
+
+
 def test_calculate_atr_basic() -> None:
     high = pd.Series([i + 2 for i in range(100, 130)])
     low = pd.Series([i - 2 for i in range(100, 130)])

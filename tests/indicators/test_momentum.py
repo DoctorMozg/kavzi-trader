@@ -84,6 +84,47 @@ def test_calculate_macd_bearish_crossover() -> None:
     assert result.macd_line < Decimal(0)
 
 
+def test_rsi_wilder_smoothing_matches_manual_calculation() -> None:
+    """Verify RSI uses Wilder's smoothing (SMA seed, then EMA-style).
+
+    Classic Wilder textbook dataset with 14-period RSI.
+    Manual calculation:
+      - 19 deltas from 20 prices
+      - SMA seed from first 14 gains/losses
+      - Wilder smoothing (alpha=1/14) for remaining 5 deltas
+      - Expected RSI ~68.07
+    A pandas ewm-based RSI would give a different value, catching regressions.
+    """
+    prices = [
+        44,
+        44.34,
+        44.09,
+        43.61,
+        44.33,
+        44.83,
+        45.10,
+        45.42,
+        45.84,
+        46.08,
+        45.89,
+        46.03,
+        45.61,
+        46.28,
+        46.28,
+        46.00,
+        46.03,
+        46.41,
+        46.22,
+        46.21,
+    ]
+    series = pd.Series(prices)
+    result = calculate_rsi(series, period=14)
+
+    assert result is not None
+    # Wilder smoothing produces 68.07; pandas ewm gives ~66.25
+    assert abs(result - Decimal("68.07")) <= Decimal("0.01")
+
+
 def test_momentum_with_trending_candles(
     trending_up_candles: list[CandlestickSchema],
 ) -> None:

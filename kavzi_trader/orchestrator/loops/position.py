@@ -81,16 +81,20 @@ class PositionManagementLoop:
                 position.symbol,
             )
             current_atr = await self._atr_provider.get_atr(position.symbol)
-            if current_price == 0:
+            if current_price <= 0:
                 logger.warning(
-                    "Current price is 0 for %s, position management unreliable",
+                    "Skipping position management for %s: invalid price %s",
                     position.symbol,
+                    current_price,
                 )
-            if current_atr == 0:
+                return
+            if current_atr <= 0:
                 logger.warning(
-                    "ATR is 0 for %s, trailing stop/break-even cannot function",
+                    "Skipping position management for %s: invalid ATR %s",
                     position.symbol,
+                    current_atr,
                 )
+                return
             actions = await self._manager.evaluate_position(
                 position=position,
                 current_price=current_price,
@@ -98,6 +102,14 @@ class PositionManagementLoop:
             )
             for action in actions:
                 await self._apply_action(position, action)
+                if action.action == PositionActionType.FULL_EXIT:
+                    return
+                refreshed = await self._state_manager.get_position(
+                    position.symbol,
+                )
+                if refreshed is None:
+                    return
+                position = refreshed
         except Exception:
             logger.exception(
                 "Failed to manage position %s for %s",
@@ -147,12 +159,13 @@ class PositionManagementLoop:
         if action.action == PositionActionType.FULL_EXIT:
             return None
         if action.action == PositionActionType.MOVE_STOP_LOSS and action.new_stop_loss:
-            return position.model_copy(
-                update={
-                    "current_stop_loss": action.new_stop_loss,
-                    "updated_at": utc_now(),
-                },
-            )
+            update: dict[str, object] = {
+                "current_stop_loss": action.new_stop_loss,
+                "updated_at": utc_now(),
+            }
+            if action.reason == "break_even":
+                update["stop_loss_moved_to_breakeven"] = True
+            return position.model_copy(update=update)
         if action.action == PositionActionType.PARTIAL_EXIT and action.exit_quantity:
             return position.model_copy(
                 update={

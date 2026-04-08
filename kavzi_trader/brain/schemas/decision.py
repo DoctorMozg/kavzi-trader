@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-MIN_RR_RATIO = Decimal("1.5")
+MIN_RR_RATIO = Decimal("2.0")
 
 
 class TradeDecisionSchema(BaseModel):

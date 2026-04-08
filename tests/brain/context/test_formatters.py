@@ -4,6 +4,7 @@ from decimal import Decimal
 from kavzi_trader.brain.context.formatters import (
     _price_based_precision,
     format_indicators_compact,
+    format_order_flow_compact,
 )
 from kavzi_trader.indicators.schemas import (
     BollingerBandsSchema,
@@ -11,6 +12,7 @@ from kavzi_trader.indicators.schemas import (
     TechnicalIndicatorsSchema,
     VolumeAnalysisSchema,
 )
+from kavzi_trader.order_flow.schemas import OrderFlowSchema
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -123,3 +125,50 @@ class TestFormatIndicatorsCompact:
         ind = _make_indicators()
         result = format_indicators_compact(ind, reference_price=Decimal("0.18"))
         assert "MACD=0.000120" in result
+
+
+class TestFormatOrderFlowCompact:
+    def test_format_order_flow_includes_squeeze_and_crowded(self) -> None:
+        """Formatter must render squeeze_alert, is_crowded_long, is_crowded_short."""
+        of = OrderFlowSchema(
+            symbol="BTCUSDT",
+            timestamp=_NOW,
+            funding_rate=Decimal("0.0005"),
+            funding_zscore=Decimal("2.5"),  # > 2.0 threshold -> crowded long
+            next_funding_time=_NOW,
+            open_interest=Decimal(100000),
+            oi_change_1h_percent=Decimal("6.0"),  # > 5.0 threshold
+            oi_change_24h_percent=Decimal("2.0"),
+            long_short_ratio=Decimal("1.2"),
+            long_account_percent=Decimal(60),
+            short_account_percent=Decimal(40),
+            price_change_1h_percent=Decimal("0.3"),  # < 0.5 threshold -> squeeze
+        )
+        result = format_order_flow_compact(of)
+
+        assert result is not None
+        assert "squeeze=True" in result
+        assert "crowded_l=True" in result
+
+    def test_format_order_flow_no_squeeze_no_crowded(self) -> None:
+        """Normal conditions produce squeeze=False and crowded=False."""
+        of = OrderFlowSchema(
+            symbol="BTCUSDT",
+            timestamp=_NOW,
+            funding_rate=Decimal("0.0001"),
+            funding_zscore=Decimal("0.5"),
+            next_funding_time=_NOW,
+            open_interest=Decimal(100000),
+            oi_change_1h_percent=Decimal("1.0"),
+            oi_change_24h_percent=Decimal("2.0"),
+            long_short_ratio=Decimal("1.0"),
+            long_account_percent=Decimal(50),
+            short_account_percent=Decimal(50),
+            price_change_1h_percent=Decimal("1.0"),
+        )
+        result = format_order_flow_compact(of)
+
+        assert result is not None
+        assert "squeeze=False" in result
+        assert "crowded_l=False" in result
+        assert "crowded_s=False" in result

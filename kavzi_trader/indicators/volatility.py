@@ -53,9 +53,19 @@ def calculate_atr(
     tr3 = (low - prev_close).abs()
 
     true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr = true_range.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
-    return Decimal(str(round(atr.iloc[-1], 8)))
+    # Drop leading NaN from shift(1)
+    tr_vals = true_range.dropna().to_numpy()
+
+    alpha = 1.0 / period
+
+    # Wilder smoothing: seed with SMA of first `period` values
+    atr = float(tr_vals[:period].mean())
+
+    for i in range(period, len(tr_vals)):
+        atr = atr * (1 - alpha) + float(tr_vals[i]) * alpha
+
+    return Decimal(str(round(atr, 8)))
 
 
 def calculate_bollinger_bands(
@@ -100,7 +110,7 @@ def calculate_bollinger_bands(
         return None
 
     middle = series.rolling(window=period).mean()
-    std = series.rolling(window=period).std()
+    std = series.rolling(window=period).std(ddof=0)
 
     upper = middle + (std_dev * std)
     lower = middle - (std_dev * std)
