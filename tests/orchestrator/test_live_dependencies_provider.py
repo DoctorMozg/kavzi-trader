@@ -202,3 +202,12 @@ async def test_deps_sentiment_none_without_cache() -> None:
     provider = _make_provider()
     deps = await provider.get_analyst("BTCUSDT")
     assert deps.sentiment_summary is None
+
+
+@pytest.mark.asyncio
+async def test_confluence_computed_once_per_cycle() -> None:
+    """Confluence should be cached after first call within a cycle."""
+    provider = _make_provider()
+    await provider.get_analyst("BTCUSDT")
+    await provider.get_trader("BTCUSDT")
+    provider._confluence.evaluate_both.assert_called_once()

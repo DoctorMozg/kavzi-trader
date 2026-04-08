@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import asyncio
+import builtins
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TypeVar, cast
 
+import redis.asyncio  # type: ignore[import-untyped]
+import redis.asyncio.client  # type: ignore[import-untyped]
 from redis.asyncio import Redis  # type: ignore[import-untyped]
 from redis.exceptions import (
     ConnectionError as RedisConnectionError,  # type: ignore[import-untyped]
@@ -143,6 +148,26 @@ class RedisStateClient:
     async def get(self, key: str) -> str | None:
         result = await self._retry(self.client.get, key)
         return cast("str | None", result)
+
+    async def sadd(self, key: str, *members: str) -> int:
+        result = await self._retry(self.client.sadd, key, *members)
+        return cast("int", result)
+
+    async def srem(self, key: str, *members: str) -> int:
+        result = await self._retry(self.client.srem, key, *members)
+        return cast("int", result)
+
+    async def smembers(self, key: str) -> builtins.set[str]:
+        result = await self._retry(self.client.smembers, key)
+        return cast("set[str]", result)
+
+    async def scard(self, key: str) -> int:
+        result = await self._retry(self.client.scard, key)
+        return cast("int", result)
+
+    def pipeline(self) -> redis.asyncio.client.Pipeline:  # type: ignore[type-arg]
+        """Return a pipeline bound to the current connection."""
+        return self.client.pipeline()
 
     async def ping(self) -> bool:
         try:

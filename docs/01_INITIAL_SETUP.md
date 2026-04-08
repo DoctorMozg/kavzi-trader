@@ -136,7 +136,7 @@ risk:
 position_management:
   trailing_stop_atr_multiplier: 1.5
   break_even_trigger_atr: 1.0
-  partial_exit_at_percent: 0.5
+  partial_exit_at_fraction: 0.5
   partial_exit_size: 0.3
   max_hold_time_hours: 24
 ```

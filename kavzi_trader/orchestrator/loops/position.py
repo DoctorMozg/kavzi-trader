@@ -21,6 +21,10 @@ class AtrProvider(Protocol):
     async def get_atr(self, symbol: str) -> Decimal: ...
 
 
+class PriceProvider(Protocol):
+    async def get_current_price(self, symbol: str) -> Decimal: ...
+
+
 class PositionManagementLoop:
     """Applies position management actions at a fixed interval."""
 
@@ -29,6 +33,7 @@ class PositionManagementLoop:
         manager: PositionManager,
         state_manager: StateManager,
         atr_provider: AtrProvider,
+        price_provider: PriceProvider,
         action_executor: PositionActionExecutor,
         interval_s: int,
         report_populator: TradeReportPopulator | None = None,
@@ -36,6 +41,7 @@ class PositionManagementLoop:
         self._manager = manager
         self._state_manager = state_manager
         self._atr_provider = atr_provider
+        self._price_provider = price_provider
         self._action_executor = action_executor
         self._interval_s = interval_s
         self._report_populator = report_populator
@@ -61,45 +67,47 @@ class PositionManagementLoop:
                 "Position management cycle: %d open positions",
                 len(positions),
             )
-        for position in positions:
-            try:
-                await self._manage_single_position(position)
-            except Exception:
-                logger.exception(
-                    "Failed to manage position %s for %s, continuing",
-                    position.id,
-                    position.symbol,
-                    extra={
-                        "position_id": position.id,
-                        "symbol": position.symbol,
-                    },
-                )
+        await asyncio.gather(
+            *(self._manage_single_position(p) for p in positions),
+            return_exceptions=True,
+        )
 
     async def _manage_single_position(
         self,
         position: PositionSchema,
     ) -> None:
-        current_price = await self._state_manager.get_current_price(
-            position.symbol,
-        )
-        current_atr = await self._atr_provider.get_atr(position.symbol)
-        if current_price == 0:
-            logger.warning(
-                "Current price is 0 for %s, position management unreliable",
+        try:
+            current_price = await self._price_provider.get_current_price(
                 position.symbol,
             )
-        if current_atr == 0:
-            logger.warning(
-                "ATR is 0 for %s, trailing stop/break-even cannot function",
-                position.symbol,
+            current_atr = await self._atr_provider.get_atr(position.symbol)
+            if current_price == 0:
+                logger.warning(
+                    "Current price is 0 for %s, position management unreliable",
+                    position.symbol,
+                )
+            if current_atr == 0:
+                logger.warning(
+                    "ATR is 0 for %s, trailing stop/break-even cannot function",
+                    position.symbol,
+                )
+            actions = await self._manager.evaluate_position(
+                position=position,
+                current_price=current_price,
+                current_atr=current_atr,
             )
-        actions = await self._manager.evaluate_position(
-            position=position,
-            current_price=current_price,
-            current_atr=current_atr,
-        )
-        for action in actions:
-            await self._apply_action(position, action)
+            for action in actions:
+                await self._apply_action(position, action)
+        except Exception:
+            logger.exception(
+                "Failed to manage position %s for %s",
+                position.id,
+                position.symbol,
+                extra={
+                    "position_id": position.id,
+                    "symbol": position.symbol,
+                },
+            )
 
     async def _apply_action(
         self,

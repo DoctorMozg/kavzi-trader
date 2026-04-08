@@ -112,8 +112,12 @@ class ReasoningLoop:
             cycle_start = time.monotonic()
             logger.debug("ReasoningLoop cycle %d starting", cycle)
             self._deps_provider.clear_cycle_cache()
+            cached_positions = await self._fetch_cycle_positions()
             results: list[bool] = await asyncio.gather(
-                *(self._handle_symbol_timed(symbol) for symbol in self._symbols),
+                *(
+                    self._handle_symbol_timed(symbol, cached_positions)
+                    for symbol in self._symbols
+                ),
             )
             interesting_count = sum(results)
             if interesting_count > 0:
@@ -141,11 +145,24 @@ class ReasoningLoop:
             )
             await asyncio.sleep(current_interval)
 
-    async def _handle_symbol_timed(self, symbol: str) -> bool:
+    async def _fetch_cycle_positions(self) -> list[PositionSchema]:
+        if self._state_manager is None:
+            return []
+        try:
+            return await self._state_manager.get_all_positions()
+        except Exception:
+            logger.exception("Failed to fetch positions for reasoning cycle")
+            return []
+
+    async def _handle_symbol_timed(
+        self,
+        symbol: str,
+        cached_positions: list[PositionSchema],
+    ) -> bool:
         sym_start = time.monotonic()
         interesting = False
         try:
-            interesting = await self._handle_symbol(symbol)
+            interesting = await self._handle_symbol(symbol, cached_positions)
         except Exception:
             logger.exception(
                 "ReasoningLoop failed for %s, continuing",
@@ -161,15 +178,11 @@ class ReasoningLoop:
         )
         return interesting
 
-    async def _get_open_position_symbols(self) -> set[str]:
-        if self._state_manager is None:
-            return set()
-        try:
-            positions = await self._state_manager.get_all_positions()
-            return {p.symbol for p in positions}
-        except Exception:
-            logger.exception("Failed to fetch open positions for skip check")
-            return set()
+    def _get_open_position_symbols(
+        self,
+        cached_positions: list[PositionSchema],
+    ) -> set[str]:
+        return {p.symbol for p in cached_positions}
 
     def _is_suspended(self, symbol: str) -> bool:
         """Check if a symbol is dynamically suspended due to consecutive SKIPs."""
@@ -217,18 +230,26 @@ class ReasoningLoop:
         # Only skip when both directions are on cooldown
         return long_cd > 0 and short_cd > 0
 
-    async def _should_skip_symbol(self, symbol: str) -> bool:
+    def _should_skip_symbol(
+        self,
+        symbol: str,
+        cached_positions: list[PositionSchema],
+    ) -> bool:
         if self._tick_cooldowns(symbol):
             return True
         if self._is_suspended(symbol):
             return True
         if not self._deps_provider.indicators_available(symbol):
             return True
-        open_symbols = await self._get_open_position_symbols()
+        open_symbols = self._get_open_position_symbols(cached_positions)
         return symbol in open_symbols
 
-    async def _handle_symbol(self, symbol: str) -> bool:
-        if await self._should_skip_symbol(symbol):
+    async def _handle_symbol(
+        self,
+        symbol: str,
+        cached_positions: list[PositionSchema],
+    ) -> bool:
+        if self._should_skip_symbol(symbol, cached_positions):
             return False
 
         result = await self._router.run(symbol, self._deps_provider)
@@ -254,7 +275,7 @@ class ReasoningLoop:
             self._track_consecutive_waits(symbol, result)
             return result.scout.verdict == "INTERESTING"
 
-        filter_result = await self._run_filter_chain(result)
+        filter_result = await self._run_filter_chain(result, cached_positions)
         if filter_result is not None and not filter_result.is_allowed:
             await self._report_filter_rejection(
                 symbol,
@@ -390,6 +411,7 @@ class ReasoningLoop:
     async def _run_filter_chain(
         self,
         result: PipelineResult,
+        cached_positions: list[PositionSchema],
     ) -> FilterChainResultSchema | None:
         if (
             self._filter_chain is None
@@ -400,7 +422,6 @@ class ReasoningLoop:
         if result.trader.action not in {"LONG", "SHORT"}:
             return None
         deps = result.trader_deps
-        positions = await self._get_open_positions()
         confluence_score = (
             result.analyst.confluence_score if result.analyst is not None else None
         )
@@ -410,20 +431,11 @@ class ReasoningLoop:
             candle=deps.recent_candles[-1],
             indicators=deps.indicators,
             order_flow=deps.order_flow,
-            positions=positions,
+            positions=cached_positions,
             atr_history=deps.atr_history,
             analyst_confluence_score=confluence_score,
             symbol_tier=deps.symbol_tier,
         )
-
-    async def _get_open_positions(self) -> list[PositionSchema]:
-        if self._state_manager is None:
-            return []
-        try:
-            return await self._state_manager.get_all_positions()
-        except Exception:
-            logger.exception("Failed to fetch positions for filter chain")
-            return []
 
     async def _report_filter_rejection(
         self,

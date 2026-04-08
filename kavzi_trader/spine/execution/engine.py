@@ -95,6 +95,7 @@ class ExecutionEngine:
             atr_history=decision.atr_history,
             state_manager=self._state_manager,
             leverage=self._leverage,
+            confidence=Decimal(str(decision.calibrated_confidence)),
             symbol_tier=decision.symbol_tier,
         )
 

@@ -177,12 +177,19 @@ class LiveDependenciesProvider:
             raise RuntimeError(msg)
 
         order_flow = self._cache.get_order_flow(symbol)
-        confluence = self._evaluate_dual_confluence(
-            symbol,
-            candles[-1],
-            indicators,
-            order_flow,
-        )
+
+        cache_key = f"confluence:{symbol}"
+        if cache_key in self._cycle_cache:
+            confluence: DualConfluenceSchema = self._cycle_cache[cache_key]
+        else:
+            confluence = self._evaluate_dual_confluence(
+                symbol,
+                candles[-1],
+                indicators,
+                order_flow,
+            )
+            self._cycle_cache[cache_key] = confluence
+
         return indicators, candles, order_flow, confluence
 
     def _get_sentiment(self) -> SentimentSummarySchema | None:

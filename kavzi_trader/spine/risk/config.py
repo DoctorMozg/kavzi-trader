@@ -25,6 +25,7 @@ class RiskConfigSchema(BaseModel):
     max_notional_percent: Decimal = Decimal("50.0")
 
     liquidation_emergency_percent: Decimal = Decimal("5.0")
+    liquidation_sl_buffer_ratio: Decimal = Decimal("0.20")
     max_margin_ratio: Decimal = Decimal("0.5")
 
     model_config = ConfigDict(frozen=True)

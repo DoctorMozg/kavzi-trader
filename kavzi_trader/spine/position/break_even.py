@@ -56,9 +56,9 @@ class BreakEvenMover:
 
         buffer = current_atr * position.management_config.break_even_buffer_atr
         if position.side == "LONG":
-            new_stop_loss = position.entry_price - buffer
-        else:
             new_stop_loss = position.entry_price + buffer
+        else:
+            new_stop_loss = position.entry_price - buffer
 
         if position.side == "LONG" and new_stop_loss <= position.current_stop_loss:
             return None

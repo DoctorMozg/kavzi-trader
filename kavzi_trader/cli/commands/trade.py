@@ -41,6 +41,7 @@ from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
 from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
     LiveOrderFlowFetcher,
 )
+from kavzi_trader.orchestrator.providers.live_price_provider import LivePriceProvider
 from kavzi_trader.orchestrator.providers.live_stream_manager import LiveStreamManager
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
@@ -282,6 +283,7 @@ async def _start_orchestrator(
         tier_registry=tier_registry,
     )
     atr_provider = LiveAtrProvider(cache)
+    price_provider = LivePriceProvider(cache)
 
     # --- Brain agents ---
     logger.info(
@@ -404,6 +406,7 @@ async def _start_orchestrator(
             manager=position_manager,
             state_manager=state_manager,
             atr_provider=atr_provider,
+            price_provider=price_provider,
             action_executor=PositionActionExecutor(
                 exchange=exchange,
                 state_manager=state_manager,

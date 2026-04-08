@@ -1,5 +1,5 @@
 from decimal import Decimal
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -30,6 +30,11 @@ def mock_redis_client() -> AsyncMock:
     client.keys = AsyncMock(return_value=[])
     client.set = AsyncMock()
     client.get = AsyncMock(return_value=None)
+    client.sadd = AsyncMock(return_value=1)
+    client.srem = AsyncMock(return_value=1)
+    client.smembers = AsyncMock(return_value=set())
+    client.scard = AsyncMock(return_value=0)
+    client.pipeline = MagicMock()
     return client
 
 

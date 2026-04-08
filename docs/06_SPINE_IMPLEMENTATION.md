@@ -143,7 +143,7 @@ class DecisionMessage(BaseModel):
 class PositionManagementConfig(BaseModel):
     trailing_stop_atr_multiplier: float = 1.5
     break_even_trigger_atr: float = 1.0
-    partial_exit_at_percent: float = 0.5
+    partial_exit_at_fraction: float = 0.5
     partial_exit_size: float = 0.3
     max_hold_time_hours: int = 24
     scale_in_allowed: bool = False
@@ -490,11 +490,11 @@ class PositionManager:
         if position.partial_exit_done:
             return
 
-        if config.partial_exit_at_percent <= 0:
+        if config.partial_exit_at_fraction <= 0:
             return
 
         target_distance = abs(position.take_profit - position.entry_price)
-        trigger_distance = target_distance * config.partial_exit_at_percent
+        trigger_distance = target_distance * config.partial_exit_at_fraction
 
         if position.side == "LONG":
             if current_price >= position.entry_price + trigger_distance:
@@ -941,7 +941,7 @@ Size multipliers by volatility regime (defined in `schemas.py`):
 class PositionManagementDefaultsSchema(BaseModel):
     trailing_stop_atr_multiplier: float = 1.5
     break_even_trigger_atr: float = 1.0
-    partial_exit_at_percent: float = 0.5
+    partial_exit_at_fraction: float = 0.5
     partial_exit_size: float = 0.3
     max_hold_time_hours: int = 24
     scale_in_allowed: bool = False

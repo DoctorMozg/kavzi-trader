@@ -121,6 +121,7 @@ async def test_start_orchestrator_uses_configured_runtime_values(
     )
     monkeypatch.setattr(trade_module, "LiveDependenciesProvider", lambda **_: object())
     monkeypatch.setattr(trade_module, "LiveAtrProvider", lambda *_: object())
+    monkeypatch.setattr(trade_module, "LivePriceProvider", lambda *_: object())
     monkeypatch.setattr(trade_module, "ExecutionEngine", lambda **_: object())
     monkeypatch.setattr(trade_module, "PromptLoader", Mock)
     monkeypatch.setattr(trade_module, "ContextBuilder", lambda: object())

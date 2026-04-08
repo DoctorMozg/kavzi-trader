@@ -44,7 +44,7 @@ class VolatilityRegimeDetector:
             regime=regime,
             atr_zscore=zscore,
             size_multiplier=multiplier,
-            is_tradeable=regime in (VolatilityRegime.NORMAL, VolatilityRegime.HIGH),
+            is_tradeable=regime != VolatilityRegime.LOW,
         )
 
     def _calculate_zscore(

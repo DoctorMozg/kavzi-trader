@@ -179,7 +179,7 @@ Active position management instructions:
 class PositionManagementSchema(BaseModel):
     trailing_stop_atr_multiplier: Annotated[float, Field(ge=0.5, le=3.0)] = 1.5
     break_even_trigger_atr: Annotated[float, Field(ge=0.5, le=2.0)] = 1.0
-    partial_exit_at_percent: Annotated[float, Field(ge=0.0, le=1.0)] = 0.5
+    partial_exit_at_fraction: Annotated[float, Field(ge=0.0, le=1.0)] = 0.5
     partial_exit_size: Annotated[float, Field(ge=0.0, le=0.5)] = 0.3
     max_hold_time_hours: Annotated[int, Field(ge=1, le=168)] = 24
     scale_in_allowed: bool = False
@@ -451,7 +451,7 @@ Respond with INTERESTING or SKIP, and a brief reason (max 20 words).
 Always specify position management parameters:
 - trailing_stop_atr_multiplier: How many ATRs to trail (1.0-2.0 typical)
 - break_even_trigger_atr: When to move stop to break-even
-- partial_exit_at_percent: Where to take partial profits (0.5 = 50% to TP)
+- partial_exit_at_fraction: Where to take partial profits (0.5 = 50% to TP)
 - max_hold_time_hours: Maximum time to hold if no progress
 </position_management>
 

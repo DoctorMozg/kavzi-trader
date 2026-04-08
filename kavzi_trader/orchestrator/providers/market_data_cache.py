@@ -34,12 +34,16 @@ class _SymbolCache:
         self.indicators: TechnicalIndicatorsSchema | None = None
         self.order_flow: OrderFlowSchema | None = None
         self.current_price: Decimal = Decimal(0)
-        self.atr_history: list[Decimal] = []
+        self.atr_history: collections.deque[Decimal] = collections.deque(
+            maxlen=ATR_HISTORY_LENGTH,
+        )
         # Parallel rolling window of ATR expressed as % of close price.
         # Powers the adaptive per-symbol ATR percentile gate in the Scout
         # filter so thresholds track each symbol's own recent volatility
         # rather than a hardcoded global floor.
-        self.atr_pct_history: list[Decimal] = []
+        self.atr_pct_history: collections.deque[Decimal] = collections.deque(
+            maxlen=ATR_HISTORY_LENGTH,
+        )
 
 
 class MarketDataCache:
@@ -122,17 +126,11 @@ class MarketDataCache:
                 self._recompute_indicators(cache)
                 if cache.indicators and cache.indicators.atr_14 is not None:
                     cache.atr_history.append(cache.indicators.atr_14)
-                    if len(cache.atr_history) > ATR_HISTORY_LENGTH:
-                        cache.atr_history = cache.atr_history[-ATR_HISTORY_LENGTH:]
                     if candle.close_price > 0:
                         atr_pct = (
                             cache.indicators.atr_14 / candle.close_price * Decimal(100)
                         )
                         cache.atr_pct_history.append(atr_pct)
-                        if len(cache.atr_pct_history) > ATR_HISTORY_LENGTH:
-                            cache.atr_pct_history = cache.atr_pct_history[
-                                -ATR_HISTORY_LENGTH:
-                            ]
 
     async def update_price(self, symbol: str, price: Decimal) -> None:
         cache = self._caches.get(symbol)
@@ -214,30 +212,26 @@ class MarketDataCache:
         candles = list(cache.candles)
         if len(candles) < ATR_HISTORY_LENGTH:
             if cache.indicators and cache.indicators.atr_14 is not None:
-                cache.atr_history = [cache.indicators.atr_14]
+                cache.atr_history.append(cache.indicators.atr_14)
                 last_close = candles[-1].close_price if candles else Decimal(0)
                 if last_close > 0:
-                    cache.atr_pct_history = [
+                    cache.atr_pct_history.append(
                         cache.indicators.atr_14 / last_close * Decimal(100),
-                    ]
+                    )
             return
-        history: list[Decimal] = []
-        pct_history: list[Decimal] = []
         start = len(candles) - ATR_HISTORY_LENGTH
         for i in range(ATR_HISTORY_LENGTH):
             window = candles[: start + i + 1]
             result = self._calculator.calculate(window)
             if result and result.atr_14 is not None:
-                history.append(result.atr_14)
+                cache.atr_history.append(result.atr_14)
                 window_close = window[-1].close_price
                 if window_close > 0:
-                    pct_history.append(
+                    cache.atr_pct_history.append(
                         result.atr_14 / window_close * Decimal(100),
                     )
-        cache.atr_history = history
-        cache.atr_pct_history = pct_history
         logger.debug(
             "Seeded ATR history with %d entries (atr_pct=%d entries)",
-            len(history),
-            len(pct_history),
+            len(cache.atr_history),
+            len(cache.atr_pct_history),
         )

@@ -60,13 +60,22 @@ class ConfluenceCalculator:
         is_detected_side: bool = True,
     ) -> AlgorithmConfluenceSchema:
         ema_alignment = self._ema_alignment(indicators, side)
-        rsi_favorable = self._rsi_favorable(indicators, side)
+        rsi_favorable = self._rsi_favorable(
+            indicators,
+            side,
+            ema_aligned=ema_alignment,
+        )
         volume_spike = self._volume_spike(indicators)
         volume_above_average = self._volume_above_average(
             indicators,
             volume_spike_active=volume_spike,
         )
-        price_at_bollinger = self._price_at_bollinger(candle, indicators, side)
+        price_at_bollinger = self._price_at_bollinger(
+            candle,
+            indicators,
+            side,
+            ema_aligned=ema_alignment,
+        )
         funding_favorable = self._funding_favorable(order_flow, side)
         oi_supports_direction = self._oi_supports_direction(order_flow, side)
         oi_funding_divergence = self._oi_funding_divergence(order_flow, side)
@@ -134,17 +143,18 @@ class ConfluenceCalculator:
         self,
         indicators: TechnicalIndicatorsSchema,
         side: Literal["LONG", "SHORT"],
+        *,
+        ema_aligned: bool,
     ) -> bool:
         rsi = indicators.rsi_14
         if rsi is None:
             return False
-        ema_aligned = self._ema_alignment(indicators, side)
         if side == "LONG":
             if ema_aligned:
                 return Decimal(50) <= rsi <= Decimal(70)
             return Decimal(30) <= rsi <= Decimal(40)
         if ema_aligned:
-            return Decimal(30) <= rsi <= Decimal(50)
+            return Decimal(50) <= rsi <= Decimal(70)
         return Decimal(60) <= rsi <= Decimal(70)
 
     def _volume_above_average(
@@ -165,11 +175,12 @@ class ConfluenceCalculator:
         candle: CandlestickSchema,
         indicators: TechnicalIndicatorsSchema,
         side: Literal["LONG", "SHORT"],
+        *,
+        ema_aligned: bool,
     ) -> bool:
         bollinger = indicators.bollinger
         if bollinger is None:
             return False
-        ema_aligned = self._ema_alignment(indicators, side)
         if side == "LONG":
             if candle.close_price <= bollinger.lower:
                 return True

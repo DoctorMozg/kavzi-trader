@@ -53,7 +53,7 @@ def test_partial_exit_requires_progress(position_factory) -> None:
 
 def test_partial_exit_skips_when_atr_profit_too_low(position_factory) -> None:
     config = PositionManagementConfigSchema(
-        partial_exit_at_percent=Decimal("0.5"),
+        partial_exit_at_fraction=Decimal("0.5"),
     )
     position = position_factory(
         entry_price=Decimal(100),

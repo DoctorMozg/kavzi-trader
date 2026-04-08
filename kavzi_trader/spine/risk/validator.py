@@ -334,16 +334,34 @@ class DynamicRiskValidator:
         else:
             liq_price = entry_price * (Decimal(1) + Decimal(1) / Decimal(leverage))
 
-        sl_distance = abs(entry_price - stop_loss)
+        # SL must fire before forced liquidation
+        if side == "LONG" and stop_loss <= liq_price:
+            return (
+                f"Stop loss at or beyond liquidation price "
+                f"(SL: {stop_loss:.2f}, liq: {liq_price:.2f}, "
+                f"leverage: {leverage}x)"
+            )
+        if side == "SHORT" and stop_loss >= liq_price:
+            return (
+                f"Stop loss at or beyond liquidation price "
+                f"(SL: {stop_loss:.2f}, liq: {liq_price:.2f}, "
+                f"leverage: {leverage}x)"
+            )
+
+        # SL must maintain a safety margin from liquidation price
         liq_distance = abs(entry_price - liq_price)
+        buffer = liq_distance * self._config.liquidation_sl_buffer_ratio
 
-        if liq_distance == 0:
-            return None
-
-        if sl_distance > liq_distance * Decimal("0.5"):
+        if side == "LONG" and stop_loss < liq_price + buffer:
             return (
                 f"Stop loss too close to liquidation price "
-                f"(SL dist: {sl_distance:.2f}, liq dist: {liq_distance:.2f}, "
+                f"(SL: {stop_loss:.2f}, min: {liq_price + buffer:.2f}, "
+                f"leverage: {leverage}x)"
+            )
+        if side == "SHORT" and stop_loss > liq_price - buffer:
+            return (
+                f"Stop loss too close to liquidation price "
+                f"(SL: {stop_loss:.2f}, max: {liq_price - buffer:.2f}, "
                 f"leverage: {leverage}x)"
             )
 

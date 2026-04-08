@@ -31,7 +31,7 @@ class PartialExitChecker:
             return None
 
         progress = current_distance / total_distance
-        if progress < position.management_config.partial_exit_at_percent:
+        if progress < position.management_config.partial_exit_at_fraction:
             return None
 
         min_profit_atr = position.management_config.partial_exit_min_profit_atr

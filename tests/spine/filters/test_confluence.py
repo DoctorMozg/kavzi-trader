@@ -63,14 +63,14 @@ def test_rsi_favorable_trend_mode_short(
     sample_candle,
     sample_order_flow,
 ) -> None:
-    """When EMAs are bearish-aligned, RSI 30-50 is favorable for SHORT."""
+    """When EMAs are bearish-aligned, RSI 50-70 is favorable for SHORT."""
     now = datetime.now(UTC)
     indicators = TechnicalIndicatorsSchema(
         ema_20=Decimal(98),
         ema_50=Decimal(100),
         ema_200=Decimal(102),
         sma_20=Decimal(100),
-        rsi_14=Decimal(40),
+        rsi_14=Decimal(60),
         macd=None,
         bollinger=None,
         atr_14=Decimal(5),
@@ -92,7 +92,7 @@ def test_rsi_favorable_trend_mode_short(
     )
 
     assert result.ema_alignment is True, "EMAs bearish-aligned"
-    assert result.rsi_favorable is True, "RSI 40 in trend-mode SHORT range 30-50"
+    assert result.rsi_favorable is True, "RSI 60 in trend-mode SHORT range 50-70"
 
 
 def test_rsi_favorable_reversal_mode_short(

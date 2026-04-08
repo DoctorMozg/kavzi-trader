@@ -275,6 +275,14 @@ risk:
   #   50 = stable (slow to change regime, fewer false signals)
   atr_zscore_period: 30
 
+  # Fraction of entry-to-liquidation distance that the SL must stay away from
+  # the liquidation price. Prevents fills near the liquidation boundary where
+  # slippage or funding-rate jumps could cause forced liquidation.
+  #   0.10 = permissive (allows SL within 90% of the distance)
+  #   0.20 = default (SL must be at least 20% of the distance from liq price)
+  #   0.30 = conservative
+  liquidation_sl_buffer_ratio: 0.20
+
 # -----------------------------------------------------------------------------
 # Position Management — trailing stops, break-even, partial exits, scaling
 # These checks run every position_check_interval_s seconds.
@@ -300,7 +308,7 @@ position_management:
 
   # Let 80% of the move play out before taking partial.
   # On a $100 account, each dollar of captured profit matters.
-  partial_exit_at_percent: 0.80
+  partial_exit_at_fraction: 0.80
 
   # Take 25% off (not 30%) — keep more of the position running.
   partial_exit_size: 0.25

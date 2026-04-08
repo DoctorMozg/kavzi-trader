@@ -37,7 +37,7 @@ class TestVolatilityRegimeDetector:
         result = detector.detect_regime(Decimal(120), history)
 
         assert result.regime == VolatilityRegime.EXTREME
-        assert result.is_tradeable is False
+        assert result.is_tradeable is True
         assert result.size_multiplier == Decimal(0)
 
     def test_low_regime_detected(self, risk_config: RiskConfigSchema) -> None:
