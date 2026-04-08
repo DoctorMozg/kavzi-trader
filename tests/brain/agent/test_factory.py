@@ -1,9 +1,32 @@
+from decimal import Decimal
+
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.config import AgentModelConfigSchema, BrainConfigSchema
 from kavzi_trader.brain.prompts.loader import PromptLoader
+from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
+
+
+def _make_tier_registry() -> SymbolTierRegistry:
+    """Build a minimal tier registry for factory tests."""
+    tier_config = SymbolTierConfigSchema(
+        risk_per_trade_percent=Decimal("3.0"),
+        max_leverage=5,
+        max_exposure_percent=Decimal("20.0"),
+        min_confidence=Decimal("0.70"),
+        crowded_long_zscore=Decimal("2.0"),
+        crowded_short_zscore=Decimal("-2.0"),
+    )
+    tier_configs = {
+        SymbolTier.TIER_1: tier_config,
+        SymbolTier.TIER_2: tier_config,
+        SymbolTier.TIER_3: tier_config,
+    }
+    return SymbolTierRegistry(tier_configs=tier_configs, symbol_map={})
 
 
 def _make_factory() -> AgentFactory:
@@ -12,7 +35,12 @@ def _make_factory() -> AgentFactory:
         analyst=AgentModelConfigSchema(model_id="test/analyst"),
         trader=AgentModelConfigSchema(model_id="test/trader", retries=2),
     )
-    return AgentFactory(config, PromptLoader())
+    return AgentFactory(
+        config,
+        PromptLoader(),
+        risk_config=RiskConfigSchema(),
+        tier_registry=_make_tier_registry(),
+    )
 
 
 def test_create_analyst_agent() -> None:

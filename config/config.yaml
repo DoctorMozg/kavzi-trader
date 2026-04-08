@@ -80,7 +80,7 @@ scout:
   #   atr_pct_min                       — hard floor (% of price)
   #   atr_pct_percentile                — percentile of own history (0-100)
   #   atr_pct_percentile_min_samples    — min history length before percentile applies
-  atr_pct_min: 0.15
+  atr_pct_min: 0.08  # BTC/ETH sit at 0.06-0.09% in calm markets; 0.15 blocked them
   atr_pct_percentile: 25
   atr_pct_percentile_min_samples: 20
 
@@ -89,8 +89,8 @@ scout:
   vol_ratio_hard_skip: 0.3
 
   # Volume ratio below which SKIP is favoured unless a criterion matches.
-  #   0.5 = permissive    0.8 = default    1.0 = strict
-  vol_ratio_soft_skip: 0.8
+  #   0.5 = permissive    0.6 = relaxed    0.8 = default    1.0 = strict
+  vol_ratio_soft_skip: 0.6  # 0.8 blocked too many quieter-volume setups
 
   # Criterion 1 BREAKOUT — price beyond Bollinger Band with volume.
   #   1.0 = permissive    1.5 = default    2.0 = strict
@@ -105,8 +105,8 @@ scout:
   breakout_percent_b_margin_min: 0.05
 
   # Criterion 2 TREND CONTINUATION — EMA alignment + RSI mid-range + volume.
-  trend_rsi_low: 40            # 30 = wide, 40 = default, 45 = strict
-  trend_rsi_high: 60           # 70 = wide, 60 = default, 55 = strict
+  trend_rsi_low: 35            # 30 = wide, 35 = relaxed, 40 = default, 45 = strict
+  trend_rsi_high: 65           # 70 = wide, 65 = relaxed, 60 = default, 55 = strict
   trend_vol_ratio_min: 1.0     # 0.8 = permissive, 1.0 = default, 1.2 = strict
 
   # Criterion 3 REVERSAL — RSI extreme + price at BB boundary.
@@ -408,13 +408,13 @@ execution:
   #
   #   LOW     regime: market is slow, decisions stay valid longer  → 300000ms (5min)
   #   NORMAL  regime: default market conditions                    → 120000ms (2min)
-  #   HIGH    regime: fast-moving market, decisions stale quicker  →  30000ms (30s)
-  #   EXTREME regime: spiking market, only very fresh decisions    →  10000ms (10s)
+  #   HIGH    regime: fast-moving market, decisions stale quicker  →  90000ms (90s)
+  #   EXTREME regime: spiking market, only very fresh decisions    →  30000ms (30s)
   staleness_thresholds_ms:
     LOW: 300000
     NORMAL: 120000
-    HIGH: 30000
-    EXTREME: 10000
+    HIGH: 90000    # 30s guaranteed expiry vs 180s reasoning loop; raised to 90s
+    EXTREME: 30000  # 10s was too aggressive — most decisions expired before execution
 
   # Whether to place SL and TP orders immediately after entry fill.
   # true  = place SL/TP right away (recommended — protects against sudden moves)

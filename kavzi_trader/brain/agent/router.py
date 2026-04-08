@@ -85,7 +85,7 @@ class PipelineResult:
         self.trader_deps = trader_deps
 
 
-_DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 3
+_DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 2
 
 # Minimum Analyst confluence_score required to escalate to the Trader tier.
 # Combined with the LLM's own setup_valid flag, this forms a hysteresis gate:

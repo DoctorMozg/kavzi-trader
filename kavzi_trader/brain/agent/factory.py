@@ -8,6 +8,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
 from kavzi_trader.brain.config import AgentModelConfigSchema, BrainConfigSchema
+from kavzi_trader.brain.context.context_dicts import SystemPromptContextDict
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
@@ -15,6 +16,10 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
+from kavzi_trader.orchestrator.loops.reasoning import _CONFLUENCE_ENTER_MIN
+from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.spine.risk.symbol_tier import SymbolTier
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +31,29 @@ class AgentFactory:
         self,
         config: BrainConfigSchema,
         prompt_loader: PromptLoader,
+        risk_config: RiskConfigSchema,
+        tier_registry: SymbolTierRegistry,
     ) -> None:
         self._config = config
         self._prompt_loader = prompt_loader
+        self._system_prompt_context = SystemPromptContextDict(
+            min_rr_ratio=str(risk_config.min_rr_ratio),
+            drawdown_pause_percent=str(risk_config.drawdown_pause_percent),
+            drawdown_close_all_percent=str(risk_config.drawdown_close_all_percent),
+            confluence_enter_min=_CONFLUENCE_ENTER_MIN,
+            volatility_low_threshold=str(risk_config.volatility_low_threshold),
+            volatility_high_threshold=str(risk_config.volatility_high_threshold),
+            volatility_extreme_threshold=str(risk_config.volatility_extreme_threshold),
+            tier_1_min_confidence=str(
+                tier_registry.get_config_for_tier(SymbolTier.TIER_1).min_confidence
+            ),
+            tier_2_min_confidence=str(
+                tier_registry.get_config_for_tier(SymbolTier.TIER_2).min_confidence
+            ),
+            tier_3_min_confidence=str(
+                tier_registry.get_config_for_tier(SymbolTier.TIER_3).min_confidence
+            ),
+        )
         timeout_s = config.request_timeout_s
         logger.info(
             "OpenRouter HTTP timeout set to %.0fs",
@@ -61,7 +86,9 @@ class AgentFactory:
             self._config.analyst.model_id,
             provider=self._provider,
         )
-        system_prompt = self._prompt_loader.render_system_prompt("analyst")
+        system_prompt = self._prompt_loader.render_system_prompt(
+            "analyst", context=self._system_prompt_context
+        )
         logger.info(
             "Creating analyst agent with model %s",
             self._config.analyst.model_id,
@@ -82,7 +109,9 @@ class AgentFactory:
             self._config.trader.model_id,
             provider=self._provider,
         )
-        system_prompt = self._prompt_loader.render_system_prompt("trader")
+        system_prompt = self._prompt_loader.render_system_prompt(
+            "trader", context=self._system_prompt_context
+        )
         logger.info(
             "Creating trader agent with model %s",
             self._config.trader.model_id,

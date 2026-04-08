@@ -24,6 +24,10 @@ class SymbolTierRegistry:
         """Return the tier for a symbol. Unknown symbols default to TIER_3."""
         return self._symbol_map.get(symbol, SymbolTier.TIER_3)
 
+    def get_config_for_tier(self, tier: SymbolTier) -> SymbolTierConfigSchema:
+        """Look up tier config by tier enum, not by symbol."""
+        return self._tier_configs[tier]
+
     def get_config(self, symbol: str) -> SymbolTierConfigSchema:
         """Return the tier config for a symbol."""
         tier = self.get_tier(symbol)

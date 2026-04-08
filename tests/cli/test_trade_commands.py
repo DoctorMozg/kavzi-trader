@@ -127,7 +127,7 @@ async def test_start_orchestrator_uses_configured_runtime_values(
     monkeypatch.setattr(trade_module, "ContextBuilder", lambda: object())
 
     class FakeFactory:
-        def __init__(self, *_args) -> None:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
             pass
 
         def create_analyst_agent(self) -> object:

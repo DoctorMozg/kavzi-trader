@@ -41,9 +41,12 @@ class PromptLoader:
     def render_system_prompt(
         self,
         agent: Literal["analyst", "trader", "synthesizer"],
+        context: Mapping[str, Any] | None = None,
     ) -> str:
         template_path = self._paths.system[agent]
-        return cast("str", self._env.get_template(template_path).render())
+        return cast(
+            "str", self._env.get_template(template_path).render(**(context or {}))
+        )
 
     def render_user_prompt(
         self,

@@ -3,7 +3,7 @@ tiers:
     risk_per_trade_percent: "4.0"
     max_leverage: 5
     max_exposure_percent: "30.0"
-    min_confidence: "0.75"
+    min_confidence: "0.65"  # was 0.75; near-misses at 0.76-0.78 blocked repeatedly
     crowded_long_zscore: "2.0"
     crowded_short_zscore: "-2.0"
     symbols:
@@ -15,7 +15,7 @@ tiers:
     risk_per_trade_percent: "3.0"
     max_leverage: 3
     max_exposure_percent: "20.0"
-    min_confidence: "0.80"
+    min_confidence: "0.70"  # was 0.80; these are major liquid coins, 0.80 too restrictive
     crowded_long_zscore: "2.5"
     crowded_short_zscore: "-2.5"
     symbols:

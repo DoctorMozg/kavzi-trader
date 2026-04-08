@@ -46,3 +46,18 @@ class TraderContextDict(MarketContextDict):
     sentiment_bias: str | None
     sentiment_confidence_adjustment: str | None
     atr_fallback_targets: list[dict[str, str]]
+
+
+class SystemPromptContextDict(TypedDict):
+    """Config values injected into system prompt templates."""
+
+    min_rr_ratio: str
+    drawdown_pause_percent: str
+    drawdown_close_all_percent: str
+    confluence_enter_min: int
+    volatility_low_threshold: str
+    volatility_high_threshold: str
+    volatility_extreme_threshold: str
+    tier_1_min_confidence: str
+    tier_2_min_confidence: str
+    tier_3_min_confidence: str

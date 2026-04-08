@@ -32,12 +32,12 @@ class ScoutConfigSchema(BaseModel):
     # threshold is ``max(atr_pct_min, percentile(atr_pct_history))`` so
     # each symbol is judged against its own recent volatility without
     # letting large-caps slip below a sanity floor.
-    #   0.10 = very permissive (quiet large-caps in NORMAL regime)
-    #   0.15 = default (report-validated: BTC/ETH often sit at 0.06-0.09%)
+    #   0.08 = default (BTC/ETH sit at 0.06-0.09% in calm markets)
+    #   0.15 = moderate (blocks large-caps in calm conditions)
     #   0.30 = legacy strict (categorically blocked large-caps in 2026-04)
     atr_pct_min: Annotated[
         Decimal,
-        Field(default=Decimal("0.15")),
+        Field(default=Decimal("0.08")),
     ]
 
     # Percentile of the per-symbol ATR% history that current ATR% must
@@ -72,11 +72,12 @@ class ScoutConfigSchema(BaseModel):
     # Volume ratio below which SKIP is strongly favoured.
     # A criterion must still match to override this soft gate.
     #   0.5 = permissive
-    #   0.8 = default
+    #   0.6 = default (allows quieter-but-not-dead volume)
+    #   0.8 = moderate
     #   1.0 = strict
     vol_ratio_soft_skip: Annotated[
         Decimal,
-        Field(default=Decimal("0.8")),
+        Field(default=Decimal("0.6")),
     ]
 
     # --- Criterion 1: BREAKOUT ---
@@ -104,10 +105,11 @@ class ScoutConfigSchema(BaseModel):
 
     # RSI range that confirms a trending (not exhausted) market.
     #   30/70 = wide (accepts more)
-    #   40/60 = default
+    #   35/65 = default (30pt window catches real trends)
+    #   40/60 = moderate
     #   45/55 = strict
-    trend_rsi_low: Annotated[Decimal, Field(default=Decimal(40))]
-    trend_rsi_high: Annotated[Decimal, Field(default=Decimal(60))]
+    trend_rsi_low: Annotated[Decimal, Field(default=Decimal(35))]
+    trend_rsi_high: Annotated[Decimal, Field(default=Decimal(65))]
 
     # Minimum volume ratio for trend continuation.
     #   0.8 = permissive

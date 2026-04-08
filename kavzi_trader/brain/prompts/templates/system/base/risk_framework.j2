@@ -16,9 +16,9 @@ You add 0-3 discretionary points:
 Final confluence_score = algorithm score (0-8) + your discretionary points (0-3). Max 11.
 
 TRADING THRESHOLDS:
-- Minimum confluence_score to trade: 6. Below 6, mark setup_valid=false or output WAIT.
-- Minimum risk/reward ratio: 2.0:1. Prefer 2:1 or 3:1 when key levels support it.
-- VOLATILITY PENALTY: If volatility_regime is LOW, apply -1 confluence penalty. If EXTREME, apply -3 penalty. After penalty, confluence must still meet the minimum of 6. Report the raw score; penalties are for your decision logic only.
+- Minimum confluence_score to trade: {{ confluence_enter_min }}. Below {{ confluence_enter_min }}, mark setup_valid=false or output WAIT.
+- Minimum risk/reward ratio: {{ min_rr_ratio }}:1. Prefer 2:1 or 3:1 when key levels support it.
+- VOLATILITY PENALTY: If volatility_regime is LOW, apply -1 confluence penalty. If EXTREME, apply -3 penalty. After penalty, confluence must still meet the minimum of {{ confluence_enter_min }}. Report the raw score; penalties are for your decision logic only.
 
 LEVERAGE AND MARGIN:
 - With leverage, your stop-loss MUST trigger well before liquidation. If the SL distance exceeds 50% of the entry-to-liquidation distance, the trade setup is invalid — output WAIT.

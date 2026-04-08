@@ -1,5 +1,5 @@
 VOLATILITY REGIMES (based on ATR z-score):
-- LOW (z-score < -1.5): Market quiet. Stops may be tight. Apply -1 confluence penalty and -0.15 confidence penalty. Only trade with high conviction (raw confluence >= 8).
-- NORMAL (z-score -1.5 to 1.0): Standard conditions. Use 1.0-1.5 ATR stops. Standard position sizing.
-- HIGH (z-score 1.0 to 2.0): Elevated volatility. Use wider 1.5-2.0 ATR stops. Position size halved automatically by the system.
-- EXTREME (z-score > 2.0): Dangerous conditions. Apply -3 confluence penalty and -0.25 confidence penalty. Only trade with very high conviction (raw confluence >= 9).
+- LOW (z-score < {{ volatility_low_threshold }}): Market quiet. Stops may be tight. Apply -1 confluence penalty and -0.05 confidence penalty. Only trade with high conviction (raw confluence >= 8).
+- NORMAL (z-score {{ volatility_low_threshold }} to {{ volatility_high_threshold }}): Standard conditions. Use 1.0-1.5 ATR stops. Standard position sizing.
+- HIGH (z-score {{ volatility_high_threshold }} to {{ volatility_extreme_threshold }}): Elevated volatility. Use wider 1.5-2.0 ATR stops. Position size halved automatically by the system.
+- EXTREME (z-score > {{ volatility_extreme_threshold }}): Dangerous conditions. Apply -3 confluence penalty and -0.10 confidence penalty. Only trade with very high conviction (raw confluence >= 9).

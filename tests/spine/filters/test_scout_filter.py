@@ -440,7 +440,7 @@ async def test_volume_spike_with_ema_support(scout: ScoutFilter) -> None:
         ema_50=Decimal(105),
         ema_200=Decimal(90),
         vol_ratio=Decimal("2.5"),
-        rsi_14=Decimal(65),  # outside trend range (40-60) so criterion 2 skips
+        rsi_14=Decimal(70),  # outside trend range (35-65) so criterion 2 skips
     )
     candle = _make_candle(
         close=Decimal(108),

@@ -74,7 +74,7 @@ class AnalystDependenciesSchema(BaseModel):
         Field(default=None),
     ]
     symbol_tier: Annotated[str, Field(default="TIER_2")]
-    tier_min_confidence: Annotated[Decimal, Field(default=Decimal("0.75"))]
+    tier_min_confidence: Annotated[Decimal, Field(default=Decimal("0.70"))]
 
     model_config = ConfigDict(frozen=True)
 
@@ -103,6 +103,6 @@ class TradingDependenciesSchema(BaseModel):
         Field(default=None),
     ]
     symbol_tier: Annotated[str, Field(default="TIER_2")]
-    tier_min_confidence: Annotated[Decimal, Field(default=Decimal("0.75"))]
+    tier_min_confidence: Annotated[Decimal, Field(default=Decimal("0.70"))]
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)

@@ -151,25 +151,25 @@ def test_confluence_override_just_above_fear(
 ) -> None:
     """FGI=11 (just above extreme fear) → returns elevated confluence min."""
     _set_fgi(cache, 11)
-    assert gate.get_confluence_override() == 8
+    assert gate.get_confluence_override() == 7
 
 
 def test_confluence_override_mid_elevated_fear(
     gate: FearGreedGateFilter,
     cache: ExternalDataCache,
 ) -> None:
-    """FGI=15 (middle of elevated fear zone) → returns 8."""
+    """FGI=15 (middle of elevated fear zone) → returns 7."""
     _set_fgi(cache, 15)
-    assert gate.get_confluence_override() == 8
+    assert gate.get_confluence_override() == 7
 
 
 def test_confluence_override_at_elevated_boundary(
     gate: FearGreedGateFilter,
     cache: ExternalDataCache,
 ) -> None:
-    """FGI=25 (== elevated fear threshold) → returns 8."""
+    """FGI=25 (== elevated fear threshold) → returns 7."""
     _set_fgi(cache, 25)
-    assert gate.get_confluence_override() == 8
+    assert gate.get_confluence_override() == 7
 
 
 def test_confluence_override_above_elevated_zone(

@@ -358,17 +358,17 @@ class SpyAnalyst:
 
 
 def _make_low_confluence() -> DualConfluenceSchema:
-    """Both sides score below the default analyst gate threshold (3)."""
+    """Both sides score below the default analyst gate threshold (2)."""
     low = AlgorithmConfluenceSchema(
         ema_alignment=True,
-        rsi_favorable=True,
+        rsi_favorable=False,
         volume_above_average=False,
         price_at_bollinger=False,
         funding_favorable=False,
         oi_supports_direction=False,
         oi_funding_divergence=False,
         volume_spike=False,
-        score=2,
+        score=1,
     )
     return DualConfluenceSchema(long=low, short=low, detected_side="SHORT")
 
@@ -419,7 +419,7 @@ async def test_router_calls_analyst_at_threshold(
 ) -> None:
     """When max algo confluence == threshold, Analyst IS called (gate is <)."""
     spy_analyst = SpyAnalyst()
-    # Default fixture has long.score=4, threshold default is 3 → not skipped
+    # Default fixture has long.score=4, threshold default is 2 → not skipped
     router = AgentRouter(
         DummyScout("INTERESTING"),
         spy_analyst,

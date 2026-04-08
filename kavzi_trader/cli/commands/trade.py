@@ -290,7 +290,12 @@ async def _start_orchestrator(
         "Creating brain agents (Analyst/Trader) via OpenRouter; Scout is algorithmic",
     )
     context_builder = ContextBuilder()
-    factory = AgentFactory(app_config.brain, prompt_loader)
+    factory = AgentFactory(
+        app_config.brain,
+        prompt_loader,
+        risk_config=app_config.risk,
+        tier_registry=tier_registry,
+    )
     scout = ScoutFilter(app_config.scout)
     analyst = AnalystAgent(
         factory.create_analyst_agent(),

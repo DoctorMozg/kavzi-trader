@@ -9,8 +9,8 @@ def _default_staleness_thresholds() -> dict[str, int]:
     return {
         VolatilityRegime.LOW.value: 300_000,
         VolatilityRegime.NORMAL.value: 120_000,
-        VolatilityRegime.HIGH.value: 30_000,
-        VolatilityRegime.EXTREME.value: 10_000,
+        VolatilityRegime.HIGH.value: 90_000,
+        VolatilityRegime.EXTREME.value: 30_000,
     }
 
 

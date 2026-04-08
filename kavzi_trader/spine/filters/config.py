@@ -97,8 +97,8 @@ class FilterConfigSchema(BaseModel):
 
     movement_bypass_confluence_min: Annotated[
         int,
-        Field(default=8, ge=0, le=11),
-    ] = 8
+        Field(default=7, ge=0, le=11),
+    ] = 7
 
     fgi_extreme_fear_threshold: Annotated[
         int,
@@ -115,8 +115,8 @@ class FilterConfigSchema(BaseModel):
     ] = 25
     fgi_elevated_fear_confluence_min: Annotated[
         int,
-        Field(default=8, ge=0, le=11),
-    ] = 8
+        Field(default=7, ge=0, le=11),
+    ] = 7
 
     fgi_fear_bypass_confluence_min: Annotated[
         int,

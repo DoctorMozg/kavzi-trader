@@ -1,6 +1,6 @@
 Validate this potential setup on {{ market_snapshot.timeframe }} {{ market_snapshot.symbol }}.
-Symbol tier: {{ symbol_tier | default("TIER_2") }} | Min confidence: {{ tier_min_confidence | default("0.75") }}
-Leverage: {{ futures_leverage | default(3) }}x (liquidation ~{{ (100 / (futures_leverage | default(3))) | round(1) }}% from entry)
+Symbol tier: {{ symbol_tier | default("TIER_2") }} | Min confidence: {{ tier_min_confidence | default("0.70") }}
+Leverage: {{ futures_leverage | default(5) }}x (liquidation ~{{ (100 / (futures_leverage | default(5))) | round(1) }}% from entry)
 
 STEP 1 — Review algorithm confluence signals for BOTH directions:
 {% include "user/context/algorithm_confluence.j2" %}
