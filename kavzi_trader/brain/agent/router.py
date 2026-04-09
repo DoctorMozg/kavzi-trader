@@ -20,6 +20,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+from kavzi_trader.orchestrator.loops.confluence_thresholds import CONFLUENCE_ENTER_MIN
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +89,9 @@ class PipelineResult:
 _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 2
 
 # Minimum Analyst confluence_score required to escalate to the Trader tier.
-# Combined with the LLM's own setup_valid flag, this forms a hysteresis gate:
-# scores 4-5 are treated as "borderline WAIT" in the reasoning loop so that
-# LLM sampling noise cannot flip the pipeline between enter and reject on
-# identical inputs. The threshold is aligned with the prompt's own "mark
-# setup_valid=true iff confluence >= 6" rubric, and bar-close dedup in the
-# router prevents intra-bar re-analysis.
-_ANALYST_CONFLUENCE_ENTER = 6
+# Sourced from the shared confluence_thresholds module so reasoning loop,
+# router, and prompt templates all use the same value.
+_ANALYST_CONFLUENCE_ENTER = CONFLUENCE_ENTER_MIN
 
 # Pre-Trader deterministic gates
 _BREAKOUT_OVEREXTENDED_B = Decimal("1.20")

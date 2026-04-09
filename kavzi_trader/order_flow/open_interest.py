@@ -2,14 +2,19 @@ from decimal import Decimal
 
 from kavzi_trader.order_flow.schemas import OIMomentumSchema, OpenInterestSchema
 
-HOUR_1_PERIODS = 12
-HOUR_24_PERIODS = 288
+_MINUTES_IN_1H = 60
+_MINUTES_IN_24H = 1440
+
+
+def periods_for_interval(interval_minutes: int) -> tuple[int, int]:
+    """Return (periods_1h, periods_24h) for a given candle interval in minutes."""
+    return _MINUTES_IN_1H // interval_minutes, _MINUTES_IN_24H // interval_minutes
 
 
 def calculate_oi_momentum(
     oi_history: list[OpenInterestSchema],
-    periods_1h: int = HOUR_1_PERIODS,
-    periods_24h: int = HOUR_24_PERIODS,
+    periods_1h: int = 4,
+    periods_24h: int = 96,
 ) -> OIMomentumSchema | None:
     if not oi_history:
         return None

@@ -702,8 +702,8 @@ async def test_router_blocks_trader_when_confluence_below_entry_gate(
     account_state,
     positions,
 ) -> None:
-    """confluence=5 + setup_valid=True must NOT reach the Trader tier."""
-    analyst = DummyAnalyst(setup_valid=True, confluence_score=5)
+    """confluence=4 + setup_valid=True must NOT reach the Trader tier."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=4)
     router = AgentRouter(DummyScout("INTERESTING"), analyst, DummyTrader())
     provider = _make_provider(
         candle,
@@ -718,7 +718,7 @@ async def test_router_blocks_trader_when_confluence_below_entry_gate(
 
     assert result.analyst is not None
     assert result.analyst.setup_valid is True
-    assert result.analyst.confluence_score == 5
+    assert result.analyst.confluence_score == 4
     assert result.trader is None
     assert provider.trader_calls == 0
 
@@ -733,8 +733,8 @@ async def test_router_enters_trader_at_confluence_entry_gate(
     account_state,
     positions,
 ) -> None:
-    """confluence=6 + setup_valid=True is the minimum to reach Trader."""
-    analyst = DummyAnalyst(setup_valid=True, confluence_score=6)
+    """confluence=5 + setup_valid=True is the minimum to reach Trader."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=5)
     router = AgentRouter(DummyScout("INTERESTING"), analyst, DummyTrader())
     provider = _make_provider(
         candle,
@@ -1016,7 +1016,7 @@ async def test_router_no_override_uses_default_gate(
     account_state,
     positions,
 ) -> None:
-    """override=None → default gate (6) applies; confluence=6 passes."""
+    """override=None → default gate (5) applies; confluence=6 passes."""
     analyst = DummyAnalyst(setup_valid=True, confluence_score=6)
     router = AgentRouter(
         DummyScout("INTERESTING"),

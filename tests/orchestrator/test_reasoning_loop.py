@@ -744,7 +744,7 @@ def test_should_enqueue_requires_confluence_entry_gate() -> None:
         analyst=_make_analyst_decision(
             setup_valid=True,
             direction="LONG",
-            confluence_score=5,
+            confluence_score=4,
         ),
         trader=TradeDecisionSchema(
             action="LONG",
@@ -763,7 +763,7 @@ def test_should_enqueue_requires_confluence_entry_gate() -> None:
         analyst=_make_analyst_decision(
             setup_valid=True,
             direction="LONG",
-            confluence_score=6,
+            confluence_score=5,
         ),
         trader=borderline.trader,
         trader_deps=deps,
@@ -1079,7 +1079,7 @@ def _make_wait_result(
 
 
 def test_consecutive_waits_apply_cooldown() -> None:
-    """After 3 consecutive WAITs, cooldown is set for (symbol, direction)."""
+    """After 5 consecutive WAITs, cooldown is set for (symbol, direction)."""
     loop = ReasoningLoop(
         symbols=["TONUSDT"],
         router=AsyncMock(),
@@ -1088,12 +1088,12 @@ def test_consecutive_waits_apply_cooldown() -> None:
     )
     result = _make_wait_result("LONG")
 
-    # Simulate 3 consecutive WAITs
-    for _ in range(3):
+    # Simulate 5 consecutive WAITs (threshold=5)
+    for _ in range(5):
         loop._track_consecutive_waits("TONUSDT", result)
 
     key = ("TONUSDT", "LONG")
-    assert loop._consecutive_waits[key] == 3
+    assert loop._consecutive_waits[key] == 5
     assert loop._cooldowns.get(key, 0) > 0
 
 
@@ -1119,7 +1119,7 @@ def test_consecutive_waits_reset_on_trade() -> None:
 
 
 def test_consecutive_waits_escalate() -> None:
-    """4th and 5th WAITs increase cooldown, capped at max."""
+    """6th+ WAITs increase cooldown, capped at max."""
     loop = ReasoningLoop(
         symbols=["TONUSDT"],
         router=AsyncMock(),
@@ -1129,25 +1129,25 @@ def test_consecutive_waits_escalate() -> None:
     result = _make_wait_result("LONG")
     key = ("TONUSDT", "LONG")
 
-    # 5 consecutive WAITs
-    for _ in range(5):
+    # 7 consecutive WAITs (threshold=5, base=2)
+    for _ in range(7):
         loop._track_consecutive_waits("TONUSDT", result)
 
-    assert loop._consecutive_waits[key] == 5
-    # count=5, excess=5-3+1=3, cooldown=min(3*3, 12)=9
-    assert loop._cooldowns[key] == 9
+    assert loop._consecutive_waits[key] == 7
+    # count=7, excess=7-5+1=3, cooldown=min(2*3, 12)=6
+    assert loop._cooldowns[key] == 6
 
-    # Push to cap (12+ waits)
-    for _ in range(10):
+    # Push to cap (15+ waits)
+    for _ in range(8):
         loop._track_consecutive_waits("TONUSDT", result)
 
     assert loop._consecutive_waits[key] == 15
-    # excess=15-3+1=13, cooldown=min(3*13, 12)=12
+    # excess=15-5+1=11, cooldown=min(2*11, 12)=12
     assert loop._cooldowns[key] == 12
 
 
 def test_consecutive_waits_no_cooldown_below_threshold() -> None:
-    """Fewer than 3 WAITs should not set any cooldown."""
+    """Fewer than 5 WAITs should not set any cooldown."""
     loop = ReasoningLoop(
         symbols=["TONUSDT"],
         router=AsyncMock(),

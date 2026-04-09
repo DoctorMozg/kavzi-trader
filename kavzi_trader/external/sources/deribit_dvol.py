@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -13,6 +14,8 @@ _DERIBIT_BASE = "https://www.deribit.com/api/v2/public"
 _DVOL_URL = f"{_DERIBIT_BASE}/get_index_price"
 _BOOK_SUMMARY_URL = f"{_DERIBIT_BASE}/get_book_summary_by_currency"
 _TIMEOUT_S = 15.0
+_MAX_RETRIES = 2
+_RETRY_BACKOFF_S = 1.0
 _ZERO = Decimal(0)
 
 
@@ -50,21 +53,50 @@ class DeribitDvolSource(ExternalSource):
             logger.exception("Deribit DVOL fetch failed")
             return None
 
+    async def _get_with_retry(
+        self,
+        url: str,
+        params: dict[str, str],
+    ) -> httpx.Response:
+        """GET with simple retry on transient HTTP/timeout errors."""
+        last_exc: httpx.HTTPStatusError | httpx.TimeoutException | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                resp = await self._client.get(url, params=params)
+                resp.raise_for_status()
+            except (httpx.HTTPStatusError, httpx.TimeoutException) as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES:
+                    delay = _RETRY_BACKOFF_S * (attempt + 1)
+                    logger.warning(
+                        "Deribit request to %s failed (attempt %d/%d), "
+                        "retrying in %.1fs: %s",
+                        url,
+                        attempt + 1,
+                        _MAX_RETRIES + 1,
+                        delay,
+                        exc,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
+            else:
+                return resp
+        raise last_exc  # type: ignore[misc]
+
     async def _fetch_dvol(self) -> Decimal:
-        resp = await self._client.get(
+        resp = await self._get_with_retry(
             _DVOL_URL,
             params={"index_name": "btcdvol_usdc"},
         )
-        resp.raise_for_status()
         result = resp.json()["result"]
         return Decimal(str(result["index_price"]))
 
     async def _fetch_put_call_ratio(self) -> Decimal:
-        resp = await self._client.get(
+        resp = await self._get_with_retry(
             _BOOK_SUMMARY_URL,
             params={"currency": "BTC", "kind": "option"},
         )
-        resp.raise_for_status()
         summaries: list[dict[str, object]] = resp.json()["result"]
 
         put_oi = _ZERO

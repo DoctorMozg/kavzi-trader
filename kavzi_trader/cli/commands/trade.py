@@ -12,6 +12,7 @@ import httpx
 from openai import AsyncOpenAI
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
 from kavzi_trader.brain.agent.analyst import AnalystAgent
 from kavzi_trader.brain.agent.factory import AgentFactory
@@ -202,7 +203,9 @@ async def _start_orchestrator(
     order_flow_fetcher = LiveOrderFlowFetcher(
         exchange=exchange,
         cache=cache,
-        calculator=OrderFlowCalculator(),
+        calculator=OrderFlowCalculator(
+            interval_minutes=KLINE_INTERVALS[app_config.trading.interval] // 60,
+        ),
         symbols=app_config.trading.symbols,
     )
     # --- Brain prompt loader (needed by synthesizer and agents) ---

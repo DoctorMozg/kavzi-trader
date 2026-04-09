@@ -66,7 +66,7 @@ scout:
   # Any regime listed here causes an immediate SKIP.
   #   ["LOW", "EXTREME"] = default (blocks very quiet and spiking markets)
   #   ["EXTREME"]        = permissive (allows quiet markets)
-  blocked_regimes: ["LOW", "EXTREME"]
+  blocked_regimes: ["EXTREME"]
 
   # Patterns allowed through EXTREME volatility regime (non-TIER_1 symbols).
   # Empty list = block all patterns in EXTREME (backward compatible default).
@@ -107,7 +107,7 @@ scout:
   # Criterion 2 TREND CONTINUATION — EMA alignment + RSI mid-range + volume.
   trend_rsi_low: 35            # 30 = wide, 35 = relaxed, 40 = default, 45 = strict
   trend_rsi_high: 65           # 70 = wide, 65 = relaxed, 60 = default, 55 = strict
-  trend_vol_ratio_min: 1.0     # 0.8 = permissive, 1.0 = default, 1.2 = strict
+  trend_vol_ratio_min: 0.8     # 0.8 = permissive, 1.0 = default, 1.2 = strict
 
   # Criterion 3 REVERSAL — RSI extreme + price at BB boundary.
   reversal_rsi_oversold: 30    # 25 = strict, 30 = default, 35 = permissive
@@ -201,11 +201,11 @@ risk:
   # On a $100 micro account, 3% = $3 risk. Combined with R/R 2.0, a
   # winner yields $6 — enough to meaningfully outweigh the ~$0.20
   # round-trip commission on a $100-500 notional position.
-  risk_per_trade_percent: 3.0
+  risk_per_trade_percent: 15.0
 
   # With $100, spread across 2 positions max. More positions = each one
   # too small to overcome minimum order sizes and commission friction.
-  max_positions: 2
+  max_positions: 4
 
   # Raised from 1.5 to 2.0. On a micro account, commissions consume a
   # larger share of profit — need larger winners to stay net positive.
@@ -216,27 +216,27 @@ risk:
   #   2.0  = tight (pauses early)
   #   3.0  = default
   #   5.0  = permissive
-  drawdown_pause_percent: 3.0
+  drawdown_pause_percent: 5.0
 
   # Account drawdown (%) at which ALL positions are emergency-closed.
   # Circuit breaker — must be greater than drawdown_pause_percent.
   #   5.0  = default
   #   10.0 = permissive (dangerous for small accounts)
-  drawdown_close_all_percent: 5.0
+  drawdown_close_all_percent: 10.0
 
   # Minimum stop-loss distance in ATR multiples.
   # Rejects trades where SL is too tight (likely to be stopped out by noise).
   #   0.3 = very tight (high noise risk)
   #   0.5 = default
   #   1.0 = wide minimum
-  min_sl_atr: 0.5
+  min_sl_atr: 0.75
 
   # Maximum stop-loss distance in ATR multiples.
   # Rejects trades where SL is too wide (excessive per-trade risk).
   #   2.0 = tight cap
   #   3.0 = default
   #   5.0 = permissive (large swings tolerated)
-  max_sl_atr: 3.0
+  max_sl_atr: 5.0
 
   # Volatility regime detection via ATR Z-score.
   # Z-score = (current_ATR - mean_ATR) / stdev_ATR over atr_zscore_period candles.
@@ -246,19 +246,19 @@ risk:
   #  -1.5 = strict (blocks more often)
   #  -1.0 = default
   #  -0.5 = permissive
-  volatility_low_threshold: -1.5
+  volatility_low_threshold: -1.0
 
   # HIGH regime (z >= high_threshold): elevated volatility, position size halved (50%).
   #   0.5 = sensitive (triggers size reduction sooner)
   #   1.0 = default
   #   1.5 = permissive
-  volatility_high_threshold: 1.0
+  volatility_high_threshold: 1.5
 
   # EXTREME regime (z >= extreme_threshold): market spike/crash, trading blocked.
   #   1.5 = sensitive
   #   2.0 = default
   #   3.0 = permissive (allows trading in very volatile conditions)
-  volatility_extreme_threshold: 2.0
+  volatility_extreme_threshold: 2.5
 
   # Maximum position notional value as percentage of account balance.
   # Prevents oversized positions on low-priced assets where ATR-based sizing
@@ -281,7 +281,7 @@ risk:
   #   0.10 = permissive (allows SL within 90% of the distance)
   #   0.20 = default (SL must be at least 20% of the distance from liq price)
   #   0.30 = conservative
-  liquidation_sl_buffer_ratio: 0.20
+  liquidation_sl_buffer_ratio: 0.10
 
 # -----------------------------------------------------------------------------
 # Position Management — trailing stops, break-even, partial exits, scaling
@@ -379,6 +379,13 @@ filters:
   #   5  = only block at extreme panic (current)
   #   10 = block at moderate fear (previous default)
   fgi_extreme_fear_threshold: 5
+
+  # Confluence gate override when FGI is in elevated fear zone (5 < FGI <= 25).
+  # Raises the minimum confluence required to enter a trade during fearful markets.
+  #   7  = default (strict — blocks most setups during fear)
+  #   6  = moderate (allows solid setups through)
+  #   5  = permissive (same as base gate — no fear penalty)
+  fgi_elevated_fear_confluence_min: 6
 
 # -----------------------------------------------------------------------------
 # Redis — event store and state management backend
@@ -483,7 +490,7 @@ orchestrator:
   # How often (seconds) the ReasoningLoop scans symbols and asks the Brain
   # for new trade decisions. 180s for 15m candles — no point scanning more
   # often than ~1/5 of the candle period.
-  reasoning_interval_s: 180
+  reasoning_interval_s: 120
 
   # How often (seconds) PositionManagementLoop evaluates open positions
   # for trailing stop, break-even, partial exit, and time exit actions.
