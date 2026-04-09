@@ -17,6 +17,10 @@ from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+from kavzi_trader.orchestrator.loops.confluence_thresholds import (
+    CONFLUENCE_ENTER_MIN,
+    CONFLUENCE_REJECT_MAX,
+)
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
@@ -35,19 +39,6 @@ logger = logging.getLogger(__name__)
 _BACKOFF_MULTIPLIER = 2.0
 _MAX_BACKOFF_FACTOR = 6.0
 
-# Confluence hysteresis bands for Analyst verdicts.
-#
-# The old schema validator forced setup_valid=True whenever confluence >= 6,
-# which meant a 1-point sampling swing at the cutoff (5↔6) could flip the
-# entire pipeline. The router now requires confluence >= 6 to escalate to
-# the Trader tier — matching the Analyst prompt's own rubric — and the
-# reasoning loop treats scores in the borderline band (4-5) as "wait for a
-# new bar" rather than "aggressive rejection". Bar-close dedup in the router
-# prevents flip-flop by memoizing the Analyst verdict within the same bar.
-_CONFLUENCE_REJECT_MAX = 3  # score <= 3 → escalating rejection cooldown
-_CONFLUENCE_ENTER_MIN = 6  # score >= 6 required (combined with setup_valid)
-# Scores in the range [_CONFLUENCE_REJECT_MAX + 1, _CONFLUENCE_ENTER_MIN) form
-# the borderline band: light cooldown, no counter escalation.
 
 # Cooldown (cycles) for borderline/LLM-reject bands. Short enough that the
 # next bar-close will naturally retrigger the Analyst, but long enough to
@@ -313,7 +304,7 @@ class ReasoningLoop:
         direction = analyst.direction
         cooldown_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
 
-        if not setup_valid and score <= _CONFLUENCE_REJECT_MAX:
+        if not setup_valid and score <= CONFLUENCE_REJECT_MAX:
             for d in cooldown_dirs:
                 key = (symbol, d)
                 count = self._consecutive_rejections.get(key, 0) + 1
@@ -332,7 +323,7 @@ class ReasoningLoop:
                 )
             return
 
-        if not setup_valid or score < _CONFLUENCE_ENTER_MIN:
+        if not setup_valid or score < CONFLUENCE_ENTER_MIN:
             for d in cooldown_dirs:
                 key = (symbol, d)
                 existing = self._cooldowns.get(key, 0)
@@ -402,7 +393,7 @@ class ReasoningLoop:
             return False
         if result.analyst is None or not result.analyst.setup_valid:
             return False
-        if result.analyst.confluence_score < _CONFLUENCE_ENTER_MIN:
+        if result.analyst.confluence_score < CONFLUENCE_ENTER_MIN:
             return False
         if result.trader is None:
             return False

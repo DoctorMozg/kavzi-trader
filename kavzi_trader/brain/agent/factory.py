@@ -16,7 +16,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.orchestrator.loops.reasoning import _CONFLUENCE_ENTER_MIN
+from kavzi_trader.orchestrator.loops.confluence_thresholds import CONFLUENCE_ENTER_MIN
 from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.symbol_tier import SymbolTier
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
@@ -40,7 +40,7 @@ class AgentFactory:
             min_rr_ratio=str(risk_config.min_rr_ratio),
             drawdown_pause_percent=str(risk_config.drawdown_pause_percent),
             drawdown_close_all_percent=str(risk_config.drawdown_close_all_percent),
-            confluence_enter_min=_CONFLUENCE_ENTER_MIN,
+            confluence_enter_min=CONFLUENCE_ENTER_MIN,
             volatility_low_threshold=str(risk_config.volatility_low_threshold),
             volatility_high_threshold=str(risk_config.volatility_high_threshold),
             volatility_extreme_threshold=str(risk_config.volatility_extreme_threshold),
