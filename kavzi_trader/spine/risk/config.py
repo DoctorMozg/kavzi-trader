@@ -24,6 +24,13 @@ class RiskConfigSchema(BaseModel):
 
     max_notional_percent: Decimal = Decimal("50.0")
 
+    # Minimum position notional (in USDT) the sizer will emit.
+    # Risk-based sizing can produce tiny positions on small accounts that fall
+    # below Binance's per-symbol MIN_NOTIONAL filter. The sizer bumps below-floor
+    # sizes up to this value; if the max-notional cap or margin capacity cannot
+    # honour the floor, the validator rejects the trade outright.
+    min_position_notional_usd: Decimal = Decimal("10.0")
+
     liquidation_emergency_percent: Decimal = Decimal("5.0")
     liquidation_sl_buffer_ratio: Decimal = Decimal("0.20")
     max_margin_ratio: Decimal = Decimal("0.5")
@@ -44,5 +51,8 @@ class RiskConfigSchema(BaseModel):
             < self.volatility_extreme_threshold
         ):
             msg = "volatility thresholds must be ordered: low < high < extreme"
+            raise ValueError(msg)
+        if self.min_position_notional_usd < 0:
+            msg = "min_position_notional_usd must be >= 0"
             raise ValueError(msg)
         return self

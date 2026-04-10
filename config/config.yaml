@@ -269,6 +269,16 @@ risk:
   #   80.0 = permissive
   max_notional_percent: 50.0
 
+  # Minimum position notional (USDT) emitted by the sizer. On micro accounts,
+  # risk-based sizing can produce positions below Binance's per-symbol
+  # MIN_NOTIONAL filter; the sizer bumps below-floor sizes up to this value.
+  # If the max-notional cap or margin capacity cannot honour the floor the
+  # trade is rejected cleanly instead of being sent to the exchange.
+  #   5.0   = permissive (matches older Binance futures floors)
+  #   10.0  = default (covers all current USDT-M perp minimums with headroom)
+  #   20.0  = strict (reject micro trades)
+  min_position_notional_usd: 10.0
+
   # Number of historical ATR values for Z-score mean/stdev calculation.
   #   14 = responsive (reacts quickly to regime changes)
   #   30 = default (balanced smoothing)

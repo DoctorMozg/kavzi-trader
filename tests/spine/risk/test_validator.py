@@ -333,6 +333,81 @@ class TestDynamicRiskValidator:
         assert result.recommended_size > Decimal(0)
 
     @pytest.mark.asyncio
+    async def test_rejects_below_min_notional_floor(self, mock_state_manager) -> None:
+        """Account too small to afford the $10 floor → trade rejected cleanly."""
+        from kavzi_trader.spine.risk.config import RiskConfigSchema
+
+        # Tiny balance + 1% cap forces max notional below the $10 floor.
+        config = RiskConfigSchema(
+            max_notional_percent=Decimal("1.0"),
+            min_position_notional_usd=Decimal("10.0"),
+        )
+        validator = DynamicRiskValidator(config)
+        mock_state_manager.get_account_state = AsyncMock(
+            return_value=AccountStateSchema(
+                total_balance_usdt=Decimal(100),
+                available_balance_usdt=Decimal(100),
+                locked_balance_usdt=Decimal(0),
+                peak_balance=Decimal(100),
+                updated_at=datetime.now(UTC),
+            ),
+        )
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
+            state_manager=mock_state_manager,
+        )
+
+        assert result.is_valid is False
+        assert result.recommended_size == Decimal(0)
+        assert any("below minimum" in r.lower() for r in result.rejection_reasons)
+
+    @pytest.mark.asyncio
+    async def test_accepts_when_floor_bump_keeps_size_valid(
+        self, mock_state_manager
+    ) -> None:
+        """Below-floor risk sizing is bumped up to $10 and trade stays valid."""
+        from kavzi_trader.spine.risk.config import RiskConfigSchema
+
+        # Risk-based size is microscopic; cap/margin allow floor to be met.
+        config = RiskConfigSchema(
+            risk_per_trade_percent=Decimal("0.01"),
+            max_notional_percent=Decimal("50.0"),
+            min_position_notional_usd=Decimal("10.0"),
+        )
+        validator = DynamicRiskValidator(config)
+        mock_state_manager.get_account_state = AsyncMock(
+            return_value=AccountStateSchema(
+                total_balance_usdt=Decimal(100),
+                available_balance_usdt=Decimal(100),
+                locked_balance_usdt=Decimal(0),
+                peak_balance=Decimal(100),
+                updated_at=datetime.now(UTC),
+            ),
+        )
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
+            state_manager=mock_state_manager,
+            leverage=5,
+        )
+
+        assert result.is_valid is True
+        assert result.recommended_size * Decimal(50000) >= Decimal("10.0")
+
+    @pytest.mark.asyncio
     async def test_leverage_forwarded_to_position_sizer(
         self, mock_state_manager
     ) -> None:

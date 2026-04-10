@@ -188,3 +188,103 @@ class TestPositionSizer:
         max_size = max_notional / Decimal("0.09")
         assert result.adjusted_size <= max_size
         assert result.adjusted_size > Decimal(0)
+
+    def test_notional_floor_bumps_tiny_position(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+    ) -> None:
+        """Micro account: risk-based sizing below floor is bumped up to $10."""
+        # Risk: 1% of $100 = $1. SL distance = 2 * 100 = 200.
+        # Base size = 1 / 200 = 0.005 BTC → $0.005 * 50000 = $250 notional.
+        # Wait — that's above floor. Need a scenario where notional < floor.
+        # With entry=50000, atr=10, sl_mult=1: stop_distance=10, base=1/10=0.1 BTC
+        # → notional = 0.1 * 50000 = $5000. Still above floor.
+        # Use tiny risk: balance=$100, risk=0.01%, stop=2 * 100 = 200,
+        # risk_amount = $0.01, base = 0.01/200 = 0.00005 BTC → $2.5 notional.
+        config = RiskConfigSchema(
+            risk_per_trade_percent=Decimal("0.01"),
+            max_notional_percent=Decimal(999),
+            min_position_notional_usd=Decimal("10.0"),
+        )
+        sizer = PositionSizer(config)
+        result = sizer.calculate_size(
+            account_balance=Decimal(100),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(2),
+            regime=normal_regime,
+            entry_price=Decimal(50000),
+            leverage=5,
+            available_balance=Decimal(100),
+        )
+        # Floor bumps size so notional >= $10
+        notional = result.adjusted_size * Decimal(50000)
+        assert notional >= Decimal("10.0")
+
+    def test_notional_floor_respects_low_regime_block(self) -> None:
+        """LOW regime (size_multiplier=0) must stay at zero, not bump to floor."""
+        low_regime = VolatilityRegimeSchema(
+            regime=VolatilityRegime.LOW,
+            atr_zscore=Decimal("-2.0"),
+            size_multiplier=Decimal(0),
+            is_tradeable=False,
+        )
+        config = RiskConfigSchema(min_position_notional_usd=Decimal("10.0"))
+        sizer = PositionSizer(config)
+        result = sizer.calculate_size(
+            account_balance=Decimal(10000),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(2),
+            regime=low_regime,
+            entry_price=Decimal(50000),
+        )
+        assert result.adjusted_size == Decimal(0)
+
+    def test_notional_floor_disabled_when_zero(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+    ) -> None:
+        """Setting floor to 0 disables the bump."""
+        config = RiskConfigSchema(
+            risk_per_trade_percent=Decimal("0.01"),
+            max_notional_percent=Decimal(999),
+            min_position_notional_usd=Decimal(0),
+        )
+        sizer = PositionSizer(config)
+        result = sizer.calculate_size(
+            account_balance=Decimal(100),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(2),
+            regime=normal_regime,
+            entry_price=Decimal(50000),
+            leverage=5,
+            available_balance=Decimal(100),
+        )
+        # No floor enforcement — original tiny size kept.
+        # risk=0.01, stop=200, base=0.00005, notional=$2.5
+        notional = result.adjusted_size * Decimal(50000)
+        assert notional < Decimal("10.0")
+
+    def test_notional_floor_clipped_by_max_notional_cap(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+    ) -> None:
+        """When max notional cap < floor, the cap wins (validator rejects)."""
+        # Floor says $10, but max cap is 5% of $100 = $5 → cap wins.
+        config = RiskConfigSchema(
+            risk_per_trade_percent=Decimal("0.01"),
+            max_notional_percent=Decimal("5.0"),
+            min_position_notional_usd=Decimal("10.0"),
+        )
+        sizer = PositionSizer(config)
+        result = sizer.calculate_size(
+            account_balance=Decimal(100),
+            atr=Decimal(100),
+            stop_loss_atr_multiplier=Decimal(2),
+            regime=normal_regime,
+            entry_price=Decimal(50000),
+            leverage=5,
+            available_balance=Decimal(100),
+        )
+        notional = result.adjusted_size * Decimal(50000)
+        # Cap = 5% of 100 = $5; floor cannot be honoured
+        assert notional <= Decimal("5.0")

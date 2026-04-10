@@ -60,6 +60,24 @@ class PositionSizer:
         size_multiplier = regime.size_multiplier
         adjusted_size = base_size * size_multiplier
 
+        # Notional floor: bump below-floor sizes up to the configured minimum
+        # so the order clears Binance's per-symbol MIN_NOTIONAL filter.
+        # Skipped when the regime multiplier has already zeroed the size
+        # (LOW/EXTREME blocks must stay blocked).
+        min_notional_floor = self._config.min_position_notional_usd
+        if adjusted_size > 0 and min_notional_floor > 0 and entry_price > 0:
+            min_size_by_notional = min_notional_floor / entry_price
+            if adjusted_size < min_size_by_notional:
+                logger.info(
+                    "Notional floor: adjusted_size=%s bumped to min=%s "
+                    "(min_notional=%s entry=%s)",
+                    adjusted_size,
+                    min_size_by_notional,
+                    min_notional_floor,
+                    entry_price,
+                )
+                adjusted_size = min_size_by_notional
+
         # Notional cap: apply early so downstream clamps see a bounded size
         if entry_price > 0 and max_exposure_pct > 0:
             max_notional = account_balance * (max_exposure_pct / 100)

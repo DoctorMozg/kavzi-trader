@@ -134,35 +134,16 @@ class DynamicRiskValidator:
 
         recommended_size = Decimal(0)
         if not rejection_reasons:
-            account = await state_manager.get_account_state()
-            if account:
-                sl_distance = abs(entry_price - stop_loss)
-                sl_atr_mult = (
-                    sl_distance / current_atr if current_atr > 0 else Decimal(1)
-                )
-                size_result = self._position_sizer.calculate_size(
-                    account_balance=account.total_balance_usdt,
-                    available_balance=account.available_balance_usdt,
-                    atr=current_atr,
-                    stop_loss_atr_multiplier=sl_atr_mult,
-                    regime=regime,
-                    entry_price=entry_price,
-                    leverage=leverage,
-                    symbol=symbol,
-                )
-                recommended_size = size_result.adjusted_size
-                logger.debug(
-                    "Position sizing: balance=%s base=%s adjusted=%s multiplier=%s",
-                    account.total_balance_usdt,
-                    size_result.base_size,
-                    size_result.adjusted_size,
-                    size_result.size_multiplier,
-                )
-            else:
-                logger.warning(
-                    "Account state unavailable, cannot size position for %s",
-                    symbol,
-                )
+            recommended_size = await self._compute_recommended_size(
+                symbol=symbol,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                current_atr=current_atr,
+                regime=regime,
+                leverage=leverage,
+                state_manager=state_manager,
+                rejection_reasons=rejection_reasons,
+            )
 
         if regime.regime == VolatilityRegime.HIGH:
             warnings.append("HIGH volatility regime - position size reduced by 50%")
@@ -186,6 +167,63 @@ class DynamicRiskValidator:
             warnings=warnings,
             should_close_all=should_close_all,
         )
+
+    async def _compute_recommended_size(
+        self,
+        symbol: str,
+        entry_price: Decimal,
+        stop_loss: Decimal,
+        current_atr: Decimal,
+        regime: VolatilityRegimeSchema,
+        leverage: int,
+        state_manager: StateManager,
+        rejection_reasons: list[str],
+    ) -> Decimal:
+        account = await state_manager.get_account_state()
+        if account is None:
+            logger.warning(
+                "Account state unavailable, cannot size position for %s",
+                symbol,
+            )
+            return Decimal(0)
+
+        sl_distance = abs(entry_price - stop_loss)
+        sl_atr_mult = sl_distance / current_atr if current_atr > 0 else Decimal(1)
+        size_result = self._position_sizer.calculate_size(
+            account_balance=account.total_balance_usdt,
+            available_balance=account.available_balance_usdt,
+            atr=current_atr,
+            stop_loss_atr_multiplier=sl_atr_mult,
+            regime=regime,
+            entry_price=entry_price,
+            leverage=leverage,
+            symbol=symbol,
+        )
+        recommended_size = size_result.adjusted_size
+        logger.debug(
+            "Position sizing: balance=%s base=%s adjusted=%s multiplier=%s",
+            account.total_balance_usdt,
+            size_result.base_size,
+            size_result.adjusted_size,
+            size_result.size_multiplier,
+        )
+
+        # Reject when the final size is still under the notional floor.
+        # The sizer already tried to bump it up; if a downstream clamp
+        # (max-notional cap or margin capacity) brought it back below the
+        # floor, the account cannot afford a viable position.
+        min_notional_floor = self._config.min_position_notional_usd
+        if min_notional_floor > 0 and recommended_size > 0:
+            final_notional = recommended_size * entry_price
+            if final_notional < min_notional_floor:
+                rejection_reasons.append(
+                    f"Position notional ${final_notional:.2f} below "
+                    f"minimum ${min_notional_floor} — account cannot "
+                    f"afford a floor-sized trade",
+                )
+                return Decimal(0)
+
+        return recommended_size
 
     async def _check_drawdown(
         self,
