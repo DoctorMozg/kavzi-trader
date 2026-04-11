@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import pytest
+from pydantic import ValidationError
 
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 
@@ -43,4 +44,32 @@ def test_trade_decision_enforces_rr_ratio() -> None:
             suggested_entry=Decimal(100),
             suggested_stop_loss=Decimal(99),
             suggested_take_profit=Decimal("100.5"),
+        )
+
+
+def test_reasoning_minimum_40() -> None:
+    """Reasoning of exactly 40 chars must be accepted."""
+    reasoning_40 = "x" * 40
+    decision = TradeDecisionSchema(
+        action="WAIT",
+        confidence=0.3,
+        reasoning=reasoning_40,
+        suggested_entry=None,
+        suggested_stop_loss=None,
+        suggested_take_profit=None,
+    )
+    assert len(decision.reasoning) == 40
+
+
+def test_reasoning_boundary_40_rejects_39() -> None:
+    """Reasoning of 39 chars must be rejected — boundary is exactly 40."""
+    reasoning_39 = "x" * 39
+    with pytest.raises(ValidationError):
+        TradeDecisionSchema(
+            action="WAIT",
+            confidence=0.3,
+            reasoning=reasoning_39,
+            suggested_entry=None,
+            suggested_stop_loss=None,
+            suggested_take_profit=None,
         )

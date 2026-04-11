@@ -16,7 +16,7 @@ class TradeDecisionSchema(BaseModel):
 
     action: Annotated[Literal["LONG", "SHORT", "WAIT", "CLOSE"], Field(...)]
     confidence: Annotated[float, Field(..., ge=0.0, le=1.0)]
-    reasoning: Annotated[str, Field(..., min_length=80, max_length=600)]
+    reasoning: Annotated[str, Field(..., min_length=40, max_length=600)]
     suggested_entry: Annotated[Decimal | None, Field(default=None)]
     suggested_stop_loss: Annotated[Decimal | None, Field(default=None)]
     suggested_take_profit: Annotated[Decimal | None, Field(default=None)]

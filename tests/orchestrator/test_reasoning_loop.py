@@ -19,6 +19,10 @@ from kavzi_trader.brain.schemas.dependencies import (
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
+from kavzi_trader.orchestrator.loops.confluence_thresholds import (
+    CONFLUENCE_ENTER_MIN,
+    CONFLUENCE_REJECT_MAX,
+)
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
@@ -662,7 +666,7 @@ def test_analyst_cooldown_reject_band_escalates() -> None:
 
 
 def test_analyst_cooldown_borderline_band_no_escalation() -> None:
-    """Score 4-5 + invalid gets a light cooldown and does NOT escalate counts."""
+    """Borderline band + invalid gets a light cooldown and does NOT escalate counts."""
     loop = ReasoningLoop(
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -672,7 +676,8 @@ def test_analyst_cooldown_borderline_band_no_escalation() -> None:
     )
     key = ("BTCUSDT", "LONG")
 
-    for score in (4, 5):
+    borderline_scores = tuple(range(CONFLUENCE_REJECT_MAX + 1, CONFLUENCE_ENTER_MIN))
+    for score in borderline_scores:
         analyst = _make_analyst_decision(
             setup_valid=False,
             direction="LONG",
@@ -763,7 +768,7 @@ def test_should_enqueue_requires_confluence_entry_gate() -> None:
         analyst=_make_analyst_decision(
             setup_valid=True,
             direction="LONG",
-            confluence_score=5,
+            confluence_score=6,
         ),
         trader=borderline.trader,
         trader_deps=deps,
@@ -1212,3 +1217,42 @@ async def test_pipeline_complete_event_recorded() -> None:
     summary = complete_calls[0].kwargs.get("summary", "")
     assert "Scout=INTERESTING" in summary
     assert "Trader=WAIT" in summary
+
+
+def test_confluence_thresholds_after_wu6_shift() -> None:
+    assert CONFLUENCE_ENTER_MIN == 6
+    assert CONFLUENCE_REJECT_MAX == 4
+
+
+def test_should_enqueue_blocks_confluence_score_five_after_wu6() -> None:
+    """WU-6: score=5 used to pass the old ENTER=5 gate; after the shift
+    it lives inside the hysteresis band and must NOT enqueue."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+    )
+    deps = _build_deps()
+    result = PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING",
+            reason="ok",
+            pattern_detected=None,
+        ),
+        analyst=_make_analyst_decision(
+            setup_valid=True,
+            direction="LONG",
+            confluence_score=5,
+        ),
+        trader=TradeDecisionSchema(
+            action="LONG",
+            confidence=0.8,
+            reasoning=_TRADER_REASONING,
+            suggested_entry=Decimal(105),
+            suggested_stop_loss=Decimal(95),
+            suggested_take_profit=Decimal(125),
+        ),
+        trader_deps=deps,
+    )
+    assert loop._should_enqueue(result) is False

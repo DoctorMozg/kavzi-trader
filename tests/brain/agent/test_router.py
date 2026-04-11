@@ -733,8 +733,8 @@ async def test_router_enters_trader_at_confluence_entry_gate(
     account_state,
     positions,
 ) -> None:
-    """confluence=5 + setup_valid=True is the minimum to reach Trader."""
-    analyst = DummyAnalyst(setup_valid=True, confluence_score=5)
+    """confluence=6 + setup_valid=True is the minimum to reach Trader."""
+    analyst = DummyAnalyst(setup_valid=True, confluence_score=6)
     router = AgentRouter(DummyScout("INTERESTING"), analyst, DummyTrader())
     provider = _make_provider(
         candle,
@@ -1016,7 +1016,7 @@ async def test_router_no_override_uses_default_gate(
     account_state,
     positions,
 ) -> None:
-    """override=None → default gate (5) applies; confluence=6 passes."""
+    """override=None → default gate (6) applies; confluence=6 passes."""
     analyst = DummyAnalyst(setup_valid=True, confluence_score=6)
     router = AgentRouter(
         DummyScout("INTERESTING"),
@@ -1625,6 +1625,171 @@ async def test_router_passes_trader_on_neutral_direction(
 
 
 # ---------------------------------------------------------------------------
+# R/R hard block: estimated R/R below 0.5 must skip the Trader LLM call
+# and return a WAIT decision straight from the deterministic gate.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_router_blocks_trader_on_low_rr(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """estimated R/R < 0.5 → Trader NOT called, WAIT returned from gate."""
+    # price=105, SUPPORT=100 (risk=5), RESISTANCE=106 (reward=1) → R/R=0.2
+    levels = [
+        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
+    ]
+    spy_trader = SpyTrader()
+    analyst = DummyAnalystWithLevels("LONG", levels)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 0, "Trader must be bypassed on R/R hard block"
+    assert result.trader is not None
+    assert result.trader.action == "WAIT"
+    assert result.trader.confidence == 0.0
+    assert "hard block" in result.trader.reasoning.lower()
+    assert len(result.trader.reasoning) >= 40
+
+
+@pytest.mark.asyncio
+async def test_router_allows_trader_on_moderate_rr(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """0.5 ≤ R/R < 1.2 → Trader IS called (existing soft-warning path)."""
+    # price=105, SUPPORT=100 (risk=5), RESISTANCE=109 (reward=4) → R/R=0.8
+    levels = [
+        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(109), level_type="RESISTANCE", reason="test"),
+    ]
+    spy_trader = SpyTrader()
+    analyst = DummyAnalystWithLevels("LONG", levels)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_router_caches_rr_hard_block_wait(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Second call on the same bar must hit the dedup cache, not re-gate."""
+    levels = [
+        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
+    ]
+    spy_trader = SpyTrader()
+    analyst = DummyAnalystWithLevels("LONG", levels)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    first = await router.run("BTCUSDT", provider)
+    second = await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 0
+    assert first.trader is not None
+    assert second.trader is not None
+    assert first.trader.action == "WAIT"
+    assert second.trader.action == "WAIT"
+    # Dedup path returns the same cached instance.
+    assert first.trader.reasoning == second.trader.reasoning
+
+
+def test_pre_trader_rr_check_ignores_neutral() -> None:
+    """NEUTRAL direction → no gate verdict regardless of estimated R/R."""
+    levels = [
+        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
+    ]
+    analyst_result = AnalystDecisionSchema(
+        setup_valid=True,
+        direction="NEUTRAL",
+        confluence_score=8,
+        key_levels=KeyLevelsSchema(levels=levels),
+        reasoning=_ANALYST_REASONING,
+    )
+    verdict = AgentRouter._pre_trader_rr_check(
+        "BTCUSDT",
+        analyst_result,
+        current_price=Decimal(105),
+        atr=Decimal(5),
+    )
+    assert verdict is None
+
+
+def test_pre_trader_rr_check_returns_wait_below_hard_block() -> None:
+    """Static method returns a WAIT TradeDecisionSchema when R/R < 0.5."""
+    levels = [
+        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
+    ]
+    analyst_result = AnalystDecisionSchema(
+        setup_valid=True,
+        direction="LONG",
+        confluence_score=8,
+        key_levels=KeyLevelsSchema(levels=levels),
+        reasoning=_ANALYST_REASONING,
+    )
+    verdict = AgentRouter._pre_trader_rr_check(
+        "BTCUSDT",
+        analyst_result,
+        current_price=Decimal(105),
+        atr=Decimal(5),
+    )
+    assert verdict is not None
+    assert verdict.action == "WAIT"
+    assert verdict.suggested_entry is None
+    assert verdict.suggested_stop_loss is None
+    assert verdict.suggested_take_profit is None
+
+
+# ---------------------------------------------------------------------------
 # UnexpectedModelBehavior: Trader returns unparseable output
 # ---------------------------------------------------------------------------
 
@@ -1706,3 +1871,489 @@ async def test_router_logs_raw_body_on_unexpected_model(
     record = matching[0]
     assert record.raw_body == "raw json garbage"
     assert record.symbol == "BTCUSDT"
+
+
+class CountedUnexpectedModelTrader:
+    """Raises UnexpectedModelBehavior with configurable bodies per call."""
+
+    def __init__(self, bodies: list[str | None]) -> None:
+        self._bodies = bodies
+        self.call_count = 0
+
+    async def run(self, deps, analyst_result=None, scout_pattern=None):
+        from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+        body = self._bodies[self.call_count]
+        self.call_count += 1
+        raise UnexpectedModelBehavior("Bad output", body=body)
+
+
+@pytest.mark.asyncio
+async def test_router_counts_trader_validation_failures(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        CountedUnexpectedModelTrader(bodies=[None, "garbage-1", "garbage-2"]),
+    )
+
+    with caplog.at_level(logging.ERROR):
+        for _ in range(3):
+            provider = _make_provider(
+                candle,
+                indicators,
+                volatility_regime,
+                order_flow,
+                algorithm_confluence,
+                account_state,
+                positions,
+            )
+            # Reset per-symbol bar-close dedup state so each pass reaches the
+            # Trader tier regardless of cached Scout/Analyst/Trader verdicts.
+            router._last_scout_bar_close.clear()
+            router._last_scout_result.clear()
+            router._last_analyzed_bar_close.clear()
+            router._last_analyst_result.clear()
+            router._last_trader_analyst_hash.clear()
+            router._last_trader_bar_close.clear()
+            router._last_trader_decision.clear()
+            await router.run("BTCUSDT", provider)
+
+    assert router._trader_validation_failures["BTCUSDT"] == 3
+
+    matching = [
+        r for r in caplog.records if "Trader returned unexpected output" in r.message
+    ]
+    assert len(matching) == 3
+    counts = [r.trader_validation_failures_total for r in matching]
+    assert counts == [1, 2, 3]
+    assert all(r.agent == "trader" for r in matching)
+
+
+@pytest.mark.asyncio
+async def test_router_trader_validation_failures_are_per_symbol(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Counter is keyed per-symbol — BTCUSDT failures don't bleed into ETHUSDT."""
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        CountedUnexpectedModelTrader(bodies=["g1", "g2", "g3"]),
+    )
+
+    provider_btc = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    provider_eth = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    # First BTC call; then advance the bar so the Trader dedup cache does
+    # not swallow the second attempt (dedup is keyed on bar_close).
+    await router.run("BTCUSDT", provider_btc)
+    _rebuild_provider_with_candle(provider_btc, _candle_with_close_time(candle, 900))
+    await router.run("BTCUSDT", provider_btc)
+    await router.run("ETHUSDT", provider_eth)
+
+    assert router._trader_validation_failures["BTCUSDT"] == 2
+    assert router._trader_validation_failures["ETHUSDT"] == 1
+
+
+@pytest.mark.asyncio
+async def test_router_successful_trader_does_not_increment_counter(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Valid Trader output (even WAIT) must not touch the failure counter."""
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        DummyTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    result = await router.run("BTCUSDT", provider)
+
+    assert result.trader is not None
+    assert result.trader.action == "WAIT"
+    assert "BTCUSDT" not in router._trader_validation_failures
+    assert router._trader_validation_failures == {}
+
+
+# ---------------------------------------------------------------------------
+# Trader dedup: memoize the final Trader decision per
+# (symbol, analyst_result_hash, candle.close_time). Cross-bar invalidation is
+# handled by the bar_close component; a different Analyst result busts the
+# cache via the hash component.
+# ---------------------------------------------------------------------------
+
+
+class SwitchableAnalyst:
+    """Analyst whose result can be swapped between calls."""
+
+    def __init__(self, result: AnalystDecisionSchema) -> None:
+        self._result = result
+        self.call_count = 0
+
+    def set_result(self, result: AnalystDecisionSchema) -> None:
+        self._result = result
+
+    async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema:
+        self.call_count += 1
+        return self._result
+
+
+def _analyst_decision(
+    direction: Literal["LONG", "SHORT", "NEUTRAL"] = "LONG",
+    confluence_score: int = 8,
+) -> AnalystDecisionSchema:
+    return AnalystDecisionSchema(
+        setup_valid=True,
+        direction=direction,
+        confluence_score=confluence_score,
+        key_levels=KeyLevelsSchema(levels=[]),
+        reasoning=_ANALYST_REASONING,
+    )
+
+
+@pytest.mark.asyncio
+async def test_router_dedups_trader_on_same_analyst_hash(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Identical Analyst result + same bar → Trader LLM called exactly once."""
+    spy_trader = SpyTrader()
+    analyst = SwitchableAnalyst(_analyst_decision())
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    first = await router.run("BTCUSDT", provider)
+    second = await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 1, (
+        "Trader LLM must only be called once for the same analyst hash + bar"
+    )
+    assert first.trader is not None
+    assert second.trader is not None
+    # Cached result is the same instance as the first decision.
+    assert second.trader is first.trader
+
+
+@pytest.mark.asyncio
+async def test_router_reinvokes_trader_on_new_analyst_result(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """When Analyst result changes (e.g. confluence_score), Trader reruns."""
+    spy_trader = SpyTrader()
+    analyst = SwitchableAnalyst(_analyst_decision(confluence_score=8))
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    await router.run("BTCUSDT", provider)
+    assert spy_trader.call_count == 1
+
+    # Swap in a different analyst result; also clear the Analyst memo so the
+    # new result actually reaches _run_trader.
+    analyst.set_result(_analyst_decision(confluence_score=9))
+    router._last_analyzed_bar_close.clear()
+    router._last_analyst_result.clear()
+
+    await router.run("BTCUSDT", provider)
+    assert spy_trader.call_count == 2, (
+        "Hash change must invalidate the Trader dedup cache"
+    )
+
+
+@pytest.mark.asyncio
+async def test_router_reinvokes_trader_on_new_bar(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Same Analyst result but a new bar close_time → Trader reruns."""
+    spy_trader = SpyTrader()
+    analyst = SwitchableAnalyst(_analyst_decision())
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    await router.run("BTCUSDT", provider)
+    assert spy_trader.call_count == 1
+
+    new_candle = _candle_with_close_time(candle, 300)
+    _rebuild_provider_with_candle(provider, new_candle)
+
+    await router.run("BTCUSDT", provider)
+    assert spy_trader.call_count == 2, (
+        "New bar close_time must invalidate the Trader dedup cache"
+    )
+
+
+@pytest.mark.asyncio
+async def test_router_caches_wait_fallback(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """UnexpectedModelBehavior WAIT fallback is cached; second call is a hit."""
+    trader = CountedUnexpectedModelTrader(bodies=["garbage-1", "garbage-2"])
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        trader,
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    first = await router.run("BTCUSDT", provider)
+    second = await router.run("BTCUSDT", provider)
+
+    assert trader.call_count == 1, (
+        "WAIT fallback from UnexpectedModelBehavior must be cached"
+    )
+    assert first.trader is not None
+    assert first.trader.action == "WAIT"
+    assert second.trader is not None
+    assert second.trader.action == "WAIT"
+    assert second.trader is first.trader
+
+
+class ExplodingTrader:
+    """Raises a generic Exception (NOT UnexpectedModelBehavior)."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def run(
+        self,
+        deps: TradingDependenciesSchema,
+        analyst_result: AnalystDecisionSchema | None = None,
+        scout_pattern: str | None = None,
+    ) -> TradeDecisionSchema:
+        self.call_count += 1
+        raise RuntimeError("boom")
+
+
+@pytest.mark.asyncio
+async def test_router_does_not_cache_on_unhandled_exception(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Generic Exception → empty result, cache untouched, next call retries."""
+    trader = ExplodingTrader()
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        trader,
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    first = await router.run("BTCUSDT", provider)
+    second = await router.run("BTCUSDT", provider)
+
+    assert trader.call_count == 2, (
+        "Unhandled exception must not poison the Trader dedup cache"
+    )
+    assert first.trader is None
+    assert second.trader is None
+    assert "BTCUSDT" not in router._last_trader_decision
+
+
+@pytest.mark.asyncio
+async def test_router_caches_breakout_reject_gate(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """breakout_reject WAIT is cached; second call hits dedup without rerun."""
+    bb_indicators = _indicators_with_bollinger(indicators, Decimal("1.35"))
+    spy_trader = SpyTrader()
+    router = AgentRouter(
+        DummyScoutWithPattern("BREAKOUT"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        spy_trader,
+    )
+    provider = _make_provider(
+        candle,
+        bb_indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    first = await router.run("BTCUSDT", provider)
+
+    with caplog.at_level(logging.INFO):
+        second = await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 0, "Trader LLM must not be called either time"
+    assert first.trader is not None
+    assert first.trader.action == "WAIT"
+    assert second.trader is not None
+    assert second.trader is first.trader, (
+        "Second call must return the cached gate WAIT decision"
+    )
+    assert any("Trader dedup hit" in r.message for r in caplog.records), (
+        "Second call should log a Trader dedup hit"
+    )
+
+
+@pytest.mark.asyncio
+async def test_router_caches_timeout_wait_fallback(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """TimeoutError WAIT fallback is cached; second call hits dedup."""
+    call_count = 0
+
+    class CountingTimeoutTrader:
+        """Raises TimeoutError and counts invocations."""
+
+        async def run(
+            self,
+            deps: TradingDependenciesSchema,
+            analyst_result: AnalystDecisionSchema | None = None,
+            scout_pattern: str | None = None,
+        ) -> TradeDecisionSchema:
+            nonlocal call_count
+            call_count += 1
+            raise TimeoutError("Trader timed out")
+
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=True, confluence_score=8),
+        CountingTimeoutTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+
+    first = await router.run("BTCUSDT", provider)
+    second = await router.run("BTCUSDT", provider)
+
+    assert call_count == 1, (
+        "TimeoutError WAIT fallback must be cached; second call should hit dedup"
+    )
+    assert first.trader is not None
+    assert first.trader.action == "WAIT"
+    assert second.trader is not None
+    assert second.trader is first.trader

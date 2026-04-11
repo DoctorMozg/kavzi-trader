@@ -40,9 +40,11 @@ brain:
   request_timeout_s: 120.0
 
   analyst:
-    # Tier 2 — Financial reasoning: 88.23% accuracy ($1.25/$10.00 per M tokens)
-    # Alternatives: anthropic/claude-opus-4.6 (87.82%), anthropic/claude-sonnet-4.5 (83.61%)
-    model_id: "openai/gpt-5.4-mini"
+    # Tier 2 — Structured confluence scoring against a fixed rubric.
+    # Haiku 4.5 targets ~1.5s p50 latency vs ~6.3s on gpt-5.4-mini with
+    # comparable rubric-following quality for well-templated prompts.
+    # Alternatives: openai/gpt-5.4-mini (higher latency), anthropic/claude-sonnet-4.5 (slower but stronger reasoning).
+    model_id: "anthropic/claude-haiku-4.5"
     retries: 2
     temperature: 0.0
     seed: 42

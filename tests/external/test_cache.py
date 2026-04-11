@@ -83,3 +83,17 @@ def test_summary_overwrite() -> None:
     retrieved = cache.get_sentiment_summary()
     assert retrieved is not None
     assert retrieved.sentiment_bias == "NEUTRAL"
+
+
+def test_sentiment_updated_at_initially_none() -> None:
+    cache = ExternalDataCache()
+    assert cache.get_sentiment_updated_at() is None
+
+
+def test_sentiment_updated_at_set_on_write() -> None:
+    cache = ExternalDataCache()
+    before = datetime.now(UTC)
+    cache.set_sentiment_summary(_make_summary())
+    updated_at = cache.get_sentiment_updated_at()
+    assert updated_at is not None
+    assert (updated_at - before).total_seconds() < 5

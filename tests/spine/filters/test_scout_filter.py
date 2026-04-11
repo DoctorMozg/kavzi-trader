@@ -373,12 +373,48 @@ async def test_trend_continuation_bearish(scout: ScoutFilter) -> None:
         ema_50=Decimal(90),
         ema_200=Decimal(100),
         rsi_14=Decimal(45),
-        vol_ratio=Decimal("1.1"),
+        vol_ratio=Decimal("1.2"),
     )
     deps = _make_deps(ind)
     result = await scout.run(deps)
     assert result.verdict == "INTERESTING"
     assert "BEARISH" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_trend_continuation_rejected_below_vol_ratio_gate(
+    scout: ScoutFilter,
+) -> None:
+    """Vol ratio below the 1.2 floor must skip TREND_CONTINUATION."""
+    ind = _make_indicators(
+        ema_20=Decimal(110),
+        ema_50=Decimal(105),
+        ema_200=Decimal(90),
+        rsi_14=Decimal(55),
+        # Just below the new 1.2 default.
+        vol_ratio=Decimal("1.19"),
+    )
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert result.pattern_detected != "TREND_CONTINUATION"
+
+
+@pytest.mark.asyncio
+async def test_trend_continuation_accepted_at_vol_ratio_gate(
+    scout: ScoutFilter,
+) -> None:
+    """Vol ratio at exactly the 1.2 floor must accept TREND_CONTINUATION."""
+    ind = _make_indicators(
+        ema_20=Decimal(110),
+        ema_50=Decimal(105),
+        ema_200=Decimal(90),
+        rsi_14=Decimal(55),
+        vol_ratio=Decimal("1.2"),
+    )
+    deps = _make_deps(ind)
+    result = await scout.run(deps)
+    assert result.verdict == "INTERESTING"
+    assert result.pattern_detected == "TREND_CONTINUATION"
 
 
 @pytest.mark.asyncio

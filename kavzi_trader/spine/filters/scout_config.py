@@ -112,12 +112,18 @@ class ScoutConfigSchema(BaseModel):
     trend_rsi_high: Annotated[Decimal, Field(default=Decimal(65))]
 
     # Minimum volume ratio for trend continuation.
+    # Raised to 1.2 per report_2026_04_10 Scout filter-rate analysis:
+    # 53% of INTERESTING events were TREND_CONTINUATION with vol_ratio
+    # hovering at baseline (~1.0-1.1). Requiring a 20% volume expansion
+    # materially tightens this dominant pattern without affecting the
+    # other five criteria.
     #   0.8 = permissive
-    #   1.0 = default
-    #   1.2 = strict
+    #   1.0 = legacy (pre-2026-04 default)
+    #   1.2 = default (post-2026-04)
+    #   1.5 = strict
     trend_vol_ratio_min: Annotated[
         Decimal,
-        Field(default=Decimal("1.0")),
+        Field(default=Decimal("1.2")),
     ]
 
     # --- Criterion 3: REVERSAL SIGNAL ---

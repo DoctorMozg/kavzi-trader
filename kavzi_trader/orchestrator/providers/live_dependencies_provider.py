@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -30,6 +31,11 @@ logger = logging.getLogger(__name__)
 
 SCOUT_CANDLES_COUNT = 50
 ANALYSIS_CANDLES_COUNT = 12
+
+# Sentiment staleness threshold: config.yaml external_sources.run_interval_s
+# is 300s, so 1800s equals 6 missed cycles before we warn — tolerates transient
+# upstream failures without per-cycle log spam.
+SENTIMENT_STALE_THRESHOLD_S = 1800
 
 
 class LiveDependenciesProvider:
@@ -195,7 +201,19 @@ class LiveDependenciesProvider:
     def _get_sentiment(self) -> SentimentSummarySchema | None:
         if self._external_cache is None:
             return None
-        return self._external_cache.get_sentiment_summary()
+        summary = self._external_cache.get_sentiment_summary()
+        if summary is not None:
+            updated_at = self._external_cache.get_sentiment_updated_at()
+            if updated_at is not None:
+                age_s = (datetime.now(UTC) - updated_at).total_seconds()
+                if age_s > SENTIMENT_STALE_THRESHOLD_S:
+                    logger.warning(
+                        "Sentiment stale by %.0fs (updated_at=%s)",
+                        age_s,
+                        updated_at.isoformat(),
+                        extra={"sentiment_age_s": round(age_s, 1)},
+                    )
+        return summary
 
     async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema:
         indicators, candles, order_flow, confluence = self._resolve_analysis_context(

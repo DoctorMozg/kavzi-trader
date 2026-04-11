@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class TrailingStopChecker:
     """Suggests a tighter stop loss once a trade moves strongly in profit."""
 
-    def evaluate(
+    def evaluate(  # noqa: PLR0911
         self,
         position: PositionSchema,
         current_price: Decimal,
@@ -32,6 +32,16 @@ class TrailingStopChecker:
 
         if profit <= 0:
             return None
+
+        # Risk-based profit lock: block trailing until the trade is at
+        # least `min_profit_lock_r * risk` in profit. Prevents the trail
+        # from ratcheting on tiny moves and giving back winners on fast
+        # reversals. `risk` is the original distance from entry to SL.
+        risk = abs(position.entry_price - position.stop_loss)
+        if risk > 0:
+            min_profit = risk * position.management_config.min_profit_lock_r
+            if profit < min_profit:
+                return None
 
         profit_atr = profit / current_atr
         if profit_atr < position.management_config.trailing_stop_trigger_atr:

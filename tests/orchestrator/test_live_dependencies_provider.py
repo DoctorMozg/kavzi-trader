@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
@@ -211,3 +212,115 @@ async def test_confluence_computed_once_per_cycle() -> None:
     await provider.get_analyst("BTCUSDT")
     await provider.get_trader("BTCUSDT")
     provider._confluence.evaluate_both.assert_called_once()
+
+
+class _FrozenDatetime(datetime):
+    """datetime subclass that lets tests pin `datetime.now(UTC)`."""
+
+    _frozen: datetime
+
+    @classmethod
+    def now(cls, tz: object = None) -> datetime:  # type: ignore[override]
+        return cls._frozen
+
+
+def _freeze_provider_now(
+    monkeypatch: pytest.MonkeyPatch,
+    frozen: datetime,
+) -> None:
+    from kavzi_trader.orchestrator.providers import live_dependencies_provider
+
+    _FrozenDatetime._frozen = frozen
+    monkeypatch.setattr(live_dependencies_provider, "datetime", _FrozenDatetime)
+
+
+def test_get_sentiment_warns_when_stale(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ext_cache = ExternalDataCache()
+    summary = SentimentSummarySchema(
+        summary="Stale summary.",
+        sentiment_bias="NEUTRAL",
+        confidence_adjustment=Decimal("0.00"),
+    )
+    ext_cache.set_sentiment_summary(summary)
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(
+        ext_cache,
+        "get_sentiment_updated_at",
+        lambda: now - timedelta(seconds=2000),
+    )
+    _freeze_provider_now(monkeypatch, now)
+
+    provider = _make_provider(external_cache=ext_cache)
+    with caplog.at_level(
+        logging.WARNING,
+        logger="kavzi_trader.orchestrator.providers.live_dependencies_provider",
+    ):
+        result = provider._get_sentiment()
+
+    assert result is summary
+    stale_records = [r for r in caplog.records if "Sentiment stale" in r.message]
+    assert len(stale_records) == 1
+    assert stale_records[0].levelno == logging.WARNING
+
+
+def test_get_sentiment_no_warn_when_fresh(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ext_cache = ExternalDataCache()
+    summary = SentimentSummarySchema(
+        summary="Fresh summary.",
+        sentiment_bias="NEUTRAL",
+        confidence_adjustment=Decimal("0.00"),
+    )
+    ext_cache.set_sentiment_summary(summary)
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(
+        ext_cache,
+        "get_sentiment_updated_at",
+        lambda: now - timedelta(seconds=900),
+    )
+    _freeze_provider_now(monkeypatch, now)
+
+    provider = _make_provider(external_cache=ext_cache)
+    with caplog.at_level(
+        logging.WARNING,
+        logger="kavzi_trader.orchestrator.providers.live_dependencies_provider",
+    ):
+        result = provider._get_sentiment()
+
+    assert result is summary
+    assert not any("Sentiment stale" in r.message for r in caplog.records)
+
+
+def test_get_sentiment_no_warn_at_exact_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Boundary: age == 1800s should NOT warn (strict `>` comparison)."""
+    ext_cache = ExternalDataCache()
+    summary = SentimentSummarySchema(
+        summary="Boundary summary.",
+        sentiment_bias="NEUTRAL",
+        confidence_adjustment=Decimal("0.00"),
+    )
+    ext_cache.set_sentiment_summary(summary)
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(
+        ext_cache,
+        "get_sentiment_updated_at",
+        lambda: now - timedelta(seconds=1800),
+    )
+    _freeze_provider_now(monkeypatch, now)
+
+    provider = _make_provider(external_cache=ext_cache)
+    with caplog.at_level(
+        logging.WARNING,
+        logger="kavzi_trader.orchestrator.providers.live_dependencies_provider",
+    ):
+        provider._get_sentiment()
+
+    assert not any("Sentiment stale" in r.message for r in caplog.records)

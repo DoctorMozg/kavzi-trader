@@ -1,9 +1,25 @@
+import logging
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from kavzi_trader.external.sources import ccdata_news as ccdata_news_module
 from kavzi_trader.external.sources.ccdata_news import CCDataNewsSource
+
+
+@pytest.fixture(autouse=True)
+def _fast_retry_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace asyncio.sleep inside ccdata_news with a no-op.
+
+    Keeps retry-behavior tests fast and prevents any other test that
+    triggers the retry path from paying the real backoff cost.
+    """
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(ccdata_news_module.asyncio, "sleep", _no_sleep)
 
 
 def _mock_response() -> Mock:
@@ -77,6 +93,58 @@ async def test_fetch_returns_none_on_error() -> None:
     source._client.get = AsyncMock(side_effect=RuntimeError("API error"))
     result = await source.fetch()
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_retries_on_transient_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """First two attempts fail, third succeeds — retry path must recover."""
+    source = CCDataNewsSource()
+    source._client = Mock()
+    source._client.get = AsyncMock(
+        side_effect=[
+            RuntimeError("transient boom 1"),
+            RuntimeError("transient boom 2"),
+            _mock_response(),
+        ]
+    )
+
+    with caplog.at_level(logging.WARNING, logger=ccdata_news_module.logger.name):
+        result = await source.fetch()
+
+    assert result is not None
+    assert result.bullish_count == 1
+    assert result.bearish_count == 1
+    assert source._client.get.await_count == 3
+    retry_warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "CCData news fetch attempt" in record.getMessage()
+    ]
+    assert len(retry_warnings) == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_returns_none_after_max_retries(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """All three attempts fail — must return None and log exactly once."""
+    source = CCDataNewsSource()
+    source._client = Mock()
+    source._client.get = AsyncMock(side_effect=RuntimeError("persistent boom"))
+
+    with caplog.at_level(logging.WARNING, logger=ccdata_news_module.logger.name):
+        result = await source.fetch()
+
+    assert result is None
+    assert source._client.get.await_count == 3
+    exception_records = [
+        record for record in caplog.records if record.levelno == logging.ERROR
+    ]
+    assert len(exception_records) == 1
+    assert "after 3 attempts" in exception_records[0].getMessage()
 
 
 @pytest.mark.asyncio

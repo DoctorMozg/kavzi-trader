@@ -27,6 +27,27 @@ def test_prompt_loader_renders_analyst_system_prompt() -> None:
     assert "ORDER FLOW INTERPRETATION" in rendered, "Expected order flow guide."
 
 
+def test_analyst_prompt_has_breakout_override() -> None:
+    loader = PromptLoader()
+    context = _make_system_prompt_context()
+    rendered = loader.render_system_prompt("analyst", context=context)
+    assert "BREAKOUT OVERRIDE" in rendered, (
+        "Expected breakout override rule in analyst trend assessment."
+    )
+
+
+def test_analyst_prompt_has_short_recovery_veto() -> None:
+    loader = PromptLoader()
+    context = _make_system_prompt_context()
+    rendered = loader.render_system_prompt("analyst", context=context)
+    assert "SHORT RECOVERY VETO" in rendered, (
+        "Expected SHORT recovery veto rule in analyst trend assessment."
+    )
+    # Veto must mention both conditions (RSI and recovery from low).
+    assert "RSI_14" in rendered
+    assert "lowest low" in rendered
+
+
 def test_prompt_loader_renders_trader_system_prompt() -> None:
     loader = PromptLoader()
     context = _make_system_prompt_context()
@@ -34,3 +55,31 @@ def test_prompt_loader_renders_trader_system_prompt() -> None:
     assert "FUNDING COSTS" in rendered, "Expected funding costs guidance."
     assert "ACCOUNT STATE RULES" in rendered, "Expected account state rules."
     assert "VOLATILITY REGIMES" in rendered, "Expected volatility guide."
+
+
+def test_trader_prompt_has_schema_examples() -> None:
+    loader = PromptLoader()
+    context = _make_system_prompt_context()
+    rendered = loader.render_system_prompt("trader", context=context)
+    assert "SCHEMA EXAMPLES" in rendered, (
+        "Expected SCHEMA EXAMPLES block with WAIT/LONG few-shot examples."
+    )
+
+
+def test_trader_prompt_has_output_contract() -> None:
+    """WU-A: JSON-only hard rule must appear before DECISION FRAMEWORK."""
+    loader = PromptLoader()
+    context = _make_system_prompt_context()
+    rendered = loader.render_system_prompt("trader", context=context)
+    assert "OUTPUT CONTRACT" in rendered, (
+        "Expected OUTPUT CONTRACT block guarding against preamble text."
+    )
+    contract_pos = rendered.index("OUTPUT CONTRACT")
+    framework_pos = rendered.index("DECISION FRAMEWORK")
+    schema_pos = rendered.index("SCHEMA EXAMPLES")
+    # Contract must come BEFORE the framework so the model sees it first.
+    assert contract_pos < framework_pos, (
+        "OUTPUT CONTRACT must precede DECISION FRAMEWORK so the JSON-only"
+        " rule is read before the reasoning framework."
+    )
+    assert contract_pos < schema_pos

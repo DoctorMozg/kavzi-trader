@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 
 from pydantic import BaseModel
 
@@ -21,6 +22,7 @@ class ExternalDataCache:
     def __init__(self) -> None:
         self._snapshot = ExternalDataSnapshotSchema.model_validate({})
         self._sentiment_summary: SentimentSummarySchema | None = None
+        self._sentiment_updated_at: datetime | None = None
         self._last_successful: dict[str, BaseModel] = {}
         self._sources_degraded: list[str] = []
 
@@ -33,6 +35,7 @@ class ExternalDataCache:
 
     def set_sentiment_summary(self, summary: SentimentSummarySchema) -> None:
         self._sentiment_summary = summary
+        self._sentiment_updated_at = datetime.now(UTC)
         logger.debug(
             "Sentiment summary updated: bias=%s adjustment=%s",
             summary.sentiment_bias,
@@ -41,6 +44,9 @@ class ExternalDataCache:
 
     def get_sentiment_summary(self) -> SentimentSummarySchema | None:
         return self._sentiment_summary
+
+    def get_sentiment_updated_at(self) -> datetime | None:
+        return self._sentiment_updated_at
 
     # -- Per-source last-successful cache --
 

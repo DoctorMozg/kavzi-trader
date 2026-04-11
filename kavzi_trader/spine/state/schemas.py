@@ -10,6 +10,12 @@ from kavzi_trader.api.common.models import OrderSide, OrderStatus, OrderType
 class PositionManagementConfigSchema(BaseModel):
     trailing_stop_atr_multiplier: Decimal = Decimal("1.5")
     trailing_stop_trigger_atr: Decimal = Decimal("2.0")
+    # Minimum profit (as a multiple of the original risk = |entry - SL|)
+    # required before the trailing stop can activate. Prevents trailing
+    # from ratcheting on tiny moves and cannibalizing winners.
+    min_profit_lock_r: Annotated[Decimal, Field(ge=Decimal(0), le=Decimal(2))] = (
+        Decimal("0.5")
+    )
     break_even_trigger_atr: Decimal = Decimal("1.5")
     break_even_buffer_atr: Decimal = Decimal("0.3")
     break_even_min_hold_s: int = 900

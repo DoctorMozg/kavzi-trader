@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import time
 from datetime import datetime
@@ -97,6 +98,10 @@ _ANALYST_CONFLUENCE_ENTER = CONFLUENCE_ENTER_MIN
 _BREAKOUT_OVEREXTENDED_B = Decimal("1.20")
 _BREAKOUT_OVEREXTENDED_B_SHORT = Decimal("-0.20")
 _RR_MIN_PRESCREEN = Decimal("1.2")
+# Hard block: estimated R/R below this value is statistically guaranteed to lose
+# at the current TP-hit rate, so we skip the Trader LLM call entirely and return
+# WAIT. See reports/report_2026_04_10.md recommendation #6.
+_RR_HARD_BLOCK = Decimal("0.5")
 
 
 class AgentRouter:
@@ -120,6 +125,16 @@ class AgentRouter:
         # Per-symbol bar-close dedup for Analyst (LLM-based).
         self._last_analyzed_bar_close: dict[str, datetime] = {}
         self._last_analyst_result: dict[str, AnalystDecisionSchema] = {}
+        # Rolling counter of Trader UnexpectedModelBehavior failures per symbol.
+        # Any UnexpectedModelBehavior (including exc.body is None) counts as
+        # the same failure class and increments the counter.
+        self._trader_validation_failures: dict[str, int] = {}
+        # Per-symbol Trader dedup keyed by (analyst result hash, bar close_time).
+        # Cross-bar invalidation via the bar_close component; within a bar,
+        # identical Analyst results short-circuit the Trader LLM call.
+        self._last_trader_analyst_hash: dict[str, str] = {}
+        self._last_trader_bar_close: dict[str, datetime] = {}
+        self._last_trader_decision: dict[str, TradeDecisionSchema] = {}
 
     async def run(
         self,
@@ -312,7 +327,7 @@ class AgentRouter:
         self._last_analyst_result[symbol] = result
         return result
 
-    async def _run_trader(
+    async def _run_trader(  # noqa: PLR0911
         self,
         symbol: str,
         deps_provider: DependenciesProvider,
@@ -320,6 +335,37 @@ class AgentRouter:
         scout_pattern: str | None = None,
     ) -> _TraderRunResult:
         deps = await deps_provider.get_trader(symbol)
+
+        # Trader dedup: memoize the final decision per
+        # (symbol, analyst_result_hash, candle.close_time). Within a bar, an
+        # identical Analyst result produces the same Trader decision, so we
+        # can short-circuit the LLM call. Cross-bar invalidation is handled
+        # by the bar_close component of the key. sha1 is used as a dedup key,
+        # not for security.
+        current_bar = deps.recent_candles[-1].close_time
+        analyst_hash = hashlib.sha1(
+            analyst_result.model_dump_json().encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()
+        prev_hash = self._last_trader_analyst_hash.get(symbol)
+        prev_bar = self._last_trader_bar_close.get(symbol)
+        if (
+            prev_hash == analyst_hash
+            and prev_bar is not None
+            and prev_bar == current_bar
+        ):
+            cached = self._last_trader_decision.get(symbol)
+            if cached is not None:
+                logger.info(
+                    "Trader dedup hit for %s: analyst_hash=%s bar=%s action=%s",
+                    symbol,
+                    analyst_hash[:8],
+                    current_bar,
+                    cached.action,
+                    extra={"symbol": symbol, "agent": "trader", "dedup": "hit"},
+                )
+                return _TraderRunResult(decision=cached, deps=deps)
+
         self._log_trader_inputs(deps, analyst_result, scout_pattern)
 
         # Deterministic pre-Trader gate: reject BREAKOUT at overextended %B
@@ -330,6 +376,9 @@ class AgentRouter:
             analyst_direction=analyst_result.direction,
         )
         if breakout_reject is not None:
+            self._last_trader_analyst_hash[symbol] = analyst_hash
+            self._last_trader_bar_close[symbol] = current_bar
+            self._last_trader_decision[symbol] = breakout_reject
             return _TraderRunResult(decision=breakout_reject, deps=deps)
 
         # Deterministic pre-Trader gate: reject poor estimated R/R
@@ -340,6 +389,9 @@ class AgentRouter:
             deps.indicators.atr_14,
         )
         if rr_reject is not None:
+            self._last_trader_analyst_hash[symbol] = analyst_hash
+            self._last_trader_bar_close[symbol] = current_bar
+            self._last_trader_decision[symbol] = rr_reject
             return _TraderRunResult(decision=rr_reject, deps=deps)
 
         t0 = time.monotonic()
@@ -369,15 +421,28 @@ class AgentRouter:
                 suggested_stop_loss=None,
                 suggested_take_profit=None,
             )
+            self._last_trader_analyst_hash[symbol] = analyst_hash
+            self._last_trader_bar_close[symbol] = current_bar
+            self._last_trader_decision[symbol] = wait
             return _TraderRunResult(decision=wait, deps=deps)
         except UnexpectedModelBehavior as exc:
             ms = (time.monotonic() - t0) * 1000
+            self._trader_validation_failures[symbol] = (
+                self._trader_validation_failures.get(symbol, 0) + 1
+            )
             logger.exception(
                 "Trader returned unexpected output for %s after %.1fs: %s",
                 symbol,
                 ms / 1000,
                 exc.message,
-                extra={"raw_body": exc.body, "symbol": symbol},
+                extra={
+                    "symbol": symbol,
+                    "agent": "trader",
+                    "raw_body": exc.body,
+                    "trader_validation_failures_total": (
+                        self._trader_validation_failures[symbol]
+                    ),
+                },
             )
             wait = TradeDecisionSchema.model_validate(
                 {
@@ -393,10 +458,19 @@ class AgentRouter:
                     "suggested_take_profit": None,
                 }
             )
+            self._last_trader_analyst_hash[symbol] = analyst_hash
+            self._last_trader_bar_close[symbol] = current_bar
+            self._last_trader_decision[symbol] = wait
             return _TraderRunResult(decision=wait, deps=deps)
         except Exception:
+            # Intentionally do NOT write the dedup cache here: transient
+            # failures must allow retries on the next cycle instead of
+            # poisoning the cache with an empty result.
             logger.exception("Trader agent failed for %s", symbol)
             return _TraderRunResult()
+        self._last_trader_analyst_hash[symbol] = analyst_hash
+        self._last_trader_bar_close[symbol] = current_bar
+        self._last_trader_decision[symbol] = result
         return _TraderRunResult(decision=result, deps=deps)
 
     @staticmethod
@@ -572,11 +646,16 @@ class AgentRouter:
         current_price: Decimal,
         atr: Decimal | None,
     ) -> TradeDecisionSchema | None:
-        """Warn when estimated R/R is below the pre-screen threshold.
+        """Pre-Trader estimated R/R gate.
 
-        Returns None always — the Trader makes the final call with its own
-        ATR-based stop-loss, and the Spine's risk validator enforces the real
-        min_rr_ratio on the Trader's output.
+        * NEUTRAL direction or missing ATR → fail open (return None).
+        * estimated R/R < `_RR_HARD_BLOCK` (0.5) → return a WAIT decision.
+          The geometry implied by the Analyst's key levels is
+          statistically guaranteed to lose at current TP-hit rates, so we
+          skip the Trader LLM call entirely to conserve budget.
+        * `_RR_HARD_BLOCK` ≤ R/R < `_RR_MIN_PRESCREEN` → log a warning and
+          proceed to the Trader for final assessment.
+        * R/R ≥ `_RR_MIN_PRESCREEN` → proceed silently.
         """
         if analyst_result.direction == "NEUTRAL":
             return None
@@ -588,6 +667,30 @@ class AgentRouter:
         )
         if estimated_rr is None:
             return None  # Fail open when we cannot estimate
+
+        if estimated_rr < _RR_HARD_BLOCK:
+            logger.warning(
+                "Pre-Trader R/R hard block for %s: estimated R/R=%.2f < %.2f"
+                " — skipping Trader call and returning WAIT",
+                symbol,
+                float(estimated_rr),
+                float(_RR_HARD_BLOCK),
+            )
+            return TradeDecisionSchema(
+                action="WAIT",
+                confidence=0.0,
+                reasoning=(
+                    f"Pre-trader R/R {float(estimated_rr):.2f} below"
+                    f" {float(_RR_HARD_BLOCK):.2f} hard block; analyst key"
+                    f" levels yield insufficient reward relative to risk."
+                    f" Skipping Trader call to conserve budget and protect"
+                    f" against statistically-losing geometry."
+                ),
+                suggested_entry=None,
+                suggested_stop_loss=None,
+                suggested_take_profit=None,
+            )
+
         if estimated_rr < _RR_MIN_PRESCREEN:
             logger.warning(
                 "Pre-Trader R/R warning for %s: estimated R/R=%.2f < %.1f"
