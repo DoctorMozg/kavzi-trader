@@ -463,6 +463,14 @@ class ReasoningLoop:
             now_ms,
         )
         symbol = result.trader_deps.symbol
+        if decision is None:
+            logger.warning(
+                "Skipping enqueue for %s: decision message could not be"
+                " built from Trader output (see prior error log)",
+                symbol,
+                extra={"symbol": symbol},
+            )
+            return
         try:
             await self._redis_client.client.lpush(
                 self._queue_key,
@@ -542,31 +550,64 @@ class ReasoningLoop:
         trader: TradeDecisionSchema,
         deps: TradingDependenciesSchema,
         snapshot_at_ms: int,
-    ) -> DecisionMessageSchema:
-        decision_id = str(uuid4())
-        position_management = PositionManagementConfigSchema()
+    ) -> DecisionMessageSchema | None:
+        # Reject malformed Trader output at the Brain→Spine boundary. LONG
+        # and SHORT must carry full trade geometry; silently substituting
+        # entry_price for missing stop_loss/take_profit would construct a
+        # self-closing trade that the schema validator still accepts as
+        # geometry-skipped CLOSE-equivalent. Fail loud and increment the
+        # Trader circuit-breaker counter so repeated malformed output
+        # suspends the symbol.
+        action = trader.action
+        if action in {"LONG", "SHORT"}:
+            missing: list[str] = []
+            if trader.suggested_entry is None:
+                missing.append("suggested_entry")
+            if trader.suggested_stop_loss is None:
+                missing.append("suggested_stop_loss")
+            if trader.suggested_take_profit is None:
+                missing.append("suggested_take_profit")
+            if missing:
+                logger.error(
+                    "Trader %s decision for %s missing required fields: %s",
+                    action,
+                    deps.symbol,
+                    missing,
+                    extra={
+                        "symbol": deps.symbol,
+                        "action": action,
+                        "missing_fields": missing,
+                    },
+                )
+                self._router.record_trader_validation_failure(deps.symbol)
+                return None
 
+        # Only LONG/SHORT/CLOSE should reach this method — WAIT is filtered
+        # by _should_enqueue upstream. A narrow cast satisfies mypy without
+        # an unreachable defensive raise.
+        typed_action = cast("Literal['LONG', 'SHORT', 'CLOSE']", action)
+
+        # For CLOSE-only decisions the Trader may omit suggested prices;
+        # geometry validation is skipped, so fall back to current price so
+        # the schema can still be constructed.
         entry_price = trader.suggested_entry or deps.current_price
         stop_loss = trader.suggested_stop_loss or entry_price
         take_profit = trader.suggested_take_profit or entry_price
         atr = deps.indicators.atr_14 or Decimal(0)
-        if trader.action not in {"LONG", "SHORT", "CLOSE"}:
-            raise ValueError("Unsupported action for execution queue")
-        action = cast("Literal['LONG', 'SHORT', 'CLOSE']", trader.action)
 
         return DecisionMessageSchema(
-            decision_id=decision_id,
+            decision_id=str(uuid4()),
             symbol=deps.symbol,
-            action=action,
+            action=typed_action,
             entry_price=entry_price,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            quantity=Decimal(0),
+            quantity=None,
             reasoning=trader.reasoning,
             raw_confidence=trader.confidence,
             calibrated_confidence=trader.confidence,
             volatility_regime=deps.volatility_regime,
-            position_management=position_management,
+            position_management=PositionManagementConfigSchema(),
             created_at_ms=snapshot_at_ms,
             expires_at_ms=snapshot_at_ms + 300_000,
             current_atr=atr,

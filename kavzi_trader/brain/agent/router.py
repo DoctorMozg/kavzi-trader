@@ -94,6 +94,11 @@ _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 2
 # router, and prompt templates all use the same value.
 _ANALYST_CONFLUENCE_ENTER = CONFLUENCE_ENTER_MIN
 
+# Number of consecutive Trader validation failures (UnexpectedModelBehavior
+# or malformed output rejected downstream) before the Trader is suspended
+# for a symbol. Resets on a successful Trader decision.
+_DEFAULT_TRADER_CIRCUIT_THRESHOLD = 3
+
 # Pre-Trader deterministic gates
 _BREAKOUT_OVEREXTENDED_B = Decimal("1.20")
 _BREAKOUT_OVEREXTENDED_B_SHORT = Decimal("-0.20")
@@ -112,12 +117,14 @@ class AgentRouter:
         trader: TraderRunner,
         analyst_min_algo_confluence: int = _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE,
         confluence_override: ConfluenceOverrideProvider | None = None,
+        trader_circuit_threshold: int = _DEFAULT_TRADER_CIRCUIT_THRESHOLD,
     ) -> None:
         self._scout = scout
         self._analyst = analyst
         self._trader = trader
         self._analyst_min_algo_confluence = analyst_min_algo_confluence
         self._confluence_override = confluence_override
+        self._trader_circuit_threshold = trader_circuit_threshold
         # Per-symbol bar-close dedup for Scout (deterministic — safe to cache
         # both INTERESTING and SKIP within the same candle).
         self._last_scout_bar_close: dict[str, datetime] = {}
@@ -125,9 +132,11 @@ class AgentRouter:
         # Per-symbol bar-close dedup for Analyst (LLM-based).
         self._last_analyzed_bar_close: dict[str, datetime] = {}
         self._last_analyst_result: dict[str, AnalystDecisionSchema] = {}
-        # Rolling counter of Trader UnexpectedModelBehavior failures per symbol.
-        # Any UnexpectedModelBehavior (including exc.body is None) counts as
-        # the same failure class and increments the counter.
+        # Rolling counter of Trader validation failures per symbol. Covers both
+        # UnexpectedModelBehavior from the LLM and downstream rejection of
+        # malformed decisions (e.g. missing stop_loss/take_profit). When the
+        # counter reaches self._trader_circuit_threshold the Trader is
+        # suspended for that symbol until a successful decision resets it.
         self._trader_validation_failures: dict[str, int] = {}
         # Per-symbol Trader dedup keyed by (analyst result hash, bar close_time).
         # Cross-bar invalidation via the bar_close component; within a bar,
@@ -135,6 +144,46 @@ class AgentRouter:
         self._last_trader_analyst_hash: dict[str, str] = {}
         self._last_trader_bar_close: dict[str, datetime] = {}
         self._last_trader_decision: dict[str, TradeDecisionSchema] = {}
+
+    def record_trader_validation_failure(self, symbol: str) -> int:
+        """Increment the per-symbol Trader failure counter and return the new
+        count. Called by the LLM-exception path inside ``_run_trader`` and by
+        the reasoning loop when downstream schema validation rejects a
+        malformed decision (e.g. missing stop_loss/take_profit).
+        """
+        count = self._trader_validation_failures.get(symbol, 0) + 1
+        self._trader_validation_failures[symbol] = count
+        logger.warning(
+            "Trader validation failure recorded for %s (total=%d/%d)",
+            symbol,
+            count,
+            self._trader_circuit_threshold,
+            extra={
+                "symbol": symbol,
+                "agent": "trader",
+                "trader_validation_failures_total": count,
+            },
+        )
+        return count
+
+    def is_trader_circuit_open(self, symbol: str) -> bool:
+        """Return True when consecutive Trader validation failures have met
+        or exceeded the circuit breaker threshold for this symbol. The
+        circuit resets automatically on the next successful Trader decision.
+        """
+        return (
+            self._trader_validation_failures.get(symbol, 0)
+            >= self._trader_circuit_threshold
+        )
+
+    def _reset_trader_failures(self, symbol: str) -> None:
+        """Clear the Trader failure counter after a successful decision."""
+        if self._trader_validation_failures.pop(symbol, 0) > 0:
+            logger.info(
+                "Trader validation failure counter cleared for %s after"
+                " successful decision",
+                symbol,
+            )
 
     async def run(
         self,
@@ -336,6 +385,43 @@ class AgentRouter:
     ) -> _TraderRunResult:
         deps = await deps_provider.get_trader(symbol)
 
+        # Circuit breaker: skip Trader LLM calls while the consecutive-failure
+        # counter has reached the threshold. Resets on the next successful
+        # decision (see _reset_trader_failures). WAIT is emitted so the
+        # reasoning loop treats it as a non-enqueued cycle.
+        if self.is_trader_circuit_open(symbol):
+            failures = self._trader_validation_failures.get(symbol, 0)
+            logger.warning(
+                "Trader circuit open for %s: %d consecutive validation"
+                " failures ≥ threshold %d — skipping Trader call",
+                symbol,
+                failures,
+                self._trader_circuit_threshold,
+                extra={
+                    "symbol": symbol,
+                    "agent": "trader",
+                    "trader_circuit_open": True,
+                    "trader_validation_failures_total": failures,
+                },
+            )
+            return _TraderRunResult(
+                decision=TradeDecisionSchema(
+                    action="WAIT",
+                    confidence=0.0,
+                    reasoning=(
+                        f"Trader circuit breaker open for {symbol}:"
+                        f" {failures} consecutive validation failures reached"
+                        f" threshold {self._trader_circuit_threshold}."
+                        f" Suspending Trader calls until a successful"
+                        f" decision resets the counter."
+                    ),
+                    suggested_entry=None,
+                    suggested_stop_loss=None,
+                    suggested_take_profit=None,
+                ),
+                deps=deps,
+            )
+
         # Trader dedup: memoize the final decision per
         # (symbol, analyst_result_hash, candle.close_time). Within a bar, an
         # identical Analyst result produces the same Trader decision, so we
@@ -427,9 +513,7 @@ class AgentRouter:
             return _TraderRunResult(decision=wait, deps=deps)
         except UnexpectedModelBehavior as exc:
             ms = (time.monotonic() - t0) * 1000
-            self._trader_validation_failures[symbol] = (
-                self._trader_validation_failures.get(symbol, 0) + 1
-            )
+            failure_count = self.record_trader_validation_failure(symbol)
             logger.exception(
                 "Trader returned unexpected output for %s after %.1fs: %s",
                 symbol,
@@ -439,9 +523,7 @@ class AgentRouter:
                     "symbol": symbol,
                     "agent": "trader",
                     "raw_body": exc.body,
-                    "trader_validation_failures_total": (
-                        self._trader_validation_failures[symbol]
-                    ),
+                    "trader_validation_failures_total": failure_count,
                 },
             )
             wait = TradeDecisionSchema.model_validate(
@@ -471,6 +553,7 @@ class AgentRouter:
         self._last_trader_analyst_hash[symbol] = analyst_hash
         self._last_trader_bar_close[symbol] = current_bar
         self._last_trader_decision[symbol] = result
+        self._reset_trader_failures(symbol)
         return _TraderRunResult(decision=result, deps=deps)
 
     @staticmethod

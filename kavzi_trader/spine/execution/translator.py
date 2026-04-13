@@ -12,6 +12,10 @@ from kavzi_trader.spine.execution.order_request_schema import OrderRequestSchema
 logger = logging.getLogger(__name__)
 
 
+class OrderTranslationError(ValueError):
+    """Raised when a decision cannot be translated into a valid order."""
+
+
 class DecisionTranslator:
     """Converts decision payloads into exchange order requests."""
 
@@ -24,10 +28,10 @@ class DecisionTranslator:
         quantity = (
             quantity_override if quantity_override is not None else decision.quantity
         )
-        if quantity_override is not None and quantity_override == 0:
-            logger.warning(
-                "Quantity override is zero for %s",
-                decision.symbol,
+        if quantity is None or quantity <= 0:
+            raise OrderTranslationError(
+                f"Refusing to translate {decision.symbol} order with "
+                f"non-positive quantity {quantity}",
             )
         logger.debug(
             "Translating decision: %s %s qty=%s price=%s",

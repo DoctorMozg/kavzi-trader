@@ -3,7 +3,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-MIN_RR_RATIO = Decimal("2.0")
+from kavzi_trader.commons.trading_constants import MIN_RR_RATIO
+
+__all__ = ["MIN_RR_RATIO", "TradeDecisionSchema"]
 
 
 class TradeDecisionSchema(BaseModel):

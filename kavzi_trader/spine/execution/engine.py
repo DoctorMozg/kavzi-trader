@@ -152,19 +152,44 @@ class ExecutionEngine:
         decision: DecisionMessageSchema,
         recommended_size: Decimal,
     ) -> ExecutionResultSchema:
-        quantity_override = (
-            recommended_size if recommended_size > 0 else decision.quantity
-        )
-        if recommended_size == 0:
-            logger.warning(
-                "Recommended size is 0 for %s after risk validation passed,"
-                " using decision quantity %s",
+        if recommended_size <= 0:
+            # Risk validator said "pass" but returned zero size — a contradiction
+            # that previously leaked into a zero-quantity order. Reject instead.
+            logger.error(
+                "Risk validator returned non-positive size %s for %s; rejecting",
+                recommended_size,
                 decision.symbol,
-                decision.quantity,
+                extra={
+                    "decision_id": decision.decision_id,
+                    "symbol": decision.symbol,
+                },
+            )
+            try:
+                await self._record_event(
+                    aggregate_id=decision.decision_id,
+                    aggregate_type="decision",
+                    event_type="order_rejected",
+                    data={
+                        "symbol": decision.symbol,
+                        "reason": "risk_validator_returned_zero_size",
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to record order_rejected event for %s",
+                    decision.decision_id,
+                )
+            return ExecutionResultSchema(
+                decision_id=decision.decision_id,
+                order_id=None,
+                status="REJECTED",
+                executed_qty=0.0,
+                executed_price=None,
+                error_message="risk_validator_returned_zero_size",
             )
         order_request = self._translator.translate(
             decision=decision,
-            quantity_override=quantity_override,
+            quantity_override=recommended_size,
         )
         logger.debug(
             "Order translated: symbol=%s side=%s qty=%s price=%s",
