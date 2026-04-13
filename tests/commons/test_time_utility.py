@@ -2,7 +2,7 @@
 Tests for time utility functions.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -11,6 +11,7 @@ from kavzi_trader.commons.time_utility import (
     MILLISECONDS_IN_SECOND,
     date_to_milliseconds,
     milliseconds_to_datetime,
+    normalize_datetime_to_utc,
     timestamp_filename,
     timestamp_path,
     utc_now,
@@ -81,3 +82,36 @@ def test_milliseconds_to_datetime() -> None:
     assert dt.month == 1
     assert dt.day == 1
     assert dt.tzinfo == UTC
+
+
+def test_normalize_datetime_to_utc_naive_is_tagged_utc() -> None:
+    """Naive datetimes are assumed to represent UTC and get tagged as such."""
+    naive = datetime(2024, 6, 1, 12, 30)  # noqa: DTZ001
+    assert naive.tzinfo is None
+
+    result = normalize_datetime_to_utc(naive)
+
+    assert result.tzinfo == UTC
+    assert result.year == 2024
+    assert result.hour == 12
+
+
+def test_normalize_datetime_to_utc_aware_non_utc_is_converted() -> None:
+    """Aware datetimes in other zones are converted to UTC."""
+    plus_three = timezone(timedelta(hours=3))
+    aware = datetime(2024, 6, 1, 15, 30, tzinfo=plus_three)
+
+    result = normalize_datetime_to_utc(aware)
+
+    assert result.tzinfo == UTC
+    assert result.hour == 12  # 15:30 +03:00 → 12:30 UTC
+
+
+def test_normalize_datetime_to_utc_preserves_utc_aware() -> None:
+    """UTC-aware datetimes pass through unchanged."""
+    aware = datetime(2024, 6, 1, 12, 30, tzinfo=UTC)
+
+    result = normalize_datetime_to_utc(aware)
+
+    assert result == aware
+    assert result.tzinfo == UTC

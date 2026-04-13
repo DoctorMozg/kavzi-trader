@@ -68,11 +68,13 @@ from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.position.trailing import TrailingStopChecker
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
+from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.redis_client import RedisStateClient
+from kavzi_trader.spine.state.schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
 
@@ -357,10 +359,15 @@ async def _start_orchestrator(
     # --- Execution engine ---
     logger.info("Creating execution engine")
     volatility_detector = VolatilityRegimeDetector(app_config.risk)
+    liquidation_calculator = LiquidationCalculator(exchange)
     engine = ExecutionEngine(
         exchange=exchange,
         state_manager=state_manager,
-        risk_validator=DynamicRiskValidator(app_config.risk, tier_registry),
+        risk_validator=DynamicRiskValidator(
+            app_config.risk,
+            tier_registry,
+            liquidation_calculator,
+        ),
         staleness_checker=StalenessChecker(app_config.execution),
         translator=DecisionTranslator(),
         monitor=OrderMonitor(exchange, app_config.execution.timeout_s),
@@ -368,7 +375,28 @@ async def _start_orchestrator(
         leverage=app_config.futures.default_leverage,
         report_populator=report_populator,
         volatility_detector=volatility_detector,
+        liquidation_calculator=liquidation_calculator,
     )
+
+    # Wire reconciler -> engine for self-healing missing SL/TP (H10). The
+    # reconciler drives this through the subset helper, which only places the
+    # specified legs and surfaces failures to the reconciler instead of
+    # auto-closing the position.
+    class _ReconcilerPlacer:
+        async def place(
+            self,
+            position: PositionSchema,
+            *,
+            place_stop_loss: bool,
+            place_take_profit: bool,
+        ) -> None:
+            await engine._place_protective_subset(  # noqa: SLF001
+                position,
+                place_stop_loss=place_stop_loss,
+                place_take_profit=place_take_profit,
+            )
+
+    state_manager.set_protective_order_placer(_ReconcilerPlacer())
 
     # --- Pre-trade filter chain ---
     filter_chain = PreTradeFilterChain(

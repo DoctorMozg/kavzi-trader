@@ -1,3 +1,4 @@
+import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock
 
@@ -12,6 +13,7 @@ class TestAccountStore:
     def store(self, mock_redis_client: AsyncMock) -> AccountStore:
         store = AccountStore.__new__(AccountStore)
         store._redis = mock_redis_client
+        store._lock = asyncio.Lock()
         return store
 
     async def test_save_account(
@@ -115,3 +117,49 @@ class TestAccountStore:
         await store.reset_peak_balance()
 
         store._redis.set.assert_called_once()
+
+    async def test_update_balance_populates_margin_ratio(self, store: AccountStore):
+        store._redis.get.return_value = None
+
+        result = await store.update_balance(
+            total_balance=Decimal(100),
+            available_balance=Decimal(40),
+            locked_balance=Decimal(60),
+            unrealized_pnl=Decimal(0),
+        )
+
+        assert result.margin_ratio == Decimal("0.6")
+        assert result.total_margin_balance == Decimal(100)
+
+    async def test_update_balance_is_concurrency_safe(self, store: AccountStore):
+        # Stateful in-memory Redis stub: concurrent update_balance calls must
+        # serialize so the final peak_balance equals the maximum input total.
+        state: dict[str, str | None] = {"payload": None}
+
+        async def fake_get(_key: str) -> str | None:
+            # Yield control to allow interleaving without the lock.
+            await asyncio.sleep(0)
+            return state["payload"]
+
+        async def fake_set(_key: str, value: str) -> None:
+            await asyncio.sleep(0)
+            state["payload"] = value
+
+        store._redis.get.side_effect = fake_get
+        store._redis.set.side_effect = fake_set
+
+        totals = [Decimal(100), Decimal(200), Decimal(300), Decimal(250)]
+        await asyncio.gather(
+            *(
+                store.update_balance(
+                    total_balance=total,
+                    available_balance=total,
+                    locked_balance=Decimal(0),
+                )
+                for total in totals
+            )
+        )
+
+        final = await store.get()
+        assert final is not None
+        assert final.peak_balance == max(totals)

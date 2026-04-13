@@ -1,5 +1,5 @@
 import logging
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.schemas import (
@@ -9,6 +9,10 @@ from kavzi_trader.spine.risk.schemas import (
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 
 logger = logging.getLogger(__name__)
+
+# Truncate toward zero at 8 decimals so rounded quantities never exceed the
+# original value and breach margin/notional caps enforced just above.
+_QUANTITY_QUANT = Decimal("0.00000001")
 
 
 class PositionSizer:
@@ -94,7 +98,7 @@ class PositionSizer:
                 )
                 adjusted_size = max_size_by_notional
 
-        adjusted_size = Decimal(str(round(float(adjusted_size), 8)))
+        adjusted_size = adjusted_size.quantize(_QUANTITY_QUANT, rounding=ROUND_DOWN)
 
         if leverage > 0 and entry_price > 0:
             balance_for_margin = (
@@ -111,8 +115,9 @@ class PositionSizer:
                     leverage,
                     entry_price,
                 )
-                adjusted_size = Decimal(
-                    str(round(float(max_size_by_margin), 8)),
+                adjusted_size = max_size_by_margin.quantize(
+                    _QUANTITY_QUANT,
+                    rounding=ROUND_DOWN,
                 )
 
         logger.debug(
@@ -128,8 +133,8 @@ class PositionSizer:
         )
 
         return PositionSizeResultSchema(
-            base_size=Decimal(str(round(float(base_size), 8))),
+            base_size=base_size.quantize(_QUANTITY_QUANT, rounding=ROUND_DOWN),
             adjusted_size=adjusted_size,
             size_multiplier=size_multiplier,
-            risk_amount=Decimal(str(round(float(risk_amount), 8))),
+            risk_amount=risk_amount.quantize(_QUANTITY_QUANT, rounding=ROUND_DOWN),
         )

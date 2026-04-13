@@ -30,3 +30,17 @@ def test_staleness_checker_allows_recent() -> None:
         regime=VolatilityRegime.NORMAL,
         now=now,
     )
+
+
+def test_staleness_checker_treats_future_timestamp_as_stale() -> None:
+    """Clock skew — decision from the 'future' must fail closed."""
+    config = ExecutionConfigSchema()
+    checker = StalenessChecker(config)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    now_ms = int(now.timestamp() * 1000)
+
+    assert checker.is_stale(
+        created_at_ms=now_ms + 1000,
+        regime=VolatilityRegime.NORMAL,
+        now=now,
+    )

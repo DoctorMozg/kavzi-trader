@@ -19,6 +19,7 @@ from kavzi_trader.spine.execution.execution_result_schema import ExecutionResult
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
+from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -50,6 +51,7 @@ class ExecutionEngine:
         leverage: int = 3,
         report_populator: TradeReportPopulator | None = None,
         volatility_detector: VolatilityRegimeDetector | None = None,
+        liquidation_calculator: LiquidationCalculator | None = None,
     ) -> None:
         self._exchange = exchange
         self._state_manager = state_manager
@@ -61,6 +63,7 @@ class ExecutionEngine:
         self._leverage = leverage
         self._report_populator = report_populator
         self._volatility_detector = volatility_detector
+        self._liquidation_calculator = liquidation_calculator
 
     async def execute(self, decision: DecisionMessageSchema) -> ExecutionResultSchema:
         logger.info(
@@ -105,9 +108,10 @@ class ExecutionEngine:
                 decision_id=decision.decision_id,
                 order_id=None,
                 status="EXPIRED",
-                executed_qty=0.0,
+                executed_qty=None,
                 executed_price=None,
                 error_message="Decision expired",
+                needs_reconciliation=False,
             )
 
         if decision.action == "CLOSE":
@@ -140,9 +144,10 @@ class ExecutionEngine:
                 decision_id=decision.decision_id,
                 order_id=None,
                 status="REJECTED",
-                executed_qty=0.0,
+                executed_qty=None,
                 executed_price=None,
                 error_message="; ".join(validation.rejection_reasons),
+                needs_reconciliation=False,
             )
 
         return await self._execute_validated(decision, validation.recommended_size)
@@ -183,9 +188,10 @@ class ExecutionEngine:
                 decision_id=decision.decision_id,
                 order_id=None,
                 status="REJECTED",
-                executed_qty=0.0,
+                executed_qty=None,
                 executed_price=None,
                 error_message="risk_validator_returned_zero_size",
+                needs_reconciliation=False,
             )
         order_request = self._translator.translate(
             decision=decision,
@@ -239,9 +245,10 @@ class ExecutionEngine:
                 decision_id=decision.decision_id,
                 order_id=None,
                 status="REJECTED",
-                executed_qty=0.0,
+                executed_qty=None,
                 executed_price=None,
                 error_message=str(exc),
+                needs_reconciliation=False,
             )
 
         try:
@@ -269,9 +276,10 @@ class ExecutionEngine:
                 decision_id=decision.decision_id,
                 order_id=str(order_response.order_id),
                 status="FILLED",
-                executed_qty=float(order_response.executed_qty),
-                executed_price=float(order_response.price),
+                executed_qty=order_response.executed_qty,
+                executed_price=order_response.price,
                 error_message=None,
+                needs_reconciliation=False,
             )
 
         monitored = await self._monitor.wait_for_completion(
@@ -284,20 +292,20 @@ class ExecutionEngine:
                 decision_id=decision.decision_id,
                 order_id=str(monitored.order_id),
                 status="FILLED",
-                executed_qty=float(monitored.executed_qty),
-                executed_price=float(monitored.price),
+                executed_qty=monitored.executed_qty,
+                executed_price=monitored.price,
                 error_message=None,
+                needs_reconciliation=False,
             )
 
         return ExecutionResultSchema(
             decision_id=decision.decision_id,
             order_id=str(order_response.order_id),
             status="SUBMITTED",
-            executed_qty=float(order_response.executed_qty),
-            executed_price=float(order_response.price)
-            if order_response.price is not None
-            else None,
+            executed_qty=order_response.executed_qty,
+            executed_price=order_response.price,
             error_message=None,
+            needs_reconciliation=True,
         )
 
     async def _close_position(
@@ -317,9 +325,10 @@ class ExecutionEngine:
                 decision_id=decision.decision_id,
                 order_id=None,
                 status="REJECTED",
-                executed_qty=0.0,
+                executed_qty=None,
                 executed_price=None,
                 error_message=f"No open position for {decision.symbol}",
+                needs_reconciliation=False,
             )
         side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
         try:
@@ -336,18 +345,49 @@ class ExecutionEngine:
                 decision_id=decision.decision_id,
                 order_id=None,
                 status="REJECTED",
-                executed_qty=0.0,
+                executed_qty=None,
                 executed_price=None,
                 error_message=str(exc),
+                needs_reconciliation=False,
+            )
+
+        # Close submitted successfully — tear down local state. Each step is
+        # isolated so a Redis failure cannot mask the on-exchange close.
+        try:
+            await self._cancel_linked_orders(position)
+        except Exception:
+            logger.exception(
+                "Failed to cancel linked orders for closed position %s",
+                position.id,
+            )
+        try:
+            await self._state_manager.remove_position(position.id)
+        except Exception:
+            logger.exception(
+                "Failed to remove position %s from state after close",
+                position.id,
+            )
+        try:
+            await self._record_event(
+                aggregate_id=position.id,
+                aggregate_type="position",
+                event_type="position_closed",
+                data={"symbol": position.symbol, "reason": "close_action"},
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record position_closed event for %s",
+                position.id,
             )
 
         return ExecutionResultSchema(
             decision_id=decision.decision_id,
             order_id=str(order_response.order_id),
             status="FILLED",
-            executed_qty=float(order_response.executed_qty),
-            executed_price=float(order_response.price),
+            executed_qty=order_response.executed_qty,
+            executed_price=self._effective_fill_price(order_response),
             error_message=None,
+            needs_reconciliation=False,
         )
 
     async def _save_open_order(self, order: OrderResponseSchema) -> None:
@@ -378,10 +418,25 @@ class ExecutionEngine:
             else Decimal(0)
         )
         position_side = self._position_side(decision.action)
-        if position_side == "LONG":
-            liq_price = order.price * (Decimal(1) - Decimal(1) / Decimal(leverage))
-        else:
-            liq_price = order.price * (Decimal(1) + Decimal(1) / Decimal(leverage))
+        liq_price: Decimal | None = None
+        if self._liquidation_calculator is not None and leverage > 0:
+            try:
+                liq_price = (
+                    await self._liquidation_calculator.estimate_liquidation_price(
+                        symbol=decision.symbol,
+                        side=position_side,
+                        entry_price=order.price,
+                        leverage=leverage,
+                        notional=order.price * order.executed_qty,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to estimate liquidation price for %s; "
+                    "recording position with liquidation_price=None",
+                    decision.symbol,
+                )
+                liq_price = None
         position = PositionSchema(
             id=decision.decision_id,
             symbol=decision.symbol,
@@ -398,7 +453,17 @@ class ExecutionEngine:
             opened_at=now,
             updated_at=now,
         )
-        await self._state_manager.update_position(position)
+        try:
+            await self._state_manager.update_position(position)
+        except Exception:
+            logger.exception(
+                "CRITICAL: Failed to persist filled position %s; "
+                "triggering emergency close",
+                position.id,
+                extra={"position_id": position.id, "symbol": position.symbol},
+            )
+            await self._emergency_close(position)
+            return
         logger.info(
             "Position opened: id=%s %s %s qty=%s entry=%s SL=%s TP=%s",
             position.id,
@@ -426,28 +491,83 @@ class ExecutionEngine:
                 position.id,
             )
         if decision.action in {"LONG", "SHORT"}:
-            await self._place_protective_orders(position)
+            try:
+                await self._place_protective_orders(position)
+            except Exception:
+                logger.exception(
+                    "CRITICAL: Unhandled error in protective order placement "
+                    "for position %s; triggering emergency close",
+                    position.id,
+                    extra={"position_id": position.id, "symbol": position.symbol},
+                )
+                await self._emergency_close(position)
+
+    async def _place_stop_loss(self, position: PositionSchema) -> None:
+        stop_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        stop_response = await self._exchange.create_order(
+            symbol=position.symbol,
+            side=stop_side,
+            order_type=OrderType.STOP_MARKET,
+            quantity=position.quantity,
+            stop_price=position.stop_loss,
+            reduce_only=True,
+        )
+        await self._save_linked_order(stop_response, position.id)
+        logger.info(
+            "Stop-loss placed for %s: stop_price=%s",
+            position.symbol,
+            position.stop_loss,
+            extra={"symbol": position.symbol},
+        )
+
+    async def _place_take_profit(self, position: PositionSchema) -> None:
+        take_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        take_response = await self._exchange.create_order(
+            symbol=position.symbol,
+            side=take_side,
+            order_type=OrderType.TAKE_PROFIT_MARKET,
+            quantity=position.quantity,
+            stop_price=position.take_profit,
+            reduce_only=True,
+        )
+        await self._save_linked_order(take_response, position.id)
+        logger.info(
+            "Take-profit placed for %s: stop_price=%s",
+            position.symbol,
+            position.take_profit,
+            extra={"symbol": position.symbol},
+        )
+
+    async def _place_protective_subset(
+        self,
+        position: PositionSchema,
+        *,
+        place_stop_loss: bool,
+        place_take_profit: bool,
+    ) -> None:
+        """Place only the requested protective legs; never emergency-close.
+
+        Reconciler-driven recovery path. If a leg fails the exception bubbles
+        to `ReconciliationService._attempt_protective_recovery`, which records
+        the failure as unrecoverable. The already-live leg is preserved; no
+        duplicate orders are placed and no healthy position is auto-closed on
+        exchange hiccups.
+        """
+        if place_stop_loss:
+            await self._place_stop_loss(position)
+        if place_take_profit:
+            await self._place_take_profit(position)
 
     async def _place_protective_orders(self, position: PositionSchema) -> None:
-        stop_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        take_side = stop_side
+        """Place SL+TP for a freshly filled position.
 
+        Initial-fill semantics: SL failure escalates to emergency-close because
+        the position has no live protection yet. Reconciler-driven retries MUST
+        use `_place_protective_subset` instead — that path keeps the live leg
+        and classifies failures as unrecoverable rather than auto-closing.
+        """
         try:
-            stop_response = await self._exchange.create_order(
-                symbol=position.symbol,
-                side=stop_side,
-                order_type=OrderType.STOP_MARKET,
-                quantity=position.quantity,
-                stop_price=position.stop_loss,
-                reduce_only=True,
-            )
-            await self._save_linked_order(stop_response, position.id)
-            logger.info(
-                "Stop-loss placed for %s: stop_price=%s",
-                position.symbol,
-                position.stop_loss,
-                extra={"symbol": position.symbol},
-            )
+            await self._place_stop_loss(position)
         except Exception:
             logger.exception(
                 "Failed to place stop-loss for position %s, closing position",
@@ -457,25 +577,24 @@ class ExecutionEngine:
             return
 
         try:
-            take_response = await self._exchange.create_order(
-                symbol=position.symbol,
-                side=take_side,
-                order_type=OrderType.TAKE_PROFIT_MARKET,
-                quantity=position.quantity,
-                stop_price=position.take_profit,
-                reduce_only=True,
-            )
-            await self._save_linked_order(take_response, position.id)
-            logger.info(
-                "Take-profit placed for %s: stop_price=%s",
-                position.symbol,
-                position.take_profit,
-                extra={"symbol": position.symbol},
-            )
+            await self._place_take_profit(position)
         except Exception:
+            # Risk is bounded by the live SL — no emergency close. We surface
+            # the broken-bracket state so the position-management loop (which
+            # treats positions without a linked TP order as needing retry)
+            # can re-place the take-profit on the next tick.
             logger.exception(
                 "Failed to place take-profit for position %s; stop-loss is active",
                 position.id,
+            )
+            logger.warning(
+                "Position %s is half-bracketed (SL only); TP retry required",
+                position.id,
+                extra={
+                    "needs_tp_retry": True,
+                    "position_id": position.id,
+                    "symbol": position.symbol,
+                },
             )
             try:
                 await self._record_event(
@@ -491,6 +610,21 @@ class ExecutionEngine:
             except Exception:
                 logger.exception(
                     "Failed to record protective_order_failed event for %s",
+                    position.id,
+                )
+            try:
+                await self._record_event(
+                    aggregate_id=position.id,
+                    aggregate_type="position",
+                    event_type="position_half_bracketed",
+                    data={
+                        "symbol": position.symbol,
+                        "position_id": position.id,
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to record position_half_bracketed event for %s",
                     position.id,
                 )
 
@@ -535,6 +669,47 @@ class ExecutionEngine:
         )
         await self._event_store.append(event)
 
+    def _effective_fill_price(
+        self,
+        order: OrderResponseSchema,
+    ) -> Decimal | None:
+        """Return the weighted-average fill price, or None when unknown.
+
+        Binance futures MARKET orders return `price=0` in the REST response;
+        the real fill price must be reconstructed from the `fills` array.
+        """
+        fills = order.fills
+        if not fills:
+            return order.price if order.price > 0 else None
+        total_qty = sum((f.qty for f in fills), Decimal(0))
+        if total_qty <= 0:
+            return order.price if order.price > 0 else None
+        weighted = sum((f.price * f.qty for f in fills), Decimal(0))
+        return weighted / total_qty
+
+    async def _cancel_linked_orders(self, position: PositionSchema) -> None:
+        linked = await self._state_manager.orders.get_by_position(position.id)
+        for order in linked:
+            try:
+                await self._exchange.cancel_order(
+                    symbol=position.symbol,
+                    order_id=int(order.order_id),
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to cancel linked order %s for position %s",
+                    order.order_id,
+                    position.id,
+                )
+            try:
+                await self._state_manager.remove_order(order.order_id)
+            except Exception:
+                logger.exception(
+                    "Failed to remove linked order %s from state for position %s",
+                    order.order_id,
+                    position.id,
+                )
+
     async def _emergency_close(self, position: PositionSchema) -> None:
         """Close position on exchange when protective orders cannot be placed."""
         close_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
@@ -547,7 +722,7 @@ class ExecutionEngine:
                 quantity=position.quantity,
                 reduce_only=True,
             )
-            exit_price = order_response.price
+            exit_price = self._effective_fill_price(order_response)
             await self._state_manager.remove_position(position.id)
             logger.warning(
                 "Emergency-closed position %s for %s",

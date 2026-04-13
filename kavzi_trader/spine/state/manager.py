@@ -7,6 +7,7 @@ from kavzi_trader.spine.state.account_store import AccountStore
 from kavzi_trader.spine.state.config import RedisConfigSchema
 from kavzi_trader.spine.state.order_store import OrderStore
 from kavzi_trader.spine.state.position_store import PositionStore
+from kavzi_trader.spine.state.reconciliation import ProtectiveOrderPlacer
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import (
     AccountStateSchema,
@@ -29,6 +30,16 @@ class StateManager:
         self._position_store = PositionStore(self._redis_client)
         self._order_store = OrderStore(self._redis_client)
         self._account_store = AccountStore(self._redis_client)
+        self._protective_order_placer: ProtectiveOrderPlacer | None = None
+
+    def set_protective_order_placer(
+        self,
+        placer: ProtectiveOrderPlacer,
+    ) -> None:
+        # Wired after construction so StateManager and ExecutionEngine can be
+        # built independently without a circular dep. Reconciler needs this to
+        # self-heal missing SL/TP; absence causes fail-closed (see H10).
+        self._protective_order_placer = placer
 
     @property
     def positions(self) -> PositionStore:
@@ -111,5 +122,6 @@ class StateManager:
             position_store=self._position_store,
             order_store=self._order_store,
             account_store=self._account_store,
+            protective_order_placer=self._protective_order_placer,
         )
         return await service.reconcile()

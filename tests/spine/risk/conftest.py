@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.state.schemas import (
     AccountStateSchema,
     PositionManagementConfigSchema,
@@ -37,6 +38,18 @@ def mock_state_manager() -> MagicMock:
         ),
     )
     return manager
+
+
+@pytest.fixture
+def mock_liquidation_calculator() -> MagicMock:
+    """A LiquidationCalculator stub that always returns a comfortable liq.
+
+    Tests that don't care about liquidation logic can inject this to satisfy
+    the validator's leveraged-trade safety check without network calls.
+    """
+    calc = MagicMock(spec=LiquidationCalculator)
+    calc.estimate_liquidation_price = AsyncMock(return_value=Decimal(1))
+    return calc
 
 
 @pytest.fixture

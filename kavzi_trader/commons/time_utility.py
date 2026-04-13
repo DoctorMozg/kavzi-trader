@@ -28,6 +28,24 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def normalize_datetime_to_utc(value: datetime) -> datetime:
+    """
+    Ensure a datetime is timezone-aware in UTC.
+
+    Naive datetimes are assumed to represent UTC and are tagged with the
+    UTC tzinfo. Aware datetimes are converted to UTC.
+
+    Args:
+        value: Datetime to normalize (naive or aware).
+
+    Returns:
+        Timezone-aware datetime in UTC.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def utc_timestamp(time: float) -> datetime:
     """
     Convert a timestamp in milliseconds to a datetime object in UTC.

@@ -154,7 +154,7 @@ class ConfluenceCalculator:
                 return Decimal(50) <= rsi <= Decimal(70)
             return Decimal(30) <= rsi <= Decimal(40)
         if ema_aligned:
-            return Decimal(50) <= rsi <= Decimal(70)
+            return Decimal(30) <= rsi <= Decimal(50)
         return Decimal(60) <= rsi <= Decimal(70)
 
     def _volume_above_average(

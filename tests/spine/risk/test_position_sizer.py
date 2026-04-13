@@ -264,6 +264,52 @@ class TestPositionSizer:
         notional = result.adjusted_size * Decimal(50000)
         assert notional < Decimal("10.0")
 
+    def test_quantize_truncates_toward_zero_beyond_8_places(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+    ) -> None:
+        """>8 decimal digits must truncate (ROUND_DOWN), never round up."""
+        # risk_amount = 100 * (1% / 100) = 1; stop_distance = 81 * 1 = 81
+        # base_size = 1 / 81 = 0.012345679012345679... (repeating)
+        # ROUND_DOWN to 8 places = 0.01234567 (NOT 0.01234568 from banker's)
+        config = RiskConfigSchema(max_notional_percent=Decimal(999))
+        sizer = PositionSizer(config)
+        result = sizer.calculate_size(
+            account_balance=Decimal(100),
+            atr=Decimal(81),
+            stop_loss_atr_multiplier=Decimal(1),
+            regime=normal_regime,
+            entry_price=Decimal(50000),
+            leverage=100,
+        )
+
+        assert result.base_size == Decimal("0.01234567")
+        assert result.adjusted_size == Decimal("0.01234567")
+
+    def test_quantize_preserves_exact_decimal_arithmetic(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+    ) -> None:
+        """No float round-trip: banker's-on-float and ROUND_DOWN diverge here."""
+        # risk_amount = 500 * (1% / 100) = 5; stop_distance = 7 * 1 = 7
+        # base_size = 5 / 7 = 0.714285714285... (9th digit = 7)
+        # Old float path: round(float(5/7), 8) rounds up to 0.71428572.
+        # New path: Decimal.quantize(..., ROUND_DOWN) truncates to 0.71428571.
+        config = RiskConfigSchema(max_notional_percent=Decimal(999))
+        sizer = PositionSizer(config)
+        result = sizer.calculate_size(
+            account_balance=Decimal(500),
+            atr=Decimal(7),
+            stop_loss_atr_multiplier=Decimal(1),
+            regime=normal_regime,
+            entry_price=Decimal(50000),
+            leverage=100,
+        )
+
+        assert result.base_size == Decimal("0.71428571")
+        assert result.risk_amount == Decimal("5.00000000")
+        assert result.risk_amount == Decimal(5)
+
     def test_notional_floor_clipped_by_max_notional_cap(
         self,
         normal_regime: VolatilityRegimeSchema,

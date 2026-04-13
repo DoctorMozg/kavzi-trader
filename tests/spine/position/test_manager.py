@@ -157,3 +157,92 @@ async def test_stop_loss_not_breached_continues(position_factory) -> None:
         a.action == PositionActionType.FULL_EXIT and a.reason == "Stop-loss breached"
         for a in actions
     )
+
+
+@pytest.mark.asyncio
+async def test_manager_defers_partial_exit_when_trailing_fires(
+    position_factory,
+) -> None:
+    # Price at the take-profit triggers both trailing_stop (profit >= 2*ATR)
+    # and partial_exit (progress == 1.0). The manager must keep only the
+    # protective stop move and defer the partial exit to the next cycle,
+    # otherwise the executor would cancel the fresh SL and re-place the old.
+    position = position_factory(
+        entry_price=Decimal(100),
+        stop_loss=Decimal(90),
+        current_stop_loss=Decimal(90),
+        take_profit=Decimal(120),
+    )
+    manager = build_manager()
+
+    actions = await manager.evaluate_position(
+        position=position,
+        current_price=Decimal(120),
+        current_atr=Decimal(10),
+    )
+
+    move_actions = [a for a in actions if a.action == PositionActionType.MOVE_STOP_LOSS]
+    partial_actions = [
+        a for a in actions if a.action == PositionActionType.PARTIAL_EXIT
+    ]
+    assert len(move_actions) == 1
+    assert move_actions[0].reason == "trailing_stop"
+    assert len(partial_actions) == 0
+
+
+@pytest.mark.asyncio
+async def test_manager_emits_partial_exit_when_trailing_already_satisfied(
+    position_factory,
+) -> None:
+    # Same price as the deferral case, but current_stop_loss is already
+    # past where trailing would move it. Trailing returns None, so the
+    # partial_exit is free to fire.
+    position = position_factory(
+        entry_price=Decimal(100),
+        stop_loss=Decimal(90),
+        current_stop_loss=Decimal(110),
+        take_profit=Decimal(120),
+    )
+    manager = build_manager()
+
+    actions = await manager.evaluate_position(
+        position=position,
+        current_price=Decimal(120),
+        current_atr=Decimal(10),
+    )
+
+    assert not any(a.action == PositionActionType.MOVE_STOP_LOSS for a in actions)
+    assert any(a.reason == "partial_exit" for a in actions)
+
+
+@pytest.mark.asyncio
+async def test_manager_defers_partial_exit_when_break_even_fires(
+    position_factory,
+) -> None:
+    # Break-even triggers at profit_atr=1.5 (price=115), partial_exit at
+    # progress=0.65 (price=113). At price=115 both conditions hold when
+    # trailing is suppressed (profit_atr=1.5 < trailing trigger 2.0).
+    one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+    position = position_factory(
+        entry_price=Decimal(100),
+        stop_loss=Decimal(90),
+        current_stop_loss=Decimal(90),
+        take_profit=Decimal(120),
+        opened_at=one_hour_ago,
+        updated_at=one_hour_ago,
+    )
+    manager = build_manager()
+
+    actions = await manager.evaluate_position(
+        position=position,
+        current_price=Decimal(115),
+        current_atr=Decimal(10),
+    )
+
+    move_actions = [a for a in actions if a.action == PositionActionType.MOVE_STOP_LOSS]
+    partial_actions = [
+        a for a in actions if a.action == PositionActionType.PARTIAL_EXIT
+    ]
+    assert len(move_actions) == 1
+    assert move_actions[0].reason == "break_even"
+    assert len(partial_actions) == 0

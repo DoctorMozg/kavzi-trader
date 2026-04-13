@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from unittest.mock import AsyncMock
 
@@ -54,7 +55,30 @@ class TestReconciliationService:
         return store
 
     @pytest.fixture
+    def mock_protective_placer(self) -> AsyncMock:
+        placer = AsyncMock()
+        placer.place = AsyncMock()
+        return placer
+
+    @pytest.fixture
     def service(
+        self,
+        mock_exchange: AsyncMock,
+        mock_position_store: AsyncMock,
+        mock_order_store: AsyncMock,
+        mock_account_store: AsyncMock,
+        mock_protective_placer: AsyncMock,
+    ) -> ReconciliationService:
+        return ReconciliationService(
+            exchange_client=mock_exchange,
+            position_store=mock_position_store,
+            order_store=mock_order_store,
+            account_store=mock_account_store,
+            protective_order_placer=mock_protective_placer,
+        )
+
+    @pytest.fixture
+    def service_without_placer(
         self,
         mock_exchange: AsyncMock,
         mock_position_store: AsyncMock,
@@ -165,11 +189,12 @@ class TestReconciliationService:
         assert result.success is True
         assert result.positions_synced == 1
 
-    async def test_reconcile_reports_missing_sl(
+    async def test_reconcile_recovers_missing_sl_via_placer(
         self,
         service: ReconciliationService,
         mock_position_store: AsyncMock,
         mock_order_store: AsyncMock,
+        mock_protective_placer: AsyncMock,
         sample_position: PositionSchema,
         sample_tp_order: OpenOrderSchema,
     ):
@@ -179,13 +204,23 @@ class TestReconciliationService:
         result = await service.reconcile()
 
         assert result.success is True
-        assert any("missing stop-loss" in d for d in result.discrepancies)
+        # Only the missing leg is requested; the live TP must NOT be re-placed
+        # (prior duplicate-placement bug, R1 from wave-3 review).
+        mock_protective_placer.place.assert_awaited_once_with(
+            sample_position,
+            place_stop_loss=True,
+            place_take_profit=False,
+        )
+        assert any(
+            "missing stop-loss" in d and "recovered" in d for d in result.discrepancies
+        )
 
-    async def test_reconcile_reports_missing_tp(
+    async def test_reconcile_recovers_missing_tp_via_placer(
         self,
         service: ReconciliationService,
         mock_position_store: AsyncMock,
         mock_order_store: AsyncMock,
+        mock_protective_placer: AsyncMock,
         sample_position: PositionSchema,
         sample_sl_order: OpenOrderSchema,
     ):
@@ -195,7 +230,96 @@ class TestReconciliationService:
         result = await service.reconcile()
 
         assert result.success is True
-        assert any("missing take-profit" in d for d in result.discrepancies)
+        mock_protective_placer.place.assert_awaited_once_with(
+            sample_position,
+            place_stop_loss=False,
+            place_take_profit=True,
+        )
+        assert any(
+            "missing take-profit" in d and "recovered" in d
+            for d in result.discrepancies
+        )
+
+    async def test_reconcile_recovers_both_legs_with_single_call(
+        self,
+        service: ReconciliationService,
+        mock_position_store: AsyncMock,
+        mock_order_store: AsyncMock,
+        mock_protective_placer: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        """Regression for R1 — the previous impl invoked the placer once per
+        missing leg, which combined with a placer that always placed both legs
+        produced duplicate reduceOnly orders on the exchange.
+        """
+        mock_position_store.get_all.return_value = [sample_position]
+        mock_order_store.get_by_position.return_value = []
+
+        result = await service.reconcile()
+
+        assert result.success is True
+        mock_protective_placer.place.assert_awaited_once_with(
+            sample_position,
+            place_stop_loss=True,
+            place_take_profit=True,
+        )
+        # One discrepancy string per missing leg is still reported.
+        assert (
+            sum(
+                1
+                for d in result.discrepancies
+                if ("missing stop-loss" in d or "missing take-profit" in d)
+                and "recovered" in d
+            )
+            == 2
+        )
+
+    async def test_reconcile_fails_when_placer_raises(
+        self,
+        service: ReconciliationService,
+        mock_position_store: AsyncMock,
+        mock_order_store: AsyncMock,
+        mock_protective_placer: AsyncMock,
+        sample_position: PositionSchema,
+        sample_tp_order: OpenOrderSchema,
+    ):
+        mock_position_store.get_all.return_value = [sample_position]
+        mock_order_store.get_by_position.return_value = [sample_tp_order]
+        mock_protective_placer.place.side_effect = RuntimeError("exchange down")
+
+        result = await service.reconcile()
+
+        assert result.success is False
+        assert any(
+            "missing stop-loss" in d and "unrecoverable" in d
+            for d in result.discrepancies
+        )
+
+    async def test_reconcile_fails_closed_without_placer(
+        self,
+        service_without_placer: ReconciliationService,
+        mock_position_store: AsyncMock,
+        mock_order_store: AsyncMock,
+        sample_position: PositionSchema,
+        sample_tp_order: OpenOrderSchema,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        mock_position_store.get_all.return_value = [sample_position]
+        mock_order_store.get_by_position.return_value = [sample_tp_order]
+
+        with caplog.at_level(logging.CRITICAL):
+            result = await service_without_placer.reconcile()
+
+        assert result.success is False
+        assert any(
+            "missing stop-loss" in d and "unrecoverable" in d
+            for d in result.discrepancies
+        )
+        assert any(
+            record.levelno == logging.CRITICAL
+            and "no protective_order_placer" in record.getMessage()
+            for record in caplog.records
+        )
 
     async def test_reconcile_handles_exception(
         self,

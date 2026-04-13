@@ -1,5 +1,6 @@
 import logging
 
+import redis.asyncio.client  # type: ignore[import-untyped]
 from pydantic import ValidationError
 
 from kavzi_trader.spine.state.redis_client import RedisStateClient
@@ -73,13 +74,31 @@ class PositionStore:
 
     async def save(self, position: PositionSchema) -> None:
         key = self._position_key(position.id)
-        await self._redis.hset(key, {"data": position.model_dump_json()})
-        await self._redis.sadd(POSITION_INDEX_KEY, position.id)
+        payload = position.model_dump_json()
+        position_id = position.id
+
+        # Why: hash write and index add must land together. redis-py's async
+        # pipeline defaults to transaction=True, issuing MULTI/EXEC so the
+        # server applies both commands atomically — no half-written state
+        # if the connection drops mid-save.
+        def _build(pipe: redis.asyncio.client.Pipeline) -> None:  # type: ignore[type-arg]
+            pipe.hset(key, mapping={"data": payload})
+            pipe.sadd(POSITION_INDEX_KEY, position_id)
+
+        await self._redis.execute_pipeline(_build)
         logger.debug("Saved position %s for %s", position.id, position.symbol)
 
     async def delete(self, position_id: str) -> None:
-        await self._redis.delete(self._position_key(position_id))
-        await self._redis.srem(POSITION_INDEX_KEY, position_id)
+        key = self._position_key(position_id)
+
+        # Why: hash delete and index removal must land together to avoid
+        # dangling index entries or orphaned hashes across a dropped
+        # connection. MULTI/EXEC via redis-py's transactional pipeline.
+        def _build(pipe: redis.asyncio.client.Pipeline) -> None:  # type: ignore[type-arg]
+            pipe.delete(key)
+            pipe.srem(POSITION_INDEX_KEY, position_id)
+
+        await self._redis.execute_pipeline(_build)
         logger.debug("Deleted position %s", position_id)
 
     async def clear_all(self) -> int:

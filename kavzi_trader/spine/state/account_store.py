@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from decimal import Decimal
 
@@ -15,6 +16,10 @@ ACCOUNT_KEY = "kt:state:account"
 class AccountStore:
     def __init__(self, redis_client: RedisStateClient) -> None:
         self._redis = redis_client
+        # Serializes read-compute-write sequences against peak_balance so
+        # concurrent reconciler + user-data stream updates cannot clobber
+        # each other's peak/drawdown derivations.
+        self._lock = asyncio.Lock()
 
     async def get(self) -> AccountStateSchema | None:
         data = await self._redis.get(ACCOUNT_KEY)
@@ -37,28 +42,46 @@ class AccountStore:
         locked_balance: Decimal,
         unrealized_pnl: Decimal = Decimal(0),
     ) -> AccountStateSchema:
-        current = await self.get()
+        async with self._lock:
+            current = await self.get()
 
-        peak_balance = total_balance
-        if current and current.peak_balance > total_balance:
-            peak_balance = current.peak_balance
+            peak_balance = total_balance
+            if current and current.peak_balance > total_balance:
+                peak_balance = current.peak_balance
 
-        drawdown = Decimal(0)
-        if peak_balance > 0:
-            drawdown = ((peak_balance - total_balance) / peak_balance) * 100
+            drawdown = Decimal(0)
+            if peak_balance > 0:
+                drawdown = ((peak_balance - total_balance) / peak_balance) * 100
 
-        new_state = AccountStateSchema(
-            total_balance_usdt=total_balance,
-            available_balance_usdt=available_balance,
-            locked_balance_usdt=locked_balance,
-            unrealized_pnl=unrealized_pnl,
-            peak_balance=peak_balance,
-            current_drawdown_percent=drawdown,
-            updated_at=utc_now(),
-        )
+            # Why: Binance's user-data balance payload does not surface a
+            # wallet-level margin ratio directly; locked/total is the
+            # simplest local proxy for "wallet fraction tied up in margin"
+            # and is what the downstream guard threshold was designed against.
+            margin_ratio = Decimal(0)
+            if total_balance > 0:
+                margin_ratio = locked_balance / total_balance
 
-        await self.save(new_state)
-        return new_state
+            total_margin_balance = total_balance + unrealized_pnl
+
+            new_state = AccountStateSchema(
+                total_balance_usdt=total_balance,
+                available_balance_usdt=available_balance,
+                locked_balance_usdt=locked_balance,
+                unrealized_pnl=unrealized_pnl,
+                peak_balance=peak_balance,
+                current_drawdown_percent=drawdown,
+                total_margin_balance=total_margin_balance,
+                margin_ratio=margin_ratio,
+                updated_at=utc_now(),
+            )
+
+            await self.save(new_state)
+            logger.debug(
+                "Updated account: peak=%s margin_ratio=%s",
+                peak_balance,
+                margin_ratio,
+            )
+            return new_state
 
     async def get_drawdown(self) -> Decimal:
         account = await self.get()
@@ -67,15 +90,18 @@ class AccountStore:
         return account.current_drawdown_percent
 
     async def reset_peak_balance(self) -> None:
-        account = await self.get()
-        if account:
-            new_state = AccountStateSchema(
-                total_balance_usdt=account.total_balance_usdt,
-                available_balance_usdt=account.available_balance_usdt,
-                locked_balance_usdt=account.locked_balance_usdt,
-                unrealized_pnl=account.unrealized_pnl,
-                peak_balance=account.total_balance_usdt,
-                current_drawdown_percent=Decimal(0),
-                updated_at=utc_now(),
-            )
-            await self.save(new_state)
+        async with self._lock:
+            account = await self.get()
+            if account:
+                new_state = AccountStateSchema(
+                    total_balance_usdt=account.total_balance_usdt,
+                    available_balance_usdt=account.available_balance_usdt,
+                    locked_balance_usdt=account.locked_balance_usdt,
+                    unrealized_pnl=account.unrealized_pnl,
+                    peak_balance=account.total_balance_usdt,
+                    current_drawdown_percent=Decimal(0),
+                    total_margin_balance=account.total_margin_balance,
+                    margin_ratio=account.margin_ratio,
+                    updated_at=utc_now(),
+                )
+                await self.save(new_state)

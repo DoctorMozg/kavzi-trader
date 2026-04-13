@@ -109,25 +109,34 @@ class PositionManager:
 
         actions: list[PositionActionSchema] = []
 
-        trailing_action = self._trailing.evaluate(position, current_price, current_atr)
-        if trailing_action:
-            actions.append(trailing_action)
-        else:
-            break_even_action = self._break_even.evaluate(
+        move_sl_action = self._trailing.evaluate(position, current_price, current_atr)
+        if move_sl_action is None:
+            move_sl_action = self._break_even.evaluate(
                 position,
                 current_price,
                 current_atr,
             )
-            if break_even_action:
-                actions.append(break_even_action)
+        if move_sl_action is not None:
+            actions.append(move_sl_action)
 
-        partial_exit_action = self._partial_exit.evaluate(
-            position,
-            current_price,
-            current_atr,
-        )
-        if partial_exit_action:
-            actions.append(partial_exit_action)
+        # Invariant: never emit MOVE_STOP_LOSS and PARTIAL_EXIT in the same
+        # cycle. The executor's partial-exit path cancels all linked orders
+        # and re-places a stop at position.current_stop_loss (the OLD value),
+        # which would silently undo the protective stop move. Defer the
+        # partial exit one tick; it will re-trigger once the new SL is live.
+        if move_sl_action is None:
+            partial_exit_action = self._partial_exit.evaluate(
+                position,
+                current_price,
+                current_atr,
+            )
+            if partial_exit_action:
+                actions.append(partial_exit_action)
+        else:
+            logger.info(
+                "Deferring partial_exit for %s: stop-loss move preferred this cycle",
+                position.symbol,
+            )
 
         logger.debug(
             "Position %s evaluation: %d actions",

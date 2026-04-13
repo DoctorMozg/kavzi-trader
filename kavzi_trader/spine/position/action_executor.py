@@ -2,6 +2,7 @@ import logging
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.common.exceptions import ExchangeError
 from kavzi_trader.api.common.models import (
     OrderResponseSchema,
     OrderSide,
@@ -18,6 +19,11 @@ logger = logging.getLogger(__name__)
 _STOP_ORDER_TYPES = frozenset(
     {OrderType.STOP, OrderType.STOP_MARKET},
 )
+
+# Binance futures error code for "Unknown order sent" — returned when the order
+# is no longer on the exchange (already filled, cancelled, or never existed).
+# Safe to treat as a successful removal from the local side.
+_ERROR_CODE_UNKNOWN_ORDER = -2011
 
 
 class PositionActionExecutor:
@@ -53,12 +59,33 @@ class PositionActionExecutor:
     ) -> None:
         if action.new_stop_loss is None:
             return
-        await self._cancel_linked_stop_orders(position)
-        await self._place_stop_order(
-            position,
-            action.new_stop_loss,
-            position.quantity,
-        )
+
+        # Snapshot existing stop orders BEFORE placing the new one so the
+        # cancel step targets only pre-existing stops and cannot accidentally
+        # cancel the freshly placed replacement (which also links to this
+        # position id).
+        linked = await self._state.orders.get_by_position(position.id)
+        old_stop_orders = [
+            order for order in linked if order.order_type in _STOP_ORDER_TYPES
+        ]
+
+        try:
+            await self._place_stop_order(
+                position,
+                action.new_stop_loss,
+                position.quantity,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to place new stop order for %s; "
+                "leaving existing stop orders in place",
+                position.symbol,
+                extra={"position_id": position.id},
+            )
+            return
+
+        for order in old_stop_orders:
+            await self._cancel_order(position, order)
 
     async def _partial_exit(
         self,
@@ -68,36 +95,71 @@ class PositionActionExecutor:
         if action.exit_quantity is None:
             return
         exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        await self._exchange.create_order(
-            symbol=position.symbol,
-            side=exit_side,
-            order_type=OrderType.MARKET,
-            quantity=action.exit_quantity,
-            reduce_only=True,
-        )
-        await self._cancel_linked_orders(position)
-        remaining = position.quantity - action.exit_quantity
+        try:
+            await self._exchange.create_order(
+                symbol=position.symbol,
+                side=exit_side,
+                order_type=OrderType.MARKET,
+                quantity=action.exit_quantity,
+                reduce_only=True,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to submit partial-exit order for %s",
+                position.symbol,
+                extra={"position_id": position.id},
+            )
+            return
+
+        # Persist partial_exit_done=True BEFORE cancelling linked orders and
+        # re-placing stops/TPs. If any of those fail, the flag is already
+        # durable and the next tick will not re-submit a partial exit against
+        # a position that has already been reduced on the exchange.
+        updated_position = position.model_copy(update={"partial_exit_done": True})
+        try:
+            await self._state.update_position(updated_position)
+        except Exception:
+            logger.critical(
+                "Partial exit executed on exchange for %s but failed to persist "
+                "partial_exit_done flag; reconciliation required",
+                position.symbol,
+                extra={"position_id": position.id},
+                exc_info=True,
+            )
+            return
+
+        await self._cancel_linked_orders(updated_position)
+        remaining = updated_position.quantity - action.exit_quantity
         if remaining > 0:
             await self._place_stop_order(
-                position,
-                position.current_stop_loss,
+                updated_position,
+                updated_position.current_stop_loss,
                 remaining,
             )
             await self._place_take_profit_order(
-                position,
-                position.take_profit,
+                updated_position,
+                updated_position.take_profit,
                 remaining,
             )
 
-    async def _full_exit(self, position: PositionSchema) -> Decimal:
+    async def _full_exit(self, position: PositionSchema) -> Decimal | None:
         exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        order_response = await self._exchange.create_order(
-            symbol=position.symbol,
-            side=exit_side,
-            order_type=OrderType.MARKET,
-            quantity=position.quantity,
-            reduce_only=True,
-        )
+        try:
+            order_response = await self._exchange.create_order(
+                symbol=position.symbol,
+                side=exit_side,
+                order_type=OrderType.MARKET,
+                quantity=position.quantity,
+                reduce_only=True,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to submit full-exit order for %s; "
+                "position left for reconciliation",
+                position.symbol,
+                extra={"position_id": position.id},
+            )
+            return None
         await self._cancel_linked_orders(position)
         await self._state.remove_position(position.id)
         return order_response.price
@@ -105,39 +167,53 @@ class PositionActionExecutor:
     async def _cancel_linked_orders(self, position: PositionSchema) -> None:
         linked = await self._state.orders.get_by_position(position.id)
         for order in linked:
-            try:
-                await self._exchange.cancel_order(
-                    symbol=position.symbol,
-                    order_id=int(order.order_id),
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to cancel linked order %s for position %s",
-                    order.order_id,
-                    position.id,
-                )
-            await self._state.remove_order(order.order_id)
+            await self._cancel_order(position, order)
 
-    async def _cancel_linked_stop_orders(
+    async def _cancel_order(
         self,
         position: PositionSchema,
+        order: OpenOrderSchema,
     ) -> None:
-        linked = await self._state.orders.get_by_position(position.id)
-        for order in linked:
-            if order.order_type not in _STOP_ORDER_TYPES:
-                continue
-            try:
-                await self._exchange.cancel_order(
-                    symbol=position.symbol,
-                    order_id=int(order.order_id),
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to cancel stop order %s for position %s",
+        """
+        Cancel a single linked order on the exchange and remove it locally.
+
+        Local removal only runs on the success path, with one exception:
+        a Binance ``-2011`` ("Unknown order sent") response means the order
+        is already gone from the exchange (filled or cancelled elsewhere),
+        so purging local state is correct. For any other failure we keep
+        the local record so reconciliation can reason about the mismatch.
+        """
+        try:
+            await self._exchange.cancel_order(
+                symbol=position.symbol,
+                order_id=int(order.order_id),
+            )
+        except ExchangeError as exc:
+            if exc.code == _ERROR_CODE_UNKNOWN_ORDER:
+                logger.info(
+                    "Order %s already absent on exchange for position %s; "
+                    "removing from local state",
                     order.order_id,
                     position.id,
                 )
-            await self._state.remove_order(order.order_id)
+                await self._state.remove_order(order.order_id)
+                return
+            logger.exception(
+                "Failed to cancel linked order %s for position %s; "
+                "keeping local record for reconciliation",
+                order.order_id,
+                position.id,
+            )
+            return
+        except Exception:
+            logger.exception(
+                "Failed to cancel linked order %s for position %s; "
+                "keeping local record for reconciliation",
+                order.order_id,
+                position.id,
+            )
+            return
+        await self._state.remove_order(order.order_id)
 
     async def _place_stop_order(
         self,

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
+from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.position_sizer import PositionSizer
 from kavzi_trader.spine.risk.schemas import (
     RiskValidationResultSchema,
@@ -31,12 +32,14 @@ class DynamicRiskValidator:
         self,
         config: RiskConfigSchema | None = None,
         tier_registry: SymbolTierRegistry | None = None,
+        liquidation_calculator: LiquidationCalculator | None = None,
     ) -> None:
         self._config = config or RiskConfigSchema()
         self._tier_registry = tier_registry
         self._volatility_detector = VolatilityRegimeDetector(self._config)
         self._position_sizer = PositionSizer(self._config, tier_registry)
         self._exposure_limiter = ExposureLimiter(self._config)
+        self._liquidation_calculator = liquidation_calculator
 
     async def validate_trade(
         self,
@@ -112,11 +115,12 @@ class DynamicRiskValidator:
             rejection_reasons.append(rr_result)
         logger.debug("R:R check: result=%s", rr_result)
 
-        liq_result = self._check_liquidation_distance(
-            entry_price,
-            stop_loss,
-            side,
-            leverage,
+        liq_result = await self._check_liquidation_distance(
+            symbol=symbol,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            side=side,
+            leverage=leverage,
         )
         if liq_result:
             rejection_reasons.append(liq_result)
@@ -358,8 +362,9 @@ class DynamicRiskValidator:
 
         return None
 
-    def _check_liquidation_distance(
+    async def _check_liquidation_distance(
         self,
+        symbol: str,
         entry_price: Decimal,
         stop_loss: Decimal,
         side: Literal["LONG", "SHORT"],
@@ -368,19 +373,62 @@ class DynamicRiskValidator:
         if leverage <= 1:
             return None
 
-        if side == "LONG":
-            liq_price = entry_price * (Decimal(1) - Decimal(1) / Decimal(leverage))
-        else:
-            liq_price = entry_price * (Decimal(1) + Decimal(1) / Decimal(leverage))
+        if self._liquidation_calculator is None:
+            # Without a calibrated MMR source the naive formula silently
+            # over-estimates liq distance and would wave through stop losses
+            # that sit beyond the real liquidation. Rejecting here forces
+            # callers to wire a LiquidationCalculator for leveraged trades.
+            logger.warning(
+                "No liquidation calculator configured for %s at %sx leverage; "
+                "rejecting trade as safety measure",
+                symbol,
+                leverage,
+            )
+            return (
+                f"Liquidation check unavailable "
+                f"(no MMR source for leverage {leverage}x)"
+            )
+
+        notional = abs(entry_price)
+        # Notional at entry = entry_price * qty. We don't have the final qty
+        # here (position sizer runs later), so we approximate the tier
+        # lookup using the entry price as a per-unit notional. Bracket
+        # selection for any reasonable position size on this symbol is
+        # overwhelmingly dominated by the first (lowest) bracket, and a
+        # higher-bracket mismatch would tighten MMR, keeping the check
+        # conservative rather than permissive.
+        liq_price = await self._liquidation_calculator.estimate_liquidation_price(
+            symbol=symbol,
+            side=side,
+            entry_price=entry_price,
+            leverage=leverage,
+            notional=notional,
+        )
+        if liq_price is None:
+            logger.warning(
+                "Could not compute liquidation price for %s, rejecting trade "
+                "as safety measure",
+                symbol,
+            )
+            return (
+                f"Liquidation price unavailable for {symbol}; "
+                f"cannot verify stop-loss safety"
+            )
+
+        logger.debug(
+            "Liquidation distance check %s side=%s entry=%s liq=%s SL=%s",
+            symbol,
+            side,
+            entry_price,
+            liq_price,
+            stop_loss,
+        )
 
         # SL must fire before forced liquidation
-        if side == "LONG" and stop_loss <= liq_price:
-            return (
-                f"Stop loss at or beyond liquidation price "
-                f"(SL: {stop_loss:.2f}, liq: {liq_price:.2f}, "
-                f"leverage: {leverage}x)"
-            )
-        if side == "SHORT" and stop_loss >= liq_price:
+        sl_past_liq = (
+            stop_loss <= liq_price if side == "LONG" else stop_loss >= liq_price
+        )
+        if sl_past_liq:
             return (
                 f"Stop loss at or beyond liquidation price "
                 f"(SL: {stop_loss:.2f}, liq: {liq_price:.2f}, "
@@ -390,17 +438,19 @@ class DynamicRiskValidator:
         # SL must maintain a safety margin from liquidation price
         liq_distance = abs(entry_price - liq_price)
         buffer = liq_distance * self._config.liquidation_sl_buffer_ratio
+        if side == "LONG":
+            safe_threshold = liq_price + buffer
+            too_close = stop_loss < safe_threshold
+            bound_label = "min"
+        else:
+            safe_threshold = liq_price - buffer
+            too_close = stop_loss > safe_threshold
+            bound_label = "max"
 
-        if side == "LONG" and stop_loss < liq_price + buffer:
+        if too_close:
             return (
                 f"Stop loss too close to liquidation price "
-                f"(SL: {stop_loss:.2f}, min: {liq_price + buffer:.2f}, "
-                f"leverage: {leverage}x)"
-            )
-        if side == "SHORT" and stop_loss > liq_price - buffer:
-            return (
-                f"Stop loss too close to liquidation price "
-                f"(SL: {stop_loss:.2f}, max: {liq_price - buffer:.2f}, "
+                f"(SL: {stop_loss:.2f}, {bound_label}: {safe_threshold:.2f}, "
                 f"leverage: {leverage}x)"
             )
 

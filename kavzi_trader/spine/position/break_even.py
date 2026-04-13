@@ -1,7 +1,7 @@
 import logging
-from datetime import UTC, datetime
 from decimal import Decimal
 
+from kavzi_trader.commons.time_utility import normalize_datetime_to_utc, utc_now
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
 from kavzi_trader.spine.position.position_action_type import PositionActionType
 from kavzi_trader.spine.state.schemas import PositionSchema
@@ -30,7 +30,8 @@ class BreakEvenMover:
 
         min_hold_s = position.management_config.break_even_min_hold_s
         if min_hold_s > 0:
-            age_s = (datetime.now(UTC) - position.opened_at).total_seconds()
+            opened_at = normalize_datetime_to_utc(position.opened_at)
+            age_s = (utc_now() - opened_at).total_seconds()
             if age_s < min_hold_s:
                 logger.debug(
                     "Break-even skipped for %s: position age %.0fs < min_hold %ds",

@@ -32,10 +32,15 @@ class OrderMonitor:
             )
         except TimeoutError:
             logger.warning(
-                "Order %s for %s not completed within %ds",
+                "Order %s for %s not completed within %ds; reconciliation required",
                 order_id,
                 symbol,
                 self._timeout_s,
+                extra={
+                    "needs_reconciliation": True,
+                    "symbol": symbol,
+                    "order_id": order_id,
+                },
             )
             return None
         logger.info(
@@ -48,6 +53,10 @@ class OrderMonitor:
         return result
 
     async def _poll_status(self, symbol: str, order_id: int) -> OrderResponseSchema:
+        # Exponential backoff with a 30s cap. `failure_count` grows only on
+        # poll exceptions (e.g., rate limits) and resets after any successful
+        # call, so healthy polls stay at the 1s floor.
+        failure_count = 0
         while True:
             try:
                 order = await self._exchange.get_order(
@@ -56,10 +65,13 @@ class OrderMonitor:
                 )
                 if order.status in {OrderStatus.FILLED, OrderStatus.CANCELED}:
                     return order
+                failure_count = 0
             except Exception:
                 logger.exception(
                     "Failed to poll order %s for %s, retrying",
                     order_id,
                     symbol,
                 )
-            await asyncio.sleep(1)
+                failure_count += 1
+            delay_s = min(30, 2**failure_count)
+            await asyncio.sleep(delay_s)

@@ -206,3 +206,26 @@ def test_break_even_zero_buffer_matches_entry(position_factory) -> None:
 
     assert action is not None
     assert action.new_stop_loss == position.entry_price
+
+
+def test_break_even_handles_naive_opened_at(position_factory) -> None:
+    """opened_at without tzinfo must not raise TypeError when subtracting."""
+    naive_opened_at = (datetime.now(UTC) - timedelta(seconds=1200)).replace(
+        tzinfo=None,
+    )
+    assert naive_opened_at.tzinfo is None
+    position = position_factory(
+        current_stop_loss=Decimal(90),
+        opened_at=naive_opened_at,
+    )
+    mover = BreakEvenMover()
+
+    action = mover.evaluate(
+        position=position,
+        current_price=Decimal(115),
+        current_atr=Decimal(10),
+    )
+
+    assert action is not None
+    assert action.action == PositionActionType.MOVE_STOP_LOSS
+    assert action.new_stop_loss == Decimal(103)

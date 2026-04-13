@@ -4,7 +4,7 @@ import asyncio
 import builtins
 import logging
 from collections.abc import Awaitable, Callable, Mapping
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import redis.asyncio  # type: ignore[import-untyped]
 import redis.asyncio.client  # type: ignore[import-untyped]
@@ -168,6 +168,24 @@ class RedisStateClient:
     def pipeline(self) -> redis.asyncio.client.Pipeline:  # type: ignore[type-arg]
         """Return a pipeline bound to the current connection."""
         return self.client.pipeline()
+
+    async def execute_pipeline(
+        self,
+        builder: Callable[[redis.asyncio.client.Pipeline], None],  # type: ignore[type-arg]
+    ) -> list[Any]:
+        """Stage ops via ``builder`` and execute through the retry wrapper.
+
+        On retry-reconnect the pipeline is rebuilt against the fresh client,
+        since a pipeline is bound to the connection that created it.
+        """
+
+        async def _run() -> list[Any]:
+            pipe = self.client.pipeline()
+            builder(pipe)
+            result = await pipe.execute()
+            return cast("list[Any]", result)
+
+        return await self._retry(_run)
 
     async def ping(self) -> bool:
         try:

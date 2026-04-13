@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.state.schemas import (
@@ -370,7 +371,7 @@ class TestDynamicRiskValidator:
 
     @pytest.mark.asyncio
     async def test_accepts_when_floor_bump_keeps_size_valid(
-        self, mock_state_manager
+        self, mock_state_manager, mock_liquidation_calculator
     ) -> None:
         """Below-floor risk sizing is bumped up to $10 and trade stays valid."""
         from kavzi_trader.spine.risk.config import RiskConfigSchema
@@ -381,7 +382,10 @@ class TestDynamicRiskValidator:
             max_notional_percent=Decimal("50.0"),
             min_position_notional_usd=Decimal("10.0"),
         )
-        validator = DynamicRiskValidator(config)
+        validator = DynamicRiskValidator(
+            config,
+            liquidation_calculator=mock_liquidation_calculator,
+        )
         mock_state_manager.get_account_state = AsyncMock(
             return_value=AccountStateSchema(
                 total_balance_usdt=Decimal(100),
@@ -409,9 +413,11 @@ class TestDynamicRiskValidator:
 
     @pytest.mark.asyncio
     async def test_leverage_forwarded_to_position_sizer(
-        self, mock_state_manager
+        self, mock_state_manager, mock_liquidation_calculator
     ) -> None:
-        validator = DynamicRiskValidator()
+        validator = DynamicRiskValidator(
+            liquidation_calculator=mock_liquidation_calculator,
+        )
 
         result_lev1 = await validator.validate_trade(
             symbol="BTCUSDT",
@@ -439,3 +445,85 @@ class TestDynamicRiskValidator:
         assert result_lev1.is_valid is True
         assert result_lev3.is_valid is True
         assert result_lev3.recommended_size >= result_lev1.recommended_size
+
+    @pytest.mark.asyncio
+    async def test_rejects_leveraged_trade_without_liquidation_calculator(
+        self, mock_state_manager
+    ) -> None:
+        """No MMR source = no trust; leveraged trade must be rejected."""
+        validator = DynamicRiskValidator()
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
+            state_manager=mock_state_manager,
+            leverage=5,
+        )
+
+        assert result.is_valid is False
+        assert any(
+            "liquidation check unavailable" in r.lower()
+            for r in result.rejection_reasons
+        )
+
+    @pytest.mark.asyncio
+    async def test_rejects_when_liquidation_calculator_returns_none(
+        self, mock_state_manager
+    ) -> None:
+        """Transient API failure must not be waved through as 'safe'."""
+        calc = MagicMock(spec=LiquidationCalculator)
+        calc.estimate_liquidation_price = AsyncMock(return_value=None)
+        validator = DynamicRiskValidator(liquidation_calculator=calc)
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
+            state_manager=mock_state_manager,
+            leverage=5,
+        )
+
+        assert result.is_valid is False
+        assert any(
+            "liquidation price unavailable" in r.lower()
+            for r in result.rejection_reasons
+        )
+
+    @pytest.mark.asyncio
+    async def test_rejects_sl_past_real_liquidation_with_mmr(
+        self, mock_state_manager
+    ) -> None:
+        """Regression: naive formula waved SL past the real liq; MMR rejects.
+
+        Entry 50000, leverage 10, MMR 0.5% puts real liq at
+        50000 * (1 - 0.1 + 0.005) = 45250. An SL at 45000 sits BELOW the real
+        liquidation and must be rejected; the naive (MMR=0) formula placed
+        liq at 45000 and would have approved this SL.
+        """
+        calc = MagicMock(spec=LiquidationCalculator)
+        calc.estimate_liquidation_price = AsyncMock(return_value=Decimal(45250))
+        validator = DynamicRiskValidator(liquidation_calculator=calc)
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(45000),
+            take_profit=Decimal(60000),
+            current_atr=Decimal(2000),
+            atr_history=[Decimal(2000)] * 10,
+            state_manager=mock_state_manager,
+            leverage=10,
+        )
+
+        assert result.is_valid is False
+        assert any("liquidation" in r.lower() for r in result.rejection_reasons)
