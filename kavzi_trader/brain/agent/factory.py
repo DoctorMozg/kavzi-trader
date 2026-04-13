@@ -130,7 +130,9 @@ class AgentFactory:
         tier: AgentModelConfigSchema,
         global_timeout_s: float,
     ) -> ModelSettings:
-        effective_timeout = tier.timeout_s or global_timeout_s
+        effective_timeout = (
+            tier.timeout_s if tier.timeout_s is not None else global_timeout_s
+        )
         settings = ModelSettings(
             temperature=tier.temperature,
             timeout=effective_timeout,

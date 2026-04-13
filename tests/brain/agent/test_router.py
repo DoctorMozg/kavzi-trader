@@ -441,8 +441,29 @@ async def test_router_calls_analyst_at_threshold(
     assert result.analyst.setup_valid is True
 
 
-def _make_detected_side_zero() -> DualConfluenceSchema:
-    """Detected side (LONG) scores 0; opposite side scores above threshold."""
+def _make_both_sides_zero() -> DualConfluenceSchema:
+    """Both long and short score 0 — all indicators returned False."""
+    zero = AlgorithmConfluenceSchema(
+        ema_alignment=False,
+        rsi_favorable=False,
+        volume_above_average=False,
+        price_at_bollinger=False,
+        funding_favorable=False,
+        oi_supports_direction=False,
+        oi_funding_divergence=False,
+        volume_spike=False,
+        score=0,
+    )
+    return DualConfluenceSchema(long=zero, short=zero, detected_side="LONG")
+
+
+def _make_detected_zero_opposite_strong() -> DualConfluenceSchema:
+    """detected_side=LONG scores 0; opposite SHORT scores 5.
+
+    Under the old buggy gate (check detected_side only) this would skip the
+    Analyst even though the SHORT side has real signal; the corrected gate
+    must NOT skip this case.
+    """
     zero = AlgorithmConfluenceSchema(
         ema_alignment=False,
         rsi_favorable=False,
@@ -469,7 +490,7 @@ def _make_detected_side_zero() -> DualConfluenceSchema:
 
 
 @pytest.mark.asyncio
-async def test_router_skips_analyst_when_detected_side_zero(
+async def test_router_skips_analyst_when_both_sides_zero(
     candle,
     indicators,
     volatility_regime,
@@ -477,7 +498,7 @@ async def test_router_skips_analyst_when_detected_side_zero(
     account_state,
     positions,
 ) -> None:
-    """When detected side has confluence 0/8, Analyst LLM is not called."""
+    """When BOTH long and short confluence are 0/8, Analyst LLM is skipped."""
     spy_analyst = SpyAnalyst()
     router = AgentRouter(
         DummyScout("INTERESTING"),
@@ -489,7 +510,7 @@ async def test_router_skips_analyst_when_detected_side_zero(
         indicators,
         volatility_regime,
         order_flow,
-        _make_detected_side_zero(),
+        _make_both_sides_zero(),
         account_state,
         positions,
     )
@@ -499,7 +520,44 @@ async def test_router_skips_analyst_when_detected_side_zero(
     assert result.analyst is not None
     assert result.analyst.setup_valid is False
     assert result.analyst.confluence_score == 0
-    assert "stale" in result.analyst.reasoning.lower()
+    assert result.analyst.direction == "NEUTRAL"
+
+
+@pytest.mark.asyncio
+async def test_router_calls_analyst_when_opposite_side_has_signal(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    account_state,
+    positions,
+) -> None:
+    """Regression for H2: detected_side=LONG with score 0 but SHORT side has
+    signal should NOT skip. The gate must evaluate both sides, not trust the
+    static detected_side attribute.
+    """
+    spy_analyst = SpyAnalyst()
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        spy_analyst,
+        DummyTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        _make_detected_zero_opposite_strong(),
+        account_state,
+        positions,
+    )
+    result = await router.run("BTCUSDT", provider)
+
+    assert spy_analyst.call_count == 1, (
+        "Analyst must run when any side has signal, even if detected_side"
+        " is the zero-score side"
+    )
+    assert result.analyst is not None
 
 
 @pytest.mark.asyncio
@@ -1918,13 +1976,9 @@ async def test_router_counts_trader_validation_failures(
             )
             # Reset per-symbol bar-close dedup state so each pass reaches the
             # Trader tier regardless of cached Scout/Analyst/Trader verdicts.
-            router._last_scout_bar_close.clear()
-            router._last_scout_result.clear()
-            router._last_analyzed_bar_close.clear()
-            router._last_analyst_result.clear()
-            router._last_trader_analyst_hash.clear()
-            router._last_trader_bar_close.clear()
-            router._last_trader_decision.clear()
+            router._scout_dedup.clear()
+            router._analyst_dedup.clear()
+            router._trader_dedup.clear()
             await router.run("BTCUSDT", provider)
 
     assert router._trader_validation_failures["BTCUSDT"] == 3
@@ -2121,8 +2175,7 @@ async def test_router_reinvokes_trader_on_new_analyst_result(
     # Swap in a different analyst result; also clear the Analyst memo so the
     # new result actually reaches _run_trader.
     analyst.set_result(_analyst_decision(confluence_score=9))
-    router._last_analyzed_bar_close.clear()
-    router._last_analyst_result.clear()
+    router._analyst_dedup.clear()
 
     await router.run("BTCUSDT", provider)
     assert spy_trader.call_count == 2, (
@@ -2167,7 +2220,7 @@ async def test_router_reinvokes_trader_on_new_bar(
 
 
 @pytest.mark.asyncio
-async def test_router_caches_wait_fallback(
+async def test_router_does_not_cache_unexpected_model_wait(
     candle,
     indicators,
     volatility_regime,
@@ -2176,7 +2229,9 @@ async def test_router_caches_wait_fallback(
     account_state,
     positions,
 ) -> None:
-    """UnexpectedModelBehavior WAIT fallback is cached; second call is a hit."""
+    """M1: UnexpectedModelBehavior WAIT fallback must NOT be cached so the
+    circuit breaker can count consecutive failures and eventually open. A
+    cached WAIT would hide retries from the failure counter."""
     trader = CountedUnexpectedModelTrader(bodies=["garbage-1", "garbage-2"])
     router = AgentRouter(
         DummyScout("INTERESTING"),
@@ -2196,14 +2251,14 @@ async def test_router_caches_wait_fallback(
     first = await router.run("BTCUSDT", provider)
     second = await router.run("BTCUSDT", provider)
 
-    assert trader.call_count == 1, (
-        "WAIT fallback from UnexpectedModelBehavior must be cached"
+    assert trader.call_count == 2, (
+        "WAIT fallback from UnexpectedModelBehavior must NOT be cached"
     )
     assert first.trader is not None
     assert first.trader.action == "WAIT"
     assert second.trader is not None
     assert second.trader.action == "WAIT"
-    assert second.trader is first.trader
+    assert "BTCUSDT" not in router._trader_dedup
 
 
 class ExplodingTrader:
@@ -2257,7 +2312,7 @@ async def test_router_does_not_cache_on_unhandled_exception(
     )
     assert first.trader is None
     assert second.trader is None
-    assert "BTCUSDT" not in router._last_trader_decision
+    assert "BTCUSDT" not in router._trader_dedup
 
 
 @pytest.mark.asyncio
@@ -2307,7 +2362,7 @@ async def test_router_caches_breakout_reject_gate(
 
 
 @pytest.mark.asyncio
-async def test_router_caches_timeout_wait_fallback(
+async def test_router_does_not_cache_timeout_wait(
     candle,
     indicators,
     volatility_regime,
@@ -2316,7 +2371,9 @@ async def test_router_caches_timeout_wait_fallback(
     account_state,
     positions,
 ) -> None:
-    """TimeoutError WAIT fallback is cached; second call hits dedup."""
+    """M1: TimeoutError WAIT fallback must NOT be cached — a transient slow
+    response should allow retry on the next cycle instead of poisoning the
+    dedup cache for the whole bar."""
     call_count = 0
 
     class CountingTimeoutTrader:
@@ -2350,10 +2407,55 @@ async def test_router_caches_timeout_wait_fallback(
     first = await router.run("BTCUSDT", provider)
     second = await router.run("BTCUSDT", provider)
 
-    assert call_count == 1, (
-        "TimeoutError WAIT fallback must be cached; second call should hit dedup"
+    assert call_count == 2, (
+        "TimeoutError WAIT fallback must NOT be cached; next cycle must retry"
     )
     assert first.trader is not None
     assert first.trader.action == "WAIT"
     assert second.trader is not None
-    assert second.trader is first.trader
+    assert second.trader.action == "WAIT"
+    assert "BTCUSDT" not in router._trader_dedup
+
+
+@pytest.mark.asyncio
+async def test_router_handles_empty_candles_without_indexerror(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """Regression for H1: a concrete DependenciesProvider returning Scout
+    deps with an empty candles list (built via model_construct to bypass
+    min_length validation) must not raise IndexError; the pipeline must
+    bail out with a SKIP-style result.
+    """
+    # model_construct skips validation so we can simulate a misbehaving
+    # provider upstream — the router is the last line of defense.
+    broken_scout_deps = ScoutDependenciesSchema.model_construct(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[],
+        indicators=indicators,
+        volatility_regime=volatility_regime,
+    )
+    normal = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    normal._scout_deps = broken_scout_deps  # type: ignore[attr-defined]
+
+    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
+
+    result = await router.run("BTCUSDT", normal)
+
+    assert result.analyst is None
+    assert result.trader is None

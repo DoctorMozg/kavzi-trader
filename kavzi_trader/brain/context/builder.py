@@ -165,8 +165,12 @@ class ContextBuilder(BaseModel):
         )
         funding_24h: str | None = None
         if deps.order_flow and deps.order_flow.funding_rate:
-            rate_24h = abs(deps.order_flow.funding_rate) * 3
-            funding_24h = f"{float(rate_24h * 100):.4f}%"
+            # Funding settles every 8h on Binance perpetuals, so *3 projects
+            # the 24h cost. Preserve sign: positive means longs pay shorts,
+            # negative means shorts pay longs — dropping the sign loses
+            # directional bias that the Trader LLM needs.
+            rate_24h = deps.order_flow.funding_rate * 3
+            funding_24h = f"{float(rate_24h * 100):+.4f}%"
 
         dual = deps.algorithm_confluence
         sentiment = deps.sentiment_summary

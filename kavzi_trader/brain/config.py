@@ -9,7 +9,10 @@ class AgentModelConfigSchema(BaseModel):
     model_id: Annotated[str, Field(..., min_length=1)]
     retries: Annotated[int, Field(default=1, ge=0, le=5)]
     temperature: Annotated[float, Field(default=0.0, ge=0.0, le=2.0)]
-    timeout_s: Annotated[float, Field(default=0.0, ge=0.0, le=300.0)]
+    # None means "inherit request_timeout_s from the parent BrainConfig".
+    # A non-None value overrides the global timeout for this tier; use a
+    # large value (e.g. 300) to approximate "no timeout" instead of 0.
+    timeout_s: Annotated[float | None, Field(default=None, ge=0.0, le=300.0)]
     seed: Annotated[int | None, Field(default=None)]
 
     model_config = ConfigDict(frozen=True)

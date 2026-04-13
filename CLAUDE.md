@@ -47,7 +47,6 @@ cd docker && docker-compose up -d
 - `brain/config.py`: LLM configuration (model IDs, retries, API key)
 - `brain/agent/factory.py`: Creates PydanticAI agents pointed at OpenRouter
 - Jinja2-templated prompts in `brain/prompts/`, Pydantic output schemas in `brain/schemas/`
-- Confidence calibration tracking in `brain/calibration/`
 - Env var: `KT_OPENROUTER_API_KEY` for API access
 
 **Spine (Execution Layer)** — `kavzi_trader/spine/`

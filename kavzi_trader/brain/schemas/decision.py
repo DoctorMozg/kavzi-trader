@@ -27,29 +27,39 @@ class TradeDecisionSchema(BaseModel):
 
     @model_validator(mode="after")
     def validate_trade_logic(self) -> "TradeDecisionSchema":
-        if self.action in {"LONG", "SHORT"}:
-            if (
-                self.suggested_entry is None
-                or self.suggested_stop_loss is None
-                or self.suggested_take_profit is None
-            ):
-                raise ValueError("Trade requires entry, stop loss, and take profit.")
-            if self.action == "LONG" and not (
-                self.suggested_stop_loss
-                < self.suggested_entry
-                < self.suggested_take_profit
-            ):
-                raise ValueError("LONG requires stop < entry < take profit.")
-            if self.action == "SHORT" and not (
-                self.suggested_stop_loss
-                > self.suggested_entry
-                > self.suggested_take_profit
-            ):
-                raise ValueError("SHORT requires stop > entry > take profit.")
-            risk = abs(self.suggested_entry - self.suggested_stop_loss)
-            reward = abs(self.suggested_take_profit - self.suggested_entry)
-            if risk == 0:
-                raise ValueError("Risk distance cannot be zero.")
-            if reward / risk < MIN_RR_RATIO:
-                raise ValueError("Risk/reward ratio below minimum.")
+        if self.action not in {"LONG", "SHORT"}:
+            return self
+        entry, stop, take = self._require_entry_stop_take()
+        self._validate_price_ordering(entry, stop, take)
+        self._validate_rr_ratio(entry, stop, take)
         return self
+
+    def _require_entry_stop_take(self) -> tuple[Decimal, Decimal, Decimal]:
+        if (
+            self.suggested_entry is None
+            or self.suggested_stop_loss is None
+            or self.suggested_take_profit is None
+        ):
+            raise ValueError("Trade requires entry, stop loss, and take profit.")
+        return (
+            self.suggested_entry,
+            self.suggested_stop_loss,
+            self.suggested_take_profit,
+        )
+
+    def _validate_price_ordering(
+        self, entry: Decimal, stop: Decimal, take: Decimal
+    ) -> None:
+        if self.action == "LONG" and not (stop < entry < take):
+            raise ValueError("LONG requires stop < entry < take profit.")
+        if self.action == "SHORT" and not (stop > entry > take):
+            raise ValueError("SHORT requires stop > entry > take profit.")
+
+    @staticmethod
+    def _validate_rr_ratio(entry: Decimal, stop: Decimal, take: Decimal) -> None:
+        risk = abs(entry - stop)
+        if risk == 0:
+            raise ValueError("Risk distance cannot be zero.")
+        reward = abs(take - entry)
+        if reward / risk < MIN_RR_RATIO:
+            raise ValueError("Risk/reward ratio below minimum.")

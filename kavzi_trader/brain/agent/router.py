@@ -71,6 +71,25 @@ class _TraderRunResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class _ScoutDedupEntry(BaseModel):
+    bar_close: datetime
+    result: ScoutDecisionSchema
+    model_config = ConfigDict(frozen=True)
+
+
+class _AnalystDedupEntry(BaseModel):
+    bar_close: datetime
+    result: AnalystDecisionSchema
+    model_config = ConfigDict(frozen=True)
+
+
+class _TraderDedupEntry(BaseModel):
+    bar_close: datetime
+    analyst_hash: str
+    decision: TradeDecisionSchema
+    model_config = ConfigDict(frozen=True)
+
+
 class PipelineResult:
     __slots__ = ("analyst", "scout", "trader", "trader_deps")
 
@@ -87,7 +106,11 @@ class PipelineResult:
         self.trader_deps = trader_deps
 
 
-_DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 2
+# Minimum algorithm confluence to escalate to the Analyst LLM. The Analyst
+# can add at most +3 points to the final confluence_score, so threshold is
+# (CONFLUENCE_ENTER_MIN - 3) = 3 — below this, even a perfect LLM bonus
+# cannot reach the entry gate.
+_DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 3
 
 # Minimum Analyst confluence_score required to escalate to the Trader tier.
 # Sourced from the shared confluence_thresholds module so reasoning loop,
@@ -127,23 +150,19 @@ class AgentRouter:
         self._trader_circuit_threshold = trader_circuit_threshold
         # Per-symbol bar-close dedup for Scout (deterministic — safe to cache
         # both INTERESTING and SKIP within the same candle).
-        self._last_scout_bar_close: dict[str, datetime] = {}
-        self._last_scout_result: dict[str, ScoutDecisionSchema] = {}
+        self._scout_dedup: dict[str, _ScoutDedupEntry] = {}
         # Per-symbol bar-close dedup for Analyst (LLM-based).
-        self._last_analyzed_bar_close: dict[str, datetime] = {}
-        self._last_analyst_result: dict[str, AnalystDecisionSchema] = {}
+        self._analyst_dedup: dict[str, _AnalystDedupEntry] = {}
+        # Per-symbol Trader dedup keyed by (analyst result hash, bar close_time).
+        # Cross-bar invalidation via the bar_close component; within a bar,
+        # identical Analyst results short-circuit the Trader LLM call.
+        self._trader_dedup: dict[str, _TraderDedupEntry] = {}
         # Rolling counter of Trader validation failures per symbol. Covers both
         # UnexpectedModelBehavior from the LLM and downstream rejection of
         # malformed decisions (e.g. missing stop_loss/take_profit). When the
         # counter reaches self._trader_circuit_threshold the Trader is
         # suspended for that symbol until a successful decision resets it.
         self._trader_validation_failures: dict[str, int] = {}
-        # Per-symbol Trader dedup keyed by (analyst result hash, bar close_time).
-        # Cross-bar invalidation via the bar_close component; within a bar,
-        # identical Analyst results short-circuit the Trader LLM call.
-        self._last_trader_analyst_hash: dict[str, str] = {}
-        self._last_trader_bar_close: dict[str, datetime] = {}
-        self._last_trader_decision: dict[str, TradeDecisionSchema] = {}
 
     def record_trader_validation_failure(self, symbol: str) -> int:
         """Increment the per-symbol Trader failure counter and return the new
@@ -195,13 +214,21 @@ class AgentRouter:
 
         scout_deps = await self._fetch_scout_deps(symbol, deps_provider)
 
+        if not scout_deps.recent_candles:
+            logger.warning(
+                "Scout deps for %s have no candles; skipping pipeline",
+                symbol,
+            )
+            self._log_stop("Scout", symbol, total_start)
+            return PipelineResult(scout=_SKIP_ERROR)
+
         # Scout bar-close dedup: deterministic filter produces the same
         # verdict for the same candle, so cache both INTERESTING and SKIP.
         current_scout_bar = scout_deps.recent_candles[-1].close_time
-        prev_scout_bar = self._last_scout_bar_close.get(symbol)
+        prev_scout = self._scout_dedup.get(symbol)
         cached_scout = (
-            self._last_scout_result.get(symbol)
-            if prev_scout_bar is not None and current_scout_bar == prev_scout_bar
+            prev_scout.result
+            if prev_scout is not None and prev_scout.bar_close == current_scout_bar
             else None
         )
         if cached_scout is not None:
@@ -215,9 +242,17 @@ class AgentRouter:
             scout_result: ScoutDecisionSchema = cached_scout
         else:
             raw = await self._invoke_scout(symbol, scout_deps)
-            scout_result = raw if raw is not None else _SKIP_ERROR
-            self._last_scout_bar_close[symbol] = current_scout_bar
-            self._last_scout_result[symbol] = scout_result
+            if raw is None:
+                # Scout raised. Don't cache the sentinel SKIP_ERROR — a
+                # transient exception must allow retry on the next cycle
+                # instead of poisoning the dedup cache with SKIP for the
+                # whole bar.
+                scout_result = _SKIP_ERROR
+            else:
+                scout_result = raw
+                self._scout_dedup[symbol] = _ScoutDedupEntry(
+                    bar_close=current_scout_bar, result=scout_result
+                )
 
         if scout_result.verdict != "INTERESTING":
             self._log_stop("Scout", symbol, total_start)
@@ -321,48 +356,29 @@ class AgentRouter:
                 ),
             )
 
-        # Gate 2: detected side has zero confluence — indicators likely stale.
-        detected_score = (
-            conf.long.score if conf.detected_side == "LONG" else conf.short.score
-        )
-        if detected_score == 0:
-            logger.info(
-                "Analyst skipped for %s: detected side %s has confluence"
-                " 0/8 — indicators may be stale",
-                symbol,
-                conf.detected_side,
+        if not deps.recent_candles:
+            logger.warning(
+                "Analyst deps for %s have no candles; returning None", symbol
             )
-            return AnalystDecisionSchema(
-                setup_valid=False,
-                direction="NEUTRAL",
-                confluence_score=0,
-                key_levels=KeyLevelsSchema(levels=[]),
-                reasoning=(
-                    f"Analyst LLM call skipped: detected side"
-                    f" {conf.detected_side} has algorithm confluence"
-                    f" 0/8, indicating all indicators returned False"
-                    f" (possibly stale data)."
-                ),
-            )
+            return None
 
         # Bar-close dedup: if the latest closed candle hasn't changed since
         # the previous Analyst call for this symbol, reuse the memoized
         # result. Skips redundant LLM calls inside the same 5-minute bar
         # when the ReasoningLoop cooldown expires mid-bar.
         current_bar = deps.recent_candles[-1].close_time
-        prev_bar = self._last_analyzed_bar_close.get(symbol)
-        if prev_bar is not None and current_bar == prev_bar:
-            cached = self._last_analyst_result.get(symbol)
-            if cached is not None:
-                logger.info(
-                    "Analyst dedup hit for %s: bar close_time=%s already"
-                    " analyzed (cached conf=%d, valid=%s)",
-                    symbol,
-                    current_bar,
-                    cached.confluence_score,
-                    cached.setup_valid,
-                )
-                return cached
+        prev_entry = self._analyst_dedup.get(symbol)
+        if prev_entry is not None and prev_entry.bar_close == current_bar:
+            cached = prev_entry.result
+            logger.info(
+                "Analyst dedup hit for %s: bar close_time=%s already"
+                " analyzed (cached conf=%d, valid=%s)",
+                symbol,
+                current_bar,
+                cached.confluence_score,
+                cached.setup_valid,
+            )
+            return cached
 
         try:
             result = await self._analyst.run(deps)
@@ -372,11 +388,12 @@ class AgentRouter:
 
         # Record the bar we just analyzed so subsequent cycles within the
         # same candle can short-circuit via the dedup hit above.
-        self._last_analyzed_bar_close[symbol] = current_bar
-        self._last_analyst_result[symbol] = result
+        self._analyst_dedup[symbol] = _AnalystDedupEntry(
+            bar_close=current_bar, result=result
+        )
         return result
 
-    async def _run_trader(  # noqa: PLR0911
+    async def _run_trader(
         self,
         symbol: str,
         deps_provider: DependenciesProvider,
@@ -385,76 +402,120 @@ class AgentRouter:
     ) -> _TraderRunResult:
         deps = await deps_provider.get_trader(symbol)
 
-        # Circuit breaker: skip Trader LLM calls while the consecutive-failure
-        # counter has reached the threshold. Resets on the next successful
-        # decision (see _reset_trader_failures). WAIT is emitted so the
-        # reasoning loop treats it as a non-enqueued cycle.
-        if self.is_trader_circuit_open(symbol):
-            failures = self._trader_validation_failures.get(symbol, 0)
+        if not deps.recent_candles:
             logger.warning(
-                "Trader circuit open for %s: %d consecutive validation"
-                " failures ≥ threshold %d — skipping Trader call",
+                "Trader deps for %s have no candles; returning empty result",
                 symbol,
-                failures,
-                self._trader_circuit_threshold,
-                extra={
-                    "symbol": symbol,
-                    "agent": "trader",
-                    "trader_circuit_open": True,
-                    "trader_validation_failures_total": failures,
-                },
             )
-            return _TraderRunResult(
-                decision=TradeDecisionSchema(
-                    action="WAIT",
-                    confidence=0.0,
-                    reasoning=(
-                        f"Trader circuit breaker open for {symbol}:"
-                        f" {failures} consecutive validation failures reached"
-                        f" threshold {self._trader_circuit_threshold}."
-                        f" Suspending Trader calls until a successful"
-                        f" decision resets the counter."
-                    ),
-                    suggested_entry=None,
-                    suggested_stop_loss=None,
-                    suggested_take_profit=None,
-                ),
-                deps=deps,
-            )
+            return _TraderRunResult()
 
-        # Trader dedup: memoize the final decision per
-        # (symbol, analyst_result_hash, candle.close_time). Within a bar, an
-        # identical Analyst result produces the same Trader decision, so we
-        # can short-circuit the LLM call. Cross-bar invalidation is handled
-        # by the bar_close component of the key. sha1 is used as a dedup key,
-        # not for security.
+        circuit_wait = self._circuit_breaker_wait(symbol)
+        if circuit_wait is not None:
+            return _TraderRunResult(decision=circuit_wait, deps=deps)
+
         current_bar = deps.recent_candles[-1].close_time
-        analyst_hash = hashlib.sha1(
-            analyst_result.model_dump_json().encode("utf-8"),
-            usedforsecurity=False,
-        ).hexdigest()
-        prev_hash = self._last_trader_analyst_hash.get(symbol)
-        prev_bar = self._last_trader_bar_close.get(symbol)
-        if (
-            prev_hash == analyst_hash
-            and prev_bar is not None
-            and prev_bar == current_bar
-        ):
-            cached = self._last_trader_decision.get(symbol)
-            if cached is not None:
-                logger.info(
-                    "Trader dedup hit for %s: analyst_hash=%s bar=%s action=%s",
-                    symbol,
-                    analyst_hash[:8],
-                    current_bar,
-                    cached.action,
-                    extra={"symbol": symbol, "agent": "trader", "dedup": "hit"},
-                )
-                return _TraderRunResult(decision=cached, deps=deps)
+        analyst_hash = self._hash_analyst(analyst_result)
+        cached = self._check_trader_dedup(symbol, analyst_hash, current_bar)
+        if cached is not None:
+            return _TraderRunResult(decision=cached, deps=deps)
 
         self._log_trader_inputs(deps, analyst_result, scout_pattern)
 
-        # Deterministic pre-Trader gate: reject BREAKOUT at overextended %B
+        gate_reject = self._check_pre_trader_gates(
+            symbol, scout_pattern, analyst_result, deps
+        )
+        if gate_reject is not None:
+            self._cache_trader_decision(symbol, gate_reject, analyst_hash, current_bar)
+            return _TraderRunResult(decision=gate_reject, deps=deps)
+
+        return await self._invoke_trader_llm(
+            symbol, deps, analyst_result, scout_pattern, analyst_hash, current_bar
+        )
+
+    def _circuit_breaker_wait(self, symbol: str) -> TradeDecisionSchema | None:
+        """Return a WAIT decision when the Trader circuit is open, else None.
+
+        The WAIT is intentionally NOT cached — the reasoning loop treats it
+        as a non-enqueued cycle, and the next successful call must reset the
+        circuit counter via `_reset_trader_failures`.
+        """
+        if not self.is_trader_circuit_open(symbol):
+            return None
+        failures = self._trader_validation_failures.get(symbol, 0)
+        logger.warning(
+            "Trader circuit open for %s: %d consecutive validation"
+            " failures ≥ threshold %d — skipping Trader call",
+            symbol,
+            failures,
+            self._trader_circuit_threshold,
+            extra={
+                "symbol": symbol,
+                "agent": "trader",
+                "trader_circuit_open": True,
+                "trader_validation_failures_total": failures,
+            },
+        )
+        return TradeDecisionSchema(
+            action="WAIT",
+            confidence=0.0,
+            reasoning=(
+                f"Trader circuit breaker open for {symbol}:"
+                f" {failures} consecutive validation failures reached"
+                f" threshold {self._trader_circuit_threshold}."
+                f" Suspending Trader calls until a successful"
+                f" decision resets the counter."
+            ),
+            suggested_entry=None,
+            suggested_stop_loss=None,
+            suggested_take_profit=None,
+        )
+
+    @staticmethod
+    def _hash_analyst(analyst_result: AnalystDecisionSchema) -> str:
+        """sha1 of the serialized Analyst result, used purely as a dedup key."""
+        return hashlib.sha1(
+            analyst_result.model_dump_json().encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()
+
+    def _check_trader_dedup(
+        self,
+        symbol: str,
+        analyst_hash: str,
+        current_bar: datetime,
+    ) -> TradeDecisionSchema | None:
+        """Return the cached Trader decision for (symbol, analyst_hash,
+        current_bar) if still valid; otherwise None. Cross-bar invalidation
+        is handled by comparing bar_close.
+        """
+        prev_entry = self._trader_dedup.get(symbol)
+        if (
+            prev_entry is None
+            or prev_entry.analyst_hash != analyst_hash
+            or prev_entry.bar_close != current_bar
+        ):
+            return None
+        cached = prev_entry.decision
+        logger.info(
+            "Trader dedup hit for %s: analyst_hash=%s bar=%s action=%s",
+            symbol,
+            analyst_hash[:8],
+            current_bar,
+            cached.action,
+            extra={"symbol": symbol, "agent": "trader", "dedup": "hit"},
+        )
+        return cached
+
+    def _check_pre_trader_gates(
+        self,
+        symbol: str,
+        scout_pattern: str | None,
+        analyst_result: AnalystDecisionSchema,
+        deps: TradingDependenciesSchema,
+    ) -> TradeDecisionSchema | None:
+        """Run deterministic pre-Trader gates. Returns a WAIT decision if
+        any gate rejects, else None to proceed to the LLM call.
+        """
         breakout_reject = self._pre_trader_breakout_check(
             symbol,
             scout_pattern,
@@ -462,24 +523,44 @@ class AgentRouter:
             analyst_direction=analyst_result.direction,
         )
         if breakout_reject is not None:
-            self._last_trader_analyst_hash[symbol] = analyst_hash
-            self._last_trader_bar_close[symbol] = current_bar
-            self._last_trader_decision[symbol] = breakout_reject
-            return _TraderRunResult(decision=breakout_reject, deps=deps)
-
-        # Deterministic pre-Trader gate: reject poor estimated R/R
-        rr_reject = self._pre_trader_rr_check(
+            return breakout_reject
+        return self._pre_trader_rr_check(
             symbol,
             analyst_result,
             deps.current_price,
             deps.indicators.atr_14,
         )
-        if rr_reject is not None:
-            self._last_trader_analyst_hash[symbol] = analyst_hash
-            self._last_trader_bar_close[symbol] = current_bar
-            self._last_trader_decision[symbol] = rr_reject
-            return _TraderRunResult(decision=rr_reject, deps=deps)
 
+    def _cache_trader_decision(
+        self,
+        symbol: str,
+        decision: TradeDecisionSchema,
+        analyst_hash: str,
+        current_bar: datetime,
+    ) -> None:
+        """Single write path for the Trader dedup cache."""
+        self._trader_dedup[symbol] = _TraderDedupEntry(
+            bar_close=current_bar,
+            analyst_hash=analyst_hash,
+            decision=decision,
+        )
+
+    async def _invoke_trader_llm(
+        self,
+        symbol: str,
+        deps: TradingDependenciesSchema,
+        analyst_result: AnalystDecisionSchema,
+        scout_pattern: str | None,
+        analyst_hash: str,
+        current_bar: datetime,
+    ) -> _TraderRunResult:
+        """Call the Trader LLM with full error handling.
+
+        * Success → cache result, reset failure counter.
+        * Timeout / UnexpectedModelBehavior → WAIT, no cache (M1), counter
+          increments on UnexpectedModelBehavior only.
+        * Other Exception → empty result, no cache.
+        """
         t0 = time.monotonic()
         try:
             result = await self._trader.run(
@@ -488,73 +569,78 @@ class AgentRouter:
                 scout_pattern=scout_pattern,
             )
         except (TimeoutError, httpx.TimeoutException):
-            ms = (time.monotonic() - t0) * 1000
-            logger.warning(
-                "Trader agent timed out for %s after %.1fs, returning WAIT",
-                symbol,
-                ms / 1000,
+            return _TraderRunResult(
+                decision=self._build_timeout_wait(symbol, t0),
+                deps=deps,
             )
-            wait = TradeDecisionSchema(
-                action="WAIT",
-                confidence=0.0,
-                reasoning=(
-                    f"Trader agent timed out after {ms / 1000:.1f}s."
-                    " Returning WAIT to avoid stale entry."
-                    " Consider lowering trader timeout_s or using a"
-                    " faster model."
-                ),
-                suggested_entry=None,
-                suggested_stop_loss=None,
-                suggested_take_profit=None,
-            )
-            self._last_trader_analyst_hash[symbol] = analyst_hash
-            self._last_trader_bar_close[symbol] = current_bar
-            self._last_trader_decision[symbol] = wait
-            return _TraderRunResult(decision=wait, deps=deps)
         except UnexpectedModelBehavior as exc:
-            ms = (time.monotonic() - t0) * 1000
-            failure_count = self.record_trader_validation_failure(symbol)
-            logger.exception(
-                "Trader returned unexpected output for %s after %.1fs: %s",
-                symbol,
-                ms / 1000,
-                exc.message,
-                extra={
-                    "symbol": symbol,
-                    "agent": "trader",
-                    "raw_body": exc.body,
-                    "trader_validation_failures_total": failure_count,
-                },
+            return _TraderRunResult(
+                decision=self._build_unexpected_model_wait(symbol, exc, t0),
+                deps=deps,
             )
-            wait = TradeDecisionSchema.model_validate(
-                {
-                    "action": "WAIT",
-                    "confidence": 0,
-                    "reasoning": (
-                        f"Trader model returned unparseable output after"
-                        f" {ms / 1000:.1f}s. Raw body logged for debugging."
-                        f" Returning WAIT to avoid acting on malformed data."
-                    ),
-                    "suggested_entry": None,
-                    "suggested_stop_loss": None,
-                    "suggested_take_profit": None,
-                }
-            )
-            self._last_trader_analyst_hash[symbol] = analyst_hash
-            self._last_trader_bar_close[symbol] = current_bar
-            self._last_trader_decision[symbol] = wait
-            return _TraderRunResult(decision=wait, deps=deps)
         except Exception:
-            # Intentionally do NOT write the dedup cache here: transient
-            # failures must allow retries on the next cycle instead of
-            # poisoning the cache with an empty result.
             logger.exception("Trader agent failed for %s", symbol)
             return _TraderRunResult()
-        self._last_trader_analyst_hash[symbol] = analyst_hash
-        self._last_trader_bar_close[symbol] = current_bar
-        self._last_trader_decision[symbol] = result
+        self._cache_trader_decision(symbol, result, analyst_hash, current_bar)
         self._reset_trader_failures(symbol)
         return _TraderRunResult(decision=result, deps=deps)
+
+    @staticmethod
+    def _build_timeout_wait(symbol: str, t0: float) -> TradeDecisionSchema:
+        ms = (time.monotonic() - t0) * 1000
+        logger.warning(
+            "Trader agent timed out for %s after %.1fs, returning WAIT",
+            symbol,
+            ms / 1000,
+        )
+        return TradeDecisionSchema(
+            action="WAIT",
+            confidence=0.0,
+            reasoning=(
+                f"Trader agent timed out after {ms / 1000:.1f}s."
+                " Returning WAIT to avoid stale entry."
+                " Consider lowering trader timeout_s or using a"
+                " faster model."
+            ),
+            suggested_entry=None,
+            suggested_stop_loss=None,
+            suggested_take_profit=None,
+        )
+
+    def _build_unexpected_model_wait(
+        self,
+        symbol: str,
+        exc: UnexpectedModelBehavior,
+        t0: float,
+    ) -> TradeDecisionSchema:
+        ms = (time.monotonic() - t0) * 1000
+        failure_count = self.record_trader_validation_failure(symbol)
+        logger.exception(
+            "Trader returned unexpected output for %s after %.1fs: %s",
+            symbol,
+            ms / 1000,
+            exc.message,
+            extra={
+                "symbol": symbol,
+                "agent": "trader",
+                "raw_body": exc.body,
+                "trader_validation_failures_total": failure_count,
+            },
+        )
+        return TradeDecisionSchema.model_validate(
+            {
+                "action": "WAIT",
+                "confidence": 0,
+                "reasoning": (
+                    f"Trader model returned unparseable output after"
+                    f" {ms / 1000:.1f}s. Raw body logged for debugging."
+                    f" Returning WAIT to avoid acting on malformed data."
+                ),
+                "suggested_entry": None,
+                "suggested_stop_loss": None,
+                "suggested_take_profit": None,
+            }
+        )
 
     @staticmethod
     def _log_analyst_inputs(deps: AnalystDependenciesSchema) -> None:

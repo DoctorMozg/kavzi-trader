@@ -196,6 +196,71 @@ def test_trader_context_no_funding_without_order_flow(
     assert context["funding_rate_24h_percent"] is None
 
 
+def test_trader_context_funding_preserves_negative_sign(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+    account_state,
+) -> None:
+    """Regression for H8: negative funding rate must keep its sign so the
+    Trader LLM can distinguish 'longs pay shorts' from 'shorts pay longs'."""
+    negative_flow = order_flow.model_copy(update={"funding_rate": Decimal("-0.0005")})
+    deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=negative_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+    builder = ContextBuilder()
+    context = builder.build_trader_context(deps)
+    funding_str = context["funding_rate_24h_percent"]
+    assert funding_str is not None
+    assert funding_str.startswith("-"), (
+        f"Negative funding rate lost sign: {funding_str!r}"
+    )
+
+
+def test_trader_context_funding_preserves_positive_sign(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+    account_state,
+) -> None:
+    """Companion to the negative-sign test: positive funding shows explicit +."""
+    positive_flow = order_flow.model_copy(update={"funding_rate": Decimal("0.0005")})
+    deps = TradingDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=positive_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+        account_state=account_state,
+        exchange_client=BinanceClient.__new__(BinanceClient),
+        event_store=RedisEventStore.__new__(RedisEventStore),
+    )
+    builder = ContextBuilder()
+    context = builder.build_trader_context(deps)
+    funding_str = context["funding_rate_24h_percent"]
+    assert funding_str is not None
+    assert funding_str.startswith("+"), (
+        f"Positive funding rate missing explicit sign: {funding_str!r}"
+    )
+
+
 def test_trader_context_includes_scout_pattern(
     candle,
     indicators,
