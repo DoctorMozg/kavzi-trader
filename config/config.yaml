@@ -207,7 +207,9 @@ risk:
 
   # With $100, spread across 2 positions max. More positions = each one
   # too small to overcome minimum order sizes and commission friction.
-  max_positions: 4
+  # Lowered from 4 → 2 to match the raised per-position exposure caps
+  # (TIER_1 80%, TIER_2 50%) so total exposure stays within max_margin_ratio.
+  max_positions: 2
 
   # Raised from 1.5 to 2.0. On a micro account, commissions consume a
   # larger share of profit — need larger winners to stay net positive.

@@ -67,9 +67,7 @@ class TestLiquidationCalculator:
         )
 
     @pytest.mark.asyncio
-    async def test_selects_middle_bracket_for_mid_notional(
-        self, mock_exchange
-    ) -> None:
+    async def test_selects_middle_bracket_for_mid_notional(self, mock_exchange) -> None:
         calc = LiquidationCalculator(mock_exchange)
 
         liq = await calc.estimate_liquidation_price(
@@ -86,9 +84,7 @@ class TestLiquidationCalculator:
         )
 
     @pytest.mark.asyncio
-    async def test_computes_short_liquidation_correctly(
-        self, mock_exchange
-    ) -> None:
+    async def test_computes_short_liquidation_correctly(self, mock_exchange) -> None:
         calc = LiquidationCalculator(mock_exchange)
 
         liq = await calc.estimate_liquidation_price(

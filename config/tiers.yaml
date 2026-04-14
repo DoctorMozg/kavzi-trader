@@ -1,8 +1,13 @@
 tiers:
   TIER_1:
     risk_per_trade_percent: "4.0"
-    max_leverage: 5
-    max_exposure_percent: "30.0"
+    # Raised from 5 to 10: on micro accounts the 30% exposure cap was the
+    # binding constraint; doubling leverage headroom lets the sizer use the
+    # full risk budget without inflating margin use beyond max_margin_ratio.
+    max_leverage: 10
+    # Raised from 30% to 80%: at $100 balance × tight BTC SLs (~0.6%) the
+    # old cap throttled risk to ~0.2% of balance even with a 4% budget.
+    max_exposure_percent: "80.0"
     min_confidence: "0.65"  # was 0.75; near-misses at 0.76-0.78 blocked repeatedly
     crowded_long_zscore: "2.0"
     crowded_short_zscore: "-2.0"
@@ -14,7 +19,9 @@ tiers:
   TIER_2:
     risk_per_trade_percent: "3.0"
     max_leverage: 3
-    max_exposure_percent: "20.0"
+    # Raised from 20% to 50%: alts have wider SLs than BTC so the cap bites
+    # less often, but still blocked valid sizing on quieter ETH/SOL days.
+    max_exposure_percent: "50.0"
     min_confidence: "0.65"  # was 0.70; liquid alts, 0.70 blocked valid setups (LINK 0.64/0.68)
     crowded_long_zscore: "2.5"
     crowded_short_zscore: "-2.5"
