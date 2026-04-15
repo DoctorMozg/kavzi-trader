@@ -1919,12 +1919,10 @@ async def test_router_logs_raw_body_on_unexpected_model(
         account_state,
         positions,
     )
-    with caplog.at_level(logging.ERROR):
+    with caplog.at_level(logging.WARNING):
         await router.run("BTCUSDT", provider)
 
-    matching = [
-        r for r in caplog.records if "Trader returned unexpected output" in r.message
-    ]
+    matching = [r for r in caplog.records if "LLM unparseable output" in r.message]
     assert len(matching) >= 1
     record = matching[0]
     assert record.raw_body == "raw json garbage"
@@ -1963,7 +1961,7 @@ async def test_router_counts_trader_validation_failures(
         CountedUnexpectedModelTrader(bodies=[None, "garbage-1", "garbage-2"]),
     )
 
-    with caplog.at_level(logging.ERROR):
+    with caplog.at_level(logging.WARNING):
         for _ in range(3):
             provider = _make_provider(
                 candle,
@@ -1984,7 +1982,7 @@ async def test_router_counts_trader_validation_failures(
     assert router._trader_validation_failures["BTCUSDT"] == 3
 
     matching = [
-        r for r in caplog.records if "Trader returned unexpected output" in r.message
+        r for r in caplog.records if "Trader validation retries exhausted" in r.message
     ]
     assert len(matching) == 3
     counts = [r.trader_validation_failures_total for r in matching]

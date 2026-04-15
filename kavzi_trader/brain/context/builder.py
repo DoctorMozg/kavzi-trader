@@ -1,5 +1,6 @@
 import logging
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -13,11 +14,13 @@ from kavzi_trader.brain.context.formatters import (
     format_indicators_compact,
     format_order_flow_compact,
 )
-from kavzi_trader.brain.context.market_snapshot import MarketSnapshotSchema
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
+)
+from kavzi_trader.orchestrator.loops.confluence_thresholds import (
+    confluence_enter_min_for_regime,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,21 +68,41 @@ class ContextBuilder(BaseModel):
         self,
         deps: AnalystDependenciesSchema | TradingDependenciesSchema,
     ) -> MarketContextDict:
-        snapshot = MarketSnapshotSchema(
-            symbol=deps.symbol,
-            current_price=deps.current_price,
-            timeframe=deps.timeframe,
-            recent_candles=deps.recent_candles,
-            indicators=deps.indicators,
-            volatility_regime=deps.volatility_regime,
-        )
+        # We used to also serialize a full ``MarketSnapshotSchema.model_dump()``
+        # here. Its fields overlapped completely with ``candles_table`` +
+        # ``indicators_compact`` and alone added ~5k tokens per prompt. Templates
+        # read the flat scalars below instead.
+        atr_14 = deps.indicators.atr_14
         return MarketContextDict(
-            market_snapshot=snapshot.model_dump(),
             candles_table=format_candles_table(deps.recent_candles),
             indicators_compact=format_indicators_compact(
                 deps.indicators, reference_price=deps.current_price
             ),
+            symbol=deps.symbol,
+            timeframe=deps.timeframe,
+            current_price=str(deps.current_price),
+            volatility_regime=deps.volatility_regime.value,
+            atr_14=str(atr_14) if atr_14 is not None else None,
         )
+
+    @staticmethod
+    def _side_trim_confluence(
+        dual_long: dict[str, Any],
+        dual_short: dict[str, Any],
+        detected_side: str,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """Return (long, short) dicts trimmed to the detected side.
+
+        When ``detected_side`` is LONG or SHORT, the opposing block is
+        dropped so the LLM only sees the perspective it will act on. When
+        the confluence is NEUTRAL, both sides remain so the LLM can
+        compare. Saves ~300 prompt tokens per trending request.
+        """
+        if detected_side == "LONG":
+            return dual_long, None
+        if detected_side == "SHORT":
+            return None, dual_short
+        return dual_long, dual_short
 
     def build_analyst_context(
         self,
@@ -89,17 +112,29 @@ class ContextBuilder(BaseModel):
         market = self._build_market_context(deps)
         dual = deps.algorithm_confluence
         sentiment = deps.sentiment_summary
+        long_block, short_block = self._side_trim_confluence(
+            dual.long.model_dump(),
+            dual.short.model_dump(),
+            dual.detected_side,
+        )
         context = AnalystContextDict(
-            market_snapshot=market["market_snapshot"],
             candles_table=market["candles_table"],
             indicators_compact=market["indicators_compact"],
+            symbol=market["symbol"],
+            timeframe=market["timeframe"],
+            current_price=market["current_price"],
+            volatility_regime=market["volatility_regime"],
+            atr_14=market["atr_14"],
             order_flow_compact=format_order_flow_compact(deps.order_flow),
-            algorithm_confluence_long=dual.long.model_dump(),
-            algorithm_confluence_short=dual.short.model_dump(),
+            algorithm_confluence_long=long_block,
+            algorithm_confluence_short=short_block,
             detected_side=dual.detected_side,
             futures_leverage=deps.leverage,
             symbol_tier=deps.symbol_tier,
             tier_min_confidence=str(deps.tier_min_confidence),
+            confluence_enter_min=confluence_enter_min_for_regime(
+                deps.volatility_regime,
+            ),
             sentiment_summary=sentiment.summary if sentiment else None,
             sentiment_bias=(sentiment.sentiment_bias if sentiment else None),
             sentiment_confidence_adjustment=(
@@ -179,13 +214,22 @@ class ContextBuilder(BaseModel):
             current_price=deps.current_price,
             atr=deps.indicators.atr_14,
         )
+        long_block, short_block = self._side_trim_confluence(
+            dual.long.model_dump(),
+            dual.short.model_dump(),
+            dual.detected_side,
+        )
         context = TraderContextDict(
-            market_snapshot=market["market_snapshot"],
             candles_table=market["candles_table"],
             indicators_compact=market["indicators_compact"],
+            symbol=market["symbol"],
+            timeframe=market["timeframe"],
+            current_price=market["current_price"],
+            volatility_regime=market["volatility_regime"],
+            atr_14=market["atr_14"],
             order_flow_compact=format_order_flow_compact(deps.order_flow),
-            algorithm_confluence_long=dual.long.model_dump(),
-            algorithm_confluence_short=dual.short.model_dump(),
+            algorithm_confluence_long=long_block,
+            algorithm_confluence_short=short_block,
             detected_side=dual.detected_side,
             account_state=deps.account_state.model_dump(),
             analyst_result=analyst_result,

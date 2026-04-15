@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import time
@@ -6,6 +7,7 @@ from decimal import Decimal
 from typing import Protocol
 
 import httpx
+import openai
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
@@ -21,7 +23,11 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.orchestrator.loops.confluence_thresholds import CONFLUENCE_ENTER_MIN
+from kavzi_trader.orchestrator.loops.confluence_thresholds import (
+    CONFLUENCE_ENTER_MIN,
+    confluence_enter_min_for_regime,
+)
+from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +128,11 @@ _ANALYST_CONFLUENCE_ENTER = CONFLUENCE_ENTER_MIN
 # for a symbol. Resets on a successful Trader decision.
 _DEFAULT_TRADER_CIRCUIT_THRESHOLD = 3
 
+# Default ceiling for concurrent Analyst LLM calls from a single
+# ReasoningLoop cycle. Mirrors the BrainConfigSchema default so tests and
+# callers that omit the argument stay consistent with production.
+_DEFAULT_ANALYST_CONCURRENCY_LIMIT = 3
+
 # Pre-Trader deterministic gates
 _BREAKOUT_OVEREXTENDED_B = Decimal("1.20")
 _BREAKOUT_OVEREXTENDED_B_SHORT = Decimal("-0.20")
@@ -130,6 +141,137 @@ _RR_MIN_PRESCREEN = Decimal("1.2")
 # at the current TP-hit rate, so we skip the Trader LLM call entirely and return
 # WAIT. See reports/report_2026_04_10.md recommendation #6.
 _RR_HARD_BLOCK = Decimal("0.5")
+
+# Max number of characters from a raw model body included in the main log
+# message. Full body is still attached via extra["raw_body"] for JSONL
+# consumers that can handle arbitrary sizes.
+_BODY_PREVIEW_CHARS = 500
+# Max number of characters from a generic exception's str() included in the
+# main log message. Avoids flooding logs on verbose HTTP error bodies.
+_EXC_MESSAGE_PREVIEW_CHARS = 200
+
+
+def _http_status_of(exc: BaseException) -> int | None:
+    """Best-effort extraction of HTTP status code from LLM / HTTP errors."""
+    response = getattr(exc, "response", None)
+    if response is not None:
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int):
+            return status
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status
+    return None
+
+
+def _retry_after_of(exc: BaseException) -> str | None:
+    """Best-effort extraction of the Retry-After header from HTTP errors."""
+    response = getattr(exc, "response", None)
+    if response is None:
+        return None
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    try:
+        value = headers.get("retry-after")
+    except AttributeError:
+        return None
+    if value is None:
+        return None
+    return str(value)
+
+
+def _log_llm_exception(
+    symbol: str,
+    agent: str,
+    exc: BaseException,
+    elapsed_ms: float,
+) -> None:
+    """Structured log dispatcher for Analyst / Trader LLM failures.
+
+    Branches by exception type so operators can separate rate limits,
+    timeouts, schema-retry exhaustion, and generic failures from the log
+    stream without parsing tracebacks.
+    """
+    base_extra: dict[str, object] = {
+        "symbol": symbol,
+        "agent": agent,
+        "exception_type": type(exc).__name__,
+        "elapsed_ms": round(elapsed_ms, 1),
+    }
+    if isinstance(exc, openai.RateLimitError):
+        retry_after = _retry_after_of(exc)
+        extra = base_extra | {"http_status": 429, "retry_after": retry_after}
+        logger.warning(
+            "%s LLM rate-limited for %s after %.1fms (retry_after=%s): %s",
+            agent,
+            symbol,
+            elapsed_ms,
+            retry_after,
+            str(exc)[:_EXC_MESSAGE_PREVIEW_CHARS],
+            extra=extra,
+        )
+        return
+    if isinstance(exc, openai.APIStatusError):
+        status = _http_status_of(exc)
+        extra = base_extra | {"http_status": status}
+        logger.warning(
+            "%s LLM HTTP %s for %s after %.1fms: %s",
+            agent,
+            status,
+            symbol,
+            elapsed_ms,
+            str(exc)[:_EXC_MESSAGE_PREVIEW_CHARS],
+            extra=extra,
+        )
+        return
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = _http_status_of(exc)
+        retry_after = _retry_after_of(exc)
+        extra = base_extra | {"http_status": status, "retry_after": retry_after}
+        logger.warning(
+            "%s LLM HTTP %s for %s after %.1fms (retry_after=%s): %s",
+            agent,
+            status,
+            symbol,
+            elapsed_ms,
+            retry_after,
+            str(exc)[:_EXC_MESSAGE_PREVIEW_CHARS],
+            extra=extra,
+        )
+        return
+    if isinstance(exc, httpx.TimeoutException | TimeoutError):
+        logger.warning(
+            "%s LLM timed out for %s after %.1fms (type=%s)",
+            agent,
+            symbol,
+            elapsed_ms,
+            type(exc).__name__,
+            extra=base_extra,
+        )
+        return
+    if isinstance(exc, UnexpectedModelBehavior):
+        body_preview = str(exc.body or "")[:_BODY_PREVIEW_CHARS]
+        extra = base_extra | {"raw_body": exc.body, "body_preview": body_preview}
+        logger.warning(
+            "%s LLM unparseable output for %s after %.1fms: %s | body_preview=%s",
+            agent,
+            symbol,
+            elapsed_ms,
+            exc.message,
+            body_preview,
+            extra=extra,
+        )
+        return
+    logger.exception(
+        "%s LLM failed for %s after %.1fms (type=%s): %s",
+        agent,
+        symbol,
+        elapsed_ms,
+        type(exc).__name__,
+        str(exc)[:_EXC_MESSAGE_PREVIEW_CHARS],
+        extra=base_extra,
+    )
 
 
 class AgentRouter:
@@ -141,6 +283,7 @@ class AgentRouter:
         analyst_min_algo_confluence: int = _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE,
         confluence_override: ConfluenceOverrideProvider | None = None,
         trader_circuit_threshold: int = _DEFAULT_TRADER_CIRCUIT_THRESHOLD,
+        analyst_concurrency_limit: int = _DEFAULT_ANALYST_CONCURRENCY_LIMIT,
     ) -> None:
         self._scout = scout
         self._analyst = analyst
@@ -148,6 +291,12 @@ class AgentRouter:
         self._analyst_min_algo_confluence = analyst_min_algo_confluence
         self._confluence_override = confluence_override
         self._trader_circuit_threshold = trader_circuit_threshold
+        # Semaphore gating Analyst LLM calls. Acquired only around the LLM
+        # await so cached dedup hits and deterministic skip gates don't
+        # consume slots. Created lazily per event loop so construction in
+        # tests without a running loop stays cheap.
+        self._analyst_concurrency_limit = analyst_concurrency_limit
+        self._analyst_semaphore: asyncio.Semaphore | None = None
         # Per-symbol bar-close dedup for Scout (deterministic — safe to cache
         # both INTERESTING and SKIP within the same candle).
         self._scout_dedup: dict[str, _ScoutDedupEntry] = {}
@@ -204,6 +353,19 @@ class AgentRouter:
                 symbol,
             )
 
+    def _get_analyst_semaphore(self) -> asyncio.Semaphore:
+        """Lazily materialize the Analyst semaphore on the running event loop.
+
+        Creating it in ``__init__`` would bind it to whichever loop happens
+        to be current at construction time, which fails in tests that
+        construct the router outside the loop they later drive.
+        """
+        if self._analyst_semaphore is None:
+            self._analyst_semaphore = asyncio.Semaphore(
+                self._analyst_concurrency_limit,
+            )
+        return self._analyst_semaphore
+
     async def run(
         self,
         symbol: str,
@@ -258,17 +420,37 @@ class AgentRouter:
             self._log_stop("Scout", symbol, total_start)
             return PipelineResult(scout=scout_result)
 
-        analyst_result = await self._run_analyst(symbol, deps_provider)
-        if analyst_result is None:
+        analyst_outcome = await self._run_analyst(symbol, deps_provider)
+        if analyst_outcome is None:
             return PipelineResult(scout=scout_result)
+        analyst_result, volatility_regime = analyst_outcome
 
-        # FGI elevated-fear confluence override: raise the entry gate when
-        # market fear is elevated but not extreme (already blocked by FGI gate).
-        confluence_gate = _ANALYST_CONFLUENCE_ENTER
+        # Regime-specific escalation gate. Replaces the prior flat
+        # CONFLUENCE_ENTER_MIN with NORMAL=6, HIGH=7, EXTREME=8, LOW=7 so
+        # volatile markets can still trade on genuinely strong setups.
+        # Confluence override (e.g. elevated-fear FGI gate) can tighten it
+        # further but never loosen it.
+        confluence_gate = confluence_enter_min_for_regime(volatility_regime)
         if self._confluence_override is not None:
             override = self._confluence_override.get_confluence_override()
             if override is not None:
                 confluence_gate = max(confluence_gate, override)
+
+        logger.info(
+            "Analyst regime gate for %s: score=%d gate=%d regime=%s pass=%s",
+            symbol,
+            analyst_result.confluence_score,
+            confluence_gate,
+            volatility_regime.value,
+            analyst_result.confluence_score >= confluence_gate,
+            extra={
+                "symbol": symbol,
+                "agent": "analyst",
+                "confluence_score": analyst_result.confluence_score,
+                "confluence_gate": confluence_gate,
+                "volatility_regime": volatility_regime.value,
+            },
+        )
 
         if (
             not analyst_result.setup_valid
@@ -322,9 +504,10 @@ class AgentRouter:
         self,
         symbol: str,
         deps_provider: DependenciesProvider,
-    ) -> AnalystDecisionSchema | None:
+    ) -> tuple[AnalystDecisionSchema, VolatilityRegime] | None:
         deps = await deps_provider.get_analyst(symbol)
         self._log_analyst_inputs(deps)
+        regime = deps.volatility_regime
 
         # Gate: skip the LLM call when algorithm confluence is too low.
         # The Analyst can add at most +3 points; if max algo < threshold,
@@ -339,7 +522,7 @@ class AgentRouter:
                 max_algo,
                 self._analyst_min_algo_confluence,
             )
-            return AnalystDecisionSchema(
+            synthetic = AnalystDecisionSchema(
                 setup_valid=False,
                 direction="NEUTRAL",
                 confluence_score=max_algo,
@@ -355,6 +538,7 @@ class AgentRouter:
                     f" the Trader tier."
                 ),
             )
+            return synthetic, regime
 
         if not deps.recent_candles:
             logger.warning(
@@ -378,12 +562,15 @@ class AgentRouter:
                 cached.confluence_score,
                 cached.setup_valid,
             )
-            return cached
+            return cached, regime
 
+        t0 = time.monotonic()
         try:
-            result = await self._analyst.run(deps)
-        except Exception:
-            logger.exception("Analyst agent failed for %s", symbol)
+            async with self._get_analyst_semaphore():
+                result = await self._analyst.run(deps)
+        except Exception as exc:  # noqa: BLE001 - LLM client raises many types
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            _log_llm_exception(symbol, "analyst", exc, elapsed_ms)
             return None
 
         # Record the bar we just analyzed so subsequent cycles within the
@@ -391,7 +578,7 @@ class AgentRouter:
         self._analyst_dedup[symbol] = _AnalystDedupEntry(
             bar_close=current_bar, result=result
         )
-        return result
+        return result, regime
 
     async def _run_trader(
         self,
@@ -487,6 +674,12 @@ class AgentRouter:
         """Return the cached Trader decision for (symbol, analyst_hash,
         current_bar) if still valid; otherwise None. Cross-bar invalidation
         is handled by comparing bar_close.
+
+        Invariant: the cache key is the 3-tuple (symbol, bar_close,
+        analyst_hash). All three must match for a hit. Changing the
+        ``_TraderDedupEntry`` fields without updating this comparison
+        would silently weaken dedup and leak stale Trader decisions
+        across bars or Analyst revisions.
         """
         prev_entry = self._trader_dedup.get(symbol)
         if (
@@ -568,9 +761,11 @@ class AgentRouter:
                 analyst_result=analyst_result,
                 scout_pattern=scout_pattern,
             )
-        except (TimeoutError, httpx.TimeoutException):
+        except (TimeoutError, httpx.TimeoutException) as exc:
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            _log_llm_exception(symbol, "trader", exc, elapsed_ms)
             return _TraderRunResult(
-                decision=self._build_timeout_wait(symbol, t0),
+                decision=self._build_timeout_wait(symbol, elapsed_ms),
                 deps=deps,
             )
         except UnexpectedModelBehavior as exc:
@@ -578,26 +773,22 @@ class AgentRouter:
                 decision=self._build_unexpected_model_wait(symbol, exc, t0),
                 deps=deps,
             )
-        except Exception:
-            logger.exception("Trader agent failed for %s", symbol)
+        except Exception as exc:  # noqa: BLE001 - LLM client raises many types
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            _log_llm_exception(symbol, "trader", exc, elapsed_ms)
             return _TraderRunResult()
         self._cache_trader_decision(symbol, result, analyst_hash, current_bar)
         self._reset_trader_failures(symbol)
         return _TraderRunResult(decision=result, deps=deps)
 
     @staticmethod
-    def _build_timeout_wait(symbol: str, t0: float) -> TradeDecisionSchema:
-        ms = (time.monotonic() - t0) * 1000
-        logger.warning(
-            "Trader agent timed out for %s after %.1fs, returning WAIT",
-            symbol,
-            ms / 1000,
-        )
+    def _build_timeout_wait(symbol: str, elapsed_ms: float) -> TradeDecisionSchema:
+        _ = symbol  # logging handled by caller via _log_llm_exception
         return TradeDecisionSchema(
             action="WAIT",
             confidence=0.0,
             reasoning=(
-                f"Trader agent timed out after {ms / 1000:.1f}s."
+                f"Trader agent timed out after {elapsed_ms / 1000:.1f}s."
                 " Returning WAIT to avoid stale entry."
                 " Consider lowering trader timeout_s or using a"
                 " faster model."
@@ -613,18 +804,22 @@ class AgentRouter:
         exc: UnexpectedModelBehavior,
         t0: float,
     ) -> TradeDecisionSchema:
-        ms = (time.monotonic() - t0) * 1000
+        elapsed_ms = (time.monotonic() - t0) * 1000
         failure_count = self.record_trader_validation_failure(symbol)
-        logger.exception(
-            "Trader returned unexpected output for %s after %.1fs: %s",
+        _log_llm_exception(symbol, "trader", exc, elapsed_ms)
+        # Augment with the validation-failure counter the helper doesn't
+        # track. Emitted once per unparseable response so the circuit
+        # breaker state is visible alongside the raw body.
+        logger.warning(
+            "Trader validation retries exhausted for %s (total=%d): %s",
             symbol,
-            ms / 1000,
+            failure_count,
             exc.message,
             extra={
                 "symbol": symbol,
                 "agent": "trader",
-                "raw_body": exc.body,
                 "trader_validation_failures_total": failure_count,
+                "exception_type": type(exc).__name__,
             },
         )
         return TradeDecisionSchema.model_validate(
@@ -633,7 +828,7 @@ class AgentRouter:
                 "confidence": 0,
                 "reasoning": (
                     f"Trader model returned unparseable output after"
-                    f" {ms / 1000:.1f}s. Raw body logged for debugging."
+                    f" {elapsed_ms / 1000:.1f}s. Raw body logged for debugging."
                     f" Returning WAIT to avoid acting on malformed data."
                 ),
                 "suggested_entry": None,

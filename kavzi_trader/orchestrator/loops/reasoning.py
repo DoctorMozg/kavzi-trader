@@ -18,8 +18,8 @@ from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.orchestrator.loops.confluence_thresholds import (
-    CONFLUENCE_ENTER_MIN,
     CONFLUENCE_REJECT_MAX,
+    confluence_enter_min_for_regime,
 )
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
@@ -27,6 +27,7 @@ from kavzi_trader.spine.filters.chain import PreTradeFilterChain
 from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
 )
+from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import (
@@ -36,8 +37,18 @@ from kavzi_trader.spine.state.schemas import (
 
 logger = logging.getLogger(__name__)
 
-_BACKOFF_MULTIPLIER = 2.0
-_MAX_BACKOFF_FACTOR = 6.0
+# Progressive idle-ramp stairs: when the loop observes N consecutive
+# cycles with no INTERESTING scouts, sleep for this many seconds before
+# the next cycle. Ordered descending so the lookup picks the deepest
+# matching stair in a single pass. Replaces the prior doubling backoff
+# (_BACKOFF_MULTIPLIER * _MAX_BACKOFF_FACTOR) which grew continuously and
+# masked genuinely idle markets as "slow to wake" rather than "truly
+# quiet".
+_IDLE_RAMP_STAIRS: tuple[tuple[int, int], ...] = (
+    (8, 720),
+    (5, 480),
+    (3, 240),
+)
 
 
 # Cooldown (cycles) for borderline/LLM-reject bands. Short enough that the
@@ -89,6 +100,10 @@ class ReasoningLoop:
         self._consecutive_waits: dict[tuple[str, str], int] = {}
         self._consecutive_skips: dict[str, int] = {}
         self._skip_eval_interval: dict[str, int] = {}
+        # Tracks the number of consecutive cycles that produced zero
+        # INTERESTING scouts. Drives the progressive idle sleep ramp; any
+        # INTERESTING cycle resets the counter.
+        self._consecutive_idle_cycles: int = 0
 
     async def run(self) -> None:
         logger.info(
@@ -97,7 +112,7 @@ class ReasoningLoop:
             self._interval_s,
         )
         cycle = 0
-        current_interval = float(self._interval_s)
+        current_interval_s = float(self._interval_s)
         while True:
             cycle += 1
             cycle_start = time.monotonic()
@@ -111,13 +126,7 @@ class ReasoningLoop:
                 ),
             )
             interesting_count = sum(results)
-            if interesting_count > 0:
-                current_interval = float(self._interval_s)
-            else:
-                current_interval = min(
-                    current_interval * _BACKOFF_MULTIPLIER,
-                    self._interval_s * _MAX_BACKOFF_FACTOR,
-                )
+            current_interval_s = self._next_sleep_interval_s(interesting_count)
             cycle_ms = (time.monotonic() - cycle_start) * 1000
             logger.info(
                 "ReasoningLoop cycle %d complete in %.1fms, "
@@ -126,15 +135,32 @@ class ReasoningLoop:
                 cycle_ms,
                 interesting_count,
                 len(results),
-                current_interval,
+                current_interval_s,
                 extra={
                     "cycle": cycle,
                     "elapsed_ms": round(cycle_ms, 1),
                     "interesting_count": interesting_count,
-                    "sleep_interval": round(current_interval, 1),
+                    "sleep_interval_s": round(current_interval_s, 1),
+                    "consecutive_idle_cycles": self._consecutive_idle_cycles,
                 },
             )
-            await asyncio.sleep(current_interval)
+            await asyncio.sleep(current_interval_s)
+
+    def _next_sleep_interval_s(self, interesting_count: int) -> float:
+        """Return the sleep interval for the next cycle.
+
+        Resets to the base interval whenever any symbol was INTERESTING.
+        On idle cycles, advances ``_consecutive_idle_cycles`` and walks the
+        idle-ramp stairs, picking the deepest matching stair.
+        """
+        if interesting_count > 0:
+            self._consecutive_idle_cycles = 0
+            return float(self._interval_s)
+        self._consecutive_idle_cycles += 1
+        for stair_cycles, stair_sleep_s in _IDLE_RAMP_STAIRS:
+            if self._consecutive_idle_cycles >= stair_cycles:
+                return float(stair_sleep_s)
+        return float(self._interval_s)
 
     async def _fetch_cycle_positions(self) -> list[PositionSchema]:
         if self._state_manager is None:
@@ -260,7 +286,11 @@ class ReasoningLoop:
         self._track_skip_suspension(symbol, result.scout.verdict)
 
         if result.analyst is not None:
-            self._apply_analyst_cooldown(symbol, result.analyst)
+            self._apply_analyst_cooldown(
+                symbol,
+                result.analyst,
+                self._regime_of(result),
+            )
 
         if not self._should_enqueue(result):
             self._track_consecutive_waits(symbol, result)
@@ -284,10 +314,24 @@ class ReasoningLoop:
         await self._enqueue_decision(result)
         return True
 
+    @staticmethod
+    def _regime_of(result: PipelineResult) -> VolatilityRegime:
+        """Return the volatility regime associated with a pipeline result.
+
+        Falls back to NORMAL when ``trader_deps`` is absent (e.g. Scout
+        SKIP or Analyst rejection before Trader deps are built) so cooldown
+        logic has a deterministic default rather than silently using the
+        wrong regime's gate.
+        """
+        if result.trader_deps is None:
+            return VolatilityRegime.NORMAL
+        return result.trader_deps.volatility_regime
+
     def _apply_analyst_cooldown(
         self,
         symbol: str,
         analyst: AnalystDecisionSchema,
+        volatility_regime: VolatilityRegime,
     ) -> None:
         """Apply hysteresis-banded cooldown based on Analyst verdict.
 
@@ -298,11 +342,17 @@ class ReasoningLoop:
             light single-cycle cooldown, no counter escalation. The next bar
             close naturally retriggers the Analyst.
           * valid setup at/above entry gate → clear lingering rejection counts.
+
+        The "borderline vs valid" boundary is the regime-specific entry
+        gate. NORMAL regimes keep the historical 6-point cutoff; HIGH and
+        EXTREME widen the borderline band so a score of 6 under HIGH is
+        treated as borderline instead of enqueable.
         """
         score = analyst.confluence_score
         setup_valid = analyst.setup_valid
         direction = analyst.direction
         cooldown_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
+        regime_gate = confluence_enter_min_for_regime(volatility_regime)
 
         if not setup_valid and score <= CONFLUENCE_REJECT_MAX:
             for d in cooldown_dirs:
@@ -323,18 +373,20 @@ class ReasoningLoop:
                 )
             return
 
-        if not setup_valid or score < CONFLUENCE_ENTER_MIN:
+        if not setup_valid or score < regime_gate:
             for d in cooldown_dirs:
                 key = (symbol, d)
                 existing = self._cooldowns.get(key, 0)
                 self._cooldowns[key] = max(existing, _BORDERLINE_COOLDOWN_CYCLES)
             logger.debug(
                 "Borderline analyst %s direction=%s score=%d setup_valid=%s"
-                " → cooldown=%d (no escalation)",
+                " regime=%s gate=%d → cooldown=%d (no escalation)",
                 symbol,
                 direction,
                 score,
                 setup_valid,
+                volatility_regime.value,
+                regime_gate,
                 _BORDERLINE_COOLDOWN_CYCLES,
             )
             return
@@ -393,7 +445,8 @@ class ReasoningLoop:
             return False
         if result.analyst is None or not result.analyst.setup_valid:
             return False
-        if result.analyst.confluence_score < CONFLUENCE_ENTER_MIN:
+        regime_gate = confluence_enter_min_for_regime(self._regime_of(result))
+        if result.analyst.confluence_score < regime_gate:
             return False
         if result.trader is None:
             return False

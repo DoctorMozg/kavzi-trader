@@ -1,11 +1,17 @@
-Validate this potential setup on {{ market_snapshot.timeframe }} {{ market_snapshot.symbol }}.
+Validate this potential setup on {{ timeframe }} {{ symbol }}.
 Symbol tier: {{ symbol_tier | default("TIER_2") }} | Min confidence: {{ tier_min_confidence | default("0.70") }}
 Leverage: {{ futures_leverage | default(5) }}x (liquidation ~{{ (100 / (futures_leverage | default(5))) | round(1) }}% from entry)
+Volatility regime: {{ volatility_regime }} | Confluence gate for this regime: {{ confluence_enter_min | default(6) }} (report RAW 0-11 score; routing applies the gate)
 
-STEP 1 — Review algorithm confluence signals for BOTH directions:
+STEP 1 — Review algorithm confluence signals for the detected direction:
 {% include "user/context/algorithm_confluence.j2" %}
-Your confluence_score base MUST match the algorithm score for your chosen direction (LONG base={{ algorithm_confluence_long.score }}/8, SHORT base={{ algorithm_confluence_short.score }}/8).
-You must add 0-3 discretionary points (order flow + price structure) to produce your final 0-11 confluence_score. The max achievable is 8 (algo base) + 3 (discretionary) = 11, matching the schema cap.
+{%- if algorithm_confluence_long %}
+LONG base score: {{ algorithm_confluence_long.score }}/8.
+{%- endif %}
+{%- if algorithm_confluence_short %}
+SHORT base score: {{ algorithm_confluence_short.score }}/8.
+{%- endif %}
+Add 0-3 discretionary points (order flow + price structure) to produce the final 0-11 confluence_score. Max achievable is 8 (algo base) + 3 (discretionary) = 11, matching the schema cap.
 
 STEP 2 — Analyze market data:
 {% include "user/context/market_snapshot.j2" %}

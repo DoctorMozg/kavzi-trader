@@ -27,7 +27,7 @@ def test_brain_config_custom_models() -> None:
 
 def test_agent_model_config_defaults() -> None:
     config = AgentModelConfigSchema(model_id="test/model")
-    assert config.retries == 1
+    assert config.retries == 3
     assert config.temperature == 0.0
 
 

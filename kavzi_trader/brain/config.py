@@ -7,7 +7,7 @@ class AgentModelConfigSchema(BaseModel):
     """Configuration for a single LLM agent tier."""
 
     model_id: Annotated[str, Field(..., min_length=1)]
-    retries: Annotated[int, Field(default=1, ge=0, le=5)]
+    retries: Annotated[int, Field(default=3, ge=0, le=5)]
     temperature: Annotated[float, Field(default=0.0, ge=0.0, le=2.0)]
     # None means "inherit request_timeout_s from the parent BrainConfig".
     # A non-None value overrides the global timeout for this tier; use a
@@ -46,5 +46,10 @@ class BrainConfigSchema(BaseModel):
             ),
         ),
     ]
+    # Hard cap on concurrent Analyst LLM calls launched from a single
+    # ReasoningLoop cycle. Prevents OpenRouter burst saturation when many
+    # symbols escalate at once. Session 2026-04-14 observed 54% Analyst
+    # failure rate without this guard.
+    analyst_concurrency_limit: Annotated[int, Field(default=3, ge=1, le=16)]
 
     model_config = ConfigDict(frozen=True)

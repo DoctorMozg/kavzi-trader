@@ -39,13 +39,19 @@ brain:
   #   300 = permissive (for heavy Opus-tier requests)
   request_timeout_s: 120.0
 
+  # Hard cap on concurrent Analyst LLM calls launched from a single
+  # ReasoningLoop cycle. Shields OpenRouter from burst saturation when
+  # many symbols pass Scout at once. Raise only if the observed Analyst
+  # failure rate is near zero and you want shorter tail-latency.
+  analyst_concurrency_limit: 3
+
   analyst:
     # Tier 2 — Structured confluence scoring against a fixed rubric.
     # Haiku 4.5 targets ~1.5s p50 latency vs ~6.3s on gpt-5.4-mini with
     # comparable rubric-following quality for well-templated prompts.
     # Alternatives: openai/gpt-5.4-mini (higher latency), anthropic/claude-sonnet-4.5 (slower but stronger reasoning).
     model_id: "anthropic/claude-haiku-4.5"
-    retries: 2
+    retries: 3
     temperature: 0.0
     seed: 42
     timeout_s: 12
@@ -55,7 +61,7 @@ brain:
     # Alternatives: openai/gpt-5 (88.23%), openai/gpt-4.1 (best tool-calling value)
     # or "anthropic/claude-opus-4.6"
     model_id: "openai/gpt-5.4"
-    retries: 2
+    retries: 3
     temperature: 0.0
 
 # -----------------------------------------------------------------------------

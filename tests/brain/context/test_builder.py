@@ -39,8 +39,88 @@ def test_context_builder_analyst(
     assert "algorithm_confluence_long" in context, "Expected LONG confluence dict."
     assert "algorithm_confluence_short" in context, "Expected SHORT confluence dict."
     assert "detected_side" in context, "Expected detected side."
-    assert "market_snapshot" in context, "Expected structured market snapshot dict."
+    # market_snapshot is intentionally NOT in context: prior model_dump()
+    # duplicated candles_table + indicators_compact and bloated prompts by
+    # ~5k tokens per Analyst request. Replaced by flat scalars.
+    assert "market_snapshot" not in context
+    assert context["symbol"] == "BTCUSDT"
+    assert context["timeframe"] == "15m"
+    assert context["current_price"] == "105"
+    assert context["volatility_regime"] == volatility_regime.value
     assert context["futures_leverage"] == 5
+
+
+def test_context_trims_opposite_side_when_detected_long(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+) -> None:
+    # Default fixture has detected_side="LONG"; SHORT block must be trimmed
+    # to None so the Analyst prompt only carries the relevant perspective.
+    deps = AnalystDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=algorithm_confluence,
+        volatility_regime=volatility_regime,
+    )
+    builder = ContextBuilder()
+    context = builder.build_analyst_context(deps)
+    assert context["algorithm_confluence_long"] is not None
+    assert context["algorithm_confluence_short"] is None
+
+
+def test_context_keeps_both_sides_when_neutral(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+) -> None:
+    neutral = algorithm_confluence.model_copy(update={"detected_side": "NEUTRAL"})
+    deps = AnalystDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=neutral,
+        volatility_regime=volatility_regime,
+    )
+    builder = ContextBuilder()
+    context = builder.build_analyst_context(deps)
+    assert context["algorithm_confluence_long"] is not None
+    assert context["algorithm_confluence_short"] is not None
+
+
+def test_context_trims_long_side_when_detected_short(
+    candle,
+    indicators,
+    order_flow,
+    algorithm_confluence,
+    volatility_regime,
+) -> None:
+    bearish = algorithm_confluence.model_copy(update={"detected_side": "SHORT"})
+    deps = AnalystDependenciesSchema(
+        symbol="BTCUSDT",
+        current_price=Decimal(105),
+        timeframe="15m",
+        recent_candles=[candle],
+        indicators=indicators,
+        order_flow=order_flow,
+        algorithm_confluence=bearish,
+        volatility_regime=volatility_regime,
+    )
+    builder = ContextBuilder()
+    context = builder.build_analyst_context(deps)
+    assert context["algorithm_confluence_long"] is None
+    assert context["algorithm_confluence_short"] is not None
 
 
 def test_context_builder_trader(

@@ -1,8 +1,10 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.context.formatters import (
     _price_based_precision,
+    format_candles_table,
     format_indicators_compact,
     format_order_flow_compact,
 )
@@ -125,6 +127,60 @@ class TestFormatIndicatorsCompact:
         ind = _make_indicators()
         result = format_indicators_compact(ind, reference_price=Decimal("0.18"))
         assert "MACD=0.000120" in result
+
+
+def _make_candle(open_time_iso: str) -> CandlestickSchema:
+    when = datetime.fromisoformat(open_time_iso)
+    return CandlestickSchema(
+        open_time=when,
+        close_time=when,
+        open_price=Decimal(100),
+        high_price=Decimal(101),
+        low_price=Decimal("99.5"),
+        close_price=Decimal("100.5"),
+        volume=Decimal("12.3456"),
+        quote_volume=Decimal("1234.56"),
+        trades_count=42,
+        taker_buy_base_volume=Decimal("6.0"),
+        taker_buy_quote_volume=Decimal("600.0"),
+    )
+
+
+class TestFormatCandlesTable:
+    # The Analyst prompt previously carried 9 columns per row
+    # (time|O|H|L|C|V|quote_vol|trades|taker_buy_vol) of which only the
+    # first six actually influenced rubric scoring. Trimmed to save ~300
+    # tokens per Analyst request across the 12-candle window.
+
+    def test_header_has_exactly_six_columns(self) -> None:
+        table = format_candles_table([])
+        assert table == "time|open|high|low|close|volume"
+        assert table.count("|") == 5
+
+    def test_row_has_exactly_six_columns(self) -> None:
+        table = format_candles_table([_make_candle("2026-01-01T12:00:00")])
+        header, row = table.split("\n")
+        assert header.count("|") == 5
+        assert row.count("|") == 5
+
+    def test_row_omits_dropped_columns(self) -> None:
+        table = format_candles_table([_make_candle("2026-01-01T12:00:00")])
+        assert "quote_vol" not in table
+        assert "trades" not in table
+        assert "taker_buy" not in table
+        # Dropped fields also must not leak their numeric values: the
+        # quote_volume constant above (1234.56) would otherwise appear as a
+        # substring if the row kept emitting it.
+        assert "1234.56" not in table
+        assert "|42|" not in table
+
+    def test_row_keeps_ohlcv_data(self) -> None:
+        table = format_candles_table([_make_candle("2026-01-01T12:00:00")])
+        _, row = table.split("\n")
+        # High-price-threshold candle uses 2-decimal precision per
+        # _price_based_precision (close_price=100.5 is above the $1 mid
+        # tier), so OHLC print with 4 decimals.
+        assert row == "12:00|100.0000|101.0000|99.5000|100.5000|12.3456"
 
 
 class TestFormatOrderFlowCompact:

@@ -4,7 +4,7 @@ from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 
-_HEADER = "time|open|high|low|close|volume|quote_vol|trades|taker_buy_vol"
+_HEADER = "time|open|high|low|close|volume"
 _HIGH_PRICE_THRESHOLD = 1000
 _MID_PRICE_THRESHOLD = 1
 
@@ -109,9 +109,6 @@ def format_candles_table(candles: list[CandlestickSchema]) -> str:
             f"|{_fmt_price(c.low_price, precision)}"
             f"|{_fmt_price(c.close_price, precision)}"
             f"|{float(c.volume):.4f}"
-            f"|{float(c.quote_volume):.2f}"
-            f"|{c.trades_count}"
-            f"|{float(c.taker_buy_base_volume):.4f}"
         )
         rows.append(row)
     return "\n".join(rows)

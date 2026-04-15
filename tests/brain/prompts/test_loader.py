@@ -22,9 +22,38 @@ def test_prompt_loader_renders_analyst_system_prompt() -> None:
     loader = PromptLoader()
     context = _make_system_prompt_context()
     rendered = loader.render_system_prompt("analyst", context=context)
-    assert "CONFLUENCE SCORING RUBRIC" in rendered, "Expected risk framework."
+    assert "CONFLUENCE SCORING" in rendered, "Expected risk framework."
     assert "VOLATILITY REGIMES" in rendered, "Expected volatility guide."
     assert "ORDER FLOW INTERPRETATION" in rendered, "Expected order flow guide."
+
+
+def test_analyst_prompt_has_no_volatility_penalty_instruction() -> None:
+    """After Phase 4 the volatility penalty is applied by the router, not
+    the LLM. The former per-prompt subtraction instructions must be gone.
+    """
+    loader = PromptLoader()
+    context = _make_system_prompt_context()
+    rendered = loader.render_system_prompt("analyst", context=context)
+    assert "VOLATILITY PENALTY" not in rendered
+    assert "-1 confluence penalty" not in rendered
+    assert "-3 confluence penalty" not in rendered
+
+
+def test_risk_framework_is_condensed() -> None:
+    """Risk framework used to repeat the 8-signal rubric verbatim. After
+    compression the rendered block stays under ~1700 chars; if it regrows
+    past 2500 the redundant rubric has slipped back in.
+    """
+    loader = PromptLoader()
+    context = _make_system_prompt_context()
+    rendered = loader.render_system_prompt("analyst", context=context)
+    # Capture roughly the risk_framework section: from its heading down
+    # to the next top-level block heading.
+    framework_start = rendered.index("CONFLUENCE SCORING (0-11 scale)")
+    framework_end = rendered.index("VOLATILITY REGIMES", framework_start)
+    framework_block = rendered[framework_start:framework_end]
+    # Reject any regression that lets the old ~1000-char rubric come back.
+    assert len(framework_block) < 1500
 
 
 def test_analyst_prompt_has_breakout_override() -> None:

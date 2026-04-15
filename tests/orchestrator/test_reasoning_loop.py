@@ -291,7 +291,7 @@ async def test_decision_message_includes_leverage() -> None:
 
 @pytest.mark.asyncio
 async def test_backoff_on_all_skip() -> None:
-    """When all symbols SKIP, the sleep interval should increase."""
+    """When all symbols SKIP for 3+ cycles, the sleep interval ramps up."""
     deps = _build_deps()
     provider = DummyDepsProvider(deps)
     router = AsyncMock()
@@ -326,20 +326,25 @@ async def test_backoff_on_all_skip() -> None:
 
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
         task = asyncio.create_task(loop.run())
-        for _ in range(50):
+        for _ in range(200):
             await original_sleep(0)
-            if len(sleep_durations) >= 2:
+            if len(sleep_durations) >= 3:
                 break
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    assert len(sleep_durations) >= 2
-    assert sleep_durations[1] > sleep_durations[0]
+    assert len(sleep_durations) >= 3
+    # Progressive staircase: cycles 1-2 stay at base (one and two idle
+    # cycles are below the first stair), cycle 3 crosses the 3-idle stair
+    # and jumps to 240s.
+    assert sleep_durations[0] == 10.0
+    assert sleep_durations[1] == 10.0
+    assert sleep_durations[2] == 240.0
 
 
 @pytest.mark.asyncio
 async def test_backoff_resets_on_interesting() -> None:
-    """After backoff, an INTERESTING verdict should reset the interval."""
+    """After ramping up, an INTERESTING verdict must reset to the base interval."""
     deps = _build_deps()
     provider = DummyDepsProvider(deps)
 
@@ -348,7 +353,9 @@ async def test_backoff_resets_on_interesting() -> None:
     async def _alternating_run(symbol: str, deps_provider: object) -> PipelineResult:
         nonlocal call_count
         call_count += 1
-        if call_count <= 1:
+        # First 3 cycles SKIP so we reach the first staircase stair (240s),
+        # then cycle 4 fires INTERESTING so we can observe the reset.
+        if call_count <= 3:
             return PipelineResult(
                 scout=ScoutDecisionSchema(
                     verdict="SKIP", reason="dead", pattern_detected=None
@@ -384,18 +391,20 @@ async def test_backoff_resets_on_interesting() -> None:
 
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
         task = asyncio.create_task(loop.run())
-        for _ in range(50):
+        for _ in range(200):
             await original_sleep(0)
-            if len(sleep_durations) >= 2:
+            if len(sleep_durations) >= 4:
                 break
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    assert len(sleep_durations) >= 2
-    # Cycle 1: all SKIP → backoff to 20
-    assert sleep_durations[0] == 20.0
-    # Cycle 2: INTERESTING → reset to base 10
+    assert len(sleep_durations) >= 4
+    # Cycles 1-2 stay at base, cycle 3 jumps to 240s (first stair), cycle 4
+    # sees INTERESTING and resets back to base 10s.
+    assert sleep_durations[0] == 10.0
     assert sleep_durations[1] == 10.0
+    assert sleep_durations[2] == 240.0
+    assert sleep_durations[3] == 10.0
 
 
 def _make_skip_result() -> PipelineResult:
@@ -655,12 +664,12 @@ def test_analyst_cooldown_reject_band_escalates() -> None:
         confluence_score=2,
     )
 
-    loop._apply_analyst_cooldown("BTCUSDT", analyst)
+    loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
     key = ("BTCUSDT", "LONG")
     assert loop._consecutive_rejections[key] == 1
     assert loop._cooldowns[key] == 9  # base=9 * mult=1
 
-    loop._apply_analyst_cooldown("BTCUSDT", analyst)
+    loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
     assert loop._consecutive_rejections[key] == 2
     assert loop._cooldowns[key] == 18  # base=9 * mult=2
 
@@ -683,7 +692,7 @@ def test_analyst_cooldown_borderline_band_no_escalation() -> None:
             direction="LONG",
             confluence_score=score,
         )
-        loop._apply_analyst_cooldown("BTCUSDT", analyst)
+        loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
         assert key not in loop._consecutive_rejections
         assert loop._cooldowns[key] == 1  # _BORDERLINE_COOLDOWN_CYCLES
 
@@ -702,7 +711,7 @@ def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
         direction="LONG",
         confluence_score=9,
     )
-    loop._apply_analyst_cooldown("BTCUSDT", analyst)
+    loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
 
     key = ("BTCUSDT", "LONG")
     assert key not in loop._consecutive_rejections
@@ -725,7 +734,7 @@ def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
         direction="LONG",
         confluence_score=7,
     )
-    loop._apply_analyst_cooldown("BTCUSDT", analyst)
+    loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
 
     assert ("BTCUSDT", "LONG") not in loop._consecutive_rejections
 
@@ -774,6 +783,100 @@ def test_should_enqueue_requires_confluence_entry_gate() -> None:
         trader_deps=deps,
     )
     assert loop._should_enqueue(at_gate) is True
+
+
+@pytest.mark.parametrize(
+    ("regime", "score", "expected_enqueue"),
+    [
+        # NORMAL regime has gate 6.
+        (VolatilityRegime.NORMAL, 5, False),
+        (VolatilityRegime.NORMAL, 6, True),
+        # HIGH regime has gate 7.
+        (VolatilityRegime.HIGH, 6, False),
+        (VolatilityRegime.HIGH, 7, True),
+        # EXTREME regime has gate 8.
+        (VolatilityRegime.EXTREME, 7, False),
+        (VolatilityRegime.EXTREME, 8, True),
+        # LOW regime has gate 7.
+        (VolatilityRegime.LOW, 6, False),
+        (VolatilityRegime.LOW, 7, True),
+    ],
+)
+def test_should_enqueue_gated_by_regime_specific_min(
+    regime: VolatilityRegime,
+    score: int,
+    expected_enqueue: bool,
+) -> None:
+    """The escalation gate must track the regime-specific minimum score."""
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+    )
+    deps = _build_deps().model_copy(update={"volatility_regime": regime})
+
+    result = PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING",
+            reason="ok",
+            pattern_detected=None,
+        ),
+        analyst=_make_analyst_decision(
+            setup_valid=True,
+            direction="LONG",
+            confluence_score=score,
+        ),
+        trader=TradeDecisionSchema(
+            action="LONG",
+            confidence=0.8,
+            reasoning=_TRADER_REASONING,
+            suggested_entry=Decimal(105),
+            suggested_stop_loss=Decimal(95),
+            suggested_take_profit=Decimal(125),
+        ),
+        trader_deps=deps,
+    )
+    assert loop._should_enqueue(result) is expected_enqueue
+
+
+@pytest.mark.parametrize(
+    "regime",
+    [
+        VolatilityRegime.NORMAL,
+        VolatilityRegime.HIGH,
+        VolatilityRegime.EXTREME,
+        VolatilityRegime.LOW,
+    ],
+)
+def test_analyst_cooldown_borderline_uses_regime_gate(
+    regime: VolatilityRegime,
+) -> None:
+    """HIGH/EXTREME regimes widen the borderline band: a score of 6 under
+    HIGH (gate=7) lands in the borderline band, not the "valid" branch.
+    """
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+    # setup_valid=False with a score equal to NORMAL gate (6). Only NORMAL
+    # would place this in the "valid cleanup" path; HIGH/EXTREME/LOW push
+    # it into the borderline band (1-cycle cooldown, no escalation).
+    analyst = _make_analyst_decision(
+        setup_valid=False,
+        direction="LONG",
+        confluence_score=6,
+    )
+
+    loop._apply_analyst_cooldown("BTCUSDT", analyst, regime)
+    key = ("BTCUSDT", "LONG")
+    assert key not in loop._consecutive_rejections
+    # Every regime funnels an invalid setup at score=6 into the borderline
+    # cooldown because the NORMAL branch only fires when setup_valid=True.
+    assert loop._cooldowns[key] == 1
 
 
 def _make_trade_result() -> PipelineResult:

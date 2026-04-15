@@ -319,7 +319,13 @@ async def _start_orchestrator(
     if external_cache is not None:
         fgi_gate = FearGreedGateFilter(external_cache, app_config.filters)
 
-    router = AgentRouter(scout, analyst, trader, confluence_override=fgi_gate)
+    router = AgentRouter(
+        scout,
+        analyst,
+        trader,
+        confluence_override=fgi_gate,
+        analyst_concurrency_limit=app_config.brain.analyst_concurrency_limit,
+    )
     logger.info("Brain agents created")
 
     position_manager = PositionManager(

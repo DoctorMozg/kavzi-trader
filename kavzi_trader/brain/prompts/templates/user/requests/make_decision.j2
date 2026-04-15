@@ -1,5 +1,6 @@
-Make a final trade decision for {{ market_snapshot.timeframe }} {{ market_snapshot.symbol }} at price {{ market_snapshot.current_price }}.
+Make a final trade decision for {{ timeframe }} {{ symbol }} at price {{ current_price }}.
 Tier: {{ symbol_tier | default("TIER_2") }} | Min confidence for LONG/SHORT: {{ tier_min_confidence | default("0.70") }}
+Volatility regime: {{ volatility_regime }}
 
 {% include "user/context/analyst_result.j2" %}
 
@@ -27,7 +28,7 @@ OPEN POSITIONS:
 {% endif %}
 
 Scout pattern: {{ scout_pattern or "None" }}
-ATR(14) for position sizing: {{ market_snapshot.indicators.atr_14 if market_snapshot.indicators.atr_14 is not none else "unavailable" }}
+ATR(14) for position sizing: {{ atr_14 if atr_14 else "unavailable" }}
 
 EXTERNAL SENTIMENT:
 {% include "user/context/sentiment.j2" %}
