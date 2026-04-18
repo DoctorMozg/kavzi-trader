@@ -218,9 +218,7 @@ async def test_router_logs_regime_gate_decision(
     with caplog.at_level(logging.INFO):
         await router.run("BTCUSDT", provider)
 
-    gate_logs = [
-        r for r in caplog.records if "Analyst regime gate" in r.message
-    ]
+    gate_logs = [r for r in caplog.records if "Analyst regime gate" in r.message]
     assert len(gate_logs) == 1
     record = gate_logs[0]
     assert record.confluence_score == 8

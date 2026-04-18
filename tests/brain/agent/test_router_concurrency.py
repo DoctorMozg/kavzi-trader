@@ -43,7 +43,8 @@ class _SlowAnalyst:
     async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema:
         self._concurrent += 1
         self.max_observed_concurrent = max(
-            self.max_observed_concurrent, self._concurrent,
+            self.max_observed_concurrent,
+            self._concurrent,
         )
         try:
             await self._gate.wait()
