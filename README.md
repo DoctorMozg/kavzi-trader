@@ -2,6 +2,19 @@
 
 LLM-Based Crypto Trading Platform for Binance
 
+## About
+
+KavziTrader is a **personal research project** exploring the trading
+capabilities of Large Language Models. It is not a product, not a service, and
+not financial advice.
+
+## Disclaimer
+
+Trading cryptocurrencies carries significant risk, including possible total
+loss of capital. This software is experimental and provided "as is" with no
+warranty — use at your own risk. See [DISCLAIMER.md](DISCLAIMER.md) for the
+full statement.
+
 ## Overview
 
 KavziTrader is an algorithmic trading platform designed for cryptocurrency trading on Binance. The platform implements a **Brain-Spine Architecture** that leverages Large Language Models (LLMs) for intelligent market analysis while maintaining deterministic, real-time execution.
@@ -23,6 +36,38 @@ KavziTrader is an algorithmic trading platform designed for cryptocurrency tradi
 - **Confidence Calibration**: Statistical tracking of LLM decision accuracy
 - **Event Sourcing**: Redis Streams audit trail with projections
 - **Structured Logging**: JSON logs and decision audit records
+
+## How It Works
+
+KavziTrader is built around a **Brain-Spine** split. The Brain is tiered LLM
+reasoning — Scout (Haiku) → Analyst (Sonnet) → Trader (Opus) — that decides
+*whether* and *what* to trade. Each tier is cheaper and faster than the next;
+Scout filters out ~90% of candles before the platform pays for deeper
+reasoning, so cost scales with opportunity rather than with market activity.
+
+The Spine is deterministic async Python that decides *how* and *when* to
+execute safely: pre-trade filters, ATR-based risk validation, an execution
+engine talking to Binance, and active position management (trailing stops,
+break-even, partial exits, scaling). Every decision and order is written to a
+Redis Streams event store, which both audits the system and drives the
+position-management loops. Latency separation is deliberate: the Brain
+operates at 0.5–5 s, the Spine responds in under 100 ms.
+
+```mermaid
+flowchart LR
+    C[Candle close] --> S{Scout<br/>Haiku ~500ms}
+    S -- SKIP --> X[Drop]
+    S -- INTERESTING --> A{Analyst<br/>Sonnet ~2s}
+    A -- invalid --> X
+    A -- valid setup --> T{Trader<br/>Opus ~5s}
+    T -- signal --> F[Pre-trade filters<br/>liquidity funding correlation news]
+    F --> R[Risk validation<br/>ATR sizing drawdown]
+    R --> E[Execution engine]
+    E --> B[(Binance API)]
+    E --> ES[(Redis Streams<br/>event store)]
+    ES --> PM[Position management<br/>trailing break-even partials scaling]
+    PM --> E
+```
 
 ## Project Structure
 
@@ -50,8 +95,8 @@ kavzitrader/
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/kavzitrader.git
-   cd kavzitrader
+   git clone https://github.com/doctormozg/kavzi-trader.git
+   cd kavzi-trader
    ```
 
 2. Install dependencies using uv:
@@ -151,3 +196,7 @@ For detailed documentation, see:
 | [Spine Implementation](docs/06_SPINE_IMPLEMENTATION.md) | Dynamic risk, position management |
 | [Trading Plan](docs/07_TRADING_PLAN.md) | Trading methodology and edge definition |
 | [Event Sourcing](docs/EVENT_SOURCING.md) | Audit trail and state management |
+
+## License
+
+MIT — see [LICENSE](LICENSE).

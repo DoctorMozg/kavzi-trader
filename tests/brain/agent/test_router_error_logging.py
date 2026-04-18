@@ -15,7 +15,9 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior
 from kavzi_trader.brain.agent.router import _log_llm_exception
 
 
-def _make_httpx_response(status_code: int, retry_after: str | None = None) -> httpx.Response:
+def _make_httpx_response(
+    status_code: int, retry_after: str | None = None
+) -> httpx.Response:
     headers = {"retry-after": retry_after} if retry_after is not None else {}
     return httpx.Response(
         status_code=status_code,
@@ -28,7 +30,9 @@ def test_http_status_error_logs_status_code(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     response = _make_httpx_response(502, retry_after="30")
-    exc = httpx.HTTPStatusError("bad gateway", request=response.request, response=response)
+    exc = httpx.HTTPStatusError(
+        "bad gateway", request=response.request, response=response
+    )
 
     with caplog.at_level(logging.WARNING):
         _log_llm_exception("BTCUSDT", "analyst", exc, elapsed_ms=1234.5)

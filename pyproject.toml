@@ -1,9 +1,24 @@
 [project]
 name = "kavzitrader"
 version = "0.1.0"
-description = "Add your description here"
+description = "Personal research project exploring the trading capabilities of LLMs: a Brain-Spine crypto trading platform for Binance with tiered PydanticAI agents."
 readme = "README.md"
 requires-python = ">=3.13"
+license = { text = "MIT" }
+license-files = ["LICENSE"]
+authors = [
+    { name = "Stanislav Gonorovskii", email = "drmozg@gmail.com" },
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Development Status :: 3 - Alpha",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Intended Audience :: Developers",
+]
+
 dependencies = [
     "click>=8.3.1",
     "numpy>=2.4.1",
@@ -21,6 +36,10 @@ dependencies = [
     "websockets>=15.0.1",
     "aiofiles>=25.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/doctormozg/kavzi-trader"
+Issues = "https://github.com/doctormozg/kavzi-trader/issues"
 
 [dependency-groups]
 dev = [

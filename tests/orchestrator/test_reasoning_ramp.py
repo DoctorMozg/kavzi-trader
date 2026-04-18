@@ -6,9 +6,9 @@ INTERESTING cycle fully resets the counter back to the base interval.
 
 import asyncio
 import unittest.mock
+from unittest.mock import AsyncMock
 
 import pytest
-from unittest.mock import AsyncMock
 
 from kavzi_trader.brain.agent.router import PipelineResult
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
@@ -16,7 +16,7 @@ from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
 
 
 @pytest.fixture
-def _skip_result() -> PipelineResult:
+def skip_result() -> PipelineResult:
     return PipelineResult(
         scout=ScoutDecisionSchema(
             verdict="SKIP",
@@ -27,7 +27,7 @@ def _skip_result() -> PipelineResult:
 
 
 @pytest.fixture
-def _interesting_result() -> PipelineResult:
+def interesting_result() -> PipelineResult:
     return PipelineResult(
         scout=ScoutDecisionSchema(
             verdict="INTERESTING",
@@ -75,9 +75,9 @@ def _build_skip_loop(router: AsyncMock) -> ReasoningLoop:
 
 
 @pytest.mark.asyncio
-async def test_idle_3_cycles_sleeps_240s(_skip_result: PipelineResult) -> None:
+async def test_idle_3_cycles_sleeps_240s(skip_result: PipelineResult) -> None:
     router = AsyncMock()
-    router.run = AsyncMock(return_value=_skip_result)
+    router.run = AsyncMock(return_value=skip_result)
     loop = _build_skip_loop(router)
 
     sleeps: list[float] = []
@@ -89,9 +89,9 @@ async def test_idle_3_cycles_sleeps_240s(_skip_result: PipelineResult) -> None:
 
 
 @pytest.mark.asyncio
-async def test_idle_5_cycles_sleeps_480s(_skip_result: PipelineResult) -> None:
+async def test_idle_5_cycles_sleeps_480s(skip_result: PipelineResult) -> None:
     router = AsyncMock()
-    router.run = AsyncMock(return_value=_skip_result)
+    router.run = AsyncMock(return_value=skip_result)
     loop = _build_skip_loop(router)
 
     sleeps: list[float] = []
@@ -104,9 +104,9 @@ async def test_idle_5_cycles_sleeps_480s(_skip_result: PipelineResult) -> None:
 
 
 @pytest.mark.asyncio
-async def test_idle_8_cycles_sleeps_720s(_skip_result: PipelineResult) -> None:
+async def test_idle_8_cycles_sleeps_720s(skip_result: PipelineResult) -> None:
     router = AsyncMock()
-    router.run = AsyncMock(return_value=_skip_result)
+    router.run = AsyncMock(return_value=skip_result)
     loop = _build_skip_loop(router)
 
     sleeps: list[float] = []
@@ -120,8 +120,8 @@ async def test_idle_8_cycles_sleeps_720s(_skip_result: PipelineResult) -> None:
 
 @pytest.mark.asyncio
 async def test_interesting_resets_ramp(
-    _skip_result: PipelineResult,
-    _interesting_result: PipelineResult,
+    skip_result: PipelineResult,
+    interesting_result: PipelineResult,
 ) -> None:
     """Once we are already sitting at the 240s stair, a single INTERESTING
     cycle must reset the counter fully so the NEXT idle returns to base.
@@ -134,8 +134,8 @@ async def test_interesting_resets_ramp(
         # Cycles 1-3 SKIP (hit the 240s stair on cycle 3), cycle 4 is
         # INTERESTING, cycle 5 SKIP again — must drop to base not 240s.
         if call_count == 4:
-            return _interesting_result
-        return _skip_result
+            return interesting_result
+        return skip_result
 
     router = AsyncMock()
     router.run = AsyncMock(side_effect=_pattern)
