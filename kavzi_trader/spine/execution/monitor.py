@@ -71,6 +71,11 @@ class OrderMonitor:
                     "Failed to poll order %s for %s, retrying",
                     order_id,
                     symbol,
+                    extra={
+                        "symbol": symbol,
+                        "order_id": order_id,
+                        "failure_count": failure_count,
+                    },
                 )
                 failure_count += 1
             delay_s = min(30, 2**failure_count)

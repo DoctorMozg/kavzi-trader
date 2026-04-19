@@ -238,6 +238,7 @@ class DynamicRiskValidator:
         except Exception:
             logger.exception(
                 "Failed to check drawdown, rejecting trade as safety measure",
+                extra={"reason": "risk_validation_error", "check": "drawdown"},
             )
             return DrawdownCheckResult(
                 rejections=["Drawdown check failed — state unavailable"],
@@ -274,6 +275,11 @@ class DynamicRiskValidator:
             logger.exception(
                 "Failed to check exposure for %s, rejecting as safety measure",
                 symbol,
+                extra={
+                    "symbol": symbol,
+                    "reason": "risk_validation_error",
+                    "check": "exposure",
+                },
             )
             return "Exposure check failed — state unavailable"
         exposure_check = self._exposure_limiter.check_exposure(symbol, positions)
@@ -481,6 +487,7 @@ class DynamicRiskValidator:
         except Exception:
             logger.exception(
                 "Failed to check margin ratio, rejecting as safety measure",
+                extra={"reason": "risk_validation_error", "check": "margin_ratio"},
             )
             return "Margin ratio check failed — state unavailable"
 

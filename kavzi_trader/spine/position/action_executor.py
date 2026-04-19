@@ -80,7 +80,11 @@ class PositionActionExecutor:
                 "Failed to place new stop order for %s; "
                 "leaving existing stop orders in place",
                 position.symbol,
-                extra={"position_id": position.id},
+                extra={
+                    "position_id": position.id,
+                    "symbol": position.symbol,
+                    "new_stop_loss": str(action.new_stop_loss),
+                },
             )
             return
 
@@ -107,7 +111,11 @@ class PositionActionExecutor:
             logger.exception(
                 "Failed to submit partial-exit order for %s",
                 position.symbol,
-                extra={"position_id": position.id},
+                extra={
+                    "position_id": position.id,
+                    "symbol": position.symbol,
+                    "exit_quantity": str(action.exit_quantity),
+                },
             )
             return
 
@@ -123,7 +131,12 @@ class PositionActionExecutor:
                 "Partial exit executed on exchange for %s but failed to persist "
                 "partial_exit_done flag; reconciliation required",
                 position.symbol,
-                extra={"position_id": position.id},
+                extra={
+                    "position_id": position.id,
+                    "symbol": position.symbol,
+                    "exit_quantity": str(action.exit_quantity),
+                    "needs_reconciliation": True,
+                },
                 exc_info=True,
             )
             return
