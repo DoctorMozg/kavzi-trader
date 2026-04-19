@@ -12,6 +12,12 @@ from pydantic import BaseModel, ConfigDict
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
+from kavzi_trader.brain.agent.decision_dedup import (
+    AnalystDedupEntry,
+    DecisionDeduplicator,
+    ScoutDedupEntry,
+    TraderDedupEntry,
+)
 from kavzi_trader.brain.agent.router_config import RouterConfigSchema
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
@@ -76,25 +82,6 @@ class DependenciesProvider(Protocol):
 class _TraderRunResult(BaseModel):
     decision: TradeDecisionSchema | None = None
     deps: TradingDependenciesSchema | None = None
-    model_config = ConfigDict(frozen=True)
-
-
-class _ScoutDedupEntry(BaseModel):
-    bar_close: datetime
-    result: ScoutDecisionSchema
-    model_config = ConfigDict(frozen=True)
-
-
-class _AnalystDedupEntry(BaseModel):
-    bar_close: datetime
-    result: AnalystDecisionSchema
-    model_config = ConfigDict(frozen=True)
-
-
-class _TraderDedupEntry(BaseModel):
-    bar_close: datetime
-    analyst_hash: str
-    decision: TradeDecisionSchema
     model_config = ConfigDict(frozen=True)
 
 
@@ -291,15 +278,12 @@ class AgentRouter:
         # tests without a running loop stays cheap.
         self._analyst_concurrency_limit = analyst_concurrency_limit
         self._analyst_semaphore: asyncio.Semaphore | None = None
-        # Per-symbol bar-close dedup for Scout (deterministic — safe to cache
-        # both INTERESTING and SKIP within the same candle).
-        self._scout_dedup: dict[str, _ScoutDedupEntry] = {}
-        # Per-symbol bar-close dedup for Analyst (LLM-based).
-        self._analyst_dedup: dict[str, _AnalystDedupEntry] = {}
-        # Per-symbol Trader dedup keyed by (analyst result hash, bar close_time).
-        # Cross-bar invalidation via the bar_close component; within a bar,
-        # identical Analyst results short-circuit the Trader LLM call.
-        self._trader_dedup: dict[str, _TraderDedupEntry] = {}
+        # Per-symbol bar-close dedup for Scout / Analyst / Trader tiers.
+        # Scout is deterministic (safe to cache INTERESTING and SKIP within
+        # the same candle); Analyst is LLM-based; Trader is keyed by the
+        # additional (analyst_hash, bar_close) pair so cross-bar
+        # invalidation and mid-bar Analyst revisions both work.
+        self._dedup = DecisionDeduplicator()
 
     @property
     def _trader_validation_failures(self) -> dict[str, int]:
@@ -315,6 +299,26 @@ class AgentRouter:
     def _trader_circuit_threshold(self) -> int:
         """Back-compat alias for the circuit breaker's configured threshold."""
         return self._circuit_breaker.threshold
+
+    @property
+    def _scout_dedup(self) -> dict[str, ScoutDedupEntry]:
+        """Back-compat alias for the deduplicator's Scout entry map.
+
+        Exposes the underlying dict by reference so callers that read or
+        mutate raw entries (e.g. tests that call ``.clear()`` or assert
+        membership) continue to see live state without a second code path.
+        """
+        return self._dedup.scout_entries
+
+    @property
+    def _analyst_dedup(self) -> dict[str, AnalystDedupEntry]:
+        """Back-compat alias for the deduplicator's Analyst entry map."""
+        return self._dedup.analyst_entries
+
+    @property
+    def _trader_dedup(self) -> dict[str, TraderDedupEntry]:
+        """Back-compat alias for the deduplicator's Trader entry map."""
+        return self._dedup.trader_entries
 
     def record_trader_validation_failure(self, symbol: str) -> int:
         """Increment the per-symbol Trader failure counter and return the new
@@ -408,12 +412,7 @@ class AgentRouter:
         # Scout bar-close dedup: deterministic filter produces the same
         # verdict for the same candle, so cache both INTERESTING and SKIP.
         current_scout_bar = scout_deps.recent_candles[-1].close_time
-        prev_scout = self._scout_dedup.get(symbol)
-        cached_scout = (
-            prev_scout.result
-            if prev_scout is not None and prev_scout.bar_close == current_scout_bar
-            else None
-        )
+        cached_scout = self._dedup.scout_hit(symbol, current_scout_bar)
         if cached_scout is not None:
             logger.info(
                 "Scout dedup hit for %s: bar close_time=%s already"
@@ -433,8 +432,10 @@ class AgentRouter:
                 scout_result = _SKIP_ERROR
             else:
                 scout_result = raw
-                self._scout_dedup[symbol] = _ScoutDedupEntry(
-                    bar_close=current_scout_bar, result=scout_result
+                self._dedup.cache_scout(
+                    symbol,
+                    bar_close=current_scout_bar,
+                    result=scout_result,
                 )
 
         if scout_result.verdict != "INTERESTING":
@@ -572,9 +573,8 @@ class AgentRouter:
         # result. Skips redundant LLM calls inside the same 5-minute bar
         # when the ReasoningLoop cooldown expires mid-bar.
         current_bar = deps.recent_candles[-1].close_time
-        prev_entry = self._analyst_dedup.get(symbol)
-        if prev_entry is not None and prev_entry.bar_close == current_bar:
-            cached = prev_entry.result
+        cached = self._dedup.analyst_hit(symbol, current_bar)
+        if cached is not None:
             logger.info(
                 "Analyst dedup hit for %s: bar close_time=%s already"
                 " analyzed (cached conf=%d, valid=%s)",
@@ -596,9 +596,7 @@ class AgentRouter:
 
         # Record the bar we just analyzed so subsequent cycles within the
         # same candle can short-circuit via the dedup hit above.
-        self._analyst_dedup[symbol] = _AnalystDedupEntry(
-            bar_close=current_bar, result=result
-        )
+        self._dedup.cache_analyst(symbol, bar_close=current_bar, result=result)
         return result, regime
 
     async def _run_trader(
@@ -623,8 +621,16 @@ class AgentRouter:
 
         current_bar = deps.recent_candles[-1].close_time
         analyst_hash = self._hash_analyst(analyst_result)
-        cached = self._check_trader_dedup(symbol, analyst_hash, current_bar)
+        cached = self._dedup.trader_hit(symbol, analyst_hash, current_bar)
         if cached is not None:
+            logger.info(
+                "Trader dedup hit for %s: analyst_hash=%s bar=%s action=%s",
+                symbol,
+                analyst_hash[:8],
+                current_bar,
+                cached.action,
+                extra={"symbol": symbol, "agent": "trader", "dedup": "hit"},
+            )
             return _TraderRunResult(decision=cached, deps=deps)
 
         self._log_trader_inputs(deps, analyst_result, scout_pattern)
@@ -633,7 +639,12 @@ class AgentRouter:
             symbol, scout_pattern, analyst_result, deps
         )
         if gate_reject is not None:
-            self._cache_trader_decision(symbol, gate_reject, analyst_hash, current_bar)
+            self._dedup.cache_trader(
+                symbol,
+                analyst_hash=analyst_hash,
+                bar_close=current_bar,
+                decision=gate_reject,
+            )
             return _TraderRunResult(decision=gate_reject, deps=deps)
 
         return await self._invoke_trader_llm(
@@ -687,40 +698,6 @@ class AgentRouter:
             usedforsecurity=False,
         ).hexdigest()
 
-    def _check_trader_dedup(
-        self,
-        symbol: str,
-        analyst_hash: str,
-        current_bar: datetime,
-    ) -> TradeDecisionSchema | None:
-        """Return the cached Trader decision for (symbol, analyst_hash,
-        current_bar) if still valid; otherwise None. Cross-bar invalidation
-        is handled by comparing bar_close.
-
-        Invariant: the cache key is the 3-tuple (symbol, bar_close,
-        analyst_hash). All three must match for a hit. Changing the
-        ``_TraderDedupEntry`` fields without updating this comparison
-        would silently weaken dedup and leak stale Trader decisions
-        across bars or Analyst revisions.
-        """
-        prev_entry = self._trader_dedup.get(symbol)
-        if (
-            prev_entry is None
-            or prev_entry.analyst_hash != analyst_hash
-            or prev_entry.bar_close != current_bar
-        ):
-            return None
-        cached = prev_entry.decision
-        logger.info(
-            "Trader dedup hit for %s: analyst_hash=%s bar=%s action=%s",
-            symbol,
-            analyst_hash[:8],
-            current_bar,
-            cached.action,
-            extra={"symbol": symbol, "agent": "trader", "dedup": "hit"},
-        )
-        return cached
-
     def _check_pre_trader_gates(
         self,
         symbol: str,
@@ -744,20 +721,6 @@ class AgentRouter:
             analyst_result,
             deps.current_price,
             deps.indicators.atr_14,
-        )
-
-    def _cache_trader_decision(
-        self,
-        symbol: str,
-        decision: TradeDecisionSchema,
-        analyst_hash: str,
-        current_bar: datetime,
-    ) -> None:
-        """Single write path for the Trader dedup cache."""
-        self._trader_dedup[symbol] = _TraderDedupEntry(
-            bar_close=current_bar,
-            analyst_hash=analyst_hash,
-            decision=decision,
         )
 
     async def _invoke_trader_llm(
@@ -799,7 +762,12 @@ class AgentRouter:
             elapsed_ms = (time.monotonic() - t0) * 1000
             self._log_llm_exception(symbol, "trader", exc, elapsed_ms)
             return _TraderRunResult()
-        self._cache_trader_decision(symbol, result, analyst_hash, current_bar)
+        self._dedup.cache_trader(
+            symbol,
+            analyst_hash=analyst_hash,
+            bar_close=current_bar,
+            decision=result,
+        )
         self._reset_trader_failures(symbol)
         return _TraderRunResult(decision=result, deps=deps)
 
