@@ -218,7 +218,10 @@ class BinanceWebsocketClient:
 
             logger.info("Subscribed to multiplex streams: %s", stream_id)
         except Exception as err:
-            logger.exception("Failed to subscribe to multiplex streams")
+            logger.exception(
+                "Failed to subscribe to multiplex streams",
+                extra={"stream_id": stream_id, "streams": streams},
+            )
             raise APIError("Failed to subscribe to multiplex streams") from err
         else:
             return stream_id
