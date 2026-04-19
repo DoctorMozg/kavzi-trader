@@ -37,6 +37,7 @@ class PositionManagementLoop:
         action_executor: PositionActionExecutor,
         interval_s: int,
         report_populator: TradeReportPopulator | None = None,
+        cycle_timeout_s: int = 30,
     ) -> None:
         self._manager = manager
         self._state_manager = state_manager
@@ -45,6 +46,7 @@ class PositionManagementLoop:
         self._action_executor = action_executor
         self._interval_s = interval_s
         self._report_populator = report_populator
+        self._cycle_timeout_s = cycle_timeout_s
 
     async def run(self) -> None:
         logger.info(
@@ -71,10 +73,23 @@ class PositionManagementLoop:
                 "Position management cycle: %d open positions",
                 len(positions),
             )
-        await asyncio.gather(
-            *(self._manage_single_position(p) for p in positions),
-            return_exceptions=True,
-        )
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *(self._manage_single_position(p) for p in positions),
+                    return_exceptions=True,
+                ),
+                timeout=self._cycle_timeout_s,
+            )
+        except TimeoutError:
+            logger.exception(
+                "Position management cycle exceeded timeout, skipping",
+                extra={
+                    "loop": "position",
+                    "cycle_timeout_s": self._cycle_timeout_s,
+                    "position_count": len(positions),
+                },
+            )
 
     async def _manage_single_position(
         self,
@@ -108,9 +123,21 @@ class PositionManagementLoop:
                 await self._apply_action(position, action)
                 if action.action == PositionActionType.FULL_EXIT:
                     return
-                refreshed = await self._state_manager.get_position(
-                    position.symbol,
-                )
+                try:
+                    refreshed = await self._state_manager.get_position(
+                        position.symbol,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to refresh position after action, "
+                        "skipping remaining actions",
+                        extra={
+                            "loop": "position",
+                            "position_id": position.id,
+                            "symbol": position.symbol,
+                        },
+                    )
+                    return
                 if refreshed is None:
                     return
                 position = refreshed

@@ -11,6 +11,7 @@ class OrchestratorConfigSchema(BaseModel):
     order_flow_fetch_interval_s: Annotated[int, Field(ge=1)] = 300
     reasoning_interval_s: Annotated[int, Field(ge=1)] = 60
     position_check_interval_s: Annotated[int, Field(ge=1)] = 5
+    position_cycle_timeout_s: Annotated[int, Field(ge=1)] = 30
     health_check_interval_s: Annotated[int, Field(ge=1)] = 30
     graceful_shutdown_timeout_s: Annotated[int, Field(ge=1)] = 10
 

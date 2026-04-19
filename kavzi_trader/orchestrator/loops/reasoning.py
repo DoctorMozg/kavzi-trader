@@ -93,12 +93,29 @@ class ReasoningLoop:
             logger.debug("ReasoningLoop cycle %d starting", cycle)
             self._deps_provider.clear_cycle_cache()
             cached_positions = await self._fetch_cycle_positions()
-            results: list[bool] = await asyncio.gather(
+            raw_results: list[bool | BaseException] = await asyncio.gather(
                 *(
                     self._handle_symbol_timed(symbol, cached_positions)
                     for symbol in self._symbols
                 ),
+                return_exceptions=True,
             )
+            results: list[bool] = []
+            for symbol, result in zip(self._symbols, raw_results, strict=True):
+                if isinstance(result, BaseException):
+                    logger.exception(
+                        "ReasoningLoop symbol %s raised, treating as non-interesting",
+                        symbol,
+                        exc_info=result,
+                        extra={
+                            "loop": "reasoning",
+                            "symbol": symbol,
+                            "cycle": cycle,
+                        },
+                    )
+                    results.append(False)
+                    continue
+                results.append(result)
             interesting_count = sum(results)
             current_interval_s = self._next_sleep_interval_s(interesting_count)
             cycle_ms = (time.monotonic() - cycle_start) * 1000
