@@ -29,8 +29,7 @@ class IdleRampStairSchema(BaseModel):
         Field(
             ge=1,
             description=(
-                "Minimum consecutive idle cycles required for this stair "
-                "to activate."
+                "Minimum consecutive idle cycles required for this stair to activate."
             ),
         ),
     ]
