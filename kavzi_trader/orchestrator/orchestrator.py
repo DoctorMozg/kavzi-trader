@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable, Coroutine
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -22,6 +23,8 @@ from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
+
+LoopFactory = Callable[[], Coroutine[Any, Any, None]]
 
 
 class ReportPriceProvider(Protocol):
@@ -63,7 +66,7 @@ class TradingOrchestrator:
         self._trading_symbols = trading_symbols or []
         self._external_sentiment_loop = external_sentiment_loop
         self._tasks: set[asyncio.Task[None]] = set()
-        self._loop_factories: dict[str, Any] = {}
+        self._loop_factories: dict[str, LoopFactory] = {}
 
     async def start(self) -> None:
         logger.info("Orchestrator starting — connecting to state store")
