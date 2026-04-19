@@ -11,6 +11,7 @@ import openai
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
+from kavzi_trader.brain.agent.router_config import RouterConfigSchema
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
     KeyLevelSchema,
@@ -133,23 +134,6 @@ _DEFAULT_TRADER_CIRCUIT_THRESHOLD = 3
 # callers that omit the argument stay consistent with production.
 _DEFAULT_ANALYST_CONCURRENCY_LIMIT = 3
 
-# Pre-Trader deterministic gates
-_BREAKOUT_OVEREXTENDED_B = Decimal("1.20")
-_BREAKOUT_OVEREXTENDED_B_SHORT = Decimal("-0.20")
-_RR_MIN_PRESCREEN = Decimal("1.2")
-# Hard block: estimated R/R below this value is statistically guaranteed to lose
-# at the current TP-hit rate, so we skip the Trader LLM call entirely and return
-# WAIT. See reports/report_2026_04_10.md recommendation #6.
-_RR_HARD_BLOCK = Decimal("0.5")
-
-# Max number of characters from a raw model body included in the main log
-# message. Full body is still attached via extra["raw_body"] for JSONL
-# consumers that can handle arbitrary sizes.
-_BODY_PREVIEW_CHARS = 500
-# Max number of characters from a generic exception's str() included in the
-# main log message. Avoids flooding logs on verbose HTTP error bodies.
-_EXC_MESSAGE_PREVIEW_CHARS = 200
-
 
 def _http_status_of(exc: BaseException) -> int | None:
     """Best-effort extraction of HTTP status code from LLM / HTTP errors."""
@@ -187,6 +171,9 @@ def _log_llm_exception(
     agent: str,
     exc: BaseException,
     elapsed_ms: float,
+    *,
+    body_preview_chars: int,
+    exc_message_preview_chars: int,
 ) -> None:
     """Structured log dispatcher for Analyst / Trader LLM failures.
 
@@ -209,7 +196,7 @@ def _log_llm_exception(
             symbol,
             elapsed_ms,
             retry_after,
-            str(exc)[:_EXC_MESSAGE_PREVIEW_CHARS],
+            str(exc)[:exc_message_preview_chars],
             extra=extra,
         )
         return
@@ -222,7 +209,7 @@ def _log_llm_exception(
             status,
             symbol,
             elapsed_ms,
-            str(exc)[:_EXC_MESSAGE_PREVIEW_CHARS],
+            str(exc)[:exc_message_preview_chars],
             extra=extra,
         )
         return
@@ -237,7 +224,7 @@ def _log_llm_exception(
             symbol,
             elapsed_ms,
             retry_after,
-            str(exc)[:_EXC_MESSAGE_PREVIEW_CHARS],
+            str(exc)[:exc_message_preview_chars],
             extra=extra,
         )
         return
@@ -252,7 +239,7 @@ def _log_llm_exception(
         )
         return
     if isinstance(exc, UnexpectedModelBehavior):
-        body_preview = str(exc.body or "")[:_BODY_PREVIEW_CHARS]
+        body_preview = str(exc.body or "")[:body_preview_chars]
         extra = base_extra | {"raw_body": exc.body, "body_preview": body_preview}
         logger.warning(
             "%s LLM unparseable output for %s after %.1fms: %s | body_preview=%s",
@@ -270,7 +257,7 @@ def _log_llm_exception(
         symbol,
         elapsed_ms,
         type(exc).__name__,
-        str(exc)[:_EXC_MESSAGE_PREVIEW_CHARS],
+        str(exc)[:exc_message_preview_chars],
         extra=base_extra,
     )
 
@@ -285,6 +272,8 @@ class AgentRouter:
         confluence_override: ConfluenceOverrideProvider | None = None,
         trader_circuit_threshold: int = _DEFAULT_TRADER_CIRCUIT_THRESHOLD,
         analyst_concurrency_limit: int = _DEFAULT_ANALYST_CONCURRENCY_LIMIT,
+        *,
+        router_config: RouterConfigSchema | None = None,
     ) -> None:
         self._scout = scout
         self._analyst = analyst
@@ -292,6 +281,7 @@ class AgentRouter:
         self._analyst_min_algo_confluence = analyst_min_algo_confluence
         self._confluence_override = confluence_override
         self._trader_circuit_threshold = trader_circuit_threshold
+        self._router_config = router_config or RouterConfigSchema()
         # Semaphore gating Analyst LLM calls. Acquired only around the LLM
         # await so cached dedup hits and deterministic skip gates don't
         # consume slots. Created lazily per event loop so construction in
@@ -353,6 +343,27 @@ class AgentRouter:
                 " successful decision",
                 symbol,
             )
+
+    def _log_llm_exception(
+        self,
+        symbol: str,
+        agent: str,
+        exc: BaseException,
+        elapsed_ms: float,
+    ) -> None:
+        """Instance-scoped wrapper around the module-level log dispatcher.
+
+        Injects the router's configured log-preview character limits so
+        callers inside the class don't repeat the config plumbing.
+        """
+        _log_llm_exception(
+            symbol,
+            agent,
+            exc,
+            elapsed_ms,
+            body_preview_chars=self._router_config.body_preview_chars,
+            exc_message_preview_chars=(self._router_config.exc_message_preview_chars),
+        )
 
     def _get_analyst_semaphore(self) -> asyncio.Semaphore:
         """Lazily materialize the Analyst semaphore on the running event loop.
@@ -571,7 +582,7 @@ class AgentRouter:
                 result = await self._analyst.run(deps)
         except Exception as exc:  # noqa: BLE001 - LLM client raises many types
             elapsed_ms = (time.monotonic() - t0) * 1000
-            _log_llm_exception(symbol, "analyst", exc, elapsed_ms)
+            self._log_llm_exception(symbol, "analyst", exc, elapsed_ms)
             return None
 
         # Record the bar we just analyzed so subsequent cycles within the
@@ -764,7 +775,7 @@ class AgentRouter:
             )
         except (TimeoutError, httpx.TimeoutException) as exc:
             elapsed_ms = (time.monotonic() - t0) * 1000
-            _log_llm_exception(symbol, "trader", exc, elapsed_ms)
+            self._log_llm_exception(symbol, "trader", exc, elapsed_ms)
             return _TraderRunResult(
                 decision=self._build_timeout_wait(symbol, elapsed_ms),
                 deps=deps,
@@ -776,7 +787,7 @@ class AgentRouter:
             )
         except Exception as exc:  # noqa: BLE001 - LLM client raises many types
             elapsed_ms = (time.monotonic() - t0) * 1000
-            _log_llm_exception(symbol, "trader", exc, elapsed_ms)
+            self._log_llm_exception(symbol, "trader", exc, elapsed_ms)
             return _TraderRunResult()
         self._cache_trader_decision(symbol, result, analyst_hash, current_bar)
         self._reset_trader_failures(symbol)
@@ -807,7 +818,7 @@ class AgentRouter:
     ) -> TradeDecisionSchema:
         elapsed_ms = (time.monotonic() - t0) * 1000
         failure_count = self.record_trader_validation_failure(symbol)
-        _log_llm_exception(symbol, "trader", exc, elapsed_ms)
+        self._log_llm_exception(symbol, "trader", exc, elapsed_ms)
         # Augment with the validation-failure counter the helper doesn't
         # track. Emitted once per unparseable response so the circuit
         # breaker state is visible alongside the raw body.
@@ -900,8 +911,8 @@ class AgentRouter:
             deps.sentiment_summary.summary[:30] if deps.sentiment_summary else "",
         )
 
-    @staticmethod
     def _pre_trader_breakout_check(
+        self,
         symbol: str,
         scout_pattern: str | None,
         deps: TradingDependenciesSchema,
@@ -916,18 +927,21 @@ class AgentRouter:
             return None
         percent_b = bb.percent_b
 
+        overextended_long = self._router_config.breakout_overextended_b_long
+        overextended_short = self._router_config.breakout_overextended_b_short
+
         is_short = analyst_direction == "SHORT"
         if is_short:
-            overextended = percent_b < _BREAKOUT_OVEREXTENDED_B_SHORT
+            overextended = percent_b < overextended_short
         else:
-            overextended = percent_b > _BREAKOUT_OVEREXTENDED_B
+            overextended = percent_b > overextended_long
 
         if overextended:
             if is_short:
-                threshold = _BREAKOUT_OVEREXTENDED_B_SHORT
+                threshold = overextended_short
                 band_desc = "below the lower band"
             else:
-                threshold = _BREAKOUT_OVEREXTENDED_B
+                threshold = overextended_long
                 band_desc = "beyond the upper band"
             logger.info(
                 "Pre-Trader BREAKOUT reject for %s: %%B=%.2f,"
@@ -954,13 +968,10 @@ class AgentRouter:
 
         if is_short:
             in_caution = (
-                percent_b < Decimal("-0.10")
-                and percent_b >= _BREAKOUT_OVEREXTENDED_B_SHORT
+                percent_b < Decimal("-0.10") and percent_b >= overextended_short
             )
         else:
-            in_caution = (
-                percent_b > Decimal("1.10") and percent_b <= _BREAKOUT_OVEREXTENDED_B
-            )
+            in_caution = percent_b > Decimal("1.10") and percent_b <= overextended_long
         if in_caution:
             logger.warning(
                 "BREAKOUT caution for %s: %%B=%.2f, direction=%s"
@@ -1004,8 +1015,8 @@ class AgentRouter:
             return None
         return reward / risk
 
-    @staticmethod
     def _pre_trader_rr_check(
+        self,
         symbol: str,
         analyst_result: AnalystDecisionSchema,
         current_price: Decimal,
@@ -1014,13 +1025,13 @@ class AgentRouter:
         """Pre-Trader estimated R/R gate.
 
         * NEUTRAL direction or missing ATR → fail open (return None).
-        * estimated R/R < `_RR_HARD_BLOCK` (0.5) → return a WAIT decision.
+        * estimated R/R < `rr_hard_block` (0.5) → return a WAIT decision.
           The geometry implied by the Analyst's key levels is
           statistically guaranteed to lose at current TP-hit rates, so we
           skip the Trader LLM call entirely to conserve budget.
-        * `_RR_HARD_BLOCK` ≤ R/R < `_RR_MIN_PRESCREEN` → log a warning and
+        * `rr_hard_block` ≤ R/R < `rr_min_prescreen` → log a warning and
           proceed to the Trader for final assessment.
-        * R/R ≥ `_RR_MIN_PRESCREEN` → proceed silently.
+        * R/R ≥ `rr_min_prescreen` → proceed silently.
         """
         if analyst_result.direction == "NEUTRAL":
             return None
@@ -1033,20 +1044,23 @@ class AgentRouter:
         if estimated_rr is None:
             return None  # Fail open when we cannot estimate
 
-        if estimated_rr < _RR_HARD_BLOCK:
+        rr_hard_block = self._router_config.rr_hard_block
+        rr_min_prescreen = self._router_config.rr_min_prescreen
+
+        if estimated_rr < rr_hard_block:
             logger.warning(
                 "Pre-Trader R/R hard block for %s: estimated R/R=%.2f < %.2f"
                 " — skipping Trader call and returning WAIT",
                 symbol,
                 float(estimated_rr),
-                float(_RR_HARD_BLOCK),
+                float(rr_hard_block),
             )
             return TradeDecisionSchema(
                 action="WAIT",
                 confidence=0.0,
                 reasoning=(
                     f"Pre-trader R/R {float(estimated_rr):.2f} below"
-                    f" {float(_RR_HARD_BLOCK):.2f} hard block; analyst key"
+                    f" {float(rr_hard_block):.2f} hard block; analyst key"
                     f" levels yield insufficient reward relative to risk."
                     f" Skipping Trader call to conserve budget and protect"
                     f" against statistically-losing geometry."
@@ -1056,13 +1070,13 @@ class AgentRouter:
                 suggested_take_profit=None,
             )
 
-        if estimated_rr < _RR_MIN_PRESCREEN:
+        if estimated_rr < rr_min_prescreen:
             logger.warning(
                 "Pre-Trader R/R warning for %s: estimated R/R=%.2f < %.1f"
                 " — proceeding to Trader for final assessment",
                 symbol,
                 float(estimated_rr),
-                float(_RR_MIN_PRESCREEN),
+                float(rr_min_prescreen),
             )
         return None
 
