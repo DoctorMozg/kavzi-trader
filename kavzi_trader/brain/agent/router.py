@@ -11,6 +11,7 @@ import openai
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
+from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
 from kavzi_trader.brain.agent.router_config import RouterConfigSchema
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
@@ -280,7 +281,9 @@ class AgentRouter:
         self._trader = trader
         self._analyst_min_algo_confluence = analyst_min_algo_confluence
         self._confluence_override = confluence_override
-        self._trader_circuit_threshold = trader_circuit_threshold
+        self._circuit_breaker = AgentCircuitBreaker(
+            threshold=trader_circuit_threshold,
+        )
         self._router_config = router_config or RouterConfigSchema()
         # Semaphore gating Analyst LLM calls. Acquired only around the LLM
         # await so cached dedup hits and deterministic skip gates don't
@@ -297,12 +300,21 @@ class AgentRouter:
         # Cross-bar invalidation via the bar_close component; within a bar,
         # identical Analyst results short-circuit the Trader LLM call.
         self._trader_dedup: dict[str, _TraderDedupEntry] = {}
-        # Rolling counter of Trader validation failures per symbol. Covers both
-        # UnexpectedModelBehavior from the LLM and downstream rejection of
-        # malformed decisions (e.g. missing stop_loss/take_profit). When the
-        # counter reaches self._trader_circuit_threshold the Trader is
-        # suspended for that symbol until a successful decision resets it.
-        self._trader_validation_failures: dict[str, int] = {}
+
+    @property
+    def _trader_validation_failures(self) -> dict[str, int]:
+        """Back-compat alias for the circuit breaker's failure map.
+
+        Exposes the underlying dict by reference so callers that read or
+        mutate raw counts (e.g. tests that assert ``== {}`` or clear the
+        map) continue to see live state without a second code path.
+        """
+        return self._circuit_breaker.failures
+
+    @property
+    def _trader_circuit_threshold(self) -> int:
+        """Back-compat alias for the circuit breaker's configured threshold."""
+        return self._circuit_breaker.threshold
 
     def record_trader_validation_failure(self, symbol: str) -> int:
         """Increment the per-symbol Trader failure counter and return the new
@@ -310,13 +322,12 @@ class AgentRouter:
         the reasoning loop when downstream schema validation rejects a
         malformed decision (e.g. missing stop_loss/take_profit).
         """
-        count = self._trader_validation_failures.get(symbol, 0) + 1
-        self._trader_validation_failures[symbol] = count
+        count = self._circuit_breaker.record_failure(symbol)
         logger.warning(
             "Trader validation failure recorded for %s (total=%d/%d)",
             symbol,
             count,
-            self._trader_circuit_threshold,
+            self._circuit_breaker.threshold,
             extra={
                 "symbol": symbol,
                 "agent": "trader",
@@ -330,14 +341,12 @@ class AgentRouter:
         or exceeded the circuit breaker threshold for this symbol. The
         circuit resets automatically on the next successful Trader decision.
         """
-        return (
-            self._trader_validation_failures.get(symbol, 0)
-            >= self._trader_circuit_threshold
-        )
+        return self._circuit_breaker.is_open(symbol)
 
     def _reset_trader_failures(self, symbol: str) -> None:
         """Clear the Trader failure counter after a successful decision."""
-        if self._trader_validation_failures.pop(symbol, 0) > 0:
+        if self._circuit_breaker.failure_count(symbol) > 0:
+            self._circuit_breaker.reset(symbol)
             logger.info(
                 "Trader validation failure counter cleared for %s after"
                 " successful decision",
@@ -638,15 +647,16 @@ class AgentRouter:
         as a non-enqueued cycle, and the next successful call must reset the
         circuit counter via `_reset_trader_failures`.
         """
-        if not self.is_trader_circuit_open(symbol):
+        if not self._circuit_breaker.is_open(symbol):
             return None
-        failures = self._trader_validation_failures.get(symbol, 0)
+        failures = self._circuit_breaker.failure_count(symbol)
+        threshold = self._circuit_breaker.threshold
         logger.warning(
             "Trader circuit open for %s: %d consecutive validation"
             " failures ≥ threshold %d — skipping Trader call",
             symbol,
             failures,
-            self._trader_circuit_threshold,
+            threshold,
             extra={
                 "symbol": symbol,
                 "agent": "trader",
@@ -660,7 +670,7 @@ class AgentRouter:
             reasoning=(
                 f"Trader circuit breaker open for {symbol}:"
                 f" {failures} consecutive validation failures reached"
-                f" threshold {self._trader_circuit_threshold}."
+                f" threshold {threshold}."
                 f" Suspending Trader calls until a successful"
                 f" decision resets the counter."
             ),
