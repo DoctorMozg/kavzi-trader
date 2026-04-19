@@ -182,21 +182,6 @@ Run tests:
 uv run pytest
 ```
 
-## Documentation
-
-For detailed documentation, see:
-
-| Document | Description |
-| --- | --- |
-| [Initial Setup](docs/01_INITIAL_SETUP.md) | Project overview and configuration |
-| [Architecture](docs/02_ARCHITECTURE.md) | System architecture (Brain-Spine paradigm) |
-| [LLM Architecture](docs/03_LLM_ARCHITECTURE.md) | Tiered agents with Jinja2 prompts |
-| [Coding Standards](docs/04_CODING_STANDARDS.md) | Code style and best practices |
-| [Implementation Plan](docs/05_IMPLEMENTATION_PLAN.md) | Phased development roadmap (20 weeks) |
-| [Spine Implementation](docs/06_SPINE_IMPLEMENTATION.md) | Dynamic risk, position management |
-| [Trading Plan](docs/07_TRADING_PLAN.md) | Trading methodology and edge definition |
-| [Event Sourcing](docs/EVENT_SOURCING.md) | Audit trail and state management |
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
