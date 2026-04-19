@@ -24,6 +24,7 @@ from kavzi_trader.orchestrator.loops.confluence_thresholds import (
 from kavzi_trader.orchestrator.loops.reasoning_config import (
     ReasoningLoopConfigSchema,
 )
+from kavzi_trader.orchestrator.loops.symbol_state import SymbolStateTracker
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
@@ -72,11 +73,7 @@ class ReasoningLoop:
         self._filter_chain = filter_chain
         self._max_rejection_multiplier = max_consecutive_rejection_multiplier
         self._reasoning_config = reasoning_config or ReasoningLoopConfigSchema()
-        self._cooldowns: dict[tuple[str, str], int] = {}  # (symbol, direction)
-        self._consecutive_rejections: dict[tuple[str, str], int] = {}
-        self._consecutive_waits: dict[tuple[str, str], int] = {}
-        self._consecutive_skips: dict[str, int] = {}
-        self._skip_eval_interval: dict[str, int] = {}
+        self._state = SymbolStateTracker()
         # Tracks the number of consecutive cycles that produced zero
         # INTERESTING scouts. Drives the progressive idle sleep ramp; any
         # INTERESTING cycle resets the counter.
@@ -183,26 +180,28 @@ class ReasoningLoop:
 
     def _is_suspended(self, symbol: str) -> bool:
         """Check if a symbol is dynamically suspended due to consecutive SKIPs."""
-        skip_interval = self._skip_eval_interval.get(symbol, 0)
+        skip_interval = self._state.skip_eval_interval(symbol)
         if skip_interval <= 0:
             return False
-        skip_count = self._consecutive_skips.get(symbol, 0)
+        skip_count = self._state.consecutive_skips(symbol)
         if skip_count % skip_interval != 0:
-            self._consecutive_skips[symbol] = skip_count + 1
+            self._state.bump_skip(symbol)
             return True
         return False
 
     def _track_skip_suspension(self, symbol: str, verdict: str) -> None:
         """Update dynamic suspension state based on scout verdict."""
         if verdict == "SKIP":
-            count = self._consecutive_skips.get(symbol, 0) + 1
-            self._consecutive_skips[symbol] = count
+            count = self._state.bump_skip(symbol)
             if count >= self._reasoning_config.skip_suspension_threshold:
+                # Default fallback of 1 preserves the doubling cadence
+                # on first suspension (1 * 2 = 2 → max(2, 2) = 2).
+                current_interval = self._state.skip_eval_interval(symbol) or 1
                 new_interval = min(
-                    max(self._skip_eval_interval.get(symbol, 1) * 2, 2),
+                    max(current_interval * 2, 2),
                     self._reasoning_config.max_skip_eval_interval,
                 )
-                self._skip_eval_interval[symbol] = new_interval
+                self._state.set_skip_eval_interval(symbol, new_interval)
                 logger.info(
                     "Symbol %s suspended: %d consecutive SKIPs, eval every %d cycles",
                     symbol,
@@ -211,18 +210,17 @@ class ReasoningLoop:
                     extra={"symbol": symbol},
                 )
         else:
-            self._consecutive_skips.pop(symbol, None)
-            self._skip_eval_interval.pop(symbol, None)
+            self._state.clear_skip_suspension(symbol)
 
     def _tick_cooldowns(self, symbol: str) -> bool:
         """Decrement direction cooldowns. Return True if ALL directions are blocked."""
-        long_cd = self._cooldowns.get((symbol, "LONG"), 0)
-        short_cd = self._cooldowns.get((symbol, "SHORT"), 0)
+        long_cd = self._state.cooldown(symbol, "LONG")
+        short_cd = self._state.cooldown(symbol, "SHORT")
 
         if long_cd > 0:
-            self._cooldowns[(symbol, "LONG")] = long_cd - 1
+            self._state.decrement_cooldown(symbol, "LONG")
         if short_cd > 0:
-            self._cooldowns[(symbol, "SHORT")] = short_cd - 1
+            self._state.decrement_cooldown(symbol, "SHORT")
 
         # Only skip when both directions are on cooldown
         return long_cd > 0 and short_cd > 0
@@ -292,10 +290,10 @@ class ReasoningLoop:
 
         # After trade enqueue, cool down both directions and reset WAIT counters
         post_trade_cd = self._analyst_cooldown_cycles * 3
-        self._cooldowns[(symbol, "LONG")] = post_trade_cd
-        self._cooldowns[(symbol, "SHORT")] = post_trade_cd
-        self._consecutive_waits.pop((symbol, "LONG"), None)
-        self._consecutive_waits.pop((symbol, "SHORT"), None)
+        self._state.set_cooldown(symbol, "LONG", post_trade_cd)
+        self._state.set_cooldown(symbol, "SHORT", post_trade_cd)
+        self._state.clear_waits(symbol, "LONG")
+        self._state.clear_waits(symbol, "SHORT")
         await self._enqueue_decision(result)
         return True
 
@@ -322,7 +320,7 @@ class ReasoningLoop:
 
         Three bands avoid flip-flopping at the old hard cutoff:
           * score <= 3 + invalid → escalating multiplier, counts toward
-            _consecutive_rejections.
+            the symbol's per-direction consecutive_rejections counter.
           * borderline (4-5) or LLM rejects high confluence (>=6 + invalid) →
             light single-cycle cooldown, no counter escalation. The next bar
             close naturally retriggers the Analyst.
@@ -341,12 +339,10 @@ class ReasoningLoop:
 
         if not setup_valid and score <= CONFLUENCE_REJECT_MAX:
             for d in cooldown_dirs:
-                key = (symbol, d)
-                count = self._consecutive_rejections.get(key, 0) + 1
-                self._consecutive_rejections[key] = count
+                count = self._state.bump_rejection(symbol, d)
                 base_cooldown = self._compute_rejection_cooldown(score)
                 multiplier = min(count, self._max_rejection_multiplier)
-                self._cooldowns[key] = base_cooldown * multiplier
+                self._state.set_cooldown(symbol, d, base_cooldown * multiplier)
                 logger.debug(
                     "Consecutive rejection %d for %s %s: cooldown=%d (base=%d x %d)",
                     count,
@@ -360,11 +356,11 @@ class ReasoningLoop:
 
         if not setup_valid or score < regime_gate:
             for d in cooldown_dirs:
-                key = (symbol, d)
-                existing = self._cooldowns.get(key, 0)
-                self._cooldowns[key] = max(
-                    existing,
-                    self._reasoning_config.borderline_cooldown_cycles,
+                existing = self._state.cooldown(symbol, d)
+                self._state.set_cooldown(
+                    symbol,
+                    d,
+                    max(existing, self._reasoning_config.borderline_cooldown_cycles),
                 )
             logger.debug(
                 "Borderline analyst %s direction=%s score=%d setup_valid=%s"
@@ -380,10 +376,10 @@ class ReasoningLoop:
             return
 
         if direction == "NEUTRAL":
-            self._consecutive_rejections.pop((symbol, "LONG"), None)
-            self._consecutive_rejections.pop((symbol, "SHORT"), None)
+            self._state.clear_rejections(symbol, "LONG")
+            self._state.clear_rejections(symbol, "SHORT")
         else:
-            self._consecutive_rejections.pop((symbol, direction), None)
+            self._state.clear_rejections(symbol, direction)
 
     def _compute_rejection_cooldown(self, confluence_score: int) -> int:
         """Scale rejection cooldown within the aggressive band (score <= 3)."""
@@ -411,9 +407,7 @@ class ReasoningLoop:
         )
         wait_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
         for d in wait_dirs:
-            key = (symbol, d)
-            count = self._consecutive_waits.get(key, 0) + 1
-            self._consecutive_waits[key] = count
+            count = self._state.bump_wait(symbol, d)
             wait_threshold = self._reasoning_config.wait_cooldown_threshold
             if count >= wait_threshold:
                 excess = count - wait_threshold + 1
@@ -421,7 +415,7 @@ class ReasoningLoop:
                     self._reasoning_config.wait_cooldown_base_cycles * excess,
                     self._reasoning_config.wait_max_cooldown_cycles,
                 )
-                self._cooldowns[key] = cooldown
+                self._state.set_cooldown(symbol, d, cooldown)
                 logger.info(
                     "Consecutive WAIT %d for %s %s: cooldown=%d cycles",
                     count,
