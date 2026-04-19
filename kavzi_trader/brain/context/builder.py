@@ -25,6 +25,7 @@ from kavzi_trader.brain.schemas.dependencies import (
 from kavzi_trader.orchestrator.loops.confluence_thresholds import (
     confluence_enter_min_for_regime,
 )
+from kavzi_trader.spine.confluence import side_trim_confluence
 
 logger = logging.getLogger(__name__)
 
@@ -91,25 +92,6 @@ class ContextBuilder(BaseModel):
             atr_14=str(atr_14) if atr_14 is not None else None,
         )
 
-    @staticmethod
-    def _side_trim_confluence(
-        dual_long: ConfluenceBlockDict,
-        dual_short: ConfluenceBlockDict,
-        detected_side: str,
-    ) -> tuple[ConfluenceBlockDict | None, ConfluenceBlockDict | None]:
-        """Return (long, short) dicts trimmed to the detected side.
-
-        When ``detected_side`` is LONG or SHORT, the opposing block is
-        dropped so the LLM only sees the perspective it will act on. When
-        the confluence is NEUTRAL, both sides remain so the LLM can
-        compare. Saves ~300 prompt tokens per trending request.
-        """
-        if detected_side == "LONG":
-            return dual_long, None
-        if detected_side == "SHORT":
-            return None, dual_short
-        return dual_long, dual_short
-
     def build_analyst_context(
         self,
         deps: AnalystDependenciesSchema,
@@ -118,7 +100,7 @@ class ContextBuilder(BaseModel):
         market = self._build_market_context(deps)
         dual = deps.algorithm_confluence
         sentiment = deps.sentiment_summary
-        long_block, short_block = self._side_trim_confluence(
+        long_block, short_block = side_trim_confluence(
             cast("ConfluenceBlockDict", dual.long.model_dump()),
             cast("ConfluenceBlockDict", dual.short.model_dump()),
             dual.detected_side,
@@ -225,7 +207,7 @@ class ContextBuilder(BaseModel):
             current_price=deps.current_price,
             atr=deps.indicators.atr_14,
         )
-        long_block, short_block = self._side_trim_confluence(
+        long_block, short_block = side_trim_confluence(
             cast("ConfluenceBlockDict", dual.long.model_dump()),
             cast("ConfluenceBlockDict", dual.short.model_dump()),
             dual.detected_side,

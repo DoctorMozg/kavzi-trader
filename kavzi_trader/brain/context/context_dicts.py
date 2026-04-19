@@ -3,26 +3,17 @@ from decimal import Decimal
 from typing import TypedDict
 
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
+from kavzi_trader.spine.confluence import ConfluenceBlockDict
 
-
-class ConfluenceBlockDict(TypedDict):
-    """Serialized shape of ``AlgorithmConfluenceSchema.model_dump()``.
-
-    Populated by ``ContextBuilder._side_trim_confluence`` which calls
-    ``model_dump()`` on each side of ``DualConfluenceSchema``. Jinja
-    templates read these fields directly (see
-    ``user/context/algorithm_confluence.j2``).
-    """
-
-    ema_alignment: bool
-    rsi_favorable: bool
-    volume_above_average: bool
-    price_at_bollinger: bool
-    funding_favorable: bool
-    oi_supports_direction: bool
-    oi_funding_divergence: bool
-    volume_spike: bool
-    score: int
+__all__ = [
+    "ATRFallbackTargetDict",
+    "AccountStateDict",
+    "AnalystContextDict",
+    "ConfluenceBlockDict",
+    "MarketContextDict",
+    "SystemPromptContextDict",
+    "TraderContextDict",
+]
 
 
 class AccountStateDict(TypedDict):
