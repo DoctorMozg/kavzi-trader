@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -83,7 +84,14 @@ class CCDataNewsSource(ExternalSource):
                 resp.raise_for_status()
                 body = resp.json()
                 articles: list[dict[str, object]] = body.get("Data", [])
-            except Exception as exc:
+            except (
+                httpx.RequestError,
+                httpx.HTTPStatusError,
+                json.JSONDecodeError,
+                ValueError,
+                KeyError,
+                AttributeError,
+            ) as exc:
                 if attempt < _MAX_RETRIES:
                     backoff_s = _RETRY_BACKOFF_BASE_S * (2 ** (attempt - 1))
                     logger.warning(
@@ -92,10 +100,15 @@ class CCDataNewsSource(ExternalSource):
                         _MAX_RETRIES,
                         exc,
                         backoff_s,
+                        extra={"attempt": attempt, "max_retries": _MAX_RETRIES},
                     )
                     await asyncio.sleep(backoff_s)
                     continue
-                logger.exception("CCData news fetch failed after %d attempts", attempt)
+                logger.exception(
+                    "CCData news fetch failed after %d attempts",
+                    attempt,
+                    extra={"attempts": attempt},
+                )
                 return None
             else:
                 return articles

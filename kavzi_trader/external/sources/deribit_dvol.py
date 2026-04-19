@@ -1,7 +1,8 @@
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import httpx
 
@@ -49,7 +50,16 @@ class DeribitDvolSource(ExternalSource):
                 eth_put_call_ratio=None,
                 fetched_at=datetime.now(UTC),
             )
-        except Exception:
+        except (
+            httpx.RequestError,
+            httpx.HTTPStatusError,
+            httpx.TimeoutException,
+            json.JSONDecodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+            InvalidOperation,
+        ):
             logger.exception("Deribit DVOL fetch failed")
             return None
 

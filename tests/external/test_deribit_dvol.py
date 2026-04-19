@@ -1,6 +1,7 @@
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 
 from kavzi_trader.external.sources.deribit_dvol import DeribitDvolSource
@@ -57,7 +58,7 @@ async def test_fetch_returns_dvol_and_pcr() -> None:
 async def test_fetch_returns_none_on_error() -> None:
     source = DeribitDvolSource()
     source._client = Mock()
-    source._client.get = AsyncMock(side_effect=RuntimeError("connection refused"))
+    source._client.get = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
     result = await source.fetch()
     assert result is None
 

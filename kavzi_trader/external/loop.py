@@ -91,7 +91,10 @@ class ExternalSentimentLoop:
                 if summary is not None:
                     self._cache.set_sentiment_summary(summary)
             except Exception:
-                logger.exception("Sentiment synthesis failed, keeping stale summary")
+                logger.exception(
+                    "Sentiment synthesis failed, keeping stale summary",
+                    extra={"sources_degraded": sources_degraded},
+                )
         elif snapshot.is_empty():
             logger.debug("All external sources returned None, skipping synthesis")
 
@@ -183,6 +186,7 @@ class ExternalSentimentLoop:
             logger.exception(
                 "External source %s fetch failed",
                 source.name,
+                extra={"source": source.name},
             )
             result = None
         if breaker is not None:
