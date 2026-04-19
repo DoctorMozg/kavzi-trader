@@ -44,7 +44,7 @@ _PROTECTIVE_ORDER_TYPES = frozenset(
 )
 
 
-class PaperPositionSchema(BaseModel):
+class _PaperPositionTracker(BaseModel):
     """Internal position tracking for paper futures exchange."""
 
     symbol: str
@@ -80,7 +80,7 @@ class PaperExchangeClient(BinanceClient):
         self._commission_rate = commission_rate
         self._order_counter = 900_000_000
         self._orders: dict[int, OrderResponseSchema] = {}
-        self._positions: dict[str, PaperPositionSchema] = {}
+        self._positions: dict[str, _PaperPositionTracker] = {}
         self._last_prices: dict[str, Decimal] = {}
         self._leverage_settings: dict[str, int] = {}
         self._margin_type_settings: dict[str, str] = {}
@@ -256,7 +256,7 @@ class PaperExchangeClient(BinanceClient):
 
             remaining = existing.quantity - close_qty
             if remaining > 0:
-                self._positions[symbol] = PaperPositionSchema(
+                self._positions[symbol] = _PaperPositionTracker(
                     symbol=symbol,
                     side=existing.side,
                     quantity=remaining,
@@ -304,7 +304,7 @@ class PaperExchangeClient(BinanceClient):
                 avg_price = (
                     (existing.entry_price * existing.quantity) + (fill_price * quantity)
                 ) / total_qty
-                self._positions[symbol] = PaperPositionSchema(
+                self._positions[symbol] = _PaperPositionTracker(
                     symbol=symbol,
                     side=pos_side,
                     quantity=total_qty,
@@ -313,7 +313,7 @@ class PaperExchangeClient(BinanceClient):
                     margin=existing.margin + initial_margin,
                 )
             else:
-                self._positions[symbol] = PaperPositionSchema(
+                self._positions[symbol] = _PaperPositionTracker(
                     symbol=symbol,
                     side=pos_side,
                     quantity=quantity,

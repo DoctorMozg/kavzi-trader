@@ -4,13 +4,7 @@ KavziTrader - Neural Network-Based Crypto Trading Platform.
 This module serves as the main entry point for the KavziTrader CLI.
 """
 
-import sys
-from pathlib import Path
-
 import click
-
-# Add src to path to allow imports from src package
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from kavzi_trader.cli.commands.config import config_command
 from kavzi_trader.cli.commands.data import data

@@ -159,7 +159,8 @@ def _http_status_of(exc: BaseException) -> int | None:
         if isinstance(status, int):
             return status
     status = getattr(exc, "status_code", None)
-    if isinstance(status, int):
+    is_status_int = isinstance(status, int)
+    if is_status_int:
         return status
     return None
 

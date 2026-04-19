@@ -71,10 +71,13 @@ class ContextBuilder(BaseModel):
         self,
         deps: AnalystDependenciesSchema | TradingDependenciesSchema,
     ) -> MarketContextDict:
-        # We used to also serialize a full ``MarketSnapshotSchema.model_dump()``
-        # here. Its fields overlapped completely with ``candles_table`` +
-        # ``indicators_compact`` and alone added ~5k tokens per prompt. Templates
-        # read the flat scalars below instead.
+        """Build the shared market context dict for Analyst/Trader prompts.
+
+        We used to also serialize a full ``MarketSnapshotSchema.model_dump()``
+        here. Its fields overlapped completely with ``candles_table`` +
+        ``indicators_compact`` and alone added ~5k tokens per prompt. Templates
+        read the flat scalars below instead.
+        """
         atr_14 = deps.indicators.atr_14
         return MarketContextDict(
             candles_table=format_candles_table(deps.recent_candles),

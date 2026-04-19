@@ -23,12 +23,12 @@ def to_async[**P, R](func: Callable[P, R]) -> Callable[P, Awaitable[R]]:
 
     Example:
         @to_async
-        def read_large_file(path: str) -> str:
-            with open(path, 'r') as f:
+        def read_large_file(path: Path) -> str:
+            with path.open('r') as f:
                 return f.read()
 
         # Now you can await the function
-        content = await read_large_file("large_file.txt")
+        content = await read_large_file(Path("large_file.txt"))
     """
 
     @functools.wraps(func)

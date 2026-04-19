@@ -3,13 +3,9 @@ Core functionality for the KavziTrader CLI.
 """
 
 import logging
-import sys
-from pathlib import Path
 
 import click
 from dotenv import load_dotenv
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from kavzi_trader.commons.logging import setup_logging
 from kavzi_trader.config import AppConfig
