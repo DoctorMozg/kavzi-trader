@@ -168,7 +168,10 @@ class ReasoningLoop:
         try:
             return await self._state_manager.get_all_positions()
         except Exception:
-            logger.exception("Failed to fetch positions for reasoning cycle")
+            logger.exception(
+                "Failed to fetch positions for reasoning cycle",
+                extra={"loop": "reasoning"},
+            )
             return []
 
     async def _handle_symbol_timed(
@@ -184,7 +187,7 @@ class ReasoningLoop:
             logger.exception(
                 "ReasoningLoop failed for %s, continuing",
                 symbol,
-                extra={"symbol": symbol},
+                extra={"loop": "reasoning", "symbol": symbol},
             )
         sym_ms = (time.monotonic() - sym_start) * 1000
         logger.info(
@@ -281,6 +284,11 @@ class ReasoningLoop:
             logger.exception(
                 "Failed to report decisions for %s",
                 symbol,
+                extra={
+                    "loop": "reasoning",
+                    "symbol": symbol,
+                    "scout_verdict": result.scout.verdict,
+                },
             )
 
         self._track_skip_suspension(symbol, result.scout.verdict)
@@ -533,7 +541,13 @@ class ReasoningLoop:
             logger.exception(
                 "Failed to enqueue decision for %s",
                 symbol,
-                extra={"symbol": symbol},
+                extra={
+                    "loop": "reasoning",
+                    "symbol": symbol,
+                    "decision_id": decision.decision_id,
+                    "action": decision.action,
+                    "queue_key": self._queue_key,
+                },
             )
             return
         logger.info(

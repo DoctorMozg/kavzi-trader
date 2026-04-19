@@ -151,17 +151,28 @@ class TradingOrchestrator:
         logger.info("Orchestrator shutdown complete")
 
     async def _health_loop(self) -> None:
+        cycle = 0
         while True:
+            cycle += 1
             try:
                 await asyncio.sleep(self._config.health_check_interval_s)
                 if not self._health_checker.is_healthy():
                     logger.warning("Health check failed")
             except Exception:
-                logger.exception("Health check loop encountered an error")
+                logger.exception(
+                    "Health check loop encountered an error",
+                    extra={
+                        "loop": "health",
+                        "cycle": cycle,
+                        "interval_s": self._config.health_check_interval_s,
+                    },
+                )
 
     async def _report_loop(self) -> None:
         """Periodically refreshes balance, positions, and prices in the report."""
+        cycle = 0
         while True:
+            cycle += 1
             try:
                 await asyncio.sleep(5)
                 if self._report_populator is None:
@@ -179,6 +190,7 @@ class TradingOrchestrator:
             except Exception:
                 logger.exception(
                     "Report loop encountered an error, continuing",
+                    extra={"loop": "report", "cycle": cycle},
                 )
 
     def _build_position_snapshots(

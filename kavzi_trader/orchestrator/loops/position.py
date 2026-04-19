@@ -57,6 +57,10 @@ class PositionManagementLoop:
             except Exception:
                 logger.exception(
                     "PositionManagementLoop encountered an error, continuing",
+                    extra={
+                        "loop": "position",
+                        "interval_s": self._interval_s,
+                    },
                 )
             await asyncio.sleep(self._interval_s)
 
@@ -116,6 +120,7 @@ class PositionManagementLoop:
                 position.id,
                 position.symbol,
                 extra={
+                    "loop": "position",
                     "position_id": position.id,
                     "symbol": position.symbol,
                 },
@@ -194,6 +199,12 @@ class PositionManagementLoop:
                 "Failed to report action %s for %s",
                 action.action.value,
                 position.symbol,
+                extra={
+                    "loop": "position",
+                    "position_id": position.id,
+                    "symbol": position.symbol,
+                    "action": action.action.value,
+                },
             )
 
     async def _safe_report_position_close(
@@ -222,4 +233,10 @@ class PositionManagementLoop:
             logger.exception(
                 "Failed to report position close for %s",
                 position.symbol,
+                extra={
+                    "loop": "position",
+                    "position_id": position.id,
+                    "symbol": position.symbol,
+                    "close_reason": close_reason,
+                },
             )
