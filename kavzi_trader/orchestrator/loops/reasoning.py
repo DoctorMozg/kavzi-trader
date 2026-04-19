@@ -21,6 +21,9 @@ from kavzi_trader.orchestrator.loops.confluence_thresholds import (
     CONFLUENCE_REJECT_MAX,
     confluence_enter_min_for_regime,
 )
+from kavzi_trader.orchestrator.loops.reasoning_config import (
+    ReasoningLoopConfigSchema,
+)
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
@@ -36,35 +39,6 @@ from kavzi_trader.spine.state.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Progressive idle-ramp stairs: when the loop observes N consecutive
-# cycles with no INTERESTING scouts, sleep for this many seconds before
-# the next cycle. Ordered descending so the lookup picks the deepest
-# matching stair in a single pass. Replaces the prior doubling backoff
-# (_BACKOFF_MULTIPLIER * _MAX_BACKOFF_FACTOR) which grew continuously and
-# masked genuinely idle markets as "slow to wake" rather than "truly
-# quiet".
-_IDLE_RAMP_STAIRS: tuple[tuple[int, int], ...] = (
-    (8, 720),
-    (5, 480),
-    (3, 240),
-)
-
-
-# Cooldown (cycles) for borderline/LLM-reject bands. Short enough that the
-# next bar-close will naturally retrigger the Analyst, but long enough to
-# avoid tight retries within the same bar.
-_BORDERLINE_COOLDOWN_CYCLES = 1
-
-# Multipliers inside the aggressive rejection band (score <= 3).
-_COOLDOWN_LOW_CONFLUENCE_THRESHOLD = 2  # score <= 2 → highest multiplier
-
-_SKIP_SUSPENSION_THRESHOLD = 20
-_MAX_SKIP_EVAL_INTERVAL = 16
-
-_WAIT_COOLDOWN_THRESHOLD = 5
-_WAIT_COOLDOWN_BASE_CYCLES = 2
-_WAIT_MAX_COOLDOWN_CYCLES = 12
 
 
 class ReasoningLoop:
@@ -83,6 +57,8 @@ class ReasoningLoop:
         analyst_cooldown_cycles: int = 3,
         filter_chain: PreTradeFilterChain | None = None,
         max_consecutive_rejection_multiplier: int = 3,
+        *,
+        reasoning_config: ReasoningLoopConfigSchema | None = None,
     ) -> None:
         self._symbols = symbols
         self._router = router
@@ -95,6 +71,7 @@ class ReasoningLoop:
         self._analyst_cooldown_cycles = analyst_cooldown_cycles
         self._filter_chain = filter_chain
         self._max_rejection_multiplier = max_consecutive_rejection_multiplier
+        self._reasoning_config = reasoning_config or ReasoningLoopConfigSchema()
         self._cooldowns: dict[tuple[str, str], int] = {}  # (symbol, direction)
         self._consecutive_rejections: dict[tuple[str, str], int] = {}
         self._consecutive_waits: dict[tuple[str, str], int] = {}
@@ -157,9 +134,9 @@ class ReasoningLoop:
             self._consecutive_idle_cycles = 0
             return float(self._interval_s)
         self._consecutive_idle_cycles += 1
-        for stair_cycles, stair_sleep_s in _IDLE_RAMP_STAIRS:
-            if self._consecutive_idle_cycles >= stair_cycles:
-                return float(stair_sleep_s)
+        for stair in self._reasoning_config.idle_ramp_stairs:
+            if self._consecutive_idle_cycles >= stair.min_idle_cycles:
+                return float(stair.sleep_s)
         return float(self._interval_s)
 
     async def _fetch_cycle_positions(self) -> list[PositionSchema]:
@@ -220,10 +197,10 @@ class ReasoningLoop:
         if verdict == "SKIP":
             count = self._consecutive_skips.get(symbol, 0) + 1
             self._consecutive_skips[symbol] = count
-            if count >= _SKIP_SUSPENSION_THRESHOLD:
+            if count >= self._reasoning_config.skip_suspension_threshold:
                 new_interval = min(
                     max(self._skip_eval_interval.get(symbol, 1) * 2, 2),
-                    _MAX_SKIP_EVAL_INTERVAL,
+                    self._reasoning_config.max_skip_eval_interval,
                 )
                 self._skip_eval_interval[symbol] = new_interval
                 logger.info(
@@ -385,7 +362,10 @@ class ReasoningLoop:
             for d in cooldown_dirs:
                 key = (symbol, d)
                 existing = self._cooldowns.get(key, 0)
-                self._cooldowns[key] = max(existing, _BORDERLINE_COOLDOWN_CYCLES)
+                self._cooldowns[key] = max(
+                    existing,
+                    self._reasoning_config.borderline_cooldown_cycles,
+                )
             logger.debug(
                 "Borderline analyst %s direction=%s score=%d setup_valid=%s"
                 " regime=%s gate=%d → cooldown=%d (no escalation)",
@@ -395,7 +375,7 @@ class ReasoningLoop:
                 setup_valid,
                 volatility_regime.value,
                 regime_gate,
-                _BORDERLINE_COOLDOWN_CYCLES,
+                self._reasoning_config.borderline_cooldown_cycles,
             )
             return
 
@@ -407,7 +387,8 @@ class ReasoningLoop:
 
     def _compute_rejection_cooldown(self, confluence_score: int) -> int:
         """Scale rejection cooldown within the aggressive band (score <= 3)."""
-        multiplier = 3 if confluence_score <= _COOLDOWN_LOW_CONFLUENCE_THRESHOLD else 2
+        low_band = self._reasoning_config.cooldown_low_confluence_threshold
+        multiplier = 3 if confluence_score <= low_band else 2
         cooldown = self._analyst_cooldown_cycles * multiplier
         logger.debug(
             "Rejection cooldown: confluence=%d multiplier=%d cooldown=%d cycles",
@@ -433,11 +414,12 @@ class ReasoningLoop:
             key = (symbol, d)
             count = self._consecutive_waits.get(key, 0) + 1
             self._consecutive_waits[key] = count
-            if count >= _WAIT_COOLDOWN_THRESHOLD:
-                excess = count - _WAIT_COOLDOWN_THRESHOLD + 1
+            wait_threshold = self._reasoning_config.wait_cooldown_threshold
+            if count >= wait_threshold:
+                excess = count - wait_threshold + 1
                 cooldown = min(
-                    _WAIT_COOLDOWN_BASE_CYCLES * excess,
-                    _WAIT_MAX_COOLDOWN_CYCLES,
+                    self._reasoning_config.wait_cooldown_base_cycles * excess,
+                    self._reasoning_config.wait_max_cooldown_cycles,
                 )
                 self._cooldowns[key] = cooldown
                 logger.info(
