@@ -213,4 +213,36 @@ class ScoutConfigSchema(BaseModel):
         Field(default=Decimal("1.5")),
     ]
 
+    # Minimum number of candles needed to compute a price-change percentage
+    # over the pullback window.  Below this count the helper returns ``None``
+    # and the criterion short-circuits to SKIP.  Two is the sensible floor
+    # (first vs. last close requires at least two samples).
+    min_candles_for_change: Annotated[
+        int,
+        Field(default=2, ge=2),
+    ]
+
+    # Size of the trailing window (in candles) examined when confirming that
+    # short-term momentum still agrees with the EMA alignment used by
+    # Criterion 6.  A larger window demands a longer streak of confirming
+    # moves; a smaller window is more permissive.
+    #   2 = permissive (only one close-to-close move inspected)
+    #   3 = default
+    #   4 = strict (three close-to-close moves inspected)
+    short_term_momentum_window: Annotated[
+        int,
+        Field(default=3, ge=2),
+    ]
+
+    # How many of the close-to-close moves inside the trailing window must
+    # agree with the EMA alignment to confirm Criterion 6.  Must be <= the
+    # window size (window minus one actual moves are inspected).
+    #   1 = permissive
+    #   2 = default
+    #   3 = strict
+    short_term_momentum_min_confirming: Annotated[
+        int,
+        Field(default=2, ge=1),
+    ]
+
     model_config = ConfigDict(frozen=True)

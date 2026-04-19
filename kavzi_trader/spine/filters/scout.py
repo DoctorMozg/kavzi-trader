@@ -13,9 +13,6 @@ from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
 logger = logging.getLogger(__name__)
 
 _ZERO = Decimal(0)
-_MIN_CANDLES_FOR_CHANGE = 2
-_MOMENTUM_MIN_CANDLES = 3
-_MOMENTUM_MIN_CONFIRMING = 2
 
 
 class _ScoutCriterionResult(BaseModel):
@@ -376,15 +373,22 @@ class ScoutFilter:
             return "NEUTRAL"
         return direction
 
-    @staticmethod
     def _short_term_momentum_confirms(
+        self,
         candles: list[CandlestickSchema],
         alignment: str,
     ) -> bool:
-        """Check that at least 2 of the last 3 close-to-close moves confirm trend."""
-        if len(candles) < _MOMENTUM_MIN_CANDLES:
+        """Check that enough of the trailing close-to-close moves confirm trend.
+
+        Window size and the required number of confirming moves are sourced
+        from ``ScoutConfigSchema.short_term_momentum_window`` and
+        ``short_term_momentum_min_confirming``.
+        """
+        cfg = self._cfg
+        window = cfg.short_term_momentum_window
+        if len(candles) < window:
             return True
-        recent = candles[-_MOMENTUM_MIN_CANDLES:]
+        recent = candles[-window:]
         confirming = 0
         for i in range(1, len(recent)):
             if (
@@ -395,7 +399,7 @@ class ScoutFilter:
                 and recent[i].close_price <= recent[i - 1].close_price
             ):
                 confirming += 1
-        return confirming >= _MOMENTUM_MIN_CONFIRMING
+        return confirming >= cfg.short_term_momentum_min_confirming
 
     @staticmethod
     def _atr_pct(ind: TechnicalIndicatorsSchema, price: Decimal) -> Decimal | None:
@@ -435,11 +439,11 @@ class ScoutFilter:
         body = abs(candle.close_price - candle.open_price)
         return body / high_low
 
-    @staticmethod
     def _compute_price_change_pct(
+        self,
         candles: list[CandlestickSchema],
     ) -> Decimal | None:
-        if len(candles) < _MIN_CANDLES_FOR_CHANGE:
+        if len(candles) < self._cfg.min_candles_for_change:
             return None
         first_close = candles[0].close_price
         if first_close == _ZERO:
