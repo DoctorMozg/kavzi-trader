@@ -19,6 +19,7 @@ from kavzi_trader.brain.agent.decision_dedup import (
     TraderDedupEntry,
 )
 from kavzi_trader.brain.agent.router_config import RouterConfigSchema
+from kavzi_trader.brain.agent.scout_pipeline import ScoutPipeline
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
     KeyLevelSchema,
@@ -38,12 +39,6 @@ from kavzi_trader.orchestrator.loops.confluence_thresholds import (
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 logger = logging.getLogger(__name__)
-
-_SKIP_ERROR = ScoutDecisionSchema(
-    verdict="SKIP",
-    reason="agent_error",
-    pattern_detected=None,
-)
 
 
 class ScoutRunner(Protocol):
@@ -284,6 +279,12 @@ class AgentRouter:
         # additional (analyst_hash, bar_close) pair so cross-bar
         # invalidation and mid-bar Analyst revisions both work.
         self._dedup = DecisionDeduplicator()
+        # Scout stage orchestrator — owns fetch-deps + dedup + invoke +
+        # cache for the Scout tier so ``run`` can delegate in one call.
+        self._scout_pipeline = ScoutPipeline(
+            scout=self._scout,
+            dedup=self._dedup,
+        )
 
     @property
     def _trader_validation_failures(self) -> dict[str, int]:
@@ -399,46 +400,9 @@ class AgentRouter:
         total_start = time.monotonic()
         logger.info("Agent pipeline started for %s", symbol)
 
-        scout_deps = await self._fetch_scout_deps(symbol, deps_provider)
-
-        if not scout_deps.recent_candles:
-            logger.warning(
-                "Scout deps for %s have no candles; skipping pipeline",
-                symbol,
-            )
-            self._log_stop("Scout", symbol, total_start)
-            return PipelineResult(scout=_SKIP_ERROR)
-
-        # Scout bar-close dedup: deterministic filter produces the same
-        # verdict for the same candle, so cache both INTERESTING and SKIP.
-        current_scout_bar = scout_deps.recent_candles[-1].close_time
-        cached_scout = self._dedup.scout_hit(symbol, current_scout_bar)
-        if cached_scout is not None:
-            logger.info(
-                "Scout dedup hit for %s: bar close_time=%s already"
-                " evaluated (cached verdict=%s)",
-                symbol,
-                current_scout_bar,
-                cached_scout.verdict,
-            )
-            scout_result: ScoutDecisionSchema = cached_scout
-        else:
-            raw = await self._invoke_scout(symbol, scout_deps)
-            if raw is None:
-                # Scout raised. Don't cache the sentinel SKIP_ERROR — a
-                # transient exception must allow retry on the next cycle
-                # instead of poisoning the dedup cache with SKIP for the
-                # whole bar.
-                scout_result = _SKIP_ERROR
-            else:
-                scout_result = raw
-                self._dedup.cache_scout(
-                    symbol,
-                    bar_close=current_scout_bar,
-                    result=scout_result,
-                )
-
-        if scout_result.verdict != "INTERESTING":
+        scout_pipeline_result = await self._scout_pipeline.run(symbol, deps_provider)
+        scout_result = scout_pipeline_result.decision
+        if scout_pipeline_result.stop:
             self._log_stop("Scout", symbol, total_start)
             return PipelineResult(scout=scout_result)
 
@@ -502,25 +466,6 @@ class AgentRouter:
             trader=trader_run.decision,
             trader_deps=trader_run.deps,
         )
-
-    async def _fetch_scout_deps(
-        self,
-        symbol: str,
-        deps_provider: DependenciesProvider,
-    ) -> ScoutDependenciesSchema:
-        return await deps_provider.get_scout(symbol)
-
-    async def _invoke_scout(
-        self,
-        symbol: str,
-        deps: ScoutDependenciesSchema,
-    ) -> ScoutDecisionSchema | None:
-        try:
-            result = await self._scout.run(deps)
-        except Exception:
-            logger.exception("Scout agent failed for %s", symbol)
-            return None
-        return result
 
     async def _run_analyst(
         self,
