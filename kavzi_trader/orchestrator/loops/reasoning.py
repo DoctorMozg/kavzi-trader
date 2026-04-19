@@ -78,6 +78,11 @@ class ReasoningLoop:
         # INTERESTING scouts. Drives the progressive idle sleep ramp; any
         # INTERESTING cycle resets the counter.
         self._consecutive_idle_cycles: int = 0
+        # Tracks the idle-ramp stair index for transition-based logging.
+        # ``None`` indicates active mode (not currently ramped into idle).
+        # Only transitions (active→idle, stair advances, idle→active) log;
+        # steady-state idle cycles stay silent to reduce log noise.
+        self._last_idle_stair_index: int | None = None
 
     async def run(self) -> None:
         logger.info(
@@ -117,28 +122,52 @@ class ReasoningLoop:
                     continue
                 results.append(result)
             interesting_count = sum(results)
-            current_interval_s = self._next_sleep_interval_s(interesting_count)
-            cycle_ms = (time.monotonic() - cycle_start) * 1000
-            logger.info(
-                "ReasoningLoop cycle %d complete in %.1fms, "
-                "interesting=%d/%d, sleeping %.0fs",
-                cycle,
-                cycle_ms,
-                interesting_count,
-                len(results),
-                current_interval_s,
-                extra={
-                    "cycle": cycle,
-                    "elapsed_ms": round(cycle_ms, 1),
-                    "interesting_count": interesting_count,
-                    "sleep_interval_s": round(current_interval_s, 1),
-                    "consecutive_idle_cycles": self._consecutive_idle_cycles,
-                },
+            current_interval_s, stair_index = self._next_sleep_interval_s(
+                interesting_count
             )
+            cycle_ms = (time.monotonic() - cycle_start) * 1000
+            if stair_index != self._last_idle_stair_index:
+                logger.info(
+                    "ReasoningLoop cycle %d complete in %.1fms, "
+                    "interesting=%d/%d, sleeping %.0fs",
+                    cycle,
+                    cycle_ms,
+                    interesting_count,
+                    len(results),
+                    current_interval_s,
+                    extra={
+                        "cycle": cycle,
+                        "elapsed_ms": round(cycle_ms, 1),
+                        "interesting_count": interesting_count,
+                        "sleep_interval_s": round(current_interval_s, 1),
+                        "consecutive_idle_cycles": self._consecutive_idle_cycles,
+                        "idle_stair_index": stair_index,
+                        "previous_idle_stair_index": self._last_idle_stair_index,
+                    },
+                )
+                self._last_idle_stair_index = stair_index
+            else:
+                logger.debug(
+                    "ReasoningLoop cycle %d complete in %.1fms, "
+                    "interesting=%d/%d, sleeping %.0fs",
+                    cycle,
+                    cycle_ms,
+                    interesting_count,
+                    len(results),
+                    current_interval_s,
+                )
             await asyncio.sleep(current_interval_s)
 
-    def _next_sleep_interval_s(self, interesting_count: int) -> float:
-        """Return the sleep interval for the next cycle.
+    def _next_sleep_interval_s(
+        self, interesting_count: int
+    ) -> tuple[float, int | None]:
+        """Return the sleep interval and idle-stair index for the next cycle.
+
+        The stair index is ``None`` in active mode (any INTERESTING symbol
+        this cycle) or when idle cycles haven't yet crossed the first stair
+        threshold; otherwise it is the index into
+        ``idle_ramp_stairs`` that dictated the sleep. The index is used by
+        the run loop to log only on idle-ramp state transitions.
 
         Resets to the base interval whenever any symbol was INTERESTING.
         On idle cycles, advances ``_consecutive_idle_cycles`` and walks the
@@ -146,12 +175,12 @@ class ReasoningLoop:
         """
         if interesting_count > 0:
             self._consecutive_idle_cycles = 0
-            return float(self._interval_s)
+            return float(self._interval_s), None
         self._consecutive_idle_cycles += 1
-        for stair in self._reasoning_config.idle_ramp_stairs:
+        for index, stair in enumerate(self._reasoning_config.idle_ramp_stairs):
             if self._consecutive_idle_cycles >= stair.min_idle_cycles:
-                return float(stair.sleep_s)
-        return float(self._interval_s)
+                return float(stair.sleep_s), index
+        return float(self._interval_s), None
 
     async def _fetch_cycle_positions(self) -> list[PositionSchema]:
         if self._state_manager is None:

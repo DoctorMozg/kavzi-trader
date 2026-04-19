@@ -29,7 +29,7 @@ _TRADER_REASONING = (
 
 
 class _Scout:
-    async def run(self, deps):
+    async def run(self, deps: ScoutDependenciesSchema) -> ScoutDecisionSchema:
         return ScoutDecisionSchema(
             verdict="INTERESTING",
             reason="test",
@@ -38,7 +38,7 @@ class _Scout:
 
 
 class _Analyst:
-    async def run(self, deps):
+    async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema:
         return AnalystDecisionSchema(
             setup_valid=True,
             direction="LONG",
@@ -54,7 +54,12 @@ class _FailingTrader:
     def __init__(self) -> None:
         self.call_count = 0
 
-    async def run(self, deps, analyst_result=None, scout_pattern=None):
+    async def run(
+        self,
+        deps: TradingDependenciesSchema,
+        analyst_result: AnalystDecisionSchema | None = None,
+        scout_pattern: str | None = None,
+    ) -> TradeDecisionSchema:
         self.call_count += 1
         raise UnexpectedModelBehavior("boom", body="malformed")
 
@@ -63,7 +68,12 @@ class _SuccessTrader:
     def __init__(self) -> None:
         self.call_count = 0
 
-    async def run(self, deps, analyst_result=None, scout_pattern=None):
+    async def run(
+        self,
+        deps: TradingDependenciesSchema,
+        analyst_result: AnalystDecisionSchema | None = None,
+        scout_pattern: str | None = None,
+    ) -> TradeDecisionSchema:
         self.call_count += 1
         return TradeDecisionSchema(
             action="WAIT",

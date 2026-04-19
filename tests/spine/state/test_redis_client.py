@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import redis.asyncio.client  # type: ignore[import-untyped]
 
 from kavzi_trader.spine.state.config import RedisConfigSchema
 from kavzi_trader.spine.state.redis_client import RedisStateClient
@@ -26,7 +27,7 @@ class TestRedisStateClientExecutePipeline:
 
         calls: list[object] = []
 
-        def builder(pipe):
+        def builder(pipe: redis.asyncio.client.Pipeline) -> None:
             calls.append(pipe)
             pipe.hset("k", mapping={"data": "v"})
             pipe.sadd("idx", "id1")
