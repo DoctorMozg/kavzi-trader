@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 import logging
 import time
@@ -11,6 +10,7 @@ import openai
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
+from kavzi_trader.brain.agent.analyst_pipeline import AnalystPipeline
 from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
 from kavzi_trader.brain.agent.decision_dedup import (
     AnalystDedupEntry,
@@ -23,7 +23,6 @@ from kavzi_trader.brain.agent.scout_pipeline import ScoutPipeline
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
     KeyLevelSchema,
-    KeyLevelsSchema,
 )
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
@@ -32,11 +31,6 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.orchestrator.loops.confluence_thresholds import (
-    CONFLUENCE_ENTER_MIN,
-    confluence_enter_min_for_regime,
-)
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 logger = logging.getLogger(__name__)
 
@@ -101,11 +95,6 @@ class PipelineResult:
 # (CONFLUENCE_ENTER_MIN - 3) = 3 — below this, even a perfect LLM bonus
 # cannot reach the entry gate.
 _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 3
-
-# Minimum Analyst confluence_score required to escalate to the Trader tier.
-# Sourced from the shared confluence_thresholds module so reasoning loop,
-# router, and prompt templates all use the same value.
-_ANALYST_CONFLUENCE_ENTER = CONFLUENCE_ENTER_MIN
 
 # Number of consecutive Trader validation failures (UnexpectedModelBehavior
 # or malformed output rejected downstream) before the Trader is suspended
@@ -261,18 +250,10 @@ class AgentRouter:
         self._scout = scout
         self._analyst = analyst
         self._trader = trader
-        self._analyst_min_algo_confluence = analyst_min_algo_confluence
-        self._confluence_override = confluence_override
         self._circuit_breaker = AgentCircuitBreaker(
             threshold=trader_circuit_threshold,
         )
         self._router_config = router_config or RouterConfigSchema()
-        # Semaphore gating Analyst LLM calls. Acquired only around the LLM
-        # await so cached dedup hits and deterministic skip gates don't
-        # consume slots. Created lazily per event loop so construction in
-        # tests without a running loop stays cheap.
-        self._analyst_concurrency_limit = analyst_concurrency_limit
-        self._analyst_semaphore: asyncio.Semaphore | None = None
         # Per-symbol bar-close dedup for Scout / Analyst / Trader tiers.
         # Scout is deterministic (safe to cache INTERESTING and SKIP within
         # the same candle); Analyst is LLM-based; Trader is keyed by the
@@ -284,6 +265,19 @@ class AgentRouter:
         self._scout_pipeline = ScoutPipeline(
             scout=self._scout,
             dedup=self._dedup,
+        )
+        # Analyst stage orchestrator — owns the min-algo confluence skip
+        # gate, bar-close dedup, semaphore-guarded LLM invocation, and the
+        # regime-aware confluence entry gate (plus its optional override).
+        # The semaphore is materialised lazily inside the pipeline so
+        # constructing the router outside an event loop stays cheap.
+        self._analyst_pipeline = AnalystPipeline(
+            analyst=self._analyst,
+            dedup=self._dedup,
+            min_algo_confluence=analyst_min_algo_confluence,
+            concurrency_limit=analyst_concurrency_limit,
+            confluence_override=confluence_override,
+            log_llm_exception=self._log_llm_exception,
         )
 
     @property
@@ -379,19 +373,6 @@ class AgentRouter:
             exc_message_preview_chars=(self._router_config.exc_message_preview_chars),
         )
 
-    def _get_analyst_semaphore(self) -> asyncio.Semaphore:
-        """Lazily materialize the Analyst semaphore on the running event loop.
-
-        Creating it in ``__init__`` would bind it to whichever loop happens
-        to be current at construction time, which fails in tests that
-        construct the router outside the loop they later drive.
-        """
-        if self._analyst_semaphore is None:
-            self._analyst_semaphore = asyncio.Semaphore(
-                self._analyst_concurrency_limit,
-            )
-        return self._analyst_semaphore
-
     async def run(
         self,
         symbol: str,
@@ -406,53 +387,30 @@ class AgentRouter:
             self._log_stop("Scout", symbol, total_start)
             return PipelineResult(scout=scout_result)
 
-        analyst_outcome = await self._run_analyst(symbol, deps_provider)
-        if analyst_outcome is None:
-            return PipelineResult(scout=scout_result)
-        analyst_result, volatility_regime = analyst_outcome
-
-        # Regime-specific escalation gate. Replaces the prior flat
-        # CONFLUENCE_ENTER_MIN with NORMAL=6, HIGH=7, EXTREME=8, LOW=7 so
-        # volatile markets can still trade on genuinely strong setups.
-        # Confluence override (e.g. elevated-fear FGI gate) can tighten it
-        # further but never loosen it.
-        confluence_gate = confluence_enter_min_for_regime(volatility_regime)
-        if self._confluence_override is not None:
-            override = self._confluence_override.get_confluence_override()
-            if override is not None:
-                confluence_gate = max(confluence_gate, override)
-
-        logger.info(
-            "Analyst regime gate for %s: score=%d gate=%d regime=%s pass=%s",
-            symbol,
-            analyst_result.confluence_score,
-            confluence_gate,
-            volatility_regime.value,
-            analyst_result.confluence_score >= confluence_gate,
-            extra={
-                "symbol": symbol,
-                "agent": "analyst",
-                "confluence_score": analyst_result.confluence_score,
-                "confluence_gate": confluence_gate,
-                "volatility_regime": volatility_regime.value,
-            },
-        )
-
-        if (
-            not analyst_result.setup_valid
-            or analyst_result.confluence_score < confluence_gate
-        ):
+        analyst_result = await self._analyst_pipeline.run(symbol, deps_provider)
+        analyst_decision = analyst_result.decision
+        if analyst_result.stop:
+            if analyst_decision is None:
+                return PipelineResult(scout=scout_result)
             self._log_stop("Analyst", symbol, total_start)
-            return PipelineResult(scout=scout_result, analyst=analyst_result)
+            return PipelineResult(
+                scout=scout_result,
+                analyst=analyst_decision,
+            )
+        # ``stop=False`` guarantees the Analyst pipeline produced a
+        # gate-passing decision; the explicit None check keeps the type
+        # narrowing visible to the checker without relying on ``assert``.
+        if analyst_decision is None:
+            return PipelineResult(scout=scout_result)
 
         trader_run = await self._run_trader(
             symbol,
             deps_provider,
-            analyst_result,
+            analyst_decision,
             scout_pattern=scout_result.pattern_detected,
         )
         if trader_run.decision is None:
-            return PipelineResult(scout=scout_result, analyst=analyst_result)
+            return PipelineResult(scout=scout_result, analyst=analyst_decision)
 
         total_ms = (time.monotonic() - total_start) * 1000
         logger.info(
@@ -462,87 +420,10 @@ class AgentRouter:
         )
         return PipelineResult(
             scout=scout_result,
-            analyst=analyst_result,
+            analyst=analyst_decision,
             trader=trader_run.decision,
             trader_deps=trader_run.deps,
         )
-
-    async def _run_analyst(
-        self,
-        symbol: str,
-        deps_provider: DependenciesProvider,
-    ) -> tuple[AnalystDecisionSchema, VolatilityRegime] | None:
-        deps = await deps_provider.get_analyst(symbol)
-        self._log_analyst_inputs(deps)
-        regime = deps.volatility_regime
-
-        # Gate: skip the LLM call when algorithm confluence is too low.
-        # The Analyst can add at most +3 points; if max algo < threshold,
-        # even the maximum boost cannot reach the confluence entry gate.
-        conf = deps.algorithm_confluence
-        max_algo = max(conf.long.score, conf.short.score)
-        if max_algo < self._analyst_min_algo_confluence:
-            logger.info(
-                "Analyst skipped for %s: max algorithm confluence %d < %d"
-                " — insufficient for valid setup even with LLM bonus",
-                symbol,
-                max_algo,
-                self._analyst_min_algo_confluence,
-            )
-            synthetic = AnalystDecisionSchema(
-                setup_valid=False,
-                direction="NEUTRAL",
-                confluence_score=max_algo,
-                key_levels=KeyLevelsSchema(levels=[]),
-                reasoning=(
-                    f"Analyst LLM call skipped: maximum algorithm"
-                    f" confluence score {max_algo}/8 is below the"
-                    f" minimum threshold"
-                    f" {self._analyst_min_algo_confluence}. Even with"
-                    f" the maximum analyst bonus of +3, the total cannot"
-                    f" reach the confluence entry gate"
-                    f" ({_ANALYST_CONFLUENCE_ENTER}) required to run"
-                    f" the Trader tier."
-                ),
-            )
-            return synthetic, regime
-
-        if not deps.recent_candles:
-            logger.warning(
-                "Analyst deps for %s have no candles; returning None", symbol
-            )
-            return None
-
-        # Bar-close dedup: if the latest closed candle hasn't changed since
-        # the previous Analyst call for this symbol, reuse the memoized
-        # result. Skips redundant LLM calls inside the same 5-minute bar
-        # when the ReasoningLoop cooldown expires mid-bar.
-        current_bar = deps.recent_candles[-1].close_time
-        cached = self._dedup.analyst_hit(symbol, current_bar)
-        if cached is not None:
-            logger.info(
-                "Analyst dedup hit for %s: bar close_time=%s already"
-                " analyzed (cached conf=%d, valid=%s)",
-                symbol,
-                current_bar,
-                cached.confluence_score,
-                cached.setup_valid,
-            )
-            return cached, regime
-
-        t0 = time.monotonic()
-        try:
-            async with self._get_analyst_semaphore():
-                result = await self._analyst.run(deps)
-        except Exception as exc:  # noqa: BLE001 - LLM client raises many types
-            elapsed_ms = (time.monotonic() - t0) * 1000
-            self._log_llm_exception(symbol, "analyst", exc, elapsed_ms)
-            return None
-
-        # Record the bar we just analyzed so subsequent cycles within the
-        # same candle can short-circuit via the dedup hit above.
-        self._dedup.cache_analyst(symbol, bar_close=current_bar, result=result)
-        return result, regime
 
     async def _run_trader(
         self,
@@ -770,32 +651,6 @@ class AgentRouter:
                 "suggested_stop_loss": None,
                 "suggested_take_profit": None,
             }
-        )
-
-    @staticmethod
-    def _log_analyst_inputs(deps: AnalystDependenciesSchema) -> None:
-        ind = deps.indicators
-        of = deps.order_flow
-        conf = deps.algorithm_confluence
-        logger.info(
-            "Analyst inputs %s: price=%s regime=%s RSI=%s "
-            "MACD=%s BB%%b=%s vol=%s funding=%s OI_1h=%s "
-            "L/S=%s conf=%s/%s(%s) sent=%s '%s'",
-            deps.symbol,
-            deps.current_price,
-            deps.volatility_regime.value,
-            ind.rsi_14,
-            ind.macd.histogram if ind.macd else None,
-            ind.bollinger.percent_b if ind.bollinger else None,
-            ind.volume.volume_ratio if ind.volume else None,
-            of.funding_rate if of else None,
-            of.oi_change_1h_percent if of else None,
-            of.long_short_ratio if of else None,
-            conf.long.score,
-            conf.short.score,
-            conf.detected_side,
-            deps.sentiment_summary.sentiment_bias if deps.sentiment_summary else None,
-            deps.sentiment_summary.summary[:30] if deps.sentiment_summary else "",
         )
 
     @staticmethod
