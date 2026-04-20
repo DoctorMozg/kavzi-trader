@@ -63,6 +63,7 @@ async def _run_until_sleeps(
 def _build_skip_loop(router: AsyncMock) -> ReasoningLoop:
     deps_provider = AsyncMock()
     deps_provider.clear_cycle_cache = unittest.mock.MagicMock()
+    deps_provider.indicators_available = unittest.mock.MagicMock(return_value=True)
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
     return ReasoningLoop(
