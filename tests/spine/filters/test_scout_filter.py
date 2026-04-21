@@ -800,40 +800,40 @@ async def test_trend_pullback_passes_with_confirming_momentum(
     assert result.pattern_detected == "TREND_PULLBACK"
 
 
-def test_short_term_momentum_confirms_bullish() -> None:
+def test_short_term_momentum_confirms_bullish(scout: ScoutFilter) -> None:
     candles = [
         _make_candle(Decimal(100), offset_min=0),
         _make_candle(Decimal(101), offset_min=5),
         _make_candle(Decimal(102), offset_min=10),
     ]
-    assert ScoutFilter._short_term_momentum_confirms(candles, "BULLISH") is True
+    assert scout._short_term_momentum_confirms(candles, "BULLISH") is True
 
 
-def test_short_term_momentum_rejects_declining_bullish() -> None:
+def test_short_term_momentum_rejects_declining_bullish(scout: ScoutFilter) -> None:
     candles = [
         _make_candle(Decimal(106), offset_min=0),
         _make_candle(Decimal(104), offset_min=5),
         _make_candle(Decimal(102), offset_min=10),
     ]
-    assert ScoutFilter._short_term_momentum_confirms(candles, "BULLISH") is False
+    assert scout._short_term_momentum_confirms(candles, "BULLISH") is False
 
 
-def test_short_term_momentum_confirms_bearish() -> None:
+def test_short_term_momentum_confirms_bearish(scout: ScoutFilter) -> None:
     candles = [
         _make_candle(Decimal(102), offset_min=0),
         _make_candle(Decimal(101), offset_min=5),
         _make_candle(Decimal(100), offset_min=10),
     ]
-    assert ScoutFilter._short_term_momentum_confirms(candles, "BEARISH") is True
+    assert scout._short_term_momentum_confirms(candles, "BEARISH") is True
 
 
-def test_short_term_momentum_few_candles_allows() -> None:
+def test_short_term_momentum_few_candles_allows(scout: ScoutFilter) -> None:
     """With < 3 candles, momentum check is permissive."""
     candles = [
         _make_candle(Decimal(100), offset_min=0),
         _make_candle(Decimal(98), offset_min=5),
     ]
-    assert ScoutFilter._short_term_momentum_confirms(candles, "BULLISH") is True
+    assert scout._short_term_momentum_confirms(candles, "BULLISH") is True
 
 
 # ------------------------------------------------------------------

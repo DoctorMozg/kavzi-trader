@@ -17,10 +17,15 @@ class DataIngestLoop:
 
     async def run(self) -> None:
         logger.info("DataIngestLoop starting WebSocket stream manager")
+        cycle = 0
         while True:
+            cycle += 1
             try:
                 await self._stream_manager.start()
             except Exception:
-                logger.exception("DataIngestLoop encountered an error, restarting")
+                logger.exception(
+                    "DataIngestLoop encountered an error, restarting",
+                    extra={"loop": "ingest", "cycle": cycle},
+                )
                 await asyncio.sleep(1)
                 logger.info("DataIngestLoop restarting stream manager")

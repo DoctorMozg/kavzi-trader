@@ -25,6 +25,7 @@ class OrderFlowLoop:
         except Exception:
             logger.exception(
                 "OrderFlowLoop warm-up failed, continuing without pre-fetched data",
+                extra={"loop": "order_flow", "phase": "warm-up"},
             )
 
     async def run(self) -> None:
@@ -32,7 +33,9 @@ class OrderFlowLoop:
             "OrderFlowLoop started, interval=%ds",
             self._interval_s,
         )
+        cycle = 0
         while True:
+            cycle += 1
             try:
                 logger.debug("OrderFlowLoop fetching order flow data")
                 await self._fetcher.fetch()
@@ -41,5 +44,13 @@ class OrderFlowLoop:
                     self._interval_s,
                 )
             except Exception:
-                logger.exception("OrderFlowLoop encountered an error, continuing")
+                logger.exception(
+                    "OrderFlowLoop encountered an error, continuing",
+                    extra={
+                        "loop": "order_flow",
+                        "phase": "steady",
+                        "cycle": cycle,
+                        "interval_s": self._interval_s,
+                    },
+                )
             await asyncio.sleep(self._interval_s)

@@ -1347,7 +1347,8 @@ def test_pre_trader_breakout_rejects_long_overextended(
         account_state,
         positions,
     )
-    result = AgentRouter._pre_trader_breakout_check(
+    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
+    result = router._pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1378,7 +1379,8 @@ def test_pre_trader_breakout_allows_short_at_high_b(
         account_state,
         positions,
     )
-    result = AgentRouter._pre_trader_breakout_check(
+    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
+    result = router._pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1407,7 +1409,8 @@ def test_pre_trader_breakout_rejects_short_overextended(
         account_state,
         positions,
     )
-    result = AgentRouter._pre_trader_breakout_check(
+    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
+    result = router._pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1438,7 +1441,8 @@ def test_pre_trader_breakout_allows_long_at_low_b(
         account_state,
         positions,
     )
-    result = AgentRouter._pre_trader_breakout_check(
+    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
+    result = router._pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1468,8 +1472,9 @@ def test_pre_trader_breakout_caution_long_zone(
         account_state,
         positions,
     )
+    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
     with caplog.at_level(logging.WARNING):
-        result = AgentRouter._pre_trader_breakout_check(
+        result = router._pre_trader_breakout_check(
             "BTCUSDT",
             "BREAKOUT",
             deps,
@@ -1500,8 +1505,9 @@ def test_pre_trader_breakout_caution_short_zone(
         account_state,
         positions,
     )
+    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
     with caplog.at_level(logging.WARNING):
-        result = AgentRouter._pre_trader_breakout_check(
+        result = router._pre_trader_breakout_check(
             "BTCUSDT",
             "BREAKOUT",
             deps,
@@ -1812,7 +1818,8 @@ def test_pre_trader_rr_check_ignores_neutral() -> None:
         key_levels=KeyLevelsSchema(levels=levels),
         reasoning=_ANALYST_REASONING,
     )
-    verdict = AgentRouter._pre_trader_rr_check(
+    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
+    verdict = router._pre_trader_rr_check(
         "BTCUSDT",
         analyst_result,
         current_price=Decimal(105),
@@ -1822,7 +1829,7 @@ def test_pre_trader_rr_check_ignores_neutral() -> None:
 
 
 def test_pre_trader_rr_check_returns_wait_below_hard_block() -> None:
-    """Static method returns a WAIT TradeDecisionSchema when R/R < 0.5."""
+    """Instance method returns a WAIT TradeDecisionSchema when R/R < 0.5."""
     levels = [
         KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
         KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
@@ -1834,7 +1841,8 @@ def test_pre_trader_rr_check_returns_wait_below_hard_block() -> None:
         key_levels=KeyLevelsSchema(levels=levels),
         reasoning=_ANALYST_REASONING,
     )
-    verdict = AgentRouter._pre_trader_rr_check(
+    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
+    verdict = router._pre_trader_rr_check(
         "BTCUSDT",
         analyst_result,
         current_price=Decimal(105),

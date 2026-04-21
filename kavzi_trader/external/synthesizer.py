@@ -139,6 +139,11 @@ class SentimentSynthesizer:
         for attempt in range(_MAX_RETRIES):
             try:
                 result = await self._agent.run(user_prompt)
+            # Broad catch: PydanticAI Agent.run() wraps OpenRouter/LLM provider
+            # calls that can surface arbitrary provider-specific errors
+            # (httpx errors, rate-limit exceptions, malformed JSON,
+            # ModelRetry, validation failures, etc.). Each retry must be
+            # resilient regardless of the specific upstream failure mode.
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 logger.warning(
@@ -146,6 +151,7 @@ class SentimentSynthesizer:
                     attempt + 1,
                     _MAX_RETRIES,
                     exc,
+                    extra={"attempt": attempt + 1, "max_retries": _MAX_RETRIES},
                 )
                 if attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(_RETRY_BACKOFF_S * (attempt + 1))

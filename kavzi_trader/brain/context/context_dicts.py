@@ -1,6 +1,52 @@
-from typing import Any, TypedDict
+from datetime import datetime
+from decimal import Decimal
+from typing import TypedDict
 
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
+from kavzi_trader.spine.confluence import ConfluenceBlockDict
+
+__all__ = [
+    "ATRFallbackTargetDict",
+    "AccountStateDict",
+    "AnalystContextDict",
+    "ConfluenceBlockDict",
+    "MarketContextDict",
+    "SystemPromptContextDict",
+    "TraderContextDict",
+]
+
+
+class AccountStateDict(TypedDict):
+    """Serialized shape of ``AccountStateSchema.model_dump()``.
+
+    Produced via ``deps.account_state.model_dump()`` in the trader
+    context builder and consumed by ``user/context/account_state.j2``
+    and ``user/requests/make_decision.j2``. Kept distinct from the
+    Binance REST ``AccountInfoDict`` (external API shape) because this
+    mirrors our internal ``AccountStateSchema`` fields.
+    """
+
+    total_balance_usdt: Decimal
+    available_balance_usdt: Decimal
+    locked_balance_usdt: Decimal
+    unrealized_pnl: Decimal
+    peak_balance: Decimal
+    current_drawdown_percent: Decimal
+    total_margin_balance: Decimal
+    margin_ratio: Decimal
+    updated_at: datetime
+
+
+class ATRFallbackTargetDict(TypedDict):
+    """Single ATR-projected take-profit target.
+
+    Produced by ``ContextBuilder._compute_atr_fallback_targets`` and
+    consumed by ``user/context/analyst_result.j2`` where each entry is
+    rendered as ``{{ target.label }} @ {{ target.price }}``.
+    """
+
+    price: str
+    label: str
 
 
 class MarketContextDict(TypedDict):
@@ -28,8 +74,8 @@ class AnalystContextDict(MarketContextDict):
     # LONG / SHORT confluence blocks are side-trimmed based on
     # ``detected_side``. Whichever side is NOT the detected direction is
     # dropped to ``None`` when the LLM only needs one perspective.
-    algorithm_confluence_long: dict[str, Any] | None
-    algorithm_confluence_short: dict[str, Any] | None
+    algorithm_confluence_long: ConfluenceBlockDict | None
+    algorithm_confluence_short: ConfluenceBlockDict | None
     detected_side: str
     futures_leverage: int
     symbol_tier: str
@@ -48,10 +94,10 @@ class TraderContextDict(MarketContextDict):
     """Template context for the trader agent."""
 
     order_flow_compact: str | None
-    algorithm_confluence_long: dict[str, Any] | None
-    algorithm_confluence_short: dict[str, Any] | None
+    algorithm_confluence_long: ConfluenceBlockDict | None
+    algorithm_confluence_short: ConfluenceBlockDict | None
     detected_side: str
-    account_state: dict[str, Any]
+    account_state: AccountStateDict
     analyst_result: AnalystDecisionSchema | None
     futures_leverage: int
     liquidation_distance_percent: float
@@ -63,7 +109,7 @@ class TraderContextDict(MarketContextDict):
     sentiment_summary: str | None
     sentiment_bias: str | None
     sentiment_confidence_adjustment: str | None
-    atr_fallback_targets: list[dict[str, str]]
+    atr_fallback_targets: list[ATRFallbackTargetDict]
 
 
 class SystemPromptContextDict(TypedDict):

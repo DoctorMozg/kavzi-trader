@@ -50,7 +50,14 @@ class ExecutionLoop:
                 try:
                     decision = DecisionMessageSchema.model_validate_json(item[1])
                 except Exception:
-                    logger.exception("Failed to parse decision payload")
+                    logger.exception(
+                        "Failed to parse decision payload from queue %s",
+                        self._queue_key,
+                        extra={
+                            "loop": "execution",
+                            "queue_key": self._queue_key,
+                        },
+                    )
                     continue
                 logger.info(
                     "Decision dequeued: id=%s symbol=%s action=%s",
@@ -85,6 +92,12 @@ class ExecutionLoop:
                     logger.exception(
                         "Failed to report execution for %s",
                         decision.symbol,
+                        extra={
+                            "loop": "execution",
+                            "decision_id": decision.decision_id,
+                            "symbol": decision.symbol,
+                            "status": result.status,
+                        },
                     )
                 if (
                     position_snapshot is not None
@@ -97,7 +110,13 @@ class ExecutionLoop:
                         Decimal(str(result.executed_price)),
                     )
             except Exception:
-                logger.exception("ExecutionLoop encountered an error, continuing")
+                logger.exception(
+                    "ExecutionLoop encountered an error, continuing",
+                    extra={
+                        "loop": "execution",
+                        "queue_key": self._queue_key,
+                    },
+                )
                 await asyncio.sleep(0.1)
 
     async def _report_execution(
@@ -147,4 +166,10 @@ class ExecutionLoop:
             logger.exception(
                 "Failed to report position close for %s",
                 position.symbol,
+                extra={
+                    "loop": "execution",
+                    "position_id": position.id,
+                    "symbol": position.symbol,
+                    "close_reason": close_reason,
+                },
             )

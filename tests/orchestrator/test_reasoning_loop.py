@@ -665,13 +665,12 @@ def test_analyst_cooldown_reject_band_escalates() -> None:
     )
 
     loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
-    key = ("BTCUSDT", "LONG")
-    assert loop._consecutive_rejections[key] == 1
-    assert loop._cooldowns[key] == 9  # base=9 * mult=1
+    assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 1
+    assert loop._state.cooldown("BTCUSDT", "LONG") == 9  # base=9 * mult=1
 
     loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
-    assert loop._consecutive_rejections[key] == 2
-    assert loop._cooldowns[key] == 18  # base=9 * mult=2
+    assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 2
+    assert loop._state.cooldown("BTCUSDT", "LONG") == 18  # base=9 * mult=2
 
 
 def test_analyst_cooldown_borderline_band_no_escalation() -> None:
@@ -683,7 +682,6 @@ def test_analyst_cooldown_borderline_band_no_escalation() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
-    key = ("BTCUSDT", "LONG")
 
     borderline_scores = tuple(range(CONFLUENCE_REJECT_MAX + 1, CONFLUENCE_ENTER_MIN))
     for score in borderline_scores:
@@ -693,8 +691,10 @@ def test_analyst_cooldown_borderline_band_no_escalation() -> None:
             confluence_score=score,
         )
         loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
-        assert key not in loop._consecutive_rejections
-        assert loop._cooldowns[key] == 1  # _BORDERLINE_COOLDOWN_CYCLES
+        assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
+        assert (
+            loop._state.cooldown("BTCUSDT", "LONG") == 1
+        )  # _BORDERLINE_COOLDOWN_CYCLES
 
 
 def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
@@ -713,9 +713,8 @@ def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
     )
     loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
 
-    key = ("BTCUSDT", "LONG")
-    assert key not in loop._consecutive_rejections
-    assert loop._cooldowns[key] == 1
+    assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
+    assert loop._state.cooldown("BTCUSDT", "LONG") == 1
 
 
 def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
@@ -727,7 +726,10 @@ def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
-    loop._consecutive_rejections[("BTCUSDT", "LONG")] = 3
+    loop._state.set_cooldown("BTCUSDT", "LONG", 0)
+    # Seed three prior rejections via the tracker API.
+    for _ in range(3):
+        loop._state.bump_rejection("BTCUSDT", "LONG")
 
     analyst = _make_analyst_decision(
         setup_valid=True,
@@ -736,7 +738,7 @@ def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
     )
     loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
 
-    assert ("BTCUSDT", "LONG") not in loop._consecutive_rejections
+    assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
 
 
 def test_should_enqueue_requires_confluence_entry_gate() -> None:
@@ -872,11 +874,10 @@ def test_analyst_cooldown_borderline_uses_regime_gate(
     )
 
     loop._apply_analyst_cooldown("BTCUSDT", analyst, regime)
-    key = ("BTCUSDT", "LONG")
-    assert key not in loop._consecutive_rejections
+    assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
     # Every regime funnels an invalid setup at score=6 into the borderline
     # cooldown because the NORMAL branch only fires when setup_valid=True.
-    assert loop._cooldowns[key] == 1
+    assert loop._state.cooldown("BTCUSDT", "LONG") == 1
 
 
 def _make_trade_result() -> PipelineResult:
@@ -1046,26 +1047,24 @@ def test_consecutive_rejections_escalate_cooldown() -> None:
         analyst_cooldown_cycles=3,
         max_consecutive_rejection_multiplier=5,
     )
-    key = ("BTCUSDT", "LONG")
 
     # First rejection: confluence=2 → base=9, multiplier=min(1,5)=1
-    count = loop._consecutive_rejections.get(key, 0) + 1
-    loop._consecutive_rejections[key] = count
+    count = loop._state.bump_rejection("BTCUSDT", "LONG")
     base = loop._compute_rejection_cooldown(2)
     multiplier = min(count, loop._max_rejection_multiplier)
     assert base == 9
     assert base * multiplier == 9  # 9 * 1
 
     # Second rejection: multiplier=min(2,5)=2
-    count = loop._consecutive_rejections.get(key, 0) + 1
-    loop._consecutive_rejections[key] = count
+    count = loop._state.bump_rejection("BTCUSDT", "LONG")
     multiplier = min(count, loop._max_rejection_multiplier)
     assert base * multiplier == 18  # 9 * 2
 
     # Sixth rejection: capped at 5
-    loop._consecutive_rejections[key] = 5
-    count = loop._consecutive_rejections.get(key, 0) + 1
-    loop._consecutive_rejections[key] = count
+    # Jump straight to 5 via the tracker, then bump once more.
+    for _ in range(5 - loop._state.consecutive_rejections("BTCUSDT", "LONG")):
+        loop._state.bump_rejection("BTCUSDT", "LONG")
+    count = loop._state.bump_rejection("BTCUSDT", "LONG")
     multiplier = min(count, loop._max_rejection_multiplier)
     assert base * multiplier == 45  # 9 * 5 (capped)
 
@@ -1079,18 +1078,17 @@ def test_consecutive_rejections_reset_on_valid_analyst() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
-    key = ("BTCUSDT", "LONG")
 
     # Accumulate 3 rejections
-    loop._consecutive_rejections[key] = 3
+    for _ in range(3):
+        loop._state.bump_rejection("BTCUSDT", "LONG")
 
     # Reset (mirrors _handle_symbol logic on valid analyst)
-    loop._consecutive_rejections.pop(key, None)
-    assert key not in loop._consecutive_rejections
+    loop._state.clear_rejections("BTCUSDT", "LONG")
+    assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
 
     # Next rejection starts fresh from multiplier=1
-    count = loop._consecutive_rejections.get(key, 0) + 1
-    loop._consecutive_rejections[key] = count
+    count = loop._state.bump_rejection("BTCUSDT", "LONG")
     base = loop._compute_rejection_cooldown(2)
     multiplier = min(count, loop._max_rejection_multiplier)
     assert multiplier == 1
@@ -1108,8 +1106,8 @@ def test_direction_aware_cooldown_allows_opposite_direction() -> None:
     )
 
     # Set SHORT cooldown only
-    loop._cooldowns[("TAOUSDT", "SHORT")] = 10
-    loop._cooldowns[("TAOUSDT", "LONG")] = 0
+    loop._state.set_cooldown("TAOUSDT", "SHORT", 10)
+    loop._state.set_cooldown("TAOUSDT", "LONG", 0)
 
     # tick_cooldowns should return False (not all blocked)
     assert loop._tick_cooldowns("TAOUSDT") is False
@@ -1126,14 +1124,14 @@ def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
     )
 
     # Set both cooldowns
-    loop._cooldowns[("TAOUSDT", "LONG")] = 5
-    loop._cooldowns[("TAOUSDT", "SHORT")] = 10
+    loop._state.set_cooldown("TAOUSDT", "LONG", 5)
+    loop._state.set_cooldown("TAOUSDT", "SHORT", 10)
 
     # Should block
     assert loop._tick_cooldowns("TAOUSDT") is True
     # Cooldowns should have decremented
-    assert loop._cooldowns[("TAOUSDT", "LONG")] == 4
-    assert loop._cooldowns[("TAOUSDT", "SHORT")] == 9
+    assert loop._state.cooldown("TAOUSDT", "LONG") == 4
+    assert loop._state.cooldown("TAOUSDT", "SHORT") == 9
 
 
 def test_neutral_rejection_blocks_both_directions() -> None:
@@ -1150,15 +1148,13 @@ def test_neutral_rejection_blocks_both_directions() -> None:
     direction = "NEUTRAL"
     cooldown_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
     for d in cooldown_dirs:
-        key = ("BTCUSDT", d)
-        count = loop._consecutive_rejections.get(key, 0) + 1
-        loop._consecutive_rejections[key] = count
+        count = loop._state.bump_rejection("BTCUSDT", d)
         base = loop._compute_rejection_cooldown(3)  # top of reject band
         multiplier = min(count, loop._max_rejection_multiplier)
-        loop._cooldowns[key] = base * multiplier
+        loop._state.set_cooldown("BTCUSDT", d, base * multiplier)
 
-    assert loop._cooldowns[("BTCUSDT", "LONG")] == 6  # base=6 * mult=1
-    assert loop._cooldowns[("BTCUSDT", "SHORT")] == 6
+    assert loop._state.cooldown("BTCUSDT", "LONG") == 6  # base=6 * mult=1
+    assert loop._state.cooldown("BTCUSDT", "SHORT") == 6
 
 
 def _make_wait_result(
@@ -1200,9 +1196,8 @@ def test_consecutive_waits_apply_cooldown() -> None:
     for _ in range(5):
         loop._track_consecutive_waits("TONUSDT", result)
 
-    key = ("TONUSDT", "LONG")
-    assert loop._consecutive_waits[key] == 5
-    assert loop._cooldowns.get(key, 0) > 0
+    assert loop._state.consecutive_waits("TONUSDT", "LONG") == 5
+    assert loop._state.cooldown("TONUSDT", "LONG") > 0
 
 
 def test_consecutive_waits_reset_on_trade() -> None:
@@ -1215,15 +1210,17 @@ def test_consecutive_waits_reset_on_trade() -> None:
     )
 
     # Accumulate some WAITs
-    loop._consecutive_waits[("TONUSDT", "LONG")] = 5
-    loop._consecutive_waits[("TONUSDT", "SHORT")] = 2
+    for _ in range(5):
+        loop._state.bump_wait("TONUSDT", "LONG")
+    for _ in range(2):
+        loop._state.bump_wait("TONUSDT", "SHORT")
 
     # Simulate trade enqueue reset (mirrors _handle_symbol logic)
-    loop._consecutive_waits.pop(("TONUSDT", "LONG"), None)
-    loop._consecutive_waits.pop(("TONUSDT", "SHORT"), None)
+    loop._state.clear_waits("TONUSDT", "LONG")
+    loop._state.clear_waits("TONUSDT", "SHORT")
 
-    assert ("TONUSDT", "LONG") not in loop._consecutive_waits
-    assert ("TONUSDT", "SHORT") not in loop._consecutive_waits
+    assert loop._state.consecutive_waits("TONUSDT", "LONG") == 0
+    assert loop._state.consecutive_waits("TONUSDT", "SHORT") == 0
 
 
 def test_consecutive_waits_escalate() -> None:
@@ -1235,23 +1232,22 @@ def test_consecutive_waits_escalate() -> None:
         redis_client=AsyncMock(),
     )
     result = _make_wait_result("LONG")
-    key = ("TONUSDT", "LONG")
 
     # 7 consecutive WAITs (threshold=5, base=2)
     for _ in range(7):
         loop._track_consecutive_waits("TONUSDT", result)
 
-    assert loop._consecutive_waits[key] == 7
+    assert loop._state.consecutive_waits("TONUSDT", "LONG") == 7
     # count=7, excess=7-5+1=3, cooldown=min(2*3, 12)=6
-    assert loop._cooldowns[key] == 6
+    assert loop._state.cooldown("TONUSDT", "LONG") == 6
 
     # Push to cap (15+ waits)
     for _ in range(8):
         loop._track_consecutive_waits("TONUSDT", result)
 
-    assert loop._consecutive_waits[key] == 15
+    assert loop._state.consecutive_waits("TONUSDT", "LONG") == 15
     # excess=15-5+1=11, cooldown=min(2*11, 12)=12
-    assert loop._cooldowns[key] == 12
+    assert loop._state.cooldown("TONUSDT", "LONG") == 12
 
 
 def test_consecutive_waits_no_cooldown_below_threshold() -> None:
@@ -1263,13 +1259,12 @@ def test_consecutive_waits_no_cooldown_below_threshold() -> None:
         redis_client=AsyncMock(),
     )
     result = _make_wait_result("LONG")
-    key = ("TONUSDT", "LONG")
 
     loop._track_consecutive_waits("TONUSDT", result)
     loop._track_consecutive_waits("TONUSDT", result)
 
-    assert loop._consecutive_waits[key] == 2
-    assert loop._cooldowns.get(key, 0) == 0
+    assert loop._state.consecutive_waits("TONUSDT", "LONG") == 2
+    assert loop._state.cooldown("TONUSDT", "LONG") == 0
 
 
 @pytest.mark.asyncio

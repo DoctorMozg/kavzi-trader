@@ -35,7 +35,14 @@ def test_http_status_error_logs_status_code(
     )
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception("BTCUSDT", "analyst", exc, elapsed_ms=1234.5)
+        _log_llm_exception(
+            "BTCUSDT",
+            "analyst",
+            exc,
+            elapsed_ms=1234.5,
+            body_preview_chars=500,
+            exc_message_preview_chars=200,
+        )
 
     matching = [r for r in caplog.records if "HTTP 502" in r.message]
     assert len(matching) == 1
@@ -59,7 +66,14 @@ def test_openai_rate_limit_logs_retry_after(
     )
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception("ETHUSDT", "analyst", exc, elapsed_ms=500.0)
+        _log_llm_exception(
+            "ETHUSDT",
+            "analyst",
+            exc,
+            elapsed_ms=500.0,
+            body_preview_chars=500,
+            exc_message_preview_chars=200,
+        )
 
     matching = [r for r in caplog.records if "rate-limited" in r.message]
     assert len(matching) == 1
@@ -80,7 +94,14 @@ def test_openai_api_status_error_logs_status(
     )
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception("SOLUSDT", "trader", exc, elapsed_ms=250.0)
+        _log_llm_exception(
+            "SOLUSDT",
+            "trader",
+            exc,
+            elapsed_ms=250.0,
+            body_preview_chars=500,
+            exc_message_preview_chars=200,
+        )
 
     matching = [r for r in caplog.records if "HTTP 500" in r.message]
     assert len(matching) == 1
@@ -95,7 +116,14 @@ def test_timeout_logs_elapsed_and_type(
     exc = httpx.ReadTimeout("timed out")
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception("BNBUSDT", "trader", exc, elapsed_ms=12_000.0)
+        _log_llm_exception(
+            "BNBUSDT",
+            "trader",
+            exc,
+            elapsed_ms=12_000.0,
+            body_preview_chars=500,
+            exc_message_preview_chars=200,
+        )
 
     matching = [r for r in caplog.records if "timed out" in r.message]
     assert len(matching) == 1
@@ -112,7 +140,14 @@ def test_builtin_timeout_error_logged_as_timeout(
     exc = TimeoutError("builtin timeout")
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception("XRPUSDT", "analyst", exc, elapsed_ms=1000.0)
+        _log_llm_exception(
+            "XRPUSDT",
+            "analyst",
+            exc,
+            elapsed_ms=1000.0,
+            body_preview_chars=500,
+            exc_message_preview_chars=200,
+        )
 
     matching = [r for r in caplog.records if "timed out" in r.message]
     assert len(matching) == 1
@@ -126,7 +161,14 @@ def test_unexpected_model_body_preview_in_message(
     exc = UnexpectedModelBehavior("parse failed", body=long_body)
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception("ADAUSDT", "trader", exc, elapsed_ms=2500.0)
+        _log_llm_exception(
+            "ADAUSDT",
+            "trader",
+            exc,
+            elapsed_ms=2500.0,
+            body_preview_chars=500,
+            exc_message_preview_chars=200,
+        )
 
     matching = [r for r in caplog.records if "unparseable output" in r.message]
     assert len(matching) == 1
@@ -146,7 +188,14 @@ def test_unexpected_model_handles_none_body(
     exc = UnexpectedModelBehavior("parse failed", body=None)
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception("LINKUSDT", "trader", exc, elapsed_ms=100.0)
+        _log_llm_exception(
+            "LINKUSDT",
+            "trader",
+            exc,
+            elapsed_ms=100.0,
+            body_preview_chars=500,
+            exc_message_preview_chars=200,
+        )
 
     matching = [r for r in caplog.records if "unparseable output" in r.message]
     assert len(matching) == 1
@@ -162,7 +211,14 @@ def test_generic_exception_includes_type_and_prefix(
     exc = RuntimeError(message)
 
     with caplog.at_level(logging.ERROR):
-        _log_llm_exception("AVAXUSDT", "analyst", exc, elapsed_ms=50.0)
+        _log_llm_exception(
+            "AVAXUSDT",
+            "analyst",
+            exc,
+            elapsed_ms=50.0,
+            body_preview_chars=500,
+            exc_message_preview_chars=200,
+        )
 
     matching = [r for r in caplog.records if "LLM failed" in r.message]
     assert len(matching) == 1

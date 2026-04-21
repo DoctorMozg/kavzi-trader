@@ -1,11 +1,14 @@
 import logging
 from decimal import Decimal
-from typing import Any
+from typing import cast
 
 from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.brain.context.context_dicts import (
+    AccountStateDict,
     AnalystContextDict,
+    ATRFallbackTargetDict,
+    ConfluenceBlockDict,
     MarketContextDict,
     TraderContextDict,
 )
@@ -22,6 +25,7 @@ from kavzi_trader.brain.schemas.dependencies import (
 from kavzi_trader.orchestrator.loops.confluence_thresholds import (
     confluence_enter_min_for_regime,
 )
+from kavzi_trader.spine.confluence import side_trim_confluence
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +72,13 @@ class ContextBuilder(BaseModel):
         self,
         deps: AnalystDependenciesSchema | TradingDependenciesSchema,
     ) -> MarketContextDict:
-        # We used to also serialize a full ``MarketSnapshotSchema.model_dump()``
-        # here. Its fields overlapped completely with ``candles_table`` +
-        # ``indicators_compact`` and alone added ~5k tokens per prompt. Templates
-        # read the flat scalars below instead.
+        """Build the shared market context dict for Analyst/Trader prompts.
+
+        We used to also serialize a full ``MarketSnapshotSchema.model_dump()``
+        here. Its fields overlapped completely with ``candles_table`` +
+        ``indicators_compact`` and alone added ~5k tokens per prompt. Templates
+        read the flat scalars below instead.
+        """
         atr_14 = deps.indicators.atr_14
         return MarketContextDict(
             candles_table=format_candles_table(deps.recent_candles),
@@ -85,25 +92,6 @@ class ContextBuilder(BaseModel):
             atr_14=str(atr_14) if atr_14 is not None else None,
         )
 
-    @staticmethod
-    def _side_trim_confluence(
-        dual_long: dict[str, Any],
-        dual_short: dict[str, Any],
-        detected_side: str,
-    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-        """Return (long, short) dicts trimmed to the detected side.
-
-        When ``detected_side`` is LONG or SHORT, the opposing block is
-        dropped so the LLM only sees the perspective it will act on. When
-        the confluence is NEUTRAL, both sides remain so the LLM can
-        compare. Saves ~300 prompt tokens per trending request.
-        """
-        if detected_side == "LONG":
-            return dual_long, None
-        if detected_side == "SHORT":
-            return None, dual_short
-        return dual_long, dual_short
-
     def build_analyst_context(
         self,
         deps: AnalystDependenciesSchema,
@@ -112,9 +100,9 @@ class ContextBuilder(BaseModel):
         market = self._build_market_context(deps)
         dual = deps.algorithm_confluence
         sentiment = deps.sentiment_summary
-        long_block, short_block = self._side_trim_confluence(
-            dual.long.model_dump(),
-            dual.short.model_dump(),
+        long_block, short_block = side_trim_confluence(
+            cast("ConfluenceBlockDict", dual.long.model_dump()),
+            cast("ConfluenceBlockDict", dual.short.model_dump()),
             dual.detected_side,
         )
         context = AnalystContextDict(
@@ -153,7 +141,7 @@ class ContextBuilder(BaseModel):
         analyst_result: AnalystDecisionSchema | None,
         current_price: Decimal,
         atr: Decimal | None,
-    ) -> list[dict[str, str]]:
+    ) -> list[ATRFallbackTargetDict]:
         """Inject ATR-projected TP targets alongside analyst key_levels."""
         if analyst_result is None or atr is None or atr == Decimal(0):
             return []
@@ -163,13 +151,18 @@ class ContextBuilder(BaseModel):
             return []
 
         multipliers = [Decimal("2.0"), Decimal("3.0")]
-        targets: list[dict[str, str]] = []
+        targets: list[ATRFallbackTargetDict] = []
         for mult in multipliers:
             if direction == "LONG":
                 price = current_price + mult * atr
             else:
                 price = current_price - mult * atr
-            targets.append({"price": str(price), "label": f"ATR projection {mult}x"})
+            targets.append(
+                ATRFallbackTargetDict(
+                    price=str(price),
+                    label=f"ATR projection {mult}x",
+                ),
+            )
 
         logger.info(
             "ATR projection targets for %s %s: %s",
@@ -214,9 +207,9 @@ class ContextBuilder(BaseModel):
             current_price=deps.current_price,
             atr=deps.indicators.atr_14,
         )
-        long_block, short_block = self._side_trim_confluence(
-            dual.long.model_dump(),
-            dual.short.model_dump(),
+        long_block, short_block = side_trim_confluence(
+            cast("ConfluenceBlockDict", dual.long.model_dump()),
+            cast("ConfluenceBlockDict", dual.short.model_dump()),
             dual.detected_side,
         )
         context = TraderContextDict(
@@ -231,7 +224,7 @@ class ContextBuilder(BaseModel):
             algorithm_confluence_long=long_block,
             algorithm_confluence_short=short_block,
             detected_side=dual.detected_side,
-            account_state=deps.account_state.model_dump(),
+            account_state=cast("AccountStateDict", deps.account_state.model_dump()),
             analyst_result=analyst_result,
             futures_leverage=deps.leverage,
             liquidation_distance_percent=round(100 / deps.leverage, 1),

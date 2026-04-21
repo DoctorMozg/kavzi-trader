@@ -19,8 +19,12 @@ from kavzi_trader.spine.execution.execution_result_schema import ExecutionResult
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
+from kavzi_trader.spine.execution.validation import ValidationOutcomeSchema
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.spine.risk.schemas import (
+    RiskValidationResultSchema,
+    VolatilityRegime,
+)
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
@@ -76,28 +80,16 @@ class ExecutionEngine:
                 "symbol": decision.symbol,
             },
         )
-        staleness_regime = decision.volatility_regime
-        if self._volatility_detector is not None:
-            detected = self._volatility_detector.detect_regime(
-                decision.current_atr,
-                decision.atr_history,
-            )
-            if detected.regime != decision.volatility_regime:
-                logger.info(
-                    "Regime drift for %s: decision=%s detected=%s, using stricter",
-                    decision.symbol,
-                    decision.volatility_regime.value,
-                    detected.regime.value,
-                )
-                staleness_regime = max(
-                    decision.volatility_regime,
-                    detected.regime,
-                    key=lambda r: _REGIME_SEVERITY.index(r),
-                )
-        if self._staleness_checker.is_stale(
-            decision.created_at_ms,
-            staleness_regime,
-        ):
+
+        regime_outcome = self._validate_regime_drift(decision)
+        effective_regime = (
+            regime_outcome.extra["effective_regime"]
+            if regime_outcome.extra is not None
+            else decision.volatility_regime
+        )
+
+        staleness_outcome = self._validate_staleness(decision, effective_regime)
+        if not staleness_outcome.passed:
             logger.info(
                 "Decision %s EXPIRED for %s",
                 decision.decision_id,
@@ -110,15 +102,102 @@ class ExecutionEngine:
                 status="EXPIRED",
                 executed_qty=None,
                 executed_price=None,
-                error_message="Decision expired",
+                error_message=staleness_outcome.reason,
                 needs_reconciliation=False,
             )
 
         if decision.action == "CLOSE":
             return await self._close_position(decision)
 
+        risk_outcome, risk_result = await self._validate_risk(decision)
+        if not risk_outcome.passed:
+            logger.info(
+                "Decision %s REJECTED for %s: %s",
+                decision.decision_id,
+                decision.symbol,
+                risk_outcome.reason,
+                extra={"decision_id": decision.decision_id},
+            )
+            return ExecutionResultSchema(
+                decision_id=decision.decision_id,
+                order_id=None,
+                status="REJECTED",
+                executed_qty=None,
+                executed_price=None,
+                error_message=risk_outcome.reason,
+                needs_reconciliation=False,
+            )
+
+        return await self._execute_validated(decision, risk_result.recommended_size)
+
+    def _validate_regime_drift(
+        self,
+        decision: DecisionMessageSchema,
+    ) -> ValidationOutcomeSchema:
+        """Resolve the volatility regime used for downstream staleness checks.
+
+        Always passes. When a detector is wired and disagrees with the
+        decision's regime, the stricter of the two is surfaced via
+        ``extra["effective_regime"]``; otherwise the decision's own regime is
+        returned verbatim.
+        """
+        effective_regime = decision.volatility_regime
+        if self._volatility_detector is not None:
+            detected = self._volatility_detector.detect_regime(
+                decision.current_atr,
+                decision.atr_history,
+            )
+            if detected.regime != decision.volatility_regime:
+                logger.info(
+                    "Regime drift for %s: decision=%s detected=%s, using stricter",
+                    decision.symbol,
+                    decision.volatility_regime.value,
+                    detected.regime.value,
+                )
+                effective_regime = max(
+                    decision.volatility_regime,
+                    detected.regime,
+                    key=lambda r: _REGIME_SEVERITY.index(r),
+                )
+        return ValidationOutcomeSchema(
+            passed=True,
+            reason=None,
+            extra={"effective_regime": effective_regime},
+        )
+
+    def _validate_staleness(
+        self,
+        decision: DecisionMessageSchema,
+        regime: VolatilityRegime,
+    ) -> ValidationOutcomeSchema:
+        """Check decision freshness against regime-specific thresholds.
+
+        Fails with reason ``"Decision expired"`` when the underlying
+        ``StalenessChecker`` flags the decision as stale for the effective
+        regime; this maps to an ``EXPIRED`` result in ``execute()``.
+        """
+        if self._staleness_checker.is_stale(
+            decision.created_at_ms,
+            regime,
+        ):
+            return ValidationOutcomeSchema(
+                passed=False,
+                reason="Decision expired",
+                extra={"regime": regime.value},
+            )
+        return ValidationOutcomeSchema(passed=True, reason=None, extra=None)
+
+    async def _validate_risk(
+        self,
+        decision: DecisionMessageSchema,
+    ) -> tuple[ValidationOutcomeSchema, RiskValidationResultSchema]:
+        """Delegate to the risk validator and translate its verdict.
+
+        Returns both the outcome (for the pipeline) and the raw validation
+        result (so ``execute()`` can read ``recommended_size`` on success).
+        """
         side: Literal["LONG", "SHORT"] = decision.action  # type: ignore[assignment]
-        validation = await self._risk_validator.validate_trade(
+        result = await self._risk_validator.validate_trade(
             symbol=decision.symbol,
             side=side,
             entry_price=decision.entry_price,
@@ -131,26 +210,16 @@ class ExecutionEngine:
             confidence=Decimal(str(decision.calibrated_confidence)),
             symbol_tier=decision.symbol_tier,
         )
-
-        if not validation.is_valid:
-            logger.info(
-                "Decision %s REJECTED for %s: %s",
-                decision.decision_id,
-                decision.symbol,
-                "; ".join(validation.rejection_reasons),
-                extra={"decision_id": decision.decision_id},
+        if not result.is_valid:
+            return (
+                ValidationOutcomeSchema(
+                    passed=False,
+                    reason="; ".join(result.rejection_reasons),
+                    extra={"rejection_reasons": list(result.rejection_reasons)},
+                ),
+                result,
             )
-            return ExecutionResultSchema(
-                decision_id=decision.decision_id,
-                order_id=None,
-                status="REJECTED",
-                executed_qty=None,
-                executed_price=None,
-                error_message="; ".join(validation.rejection_reasons),
-                needs_reconciliation=False,
-            )
-
-        return await self._execute_validated(decision, validation.recommended_size)
+        return ValidationOutcomeSchema(passed=True, reason=None, extra=None), result
 
     async def _execute_validated(
         self,
@@ -228,13 +297,21 @@ class ExecutionEngine:
                 client_order_id=order_request.client_order_id,
             )
         except Exception as exc:
-            logger.exception("Failed to submit order for %s", decision.symbol)
+            # Preserve the full exception text on the return path; truncate
+            # only in the log preview so downstream consumers (reconciler,
+            # dashboards) see the complete reason.
+            error_text = str(exc)
+            logger.exception(
+                "Failed to submit order for %s",
+                decision.symbol,
+                extra={"error_message_preview": error_text[:200]},
+            )
             try:
                 await self._record_event(
                     aggregate_id=decision.decision_id,
                     aggregate_type="decision",
                     event_type="order_rejected",
-                    data={"symbol": decision.symbol, "reason": str(exc)},
+                    data={"symbol": decision.symbol, "reason": error_text},
                 )
             except Exception:
                 logger.exception(
@@ -247,7 +324,7 @@ class ExecutionEngine:
                 status="REJECTED",
                 executed_qty=None,
                 executed_price=None,
-                error_message=str(exc),
+                error_message=error_text,
                 needs_reconciliation=False,
             )
 

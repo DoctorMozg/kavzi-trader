@@ -457,6 +457,7 @@ async def _start_orchestrator(
             ),
             interval_s=app_config.orchestrator.position_check_interval_s,
             report_populator=report_populator,
+            cycle_timeout_s=app_config.orchestrator.position_cycle_timeout_s,
         ),
         health_checker=HealthChecker(),
         report_populator=report_populator,

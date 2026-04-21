@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import UTC, datetime
 
@@ -48,6 +49,14 @@ class FearGreedSource(ExternalSource):
                 classification=classification,
                 fetched_at=datetime.now(UTC),
             )
-        except Exception:
+        except (
+            httpx.RequestError,
+            httpx.HTTPStatusError,
+            httpx.TimeoutException,
+            json.JSONDecodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+        ):
             logger.exception("Fear & Greed fetch failed")
             return None

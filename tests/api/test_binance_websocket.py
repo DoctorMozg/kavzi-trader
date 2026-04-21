@@ -209,7 +209,7 @@ async def test_multiplex_streams(
 
     # Mock the bsm.multiplex_socket method
     mock_stream_manager.bsm = MagicMock()
-    mock_stream_manager.bsm.multiplex_socket = AsyncMock(return_value=123)
+    mock_stream_manager.bsm.multiplex_socket = MagicMock(return_value=123)
 
     # Subscribe to multiple streams
     streams = ["btcusdt@kline_1m", "ethusdt@ticker"]
@@ -418,7 +418,7 @@ async def test_kline_handler_subscribe() -> None:
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
     mock_manager.bsm = MagicMock()
-    mock_manager.bsm.kline_socket = AsyncMock(return_value=123)
+    mock_manager.bsm.kline_socket = MagicMock(return_value=123)
     mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager
@@ -449,7 +449,7 @@ async def test_ticker_handler_subscribe() -> None:
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
     mock_manager.bsm = MagicMock()
-    mock_manager.bsm.symbol_ticker_socket = AsyncMock(return_value=123)
+    mock_manager.bsm.symbol_ticker_socket = MagicMock(return_value=123)
     mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager
@@ -479,7 +479,7 @@ async def test_trades_handler_subscribe() -> None:
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
     mock_manager.bsm = MagicMock()
-    mock_manager.bsm.trade_socket = AsyncMock(return_value=123)
+    mock_manager.bsm.trade_socket = MagicMock(return_value=123)
     mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager
@@ -509,7 +509,7 @@ async def test_depth_handler_subscribe() -> None:
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
     mock_manager.bsm = MagicMock()
-    mock_manager.bsm.depth_socket = AsyncMock(return_value=123)
+    mock_manager.bsm.depth_socket = MagicMock(return_value=123)
     mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager
@@ -540,7 +540,7 @@ async def test_user_data_handler_subscribe() -> None:
     # Create a mock StreamManager with twm attribute
     mock_manager = MagicMock()
     mock_manager.bsm = MagicMock()
-    mock_manager.bsm.user_socket = AsyncMock(return_value=123)
+    mock_manager.bsm.user_socket = MagicMock(return_value=123)
     mock_manager.start = AsyncMock()  # Make start() awaitable
 
     # Create a handler with the mock manager

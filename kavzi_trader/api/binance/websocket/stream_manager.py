@@ -109,9 +109,12 @@ class StreamManager:
                 self._bsm = None
                 self._is_running = False
                 logger.info("Binance WebSocket client stopped")
-            except Exception as e:
-                logger.exception("Failed to stop Binance WebSocket client")
-                raise APIError("Failed to stop WebSocket client") from e
+            except Exception as ws_error:
+                logger.exception(
+                    "Failed to stop Binance WebSocket client",
+                    extra={"active_streams": list(self._streams.keys())},
+                )
+                raise APIError("Failed to stop WebSocket client") from ws_error
 
     # ------------------------------------------------------------------
     # Stream registration
@@ -176,6 +179,7 @@ class StreamManager:
             logger.exception(
                 "Recv loop error for stream %s",
                 stream_name,
+                extra={"stream_name": stream_name},
             )
             if self.on_error_callback:
                 self.on_error_callback(
@@ -200,7 +204,10 @@ class StreamManager:
             try:
                 await self.stream_callbacks[stream_name](msg)
             except Exception:
-                logger.exception("Error in stream callback")
+                logger.exception(
+                    "Error in stream callback",
+                    extra={"stream_name": stream_name},
+                )
                 if self.on_error_callback:
                     self.on_error_callback(
                         APIError("Error in stream callback"),

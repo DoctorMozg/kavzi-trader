@@ -84,7 +84,15 @@ class ReconciliationService:
             positions_synced = recovery.verified
             unrecoverable = recovery.unrecoverable
         except Exception:
-            logger.exception("Reconciliation failed")
+            logger.exception(
+                "Reconciliation failed",
+                extra={
+                    "discrepancies_count": len(discrepancies),
+                    "positions_synced": positions_synced,
+                    "orders_synced": orders_synced,
+                    "orders_removed": orders_removed,
+                },
+            )
             return ReconciliationResultSchema(
                 success=False,
                 discrepancies=discrepancies,

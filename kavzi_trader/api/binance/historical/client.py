@@ -196,7 +196,11 @@ class BinanceHistoricalDataClient:
                         )
 
             except Exception:
-                logger.exception("Error downloading data for %s", symbol)
+                logger.exception(
+                    "Error downloading data for %s",
+                    symbol,
+                    extra={"symbol": symbol},
+                )
                 results[symbol] = False
 
         logger.info(

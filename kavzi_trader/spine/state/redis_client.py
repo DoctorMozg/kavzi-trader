@@ -112,7 +112,14 @@ class RedisStateClient:
             await self._client.ping()
             logger.info("Reconnected to Redis")
         except Exception:
-            logger.exception("Redis reconnection failed")
+            logger.exception(
+                "Redis reconnection failed",
+                extra={
+                    "redis_host": self._config.host,
+                    "redis_port": self._config.port,
+                    "redis_db": self._config.db,
+                },
+            )
 
     async def hset(self, key: str, mapping: dict[str, object]) -> None:
         normalized = {field: str(value) for field, value in mapping.items()}

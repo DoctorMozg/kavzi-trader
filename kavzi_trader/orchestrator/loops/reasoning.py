@@ -21,6 +21,10 @@ from kavzi_trader.orchestrator.loops.confluence_thresholds import (
     CONFLUENCE_REJECT_MAX,
     confluence_enter_min_for_regime,
 )
+from kavzi_trader.orchestrator.loops.reasoning_config import (
+    ReasoningLoopConfigSchema,
+)
+from kavzi_trader.orchestrator.loops.symbol_state import SymbolStateTracker
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
@@ -36,35 +40,6 @@ from kavzi_trader.spine.state.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Progressive idle-ramp stairs: when the loop observes N consecutive
-# cycles with no INTERESTING scouts, sleep for this many seconds before
-# the next cycle. Ordered descending so the lookup picks the deepest
-# matching stair in a single pass. Replaces the prior doubling backoff
-# (_BACKOFF_MULTIPLIER * _MAX_BACKOFF_FACTOR) which grew continuously and
-# masked genuinely idle markets as "slow to wake" rather than "truly
-# quiet".
-_IDLE_RAMP_STAIRS: tuple[tuple[int, int], ...] = (
-    (8, 720),
-    (5, 480),
-    (3, 240),
-)
-
-
-# Cooldown (cycles) for borderline/LLM-reject bands. Short enough that the
-# next bar-close will naturally retrigger the Analyst, but long enough to
-# avoid tight retries within the same bar.
-_BORDERLINE_COOLDOWN_CYCLES = 1
-
-# Multipliers inside the aggressive rejection band (score <= 3).
-_COOLDOWN_LOW_CONFLUENCE_THRESHOLD = 2  # score <= 2 → highest multiplier
-
-_SKIP_SUSPENSION_THRESHOLD = 20
-_MAX_SKIP_EVAL_INTERVAL = 16
-
-_WAIT_COOLDOWN_THRESHOLD = 5
-_WAIT_COOLDOWN_BASE_CYCLES = 2
-_WAIT_MAX_COOLDOWN_CYCLES = 12
 
 
 class ReasoningLoop:
@@ -83,6 +58,8 @@ class ReasoningLoop:
         analyst_cooldown_cycles: int = 3,
         filter_chain: PreTradeFilterChain | None = None,
         max_consecutive_rejection_multiplier: int = 3,
+        *,
+        reasoning_config: ReasoningLoopConfigSchema | None = None,
     ) -> None:
         self._symbols = symbols
         self._router = router
@@ -95,15 +72,17 @@ class ReasoningLoop:
         self._analyst_cooldown_cycles = analyst_cooldown_cycles
         self._filter_chain = filter_chain
         self._max_rejection_multiplier = max_consecutive_rejection_multiplier
-        self._cooldowns: dict[tuple[str, str], int] = {}  # (symbol, direction)
-        self._consecutive_rejections: dict[tuple[str, str], int] = {}
-        self._consecutive_waits: dict[tuple[str, str], int] = {}
-        self._consecutive_skips: dict[str, int] = {}
-        self._skip_eval_interval: dict[str, int] = {}
+        self._reasoning_config = reasoning_config or ReasoningLoopConfigSchema()
+        self._state = SymbolStateTracker()
         # Tracks the number of consecutive cycles that produced zero
         # INTERESTING scouts. Drives the progressive idle sleep ramp; any
         # INTERESTING cycle resets the counter.
         self._consecutive_idle_cycles: int = 0
+        # Tracks the idle-ramp stair index for transition-based logging.
+        # ``None`` indicates active mode (not currently ramped into idle).
+        # Only transitions (active→idle, stair advances, idle→active) log;
+        # steady-state idle cycles stay silent to reduce log noise.
+        self._last_idle_stair_index: int | None = None
 
     async def run(self) -> None:
         logger.info(
@@ -119,35 +98,76 @@ class ReasoningLoop:
             logger.debug("ReasoningLoop cycle %d starting", cycle)
             self._deps_provider.clear_cycle_cache()
             cached_positions = await self._fetch_cycle_positions()
-            results: list[bool] = await asyncio.gather(
+            raw_results: list[bool | BaseException] = await asyncio.gather(
                 *(
                     self._handle_symbol_timed(symbol, cached_positions)
                     for symbol in self._symbols
                 ),
+                return_exceptions=True,
             )
+            results: list[bool] = []
+            for symbol, result in zip(self._symbols, raw_results, strict=True):
+                if isinstance(result, BaseException):
+                    logger.exception(
+                        "ReasoningLoop symbol %s raised, treating as non-interesting",
+                        symbol,
+                        exc_info=result,
+                        extra={
+                            "loop": "reasoning",
+                            "symbol": symbol,
+                            "cycle": cycle,
+                        },
+                    )
+                    results.append(False)
+                    continue
+                results.append(result)
             interesting_count = sum(results)
-            current_interval_s = self._next_sleep_interval_s(interesting_count)
-            cycle_ms = (time.monotonic() - cycle_start) * 1000
-            logger.info(
-                "ReasoningLoop cycle %d complete in %.1fms, "
-                "interesting=%d/%d, sleeping %.0fs",
-                cycle,
-                cycle_ms,
-                interesting_count,
-                len(results),
-                current_interval_s,
-                extra={
-                    "cycle": cycle,
-                    "elapsed_ms": round(cycle_ms, 1),
-                    "interesting_count": interesting_count,
-                    "sleep_interval_s": round(current_interval_s, 1),
-                    "consecutive_idle_cycles": self._consecutive_idle_cycles,
-                },
+            current_interval_s, stair_index = self._next_sleep_interval_s(
+                interesting_count
             )
+            cycle_ms = (time.monotonic() - cycle_start) * 1000
+            if stair_index != self._last_idle_stair_index:
+                logger.info(
+                    "ReasoningLoop cycle %d complete in %.1fms, "
+                    "interesting=%d/%d, sleeping %.0fs",
+                    cycle,
+                    cycle_ms,
+                    interesting_count,
+                    len(results),
+                    current_interval_s,
+                    extra={
+                        "cycle": cycle,
+                        "elapsed_ms": round(cycle_ms, 1),
+                        "interesting_count": interesting_count,
+                        "sleep_interval_s": round(current_interval_s, 1),
+                        "consecutive_idle_cycles": self._consecutive_idle_cycles,
+                        "idle_stair_index": stair_index,
+                        "previous_idle_stair_index": self._last_idle_stair_index,
+                    },
+                )
+                self._last_idle_stair_index = stair_index
+            else:
+                logger.debug(
+                    "ReasoningLoop cycle %d complete in %.1fms, "
+                    "interesting=%d/%d, sleeping %.0fs",
+                    cycle,
+                    cycle_ms,
+                    interesting_count,
+                    len(results),
+                    current_interval_s,
+                )
             await asyncio.sleep(current_interval_s)
 
-    def _next_sleep_interval_s(self, interesting_count: int) -> float:
-        """Return the sleep interval for the next cycle.
+    def _next_sleep_interval_s(
+        self, interesting_count: int
+    ) -> tuple[float, int | None]:
+        """Return the sleep interval and idle-stair index for the next cycle.
+
+        The stair index is ``None`` in active mode (any INTERESTING symbol
+        this cycle) or when idle cycles haven't yet crossed the first stair
+        threshold; otherwise it is the index into
+        ``idle_ramp_stairs`` that dictated the sleep. The index is used by
+        the run loop to log only on idle-ramp state transitions.
 
         Resets to the base interval whenever any symbol was INTERESTING.
         On idle cycles, advances ``_consecutive_idle_cycles`` and walks the
@@ -155,12 +175,12 @@ class ReasoningLoop:
         """
         if interesting_count > 0:
             self._consecutive_idle_cycles = 0
-            return float(self._interval_s)
+            return float(self._interval_s), None
         self._consecutive_idle_cycles += 1
-        for stair_cycles, stair_sleep_s in _IDLE_RAMP_STAIRS:
-            if self._consecutive_idle_cycles >= stair_cycles:
-                return float(stair_sleep_s)
-        return float(self._interval_s)
+        for index, stair in enumerate(self._reasoning_config.idle_ramp_stairs):
+            if self._consecutive_idle_cycles >= stair.min_idle_cycles:
+                return float(stair.sleep_s), index
+        return float(self._interval_s), None
 
     async def _fetch_cycle_positions(self) -> list[PositionSchema]:
         if self._state_manager is None:
@@ -168,7 +188,10 @@ class ReasoningLoop:
         try:
             return await self._state_manager.get_all_positions()
         except Exception:
-            logger.exception("Failed to fetch positions for reasoning cycle")
+            logger.exception(
+                "Failed to fetch positions for reasoning cycle",
+                extra={"loop": "reasoning"},
+            )
             return []
 
     async def _handle_symbol_timed(
@@ -184,7 +207,7 @@ class ReasoningLoop:
             logger.exception(
                 "ReasoningLoop failed for %s, continuing",
                 symbol,
-                extra={"symbol": symbol},
+                extra={"loop": "reasoning", "symbol": symbol},
             )
         sym_ms = (time.monotonic() - sym_start) * 1000
         logger.info(
@@ -203,26 +226,28 @@ class ReasoningLoop:
 
     def _is_suspended(self, symbol: str) -> bool:
         """Check if a symbol is dynamically suspended due to consecutive SKIPs."""
-        skip_interval = self._skip_eval_interval.get(symbol, 0)
+        skip_interval = self._state.skip_eval_interval(symbol)
         if skip_interval <= 0:
             return False
-        skip_count = self._consecutive_skips.get(symbol, 0)
+        skip_count = self._state.consecutive_skips(symbol)
         if skip_count % skip_interval != 0:
-            self._consecutive_skips[symbol] = skip_count + 1
+            self._state.bump_skip(symbol)
             return True
         return False
 
     def _track_skip_suspension(self, symbol: str, verdict: str) -> None:
         """Update dynamic suspension state based on scout verdict."""
         if verdict == "SKIP":
-            count = self._consecutive_skips.get(symbol, 0) + 1
-            self._consecutive_skips[symbol] = count
-            if count >= _SKIP_SUSPENSION_THRESHOLD:
+            count = self._state.bump_skip(symbol)
+            if count >= self._reasoning_config.skip_suspension_threshold:
+                # Default fallback of 1 preserves the doubling cadence
+                # on first suspension (1 * 2 = 2 → max(2, 2) = 2).
+                current_interval = self._state.skip_eval_interval(symbol) or 1
                 new_interval = min(
-                    max(self._skip_eval_interval.get(symbol, 1) * 2, 2),
-                    _MAX_SKIP_EVAL_INTERVAL,
+                    max(current_interval * 2, 2),
+                    self._reasoning_config.max_skip_eval_interval,
                 )
-                self._skip_eval_interval[symbol] = new_interval
+                self._state.set_skip_eval_interval(symbol, new_interval)
                 logger.info(
                     "Symbol %s suspended: %d consecutive SKIPs, eval every %d cycles",
                     symbol,
@@ -231,18 +256,17 @@ class ReasoningLoop:
                     extra={"symbol": symbol},
                 )
         else:
-            self._consecutive_skips.pop(symbol, None)
-            self._skip_eval_interval.pop(symbol, None)
+            self._state.clear_skip_suspension(symbol)
 
     def _tick_cooldowns(self, symbol: str) -> bool:
         """Decrement direction cooldowns. Return True if ALL directions are blocked."""
-        long_cd = self._cooldowns.get((symbol, "LONG"), 0)
-        short_cd = self._cooldowns.get((symbol, "SHORT"), 0)
+        long_cd = self._state.cooldown(symbol, "LONG")
+        short_cd = self._state.cooldown(symbol, "SHORT")
 
         if long_cd > 0:
-            self._cooldowns[(symbol, "LONG")] = long_cd - 1
+            self._state.decrement_cooldown(symbol, "LONG")
         if short_cd > 0:
-            self._cooldowns[(symbol, "SHORT")] = short_cd - 1
+            self._state.decrement_cooldown(symbol, "SHORT")
 
         # Only skip when both directions are on cooldown
         return long_cd > 0 and short_cd > 0
@@ -281,6 +305,11 @@ class ReasoningLoop:
             logger.exception(
                 "Failed to report decisions for %s",
                 symbol,
+                extra={
+                    "loop": "reasoning",
+                    "symbol": symbol,
+                    "scout_verdict": result.scout.verdict,
+                },
             )
 
         self._track_skip_suspension(symbol, result.scout.verdict)
@@ -307,10 +336,10 @@ class ReasoningLoop:
 
         # After trade enqueue, cool down both directions and reset WAIT counters
         post_trade_cd = self._analyst_cooldown_cycles * 3
-        self._cooldowns[(symbol, "LONG")] = post_trade_cd
-        self._cooldowns[(symbol, "SHORT")] = post_trade_cd
-        self._consecutive_waits.pop((symbol, "LONG"), None)
-        self._consecutive_waits.pop((symbol, "SHORT"), None)
+        self._state.set_cooldown(symbol, "LONG", post_trade_cd)
+        self._state.set_cooldown(symbol, "SHORT", post_trade_cd)
+        self._state.clear_waits(symbol, "LONG")
+        self._state.clear_waits(symbol, "SHORT")
         await self._enqueue_decision(result)
         return True
 
@@ -337,7 +366,7 @@ class ReasoningLoop:
 
         Three bands avoid flip-flopping at the old hard cutoff:
           * score <= 3 + invalid → escalating multiplier, counts toward
-            _consecutive_rejections.
+            the symbol's per-direction consecutive_rejections counter.
           * borderline (4-5) or LLM rejects high confluence (>=6 + invalid) →
             light single-cycle cooldown, no counter escalation. The next bar
             close naturally retriggers the Analyst.
@@ -356,12 +385,10 @@ class ReasoningLoop:
 
         if not setup_valid and score <= CONFLUENCE_REJECT_MAX:
             for d in cooldown_dirs:
-                key = (symbol, d)
-                count = self._consecutive_rejections.get(key, 0) + 1
-                self._consecutive_rejections[key] = count
+                count = self._state.bump_rejection(symbol, d)
                 base_cooldown = self._compute_rejection_cooldown(score)
                 multiplier = min(count, self._max_rejection_multiplier)
-                self._cooldowns[key] = base_cooldown * multiplier
+                self._state.set_cooldown(symbol, d, base_cooldown * multiplier)
                 logger.debug(
                     "Consecutive rejection %d for %s %s: cooldown=%d (base=%d x %d)",
                     count,
@@ -375,9 +402,12 @@ class ReasoningLoop:
 
         if not setup_valid or score < regime_gate:
             for d in cooldown_dirs:
-                key = (symbol, d)
-                existing = self._cooldowns.get(key, 0)
-                self._cooldowns[key] = max(existing, _BORDERLINE_COOLDOWN_CYCLES)
+                existing = self._state.cooldown(symbol, d)
+                self._state.set_cooldown(
+                    symbol,
+                    d,
+                    max(existing, self._reasoning_config.borderline_cooldown_cycles),
+                )
             logger.debug(
                 "Borderline analyst %s direction=%s score=%d setup_valid=%s"
                 " regime=%s gate=%d → cooldown=%d (no escalation)",
@@ -387,19 +417,20 @@ class ReasoningLoop:
                 setup_valid,
                 volatility_regime.value,
                 regime_gate,
-                _BORDERLINE_COOLDOWN_CYCLES,
+                self._reasoning_config.borderline_cooldown_cycles,
             )
             return
 
         if direction == "NEUTRAL":
-            self._consecutive_rejections.pop((symbol, "LONG"), None)
-            self._consecutive_rejections.pop((symbol, "SHORT"), None)
+            self._state.clear_rejections(symbol, "LONG")
+            self._state.clear_rejections(symbol, "SHORT")
         else:
-            self._consecutive_rejections.pop((symbol, direction), None)
+            self._state.clear_rejections(symbol, direction)
 
     def _compute_rejection_cooldown(self, confluence_score: int) -> int:
         """Scale rejection cooldown within the aggressive band (score <= 3)."""
-        multiplier = 3 if confluence_score <= _COOLDOWN_LOW_CONFLUENCE_THRESHOLD else 2
+        low_band = self._reasoning_config.cooldown_low_confluence_threshold
+        multiplier = 3 if confluence_score <= low_band else 2
         cooldown = self._analyst_cooldown_cycles * multiplier
         logger.debug(
             "Rejection cooldown: confluence=%d multiplier=%d cooldown=%d cycles",
@@ -422,16 +453,15 @@ class ReasoningLoop:
         )
         wait_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
         for d in wait_dirs:
-            key = (symbol, d)
-            count = self._consecutive_waits.get(key, 0) + 1
-            self._consecutive_waits[key] = count
-            if count >= _WAIT_COOLDOWN_THRESHOLD:
-                excess = count - _WAIT_COOLDOWN_THRESHOLD + 1
+            count = self._state.bump_wait(symbol, d)
+            wait_threshold = self._reasoning_config.wait_cooldown_threshold
+            if count >= wait_threshold:
+                excess = count - wait_threshold + 1
                 cooldown = min(
-                    _WAIT_COOLDOWN_BASE_CYCLES * excess,
-                    _WAIT_MAX_COOLDOWN_CYCLES,
+                    self._reasoning_config.wait_cooldown_base_cycles * excess,
+                    self._reasoning_config.wait_max_cooldown_cycles,
                 )
-                self._cooldowns[key] = cooldown
+                self._state.set_cooldown(symbol, d, cooldown)
                 logger.info(
                     "Consecutive WAIT %d for %s %s: cooldown=%d cycles",
                     count,
@@ -533,7 +563,13 @@ class ReasoningLoop:
             logger.exception(
                 "Failed to enqueue decision for %s",
                 symbol,
-                extra={"symbol": symbol},
+                extra={
+                    "loop": "reasoning",
+                    "symbol": symbol,
+                    "decision_id": decision.decision_id,
+                    "action": decision.action,
+                    "queue_key": self._queue_key,
+                },
             )
             return
         logger.info(

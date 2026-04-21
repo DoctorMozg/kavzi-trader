@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable, Coroutine
 from decimal import Decimal
 from typing import Any, Protocol
 
@@ -22,6 +23,8 @@ from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
+
+LoopFactory = Callable[[], Coroutine[Any, Any, None]]
 
 
 class ReportPriceProvider(Protocol):
@@ -63,7 +66,7 @@ class TradingOrchestrator:
         self._trading_symbols = trading_symbols or []
         self._external_sentiment_loop = external_sentiment_loop
         self._tasks: set[asyncio.Task[None]] = set()
-        self._loop_factories: dict[str, Any] = {}
+        self._loop_factories: dict[str, LoopFactory] = {}
 
     async def start(self) -> None:
         logger.info("Orchestrator starting — connecting to state store")
@@ -151,17 +154,28 @@ class TradingOrchestrator:
         logger.info("Orchestrator shutdown complete")
 
     async def _health_loop(self) -> None:
+        cycle = 0
         while True:
+            cycle += 1
             try:
                 await asyncio.sleep(self._config.health_check_interval_s)
                 if not self._health_checker.is_healthy():
                     logger.warning("Health check failed")
             except Exception:
-                logger.exception("Health check loop encountered an error")
+                logger.exception(
+                    "Health check loop encountered an error",
+                    extra={
+                        "loop": "health",
+                        "cycle": cycle,
+                        "interval_s": self._config.health_check_interval_s,
+                    },
+                )
 
     async def _report_loop(self) -> None:
         """Periodically refreshes balance, positions, and prices in the report."""
+        cycle = 0
         while True:
+            cycle += 1
             try:
                 await asyncio.sleep(5)
                 if self._report_populator is None:
@@ -179,6 +193,7 @@ class TradingOrchestrator:
             except Exception:
                 logger.exception(
                     "Report loop encountered an error, continuing",
+                    extra={"loop": "report", "cycle": cycle},
                 )
 
     def _build_position_snapshots(
