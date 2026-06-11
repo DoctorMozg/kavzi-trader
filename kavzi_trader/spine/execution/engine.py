@@ -657,6 +657,7 @@ class ExecutionEngine:
             leverage=leverage,
             liquidation_price=liq_price,
             initial_margin=initial_margin,
+            atr_at_entry=decision.current_atr if decision.current_atr > 0 else None,
             opened_at=now,
             updated_at=now,
         )

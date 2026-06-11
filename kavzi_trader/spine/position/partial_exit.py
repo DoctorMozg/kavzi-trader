@@ -35,8 +35,11 @@ class PartialExitChecker:
             return None
 
         min_profit_atr = position.management_config.partial_exit_min_profit_atr
-        if current_atr > 0 and min_profit_atr > 0:
-            profit_atr = current_distance / current_atr
+        # Use ATR at entry so volatility expansion after open can't shrink
+        # profit/ATR below the threshold and suppress a valid partial exit.
+        reference_atr = position.atr_at_entry or current_atr
+        if reference_atr > 0 and min_profit_atr > 0:
+            profit_atr = current_distance / reference_atr
             if profit_atr < min_profit_atr:
                 logger.debug(
                     "Partial exit skipped for %s: profit_atr=%s < min=%s",

@@ -22,6 +22,7 @@ def position_factory() -> Callable[..., PositionSchema]:
         take_profit: Decimal | None = None,
         stop_loss_moved_to_breakeven: bool = False,
         partial_exit_done: bool = False,
+        atr_at_entry: Decimal | None = None,
         opened_at: datetime | None = None,
         updated_at: datetime | None = None,
         management_config: PositionManagementConfigSchema | None = None,
@@ -54,6 +55,7 @@ def position_factory() -> Callable[..., PositionSchema]:
             "management_config": management_config,
             "stop_loss_moved_to_breakeven": stop_loss_moved_to_breakeven,
             "partial_exit_done": partial_exit_done,
+            "atr_at_entry": atr_at_entry,
             "opened_at": opened_at,
             "updated_at": updated_at,
         }
