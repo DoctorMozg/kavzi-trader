@@ -3,7 +3,7 @@ from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kavzi_trader.spine.execution.geometry_schemas import (
+from kavzi_trader.brain.schemas.trade_structure import (
     EntryTactic,
     TargetStyle,
     TradeDirection,

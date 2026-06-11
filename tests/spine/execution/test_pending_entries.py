@@ -93,7 +93,9 @@ async def test_sweep_protects_position_on_fill() -> None:
     await engine.process_pending_entries(now_ms=5_000)
 
     engine._on_order_filled.assert_awaited_once()
-    called_decision = engine._on_order_filled.await_args.args[0]
+    await_args = engine._on_order_filled.await_args
+    assert await_args is not None
+    called_decision = await_args.args[0]
     assert called_decision.symbol == "BTCUSDT"
     assert called_decision.action == "LONG"
     state_manager.remove_pending_entry.assert_awaited_once_with("555")
