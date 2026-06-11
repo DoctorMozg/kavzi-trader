@@ -6,12 +6,45 @@ import pytest
 
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.state.schemas import (
     AccountStateSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
+
+
+def make_tier_registry() -> SymbolTierRegistry:
+    """Registry mirroring config/tiers.yaml risk budgets (TIER_1 = 4%)."""
+    tier_configs = {
+        SymbolTier.TIER_1: SymbolTierConfigSchema.model_validate(
+            {
+                "risk_per_trade_percent": "4.0",
+                "max_leverage": 10,
+                "max_exposure_percent": "80.0",
+                "min_confidence": "0.65",
+                "crowded_long_zscore": "2.0",
+                "crowded_short_zscore": "-2.0",
+            },
+        ),
+        SymbolTier.TIER_3: SymbolTierConfigSchema.model_validate(
+            {
+                "risk_per_trade_percent": "2.0",
+                "max_leverage": 2,
+                "max_exposure_percent": "10.0",
+                "min_confidence": "0.85",
+                "crowded_long_zscore": "3.0",
+                "crowded_short_zscore": "-3.0",
+            },
+        ),
+    }
+    symbol_map = {
+        "BTCUSDT": SymbolTier.TIER_1,
+        "ETHUSDT": SymbolTier.TIER_1,
+    }
+    return SymbolTierRegistry(tier_configs=tier_configs, symbol_map=symbol_map)
 
 
 def make_position(symbol: str) -> PositionSchema:
@@ -527,3 +560,57 @@ class TestDynamicRiskValidator:
 
         assert result.is_valid is False
         assert any("liquidation" in r.lower() for r in result.rejection_reasons)
+
+    @pytest.mark.asyncio
+    async def test_rejects_when_portfolio_risk_exceeds_cap(
+        self, mock_state_manager
+    ) -> None:
+        """One open TIER_1 (4%) + new TIER_1 (4%) = 8% > 2.5% cap → rejected."""
+        validator = DynamicRiskValidator(tier_registry=make_tier_registry())
+        mock_state_manager.get_all_positions = AsyncMock(
+            return_value=[make_position("BTCUSDT")],
+        )
+
+        result = await validator.validate_trade(
+            symbol="ETHUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
+            state_manager=mock_state_manager,
+        )
+
+        assert result.is_valid is False
+        assert any("portfolio risk" in r.lower() for r in result.rejection_reasons)
+
+    @pytest.mark.asyncio
+    async def test_allows_single_position_below_cap(self, mock_state_manager) -> None:
+        """Zero open positions + single TIER_1 (4%) < 4.5% cap → no rejection."""
+        from kavzi_trader.spine.risk.config import RiskConfigSchema
+
+        # pause=5% → cap = 5 - 0.5 = 4.5%, so a lone 4% trade fits.
+        # close-all must stay above pause to satisfy the config ordering check.
+        config = RiskConfigSchema(
+            drawdown_pause_percent=Decimal("5.0"),
+            drawdown_close_all_percent=Decimal("8.0"),
+        )
+        validator = DynamicRiskValidator(
+            config=config,
+            tier_registry=make_tier_registry(),
+        )
+        mock_state_manager.get_all_positions = AsyncMock(return_value=[])
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 10,
+            state_manager=mock_state_manager,
+        )
+
+        assert not any("portfolio risk" in r.lower() for r in result.rejection_reasons)

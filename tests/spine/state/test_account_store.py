@@ -1,9 +1,11 @@
 import asyncio
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock
 
 import pytest
 
+from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.spine.state.account_store import AccountStore
 from kavzi_trader.spine.state.schemas import AccountStateSchema
 
@@ -163,3 +165,52 @@ class TestAccountStore:
         final = await store.get()
         assert final is not None
         assert final.peak_balance == max(totals)
+
+    async def test_peak_decays_over_time(self, store: AccountStore):
+        # A stale peak well above a flat balance must decay so drawdown can
+        # recover instead of pinning the system in a paused state forever.
+        stale_peak = AccountStateSchema(
+            total_balance_usdt=Decimal(90),
+            available_balance_usdt=Decimal(90),
+            locked_balance_usdt=Decimal(0),
+            peak_balance=Decimal(100),
+            peak_balance_updated_at=utc_now() - timedelta(days=5),
+            current_drawdown_percent=Decimal(10),
+            updated_at=utc_now(),
+        )
+        store._redis.get.return_value = stale_peak.model_dump_json()
+
+        result = await store.update_balance(
+            total_balance=Decimal(90),
+            available_balance=Decimal(90),
+            locked_balance=Decimal(0),
+        )
+
+        # 0.98 ** 5 ~= 0.9039, so the decayed peak (~90.4) is below 100.
+        assert result.peak_balance < Decimal(100)
+        assert result.peak_balance == Decimal(100) * Decimal(str(0.98**5))
+        # Drawdown now reflects the decayed peak, far below the original 10%.
+        assert result.current_drawdown_percent < Decimal(10)
+
+    async def test_peak_does_not_drop_below_current_balance(self, store: AccountStore):
+        # Even after a long decay window the current balance is the floor:
+        # peak can never decay below the live balance.
+        stale_peak = AccountStateSchema(
+            total_balance_usdt=Decimal(95),
+            available_balance_usdt=Decimal(95),
+            locked_balance_usdt=Decimal(0),
+            peak_balance=Decimal(100),
+            peak_balance_updated_at=utc_now() - timedelta(days=365),
+            current_drawdown_percent=Decimal(5),
+            updated_at=utc_now(),
+        )
+        store._redis.get.return_value = stale_peak.model_dump_json()
+
+        result = await store.update_balance(
+            total_balance=Decimal(95),
+            available_balance=Decimal(95),
+            locked_balance=Decimal(0),
+        )
+
+        assert result.peak_balance == Decimal(95)
+        assert result.current_drawdown_percent == Decimal(0)

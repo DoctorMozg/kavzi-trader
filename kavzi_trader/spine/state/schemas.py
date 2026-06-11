@@ -8,23 +8,17 @@ from kavzi_trader.api.common.models import OrderSide, OrderStatus, OrderType
 
 
 class PositionManagementConfigSchema(BaseModel):
-    trailing_stop_atr_multiplier: Decimal = Decimal("1.5")
-    trailing_stop_trigger_atr: Decimal = Decimal("2.0")
-    # Minimum profit (as a multiple of the original risk = |entry - SL|)
-    # required before the trailing stop can activate. Prevents trailing
-    # from ratcheting on tiny moves and cannibalizing winners.
-    min_profit_lock_r: Annotated[Decimal, Field(ge=Decimal(0), le=Decimal(2))] = (
-        Decimal("0.5")
-    )
-    break_even_trigger_atr: Decimal = Decimal("1.5")
-    break_even_buffer_atr: Decimal = Decimal("0.3")
-    break_even_min_hold_s: int = 900
     partial_exit_at_fraction: Annotated[
         Decimal, Field(ge=Decimal(0), le=Decimal(1))
     ] = Decimal("0.65")
     partial_exit_size: Decimal = Decimal("0.3")
     partial_exit_min_profit_atr: Decimal = Decimal("1.0")
     max_hold_time_hours: int = 24
+    # Exit if position hasn't moved stall_min_progress_atr in ATR units toward
+    # TP after stall_check_after_hours. Catches setups that were wrong but
+    # didn't trigger the stop-loss.
+    stall_check_after_hours: int = 8
+    stall_min_progress_atr: Decimal = Decimal("0.3")
 
     model_config = ConfigDict(frozen=True)
 
@@ -46,6 +40,7 @@ class PositionSchema(BaseModel):
     accumulated_funding: Decimal = Decimal(0)
     stop_loss_moved_to_breakeven: bool = False
     partial_exit_done: bool = False
+    atr_at_entry: Decimal | None = None
     opened_at: datetime
     updated_at: datetime
 
@@ -90,6 +85,11 @@ class AccountStateSchema(BaseModel):
     locked_balance_usdt: Decimal
     unrealized_pnl: Decimal = Decimal(0)
     peak_balance: Decimal
+    # Timestamp of the last peak_balance derivation. Drives the time-based
+    # peak decay in AccountStore.update_balance so drawdown recovers when the
+    # balance stays flat below the peak. Defaults to None so Redis records
+    # written before this field deserialize cleanly.
+    peak_balance_updated_at: Annotated[datetime | None, Field(default=None)] = None
     current_drawdown_percent: Decimal = Decimal(0)
     total_margin_balance: Decimal = Decimal(0)
     margin_ratio: Decimal = Decimal(0)

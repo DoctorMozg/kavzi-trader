@@ -97,6 +97,14 @@ class DynamicRiskValidator:
             rejection_reasons.append(exposure_result)
         logger.debug("Exposure check: result=%s", exposure_result)
 
+        portfolio_risk_result = await self._check_total_portfolio_risk(
+            symbol,
+            state_manager,
+        )
+        if portfolio_risk_result:
+            rejection_reasons.append(portfolio_risk_result)
+        logger.debug("Portfolio risk check: result=%s", portfolio_risk_result)
+
         regime_result = self._check_volatility_regime(regime, symbol_tier)
         if regime_result:
             rejection_reasons.append(regime_result)
@@ -286,6 +294,53 @@ class DynamicRiskValidator:
 
         if not exposure_check.is_allowed:
             return exposure_check.rejection_reason
+        return None
+
+    async def _check_total_portfolio_risk(
+        self,
+        symbol: str,
+        state_manager: StateManager,
+    ) -> str | None:
+        # Per-position notional caps and the max-position count don't bound the
+        # *aggregate* loss two correlated positions can take in a single candle.
+        # Two TIER_1 positions at 4% each = 8% concurrent open risk, which can
+        # blow through the drawdown pause and close-all thresholds in one move
+        # before either fires. Cap the summed risk just under the pause level.
+        if self._tier_registry is None:
+            return None
+
+        try:
+            positions = await state_manager.get_all_positions()
+        except Exception:
+            logger.exception(
+                "Failed to check portfolio risk for %s, rejecting as safety measure",
+                symbol,
+                extra={
+                    "symbol": symbol,
+                    "reason": "risk_validation_error",
+                    "check": "portfolio_risk",
+                },
+            )
+            return "Portfolio risk check failed — state unavailable"
+
+        max_portfolio_risk_percent = self._config.drawdown_pause_percent - Decimal(
+            "0.5"
+        )
+        open_risk = sum(
+            (
+                self._tier_registry.get_config(pos.symbol).risk_per_trade_percent
+                for pos in positions
+            ),
+            Decimal(0),
+        )
+        new_trade_risk = self._tier_registry.get_config(symbol).risk_per_trade_percent
+        total_risk = open_risk + new_trade_risk
+
+        if total_risk > max_portfolio_risk_percent:
+            return (
+                f"Portfolio risk {total_risk}% exceeds cap "
+                f"({max_portfolio_risk_percent}%)"
+            )
         return None
 
     def _check_volatility_regime(

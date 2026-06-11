@@ -122,8 +122,6 @@ def volatility_regime() -> VolatilityRegime:
 def positions() -> list[PositionSchema]:
     now = utc_now()
     management = PositionManagementConfigSchema(
-        trailing_stop_atr_multiplier=Decimal("1.5"),
-        break_even_trigger_atr=Decimal("1.0"),
         partial_exit_at_fraction=Decimal("0.5"),
         partial_exit_size=Decimal("0.3"),
         max_hold_time_hours=24,

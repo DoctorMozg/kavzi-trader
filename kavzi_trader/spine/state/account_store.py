@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 from decimal import Decimal
 
 from pydantic import ValidationError
@@ -11,6 +12,12 @@ from kavzi_trader.spine.state.schemas import AccountStateSchema
 logger = logging.getLogger(__name__)
 
 ACCOUNT_KEY = "kt:state:account"
+
+# Fraction of the peak balance retained per elapsed day. ~2%/day decay lets
+# drawdown recover automatically when the balance stays flat below the peak,
+# so a >=5% DD with no open positions does not pause the system forever.
+PEAK_DECAY_PER_DAY = 0.98
+SECONDS_PER_DAY = 86400
 
 
 class AccountStore:
@@ -44,10 +51,24 @@ class AccountStore:
     ) -> AccountStateSchema:
         async with self._lock:
             current = await self.get()
+            now = utc_now()
 
+            # Decay the stored peak toward the current balance over elapsed
+            # whole days so a stale peak cannot keep drawdown elevated
+            # indefinitely. Whole-day granularity keeps frequent intra-day
+            # balance updates from nudging the peak on sub-second jitter; with
+            # no prior timestamp (legacy records / fresh state) elapsed is 0,
+            # so the multiplier is 1.0 and the peak is left untouched.
             peak_balance = total_balance
             if current and current.peak_balance > total_balance:
-                peak_balance = current.peak_balance
+                days_elapsed = 0
+                if current.peak_balance_updated_at is not None:
+                    elapsed_s = (now - current.peak_balance_updated_at).total_seconds()
+                    days_elapsed = max(0, math.floor(elapsed_s / SECONDS_PER_DAY))
+
+                decay_multiplier = Decimal(str(PEAK_DECAY_PER_DAY**days_elapsed))
+                decayed_peak = current.peak_balance * decay_multiplier
+                peak_balance = max(total_balance, decayed_peak)
 
             drawdown = Decimal(0)
             if peak_balance > 0:
@@ -69,10 +90,11 @@ class AccountStore:
                 locked_balance_usdt=locked_balance,
                 unrealized_pnl=unrealized_pnl,
                 peak_balance=peak_balance,
+                peak_balance_updated_at=now,
                 current_drawdown_percent=drawdown,
                 total_margin_balance=total_margin_balance,
                 margin_ratio=margin_ratio,
-                updated_at=utc_now(),
+                updated_at=now,
             )
 
             await self.save(new_state)
@@ -93,15 +115,17 @@ class AccountStore:
         async with self._lock:
             account = await self.get()
             if account:
+                now = utc_now()
                 new_state = AccountStateSchema(
                     total_balance_usdt=account.total_balance_usdt,
                     available_balance_usdt=account.available_balance_usdt,
                     locked_balance_usdt=account.locked_balance_usdt,
                     unrealized_pnl=account.unrealized_pnl,
                     peak_balance=account.total_balance_usdt,
+                    peak_balance_updated_at=now,
                     current_drawdown_percent=Decimal(0),
                     total_margin_balance=account.total_margin_balance,
                     margin_ratio=account.margin_ratio,
-                    updated_at=utc_now(),
+                    updated_at=now,
                 )
                 await self.save(new_state)

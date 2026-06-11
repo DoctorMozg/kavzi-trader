@@ -16,21 +16,20 @@ from kavzi_trader.spine.state.schemas import (
 class TestPositionManagementConfigSchema:
     def test_default_values(self):
         config = PositionManagementConfigSchema()
-        assert config.trailing_stop_atr_multiplier == Decimal("1.5")
-        assert config.trailing_stop_trigger_atr == Decimal("2.0")
-        assert config.break_even_trigger_atr == Decimal("1.5")
-        assert config.break_even_buffer_atr == Decimal("0.3")
-        assert config.break_even_min_hold_s == 900
         assert config.partial_exit_at_fraction == Decimal("0.65")
         assert config.partial_exit_size == Decimal("0.3")
         assert config.partial_exit_min_profit_atr == Decimal("1.0")
         assert config.max_hold_time_hours == 24
+        assert config.stall_check_after_hours == 8
+        assert config.stall_min_progress_atr == Decimal("0.3")
 
     def test_custom_values(self):
         config = PositionManagementConfigSchema(
-            trailing_stop_atr_multiplier=Decimal("2.0"),
+            stall_check_after_hours=4,
+            stall_min_progress_atr=Decimal("0.5"),
         )
-        assert config.trailing_stop_atr_multiplier == Decimal("2.0")
+        assert config.stall_check_after_hours == 4
+        assert config.stall_min_progress_atr == Decimal("0.5")
 
     def test_frozen(self):
         from pydantic import ValidationError
