@@ -642,8 +642,11 @@ paper:
   # position sizing and commission impact.
   initial_balance_usdt: 100
 
-  # Simulated commission rate per trade (0.001 = 0.1%, Binance standard).
-  #   0.0    = no commission (optimistic)
-  #   0.001  = default (0.1% — Binance spot/futures taker fee)
-  #   0.002  = conservative (accounts for slippage)
-  commission_rate: 0.001
+  # Simulated commission rate per trade. Binance USDT-M futures VIP0 is
+  # 0.05% taker / 0.02% maker; 0.0005 (taker) is the realistic single-rate
+  # default. The old 0.001 overstated fees ~2x and made the paper P&L look
+  # worse than live would.
+  #   0.0     = no commission (optimistic)
+  #   0.0005  = default (0.05% — Binance USDT-M taker fee)
+  #   0.001   = conservative (rough slippage cushion)
+  commission_rate: 0.0005

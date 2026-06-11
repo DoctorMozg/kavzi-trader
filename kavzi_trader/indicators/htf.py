@@ -18,8 +18,7 @@ from kavzi_trader.indicators.trend import calculate_ema
 # trend is reported NEUTRAL rather than guessed from a short stack.
 _MIN_BARS_1H = 50
 
-# RSI midline. Above it confirms bullish momentum for a LONG bias, below it
-# confirms bearish momentum for SHORT; exactly 50 is treated as neutral.
+# RSI midline separating bullish (>50) from bearish (<50) momentum.
 _RSI_MIDLINE = Decimal(50)
 
 HtfDirection = Literal["LONG", "SHORT", "NEUTRAL"]
