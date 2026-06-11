@@ -1,12 +1,11 @@
 import logging
 from decimal import Decimal
 
-from kavzi_trader.spine.position.break_even import BreakEvenMover
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
 from kavzi_trader.spine.position.position_action_type import PositionActionType
+from kavzi_trader.spine.position.stall_exit import StallExitChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
-from kavzi_trader.spine.position.trailing import TrailingStopChecker
 from kavzi_trader.spine.state.schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
@@ -17,15 +16,13 @@ class PositionManager:
 
     def __init__(
         self,
-        break_even: BreakEvenMover,
-        trailing: TrailingStopChecker,
         partial_exit: PartialExitChecker,
         time_exit: TimeExitChecker,
+        stall_exit: StallExitChecker,
     ) -> None:
-        self._break_even = break_even
-        self._trailing = trailing
         self._partial_exit = partial_exit
         self._time_exit = time_exit
+        self._stall_exit = stall_exit
 
     async def evaluate_position(
         self,
@@ -98,7 +95,7 @@ class PositionManager:
 
         if current_atr <= 0:
             logger.warning(
-                "ATR is %s for %s, trailing stop and break-even cannot function",
+                "ATR is %s for %s, partial exit cannot function",
                 current_atr,
                 position.symbol,
             )
@@ -107,36 +104,21 @@ class PositionManager:
         if time_exit_action:
             return [time_exit_action]
 
+        stall_exit_action = self._stall_exit.evaluate(
+            position, current_price, current_atr
+        )
+        if stall_exit_action:
+            return [stall_exit_action]
+
         actions: list[PositionActionSchema] = []
 
-        move_sl_action = self._trailing.evaluate(position, current_price, current_atr)
-        if move_sl_action is None:
-            move_sl_action = self._break_even.evaluate(
-                position,
-                current_price,
-                current_atr,
-            )
-        if move_sl_action is not None:
-            actions.append(move_sl_action)
-
-        # Invariant: never emit MOVE_STOP_LOSS and PARTIAL_EXIT in the same
-        # cycle. The executor's partial-exit path cancels all linked orders
-        # and re-places a stop at position.current_stop_loss (the OLD value),
-        # which would silently undo the protective stop move. Defer the
-        # partial exit one tick; it will re-trigger once the new SL is live.
-        if move_sl_action is None:
-            partial_exit_action = self._partial_exit.evaluate(
-                position,
-                current_price,
-                current_atr,
-            )
-            if partial_exit_action:
-                actions.append(partial_exit_action)
-        else:
-            logger.info(
-                "Deferring partial_exit for %s: stop-loss move preferred this cycle",
-                position.symbol,
-            )
+        partial_exit_action = self._partial_exit.evaluate(
+            position,
+            current_price,
+            current_atr,
+        )
+        if partial_exit_action:
+            actions.append(partial_exit_action)
 
         logger.debug(
             "Position %s evaluation: %d actions",

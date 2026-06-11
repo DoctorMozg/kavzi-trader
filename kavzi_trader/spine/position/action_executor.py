@@ -43,53 +43,11 @@ class PositionActionExecutor:
         """Execute action and return exit price for FULL_EXIT, None otherwise."""
         if action.action == PositionActionType.NO_ACTION:
             return None
-        if action.action == PositionActionType.MOVE_STOP_LOSS:
-            await self._move_stop_loss(position, action)
-            return None
         if action.action == PositionActionType.PARTIAL_EXIT:
             await self._partial_exit(position, action)
             return None
         # PositionActionType.FULL_EXIT
         return await self._full_exit(position)
-
-    async def _move_stop_loss(
-        self,
-        position: PositionSchema,
-        action: PositionActionSchema,
-    ) -> None:
-        if action.new_stop_loss is None:
-            return
-
-        # Snapshot existing stop orders BEFORE placing the new one so the
-        # cancel step targets only pre-existing stops and cannot accidentally
-        # cancel the freshly placed replacement (which also links to this
-        # position id).
-        linked = await self._state.orders.get_by_position(position.id)
-        old_stop_orders = [
-            order for order in linked if order.order_type in _STOP_ORDER_TYPES
-        ]
-
-        try:
-            await self._place_stop_order(
-                position,
-                action.new_stop_loss,
-                position.quantity,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to place new stop order for %s; "
-                "leaving existing stop orders in place",
-                position.symbol,
-                extra={
-                    "position_id": position.id,
-                    "symbol": position.symbol,
-                    "new_stop_loss": str(action.new_stop_loss),
-                },
-            )
-            return
-
-        for order in old_stop_orders:
-            await self._cancel_order(position, order)
 
     async def _partial_exit(
         self,

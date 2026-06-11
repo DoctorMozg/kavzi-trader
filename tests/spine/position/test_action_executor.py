@@ -87,60 +87,6 @@ def executor(
     )
 
 
-class TestMoveStopLoss:
-    async def test_cancels_old_stop_and_places_new(
-        self,
-        executor: PositionActionExecutor,
-        mock_exchange: AsyncMock,
-        mock_state_manager: AsyncMock,
-        sample_position: PositionSchema,
-    ):
-        existing_sl = OpenOrderSchema(
-            order_id="100",
-            symbol="BTCUSDT",
-            side=OrderSide.SELL,
-            order_type=OrderType.STOP_MARKET,
-            price=Decimal(48000),
-            quantity=Decimal("0.1"),
-            status=OrderStatus.NEW,
-            linked_position_id="pos_001",
-            created_at=utc_now(),
-        )
-        mock_state_manager.orders.get_by_position.return_value = [existing_sl]
-        action = PositionActionSchema(
-            action=PositionActionType.MOVE_STOP_LOSS,
-            new_stop_loss=Decimal(49000),
-            reason="trailing stop",
-        )
-
-        await executor.execute(sample_position, action)
-
-        mock_exchange.cancel_order.assert_called_once_with(
-            symbol="BTCUSDT",
-            order_id=100,
-        )
-        mock_state_manager.remove_order.assert_called_once_with("100")
-        assert mock_exchange.create_order.call_count == 1
-        call_kwargs = mock_exchange.create_order.call_args.kwargs
-        assert call_kwargs["order_type"] == OrderType.STOP_MARKET
-        assert call_kwargs["stop_price"] == Decimal(49000)
-
-    async def test_no_op_without_new_stop_loss(
-        self,
-        executor: PositionActionExecutor,
-        mock_exchange: AsyncMock,
-        sample_position: PositionSchema,
-    ):
-        action = PositionActionSchema(
-            action=PositionActionType.MOVE_STOP_LOSS,
-            reason="no change",
-        )
-
-        await executor.execute(sample_position, action)
-
-        mock_exchange.create_order.assert_not_called()
-
-
 class TestPartialExit:
     async def test_places_exit_and_recreates_protective(
         self,

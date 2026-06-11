@@ -190,14 +190,6 @@ class PositionManagementLoop:
     ) -> PositionSchema | None:
         if action.action == PositionActionType.FULL_EXIT:
             return None
-        if action.action == PositionActionType.MOVE_STOP_LOSS and action.new_stop_loss:
-            update: dict[str, object] = {
-                "current_stop_loss": action.new_stop_loss,
-                "updated_at": utc_now(),
-            }
-            if action.reason == "break_even":
-                update["stop_loss_moved_to_breakeven"] = True
-            return position.model_copy(update=update)
         if action.action == PositionActionType.PARTIAL_EXIT and action.exit_quantity:
             return position.model_copy(
                 update={

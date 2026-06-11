@@ -57,41 +57,6 @@ def _make_loop(
     )
 
 
-# ---- F2: Break-even flag ---------------------------------------------------
-
-
-class TestBuildUpdatedPosition:
-    def test_break_even_action_sets_flag_in_updated_position(self) -> None:
-        """MOVE_STOP_LOSS with reason='break_even' must set the flag."""
-        position = _make_position()
-        action = PositionActionSchema(
-            action=PositionActionType.MOVE_STOP_LOSS,
-            new_stop_loss=Decimal(105),
-            reason="break_even",
-        )
-        loop = _make_loop()
-        updated = loop._build_updated_position(position, action)
-
-        assert updated is not None
-        assert updated.stop_loss_moved_to_breakeven is True
-        assert updated.current_stop_loss == Decimal(105)
-
-    def test_trailing_stop_action_does_not_set_break_even_flag(self) -> None:
-        """MOVE_STOP_LOSS with reason='trailing_stop' must leave flag False."""
-        position = _make_position()
-        action = PositionActionSchema(
-            action=PositionActionType.MOVE_STOP_LOSS,
-            new_stop_loss=Decimal(102),
-            reason="trailing_stop",
-        )
-        loop = _make_loop()
-        updated = loop._build_updated_position(position, action)
-
-        assert updated is not None
-        assert updated.stop_loss_moved_to_breakeven is False
-        assert updated.current_stop_loss == Decimal(102)
-
-
 # ---- F14: Zero price guard --------------------------------------------------
 
 
@@ -130,15 +95,14 @@ async def test_position_refreshed_between_actions() -> None:
         exit_quantity=Decimal("0.1"),
         reason="partial_profit",
     )
-    move_sl_action = PositionActionSchema(
-        action=PositionActionType.MOVE_STOP_LOSS,
-        new_stop_loss=Decimal(102),
-        reason="trailing_stop",
+    exit_action = PositionActionSchema(
+        action=PositionActionType.FULL_EXIT,
+        reason="time_exit",
     )
 
     manager = AsyncMock()
     manager.evaluate_position = AsyncMock(
-        return_value=[partial_exit_action, move_sl_action],
+        return_value=[partial_exit_action, exit_action],
     )
 
     state_manager = AsyncMock()

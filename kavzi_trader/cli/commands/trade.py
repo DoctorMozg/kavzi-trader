@@ -63,11 +63,10 @@ from kavzi_trader.spine.filters.movement import MinimumMovementFilter
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.filters.spike_cooldown import SpikeCooldownFilter
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
-from kavzi_trader.spine.position.break_even import BreakEvenMover
 from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
+from kavzi_trader.spine.position.stall_exit import StallExitChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
-from kavzi_trader.spine.position.trailing import TrailingStopChecker
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
@@ -331,10 +330,9 @@ async def _start_orchestrator(
     logger.info("Brain agents created")
 
     position_manager = PositionManager(
-        break_even=BreakEvenMover(),
-        trailing=TrailingStopChecker(),
         partial_exit=PartialExitChecker(),
         time_exit=TimeExitChecker(),
+        stall_exit=StallExitChecker(),
     )
 
     # --- Reporting ---
