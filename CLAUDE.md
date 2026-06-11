@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-KavziTrader is an LLM-based cryptocurrency trading platform for Binance using a **Brain-Spine Architecture**. The Brain (tiered PydanticAI agents: Haiku → Sonnet → Opus) handles intelligent market analysis; the Spine handles deterministic, high-speed async execution. Python 3.13+, async-first, event-sourced via Redis Streams.
+KavziTrader is an LLM-based cryptocurrency trading platform for Binance using a **Brain-Spine Architecture**. The Brain (Scout deterministic filter + Analyst LLM → Trader LLM) handles intelligent market analysis; the Spine handles deterministic, high-speed async execution. Python 3.13+, async-first, event-sourced via Redis Streams.
 
 ## Commands
 
@@ -42,8 +42,8 @@ cd docker && docker-compose up -d
 ### Brain-Spine Paradigm
 
 **Brain (LLM Layer)** — `kavzi_trader/brain/`
-- Tiered PydanticAI agents routed via OpenRouter: Scout (Haiku, ~500ms) → Analyst (Sonnet, ~2s) → Trader (Opus, ~5s)
-- 90%+ filter rate at the cheap Scout tier before escalating
+- Scout (deterministic rule filter in `spine/filters/scout.py`, <1ms, no LLM) → Analyst (Haiku 4.5 LLM via OpenRouter, ~1.5s) → Trader (GPT-5.4 LLM via OpenRouter, ~3-5s)
+- 90%+ filter rate at Scout before any LLM token is spent
 - `brain/config.py`: LLM configuration (model IDs, retries, API key)
 - `brain/agent/factory.py`: Creates PydanticAI agents pointed at OpenRouter
 - Jinja2-templated prompts in `brain/prompts/`, Pydantic output schemas in `brain/schemas/`
@@ -52,7 +52,7 @@ cd docker && docker-compose up -d
 **Spine (Execution Layer)** — `kavzi_trader/spine/`
 - `execution/`: Order execution engine with staleness validation
 - `risk/`: ATR-based dynamic risk validator, volatility calculator, position sizer
-- `position/`: Active management — trailing stops, break-even, partial exits, scaling, time exits
+- `position/`: Active management — partial exits, time exits
 - `state/`: Redis-backed state management (positions, orders, account balance)
 - `filters/`: Pre-trade validation — liquidity, funding rate, correlation, news, movement
 

@@ -53,7 +53,6 @@ class IdleRampStairSchema(BaseModel):
 # and masked genuinely idle markets as "slow to wake" rather than
 # "truly quiet".
 _DEFAULT_IDLE_RAMP_STAIRS: tuple[IdleRampStairSchema, ...] = (
-    IdleRampStairSchema(min_idle_cycles=8, sleep_s=720),
     IdleRampStairSchema(min_idle_cycles=5, sleep_s=480),
     IdleRampStairSchema(min_idle_cycles=3, sleep_s=240),
 )

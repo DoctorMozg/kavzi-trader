@@ -74,7 +74,7 @@ scout:
   # Any regime listed here causes an immediate SKIP.
   #   ["LOW", "EXTREME"] = default (blocks very quiet and spiking markets)
   #   ["EXTREME"]        = permissive (allows quiet markets)
-  blocked_regimes: ["EXTREME"]
+  blocked_regimes: ["LOW", "EXTREME"]
 
   # Patterns allowed through EXTREME volatility regime (non-TIER_1 symbols).
   # Empty list = block all patterns in EXTREME (backward compatible default).
@@ -309,28 +309,10 @@ risk:
   liquidation_sl_buffer_ratio: 0.10
 
 # -----------------------------------------------------------------------------
-# Position Management — trailing stops, break-even, partial exits, scaling
+# Position Management — partial exits and time-based exits
 # These checks run every position_check_interval_s seconds.
 # -----------------------------------------------------------------------------
 position_management:
-  # Wider trail gives winning trades room to breathe. On 15m candles,
-  # 2.0 ATR ≈ 1-2% for BTC — survives normal pullbacks within a trend.
-  trailing_stop_atr_multiplier: 2.0
-
-  # Don't start trailing until a substantial move has developed.
-  # 3.0 ATR on 15m ≈ 1.5-3% — ensures the trend is real, not noise.
-  trailing_stop_trigger_atr: 3.0
-
-  # Patience before break-even. On 15m, the first 2 candles often retrace.
-  # 2.0 ATR lets the move establish before protecting capital.
-  break_even_trigger_atr: 2.0
-
-  # Buffer to avoid noise stops at break-even.
-  break_even_buffer_atr: 0.3
-
-  # 30 min = 2 candles on 15m. Prevents premature BE on normal pullbacks.
-  break_even_min_hold_s: 1800
-
   # Let 80% of the move play out before taking partial.
   # On a $100 account, each dollar of captured profit matters.
   partial_exit_at_fraction: 0.80
@@ -342,8 +324,13 @@ position_management:
   # Prevents tiny partial exits where commission > captured profit.
   partial_exit_min_profit_atr: 1.5
 
-  # 48 hours max hold. 15m candles = slower setups = need more time.
-  max_hold_time_hours: 48
+  # 24 hours max hold. Beyond one funding cycle, decaying setups should exit.
+  max_hold_time_hours: 24
+
+  # Stall exit: if the position hasn't made at least 0.5 ATR net progress
+  # toward TP within 8 hours of open, the setup failed without stopping out.
+  stall_check_after_hours: 8
+  stall_min_progress_atr: 0.5
 
 # -----------------------------------------------------------------------------
 # Order Flow — funding rate and open interest monitoring
@@ -404,13 +391,6 @@ filters:
   #   5  = only block at extreme panic (current)
   #   10 = block at moderate fear (previous default)
   fgi_extreme_fear_threshold: 5
-
-  # Confluence gate override when FGI is in elevated fear zone (5 < FGI <= 25).
-  # Raises the minimum confluence required to enter a trade during fearful markets.
-  #   7  = default (strict — blocks most setups during fear)
-  #   6  = moderate (allows solid setups through)
-  #   5  = permissive (same as base gate — no fear penalty)
-  fgi_elevated_fear_confluence_min: 6
 
 # -----------------------------------------------------------------------------
 # Redis — event store and state management backend

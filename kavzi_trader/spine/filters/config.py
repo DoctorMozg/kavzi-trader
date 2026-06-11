@@ -109,23 +109,12 @@ class FilterConfigSchema(BaseModel):
         Field(default=90, ge=0, le=100),
     ] = 90
 
-    fgi_elevated_fear_threshold: Annotated[
-        int,
-        Field(default=25, ge=0, le=100),
-    ] = 25
-    # Raised confluence bar applied to LONGs in the elevated-fear zone
-    # (buying into fear is the documented loss pattern). 7 = NORMAL gate + 1.
-    fgi_elevated_fear_confluence_min: Annotated[
-        int,
-        Field(default=7, ge=0, le=11),
-    ] = 7
-
     fgi_elevated_greed_threshold: Annotated[
         int,
         Field(default=75, ge=0, le=100),
     ] = 75
-    # Mirror of the elevated-fear bar, applied to SHORTs in the elevated-greed
-    # zone (shorting into euphoria is the symmetric risk). 7 = NORMAL gate + 1.
+    # Raised confluence bar applied to SHORTs in the elevated-greed zone
+    # (shorting into euphoria is the documented loss pattern). 7 = NORMAL gate + 1.
     fgi_elevated_greed_confluence_min: Annotated[
         int,
         Field(default=7, ge=0, le=11),
