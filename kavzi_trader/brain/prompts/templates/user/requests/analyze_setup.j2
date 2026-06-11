@@ -15,6 +15,10 @@ Add 0-3 discretionary points (order flow + price structure) to produce the final
 
 STEP 2 — Analyze market data:
 {% include "user/context/market_snapshot.j2" %}
+{% if htf_trend %}
+HIGHER TIMEFRAME: {{ htf_trend }}
+A setup that fights the 1h trend (e.g. a SHORT while the 1h trend is LONG) needs visibly stronger confluence to justify; the routing layer already raises the entry bar by one point for counter-trend setups. Note in your reasoning whether your direction aligns with or opposes the 1h trend.
+{% endif %}
 
 STEP 3 — Assess order flow:
 {% include "user/context/order_flow.j2" %}

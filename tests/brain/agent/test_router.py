@@ -21,6 +21,7 @@ from kavzi_trader.brain.schemas.dependencies import (
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.indicators.htf import HtfTrendSchema
 from kavzi_trader.indicators.schemas import (
     BollingerBandsSchema,
     TechnicalIndicatorsSchema,
@@ -2401,3 +2402,101 @@ async def test_router_handles_empty_candles_without_indexerror(
 
     assert result.analyst is None
     assert result.trader is None
+
+
+# ---------------------------------------------------------------------------
+# HTF soft gate: a setup opposing the 1h trend must clear a bar one point
+# higher; an aligned setup passes at the regime gate.
+# ---------------------------------------------------------------------------
+
+
+def _with_htf(
+    provider: FakeDepsProvider,
+    direction: str,
+) -> FakeDepsProvider:
+    htf = HtfTrendSchema(
+        direction=direction,  # type: ignore[arg-type]
+        ema_20=None,
+        ema_50=None,
+        rsi_14=None,
+        bars_1h=60,
+    )
+    provider._analyst_deps = provider._analyst_deps.model_copy(
+        update={"htf_trend": htf}
+    )
+    return provider
+
+
+@pytest.mark.asyncio
+async def test_counter_htf_setup_blocked_at_regime_gate(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """LONG at exactly the NORMAL gate (6) is blocked when 1h trend is SHORT."""
+    levels = [
+        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(120), level_type="RESISTANCE", reason="test"),
+    ]
+    spy_trader = SpyTrader()
+    analyst = DummyAnalystWithLevels("LONG", levels, confluence_score=6)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _with_htf(
+        _make_provider(
+            candle,
+            indicators,
+            volatility_regime,
+            order_flow,
+            algorithm_confluence,
+            account_state,
+            positions,
+        ),
+        "SHORT",
+    )
+
+    result = await router.run("BTCUSDT", provider)
+
+    # Gate raised 6 -> 7 by the counter-trend rule; score 6 falls short.
+    assert spy_trader.call_count == 0
+    assert result.trader is None
+
+
+@pytest.mark.asyncio
+async def test_aligned_htf_setup_passes_regime_gate(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """The same score-6 LONG reaches the Trader when the 1h trend is LONG."""
+    levels = [
+        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
+        KeyLevelSchema(price=Decimal(120), level_type="RESISTANCE", reason="test"),
+    ]
+    spy_trader = SpyTrader()
+    analyst = DummyAnalystWithLevels("LONG", levels, confluence_score=6)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _with_htf(
+        _make_provider(
+            candle,
+            indicators,
+            volatility_regime,
+            order_flow,
+            algorithm_confluence,
+            account_state,
+            positions,
+        ),
+        "LONG",
+    )
+
+    result = await router.run("BTCUSDT", provider)
+
+    assert spy_trader.call_count == 1
+    assert result.analyst is not None

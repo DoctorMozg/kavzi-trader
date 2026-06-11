@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
@@ -14,6 +14,7 @@ from kavzi_trader.config import FuturesConfigSchema
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.external.schemas import SentimentSummarySchema
+from kavzi_trader.indicators.htf import HtfTrendSchema, compute_htf_trend
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
@@ -198,6 +199,20 @@ class LiveDependenciesProvider:
 
         return indicators, candles, order_flow, confluence
 
+    def _get_htf_trend(
+        self,
+        symbol: str,
+        candles: list[CandlestickSchema],
+    ) -> HtfTrendSchema:
+        """1h trend aggregated from the cached 15m window, cached per cycle."""
+        cache_key = f"htf:{symbol}"
+        cached = self._cycle_cache.get(cache_key)
+        if cached is not None:
+            return cast("HtfTrendSchema", cached)
+        trend = compute_htf_trend(candles)
+        self._cycle_cache[cache_key] = trend
+        return trend
+
     def _get_sentiment(self) -> SentimentSummarySchema | None:
         if self._external_cache is None:
             return None
@@ -229,6 +244,7 @@ class LiveDependenciesProvider:
             order_flow=order_flow,
             algorithm_confluence=confluence,
             volatility_regime=self._get_regime(symbol),
+            htf_trend=self._get_htf_trend(symbol, candles),
             leverage=self._get_leverage(symbol),
             sentiment_summary=self._get_sentiment(),
             **tier_kwargs,
@@ -251,6 +267,7 @@ class LiveDependenciesProvider:
             order_flow=order_flow,
             algorithm_confluence=confluence,
             volatility_regime=self._get_regime(symbol),
+            htf_trend=self._get_htf_trend(symbol, candles),
             account_state=account_state,
             open_positions=open_positions,
             leverage=self._get_leverage(symbol),

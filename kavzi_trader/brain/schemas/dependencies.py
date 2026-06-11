@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.external.schemas import SentimentSummarySchema
+from kavzi_trader.indicators.htf import HtfTrendSchema
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
@@ -68,6 +69,7 @@ class AnalystDependenciesSchema(BaseModel):
     order_flow: Annotated[OrderFlowSchema | None, Field(default=None)]
     algorithm_confluence: Annotated[DualConfluenceSchema, Field(...)]
     volatility_regime: Annotated[VolatilityRegime, Field(...)]
+    htf_trend: Annotated[HtfTrendSchema | None, Field(default=None)]
     leverage: Annotated[int, Field(default=5, ge=1, le=125)]
     sentiment_summary: Annotated[
         SentimentSummarySchema | None,
@@ -92,6 +94,7 @@ class TradingDependenciesSchema(BaseModel):
     order_flow: Annotated[OrderFlowSchema | None, Field(default=None)]
     algorithm_confluence: Annotated[DualConfluenceSchema, Field(...)]
     volatility_regime: Annotated[VolatilityRegime, Field(...)]
+    htf_trend: Annotated[HtfTrendSchema | None, Field(default=None)]
     account_state: Annotated[AccountStateSchema, Field(...)]
     open_positions: Annotated[list[PositionSchema], Field(default_factory=list)]
     leverage: Annotated[int, Field(default=5, ge=1, le=125)]

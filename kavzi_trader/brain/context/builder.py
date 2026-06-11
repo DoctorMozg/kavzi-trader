@@ -25,6 +25,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
+from kavzi_trader.indicators.htf import HtfTrendSchema
 from kavzi_trader.spine.confluence import side_trim_confluence
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,7 @@ class ContextBuilder(BaseModel):
             sentiment_confidence_adjustment=(
                 str(sentiment.confidence_adjustment) if sentiment else None
             ),
+            htf_trend=self._format_htf_trend(deps.htf_trend),
         )
         logger.debug(
             "Built analyst context for %s: %d keys",
@@ -135,6 +137,21 @@ class ContextBuilder(BaseModel):
             len(context),
         )
         return context
+
+    @staticmethod
+    def _format_htf_trend(htf: HtfTrendSchema | None) -> str | None:
+        """Compact 1h-trend line for the Analyst prompt, or None if absent."""
+        if htf is None:
+            return None
+        if htf.direction == "NEUTRAL":
+            return f"1h trend: NEUTRAL ({htf.bars_1h} 1h bars)"
+        ema = (
+            f"EMA20 {htf.ema_20} vs EMA50 {htf.ema_50}"
+            if htf.ema_20 is not None and htf.ema_50 is not None
+            else "EMA stack n/a"
+        )
+        rsi = f"RSI {htf.rsi_14}" if htf.rsi_14 is not None else "RSI n/a"
+        return f"1h trend: {htf.direction} ({ema}, {rsi})"
 
     @staticmethod
     def _compute_atr_fallback_targets(

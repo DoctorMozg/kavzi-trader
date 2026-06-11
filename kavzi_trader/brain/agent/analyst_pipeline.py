@@ -15,6 +15,7 @@ from kavzi_trader.brain.schemas.analyst import (
     KeyLevelsSchema,
 )
 from kavzi_trader.brain.schemas.dependencies import AnalystDependenciesSchema
+from kavzi_trader.indicators.htf import HtfTrendSchema
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 logger = logging.getLogger(__name__)
@@ -204,6 +205,7 @@ class AnalystPipeline:
                 symbol,
                 decision=cached,
                 regime=regime,
+                htf_trend=deps.htf_trend,
                 cached=True,
             )
 
@@ -229,6 +231,7 @@ class AnalystPipeline:
             symbol,
             decision=result,
             regime=regime,
+            htf_trend=deps.htf_trend,
             cached=False,
         )
 
@@ -238,6 +241,7 @@ class AnalystPipeline:
         *,
         decision: AnalystDecisionSchema,
         regime: VolatilityRegime,
+        htf_trend: HtfTrendSchema | None,
         cached: bool,
     ) -> AnalystPipelineResultSchema:
         """Apply the regime-specific escalation gate + optional override.
@@ -255,6 +259,25 @@ class AnalystPipeline:
             )
             if override is not None:
                 confluence_gate = max(confluence_gate, override)
+
+        # HTF soft gate: a setup fighting the 1h trend must clear a bar one
+        # point higher. Counter-trend entries can still pass on genuinely
+        # strong confluence; weak ones against the higher timeframe are cut.
+        if (
+            htf_trend is not None
+            and htf_trend.direction in {"LONG", "SHORT"}
+            and decision.direction in {"LONG", "SHORT"}
+            and htf_trend.direction != decision.direction
+        ):
+            confluence_gate += 1
+            logger.info(
+                "HTF counter-trend gate for %s: analyst=%s vs 1h=%s — gate +1=%d",
+                symbol,
+                decision.direction,
+                htf_trend.direction,
+                confluence_gate,
+                extra={"symbol": symbol, "agent": "analyst"},
+            )
 
         passed = decision.confluence_score >= confluence_gate
         logger.info(

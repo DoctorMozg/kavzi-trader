@@ -88,6 +88,7 @@ class AnalystContextDict(MarketContextDict):
     sentiment_summary: str | None
     sentiment_bias: str | None
     sentiment_confidence_adjustment: str | None
+    htf_trend: str | None
 
 
 class TraderContextDict(MarketContextDict):
