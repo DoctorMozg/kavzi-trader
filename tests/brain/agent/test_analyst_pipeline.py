@@ -34,7 +34,9 @@ class _StubDepsFetcher:
 
 
 def _make_dual_confluence(long_score: int, short_score: int) -> DualConfluenceSchema:
-    def _conf(score: int, ema: bool = False, funding: bool = False) -> AlgorithmConfluenceSchema:
+    def _conf(
+        score: int, ema: bool = False, funding: bool = False
+    ) -> AlgorithmConfluenceSchema:
         return AlgorithmConfluenceSchema(
             ema_alignment=ema,
             rsi_favorable=False,
@@ -67,7 +69,7 @@ def _make_analyst_deps(
         rsi_14=Decimal("49.6"),
         macd=None,
         bollinger=None,
-        atr_14=Decimal("5"),
+        atr_14=Decimal(5),
         volume=None,
         timestamp=utc_now(),
     )
@@ -115,8 +117,7 @@ async def test_pre_filter_block_includes_directional_conflict_fields(
 
     # The pre-filter log record must carry directional-conflict structured fields.
     conflict_records = [
-        r for r in caplog.records
-        if "max algorithm confluence" in r.getMessage()
+        r for r in caplog.records if "max algorithm confluence" in r.getMessage()
     ]
     assert len(conflict_records) == 1, (
         "Expected exactly one 'max algorithm confluence' log record"
@@ -151,8 +152,7 @@ async def test_pre_filter_block_dominant_side_long_when_long_leads(
 
     assert result.reason == "below_min_algo_confluence"
     conflict_records = [
-        r for r in caplog.records
-        if "max algorithm confluence" in r.getMessage()
+        r for r in caplog.records if "max algorithm confluence" in r.getMessage()
     ]
     assert len(conflict_records) == 1
     assert conflict_records[0].dominant_confluence_side == "LONG"
