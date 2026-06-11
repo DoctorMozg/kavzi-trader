@@ -6,15 +6,15 @@ from typing import Annotated, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
+from kavzi_trader.brain.confluence_thresholds import (
+    CONFLUENCE_ENTER_MIN,
+    confluence_enter_min_for_regime,
+)
 from kavzi_trader.brain.schemas.analyst import (
     AnalystDecisionSchema,
     KeyLevelsSchema,
 )
 from kavzi_trader.brain.schemas.dependencies import AnalystDependenciesSchema
-from kavzi_trader.orchestrator.loops.confluence_thresholds import (
-    CONFLUENCE_ENTER_MIN,
-    confluence_enter_min_for_regime,
-)
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 logger = logging.getLogger(__name__)

@@ -165,9 +165,6 @@ def _trader_wait_stub() -> AsyncMock:
                     "Neutral analyst output in this test means no trade is"
                     " required; returning WAIT for safety."
                 ),
-                "suggested_entry": None,
-                "suggested_stop_loss": None,
-                "suggested_take_profit": None,
             },
         ),
     )

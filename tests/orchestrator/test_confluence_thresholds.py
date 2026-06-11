@@ -1,6 +1,6 @@
 import pytest
 
-from kavzi_trader.orchestrator.loops.confluence_thresholds import (
+from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_ENTER_MIN,
     CONFLUENCE_REJECT_MAX,
     confluence_enter_min_for_regime,

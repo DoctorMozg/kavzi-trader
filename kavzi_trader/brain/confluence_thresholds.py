@@ -5,6 +5,12 @@
 # borderline band (CONFLUENCE_REJECT_MAX+1 to gate-1) as "wait for a new
 # bar" rather than "aggressive rejection". Bar-close dedup in the router
 # prevents flip-flop by memoizing the Analyst verdict within the same bar.
+#
+# Lives in the Brain layer (not orchestrator) because it encodes the
+# Brain's escalation policy and is consumed by the context builder, agent
+# factory, and router. Keeping it here avoids a Brain->orchestrator import
+# inversion that would drag the eager orchestrator package init into every
+# brain import and create a circular import.
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 CONFLUENCE_REJECT_MAX = 4  # score <= 4 → escalating rejection cooldown

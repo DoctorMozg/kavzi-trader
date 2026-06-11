@@ -8,6 +8,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
 from kavzi_trader.brain.config import AgentModelConfigSchema, BrainConfigSchema
+from kavzi_trader.brain.confluence_thresholds import CONFLUENCE_ENTER_MIN
 from kavzi_trader.brain.context.context_dicts import SystemPromptContextDict
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
@@ -16,7 +17,6 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.orchestrator.loops.confluence_thresholds import CONFLUENCE_ENTER_MIN
 from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.symbol_tier import SymbolTier
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry

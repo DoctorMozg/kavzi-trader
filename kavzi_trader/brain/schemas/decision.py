@@ -1,65 +1,75 @@
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kavzi_trader.commons.trading_constants import MIN_RR_RATIO
+from kavzi_trader.spine.execution.geometry_schemas import (
+    EntryTactic,
+    TargetStyle,
+    TradeDirection,
+    TradeStructureSchema,
+)
 
-__all__ = ["MIN_RR_RATIO", "TradeDecisionSchema"]
+__all__ = ["TradeDecisionSchema"]
 
 
 class TradeDecisionSchema(BaseModel):
     """
-    Final trading decision with entry, risk, and profit targets.
+    Final trading decision expressed as structure, not prices.
 
-    This is the structured output used by the execution system to place
-    or skip a trade.
+    The Trader agent picks which structure anchors the trade — entry tactic,
+    stop anchor (a key-level index or an ATR multiplier), and target style.
+    The Spine's ``TradeGeometryCalculator`` derives the exact entry /
+    stop-loss / take-profit prices and enforces the minimum risk:reward
+    ratio deterministically, so the model never performs price arithmetic.
     """
 
     action: Annotated[Literal["LONG", "SHORT", "WAIT", "CLOSE"], Field(...)]
     confidence: Annotated[float, Field(..., ge=0.0, le=1.0)]
     reasoning: Annotated[str, Field(..., min_length=40, max_length=600)]
-    suggested_entry: Annotated[Decimal | None, Field(default=None)]
-    suggested_stop_loss: Annotated[Decimal | None, Field(default=None)]
-    suggested_take_profit: Annotated[Decimal | None, Field(default=None)]
+    entry_tactic: Annotated[EntryTactic | None, Field(default=None)]
+    entry_level_index: Annotated[int | None, Field(default=None, ge=0)]
+    stop_level_index: Annotated[int | None, Field(default=None, ge=0)]
+    stop_atr_multiplier: Annotated[Decimal | None, Field(default=None, gt=0)]
+    target_style: Annotated[TargetStyle | None, Field(default=None)]
 
     model_config = ConfigDict(frozen=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _default_entry_tactic(cls, data: object) -> object:
+        # IMMEDIATE is the unambiguous default; tolerating its omission
+        # avoids burning an LLM retry on a missing-but-inferable field.
+        if isinstance(data, dict) and data.get("action") in {"LONG", "SHORT"}:
+            data.setdefault("entry_tactic", "IMMEDIATE")
+        return data
+
     @model_validator(mode="after")
-    def validate_trade_logic(self) -> "TradeDecisionSchema":
+    def validate_trade_structure(self) -> "TradeDecisionSchema":
         if self.action not in {"LONG", "SHORT"}:
             return self
-        entry, stop, take = self._require_entry_stop_take()
-        self._validate_price_ordering(entry, stop, take)
-        self._validate_rr_ratio(entry, stop, take)
+        if self.target_style is None:
+            raise ValueError("LONG/SHORT requires target_style.")
+        has_level_stop = self.stop_level_index is not None
+        has_atr_stop = self.stop_atr_multiplier is not None
+        if has_level_stop == has_atr_stop:
+            raise ValueError(
+                "LONG/SHORT requires exactly one stop anchor:"
+                " stop_level_index or stop_atr_multiplier."
+            )
+        if self.entry_tactic == "PULLBACK_TO_LEVEL" and self.entry_level_index is None:
+            raise ValueError("PULLBACK_TO_LEVEL requires entry_level_index.")
         return self
 
-    def _require_entry_stop_take(self) -> tuple[Decimal, Decimal, Decimal]:
-        if (
-            self.suggested_entry is None
-            or self.suggested_stop_loss is None
-            or self.suggested_take_profit is None
-        ):
-            raise ValueError("Trade requires entry, stop loss, and take profit.")
-        return (
-            self.suggested_entry,
-            self.suggested_stop_loss,
-            self.suggested_take_profit,
+    def to_structure(self) -> TradeStructureSchema:
+        """Convert an actionable decision into geometry-calculator input."""
+        if self.action not in {"LONG", "SHORT"} or self.target_style is None:
+            raise ValueError(f"No trade structure for action {self.action}.")
+        return TradeStructureSchema(
+            direction=cast("TradeDirection", self.action),
+            entry_tactic=self.entry_tactic or "IMMEDIATE",
+            entry_level_index=self.entry_level_index,
+            stop_level_index=self.stop_level_index,
+            stop_atr_multiplier=self.stop_atr_multiplier,
+            target_style=self.target_style,
         )
-
-    def _validate_price_ordering(
-        self, entry: Decimal, stop: Decimal, take: Decimal
-    ) -> None:
-        if self.action == "LONG" and not (stop < entry < take):
-            raise ValueError("LONG requires stop < entry < take profit.")
-        if self.action == "SHORT" and not (stop > entry > take):
-            raise ValueError("SHORT requires stop > entry > take profit.")
-
-    @staticmethod
-    def _validate_rr_ratio(entry: Decimal, stop: Decimal, take: Decimal) -> None:
-        risk = abs(entry - stop)
-        if risk == 0:
-            raise ValueError("Risk distance cannot be zero.")
-        reward = abs(take - entry)
-        if reward / risk < MIN_RR_RATIO:
-            raise ValueError("Risk/reward ratio below minimum.")

@@ -12,14 +12,45 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior
 from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
 from kavzi_trader.brain.agent.router_config import RouterConfigSchema
-from kavzi_trader.brain.schemas.analyst import (
-    AnalystDecisionSchema,
-    KeyLevelSchema,
-)
+from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
+from kavzi_trader.spine.execution.geometry import TradeGeometryCalculator
+from kavzi_trader.spine.execution.geometry_schemas import (
+    GeometryInputsSchema,
+    GeometryRejectionSchema,
+    TradeGeometrySchema,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _wait_decision(reasoning: str, confidence: float = 0.0) -> TradeDecisionSchema:
+    """Build a structure-less WAIT decision for deterministic reject paths."""
+    return TradeDecisionSchema(
+        action="WAIT",
+        confidence=confidence,
+        reasoning=reasoning,
+        entry_tactic=None,
+        entry_level_index=None,
+        stop_level_index=None,
+        stop_atr_multiplier=None,
+        target_style=None,
+    )
+
+
+def _geometry_inputs(
+    analyst_result: AnalystDecisionSchema,
+    deps: TradingDependenciesSchema,
+) -> GeometryInputsSchema:
+    """Assemble geometry-calculator inputs from the pipeline context."""
+    return GeometryInputsSchema(
+        symbol=deps.symbol,
+        current_price=deps.current_price,
+        atr_14=deps.indicators.atr_14,
+        key_levels=analyst_result.key_levels.levels,
+        leverage=deps.leverage,
+    )
 
 
 class TraderRunner(Protocol):
@@ -50,6 +81,8 @@ _TraderStopReason = Literal[
     "circuit_open",
     "dedup_hit",
     "pre_trade_gate_reject",
+    "geometry_reject",
+    "structure_invalid",
     "llm_timeout",
     "llm_unexpected_model",
     "llm_error",
@@ -68,10 +101,14 @@ class TraderPipelineResultSchema(BaseModel):
 
     ``deps`` is None only when ``get_trader`` returned empty candles or
     the Trader raised a generic unhandled exception.
+
+    ``geometry`` carries the concrete entry/SL/TP derived for an actionable
+    LONG/SHORT decision; it is None for WAIT/CLOSE and every reject path.
     """
 
     decision: Annotated[TradeDecisionSchema | None, Field(default=None)]
     deps: Annotated[TradingDependenciesSchema | None, Field(default=None)]
+    geometry: Annotated[TradeGeometrySchema | None, Field(default=None)]
     cached: Annotated[bool, Field(default=False)]
     reason: Annotated[_TraderStopReason, Field(...)]
 
@@ -83,10 +120,10 @@ class TraderPipeline:
 
     Extracted from ``AgentRouter`` so the router's ``run`` method can
     delegate Trader orchestration in one call and concentrate on tier
-    transitions. Preserves the original behaviour exactly — including log
-    messages, circuit-breaker semantics, dedup semantics (3-tuple key of
-    ``symbol`` / ``analyst_hash`` / ``bar_close``), deterministic
-    pre-trade gates (breakout %B, R/R), and LLM-failure fallbacks.
+    transitions. Owns the circuit-breaker short-circuit, 3-tuple dedup,
+    deterministic pre-trade gates (breakout %B, geometry viability), guarded
+    LLM invocation, and the geometry-derivation step that turns the Trader's
+    structural choice into concrete prices.
     """
 
     def __init__(
@@ -96,12 +133,14 @@ class TraderPipeline:
         circuit_breaker: AgentCircuitBreaker,
         router_config: RouterConfigSchema,
         log_llm_exception: LLMExceptionLogger,
+        geometry: TradeGeometryCalculator,
     ) -> None:
         self._trader = trader
         self._dedup = dedup
         self._circuit_breaker = circuit_breaker
         self._router_config = router_config
         self._log_llm_exception = log_llm_exception
+        self._geometry = geometry
 
     async def run(
         self,
@@ -116,12 +155,12 @@ class TraderPipeline:
         * Short-circuits with a WAIT when the symbol's circuit is open.
         * Consults the dedup cache keyed on
           (symbol, analyst_hash, bar_close).
-        * Runs deterministic pre-Trader gates (breakout %B, R/R). Gate
-          rejects are cached so the cycle doesn't re-evaluate gates on
-          the next invocation within the same bar.
-        * Otherwise invokes the Trader LLM under full error handling;
-          caches only successful decisions and resets the circuit
-          counter on success.
+        * Runs deterministic pre-Trader gates (breakout %B, geometry
+          viability). Gate rejects are cached so the cycle doesn't
+          re-evaluate gates on the next invocation within the same bar.
+        * Otherwise invokes the Trader LLM under full error handling, then
+          derives concrete geometry for actionable decisions; caches only
+          successful decisions and resets the circuit counter on success.
         """
         deps = await deps_provider.get_trader(symbol)
 
@@ -133,6 +172,7 @@ class TraderPipeline:
             return TraderPipelineResultSchema(
                 decision=None,
                 deps=None,
+                geometry=None,
                 cached=False,
                 reason="no_candles",
             )
@@ -142,6 +182,7 @@ class TraderPipeline:
             return TraderPipelineResultSchema(
                 decision=circuit_wait,
                 deps=deps,
+                geometry=None,
                 cached=False,
                 reason="circuit_open",
             )
@@ -155,12 +196,13 @@ class TraderPipeline:
                 symbol,
                 analyst_hash[:8],
                 current_bar,
-                cached.action,
+                cached.decision.action,
                 extra={"symbol": symbol, "agent": "trader", "dedup": "hit"},
             )
             return TraderPipelineResultSchema(
-                decision=cached,
+                decision=cached.decision,
                 deps=deps,
+                geometry=cached.geometry,
                 cached=True,
                 reason="dedup_hit",
             )
@@ -180,6 +222,7 @@ class TraderPipeline:
             return TraderPipelineResultSchema(
                 decision=gate_reject,
                 deps=deps,
+                geometry=None,
                 cached=False,
                 reason="pre_trade_gate_reject",
             )
@@ -206,7 +249,7 @@ class TraderPipeline:
         threshold = self._circuit_breaker.threshold
         logger.warning(
             "Trader circuit open for %s: %d consecutive validation"
-            " failures \u2265 threshold %d \u2014 skipping Trader call",
+            " failures ≥ threshold %d — skipping Trader call",
             symbol,
             failures,
             threshold,
@@ -217,19 +260,12 @@ class TraderPipeline:
                 "trader_validation_failures_total": failures,
             },
         )
-        return TradeDecisionSchema(
-            action="WAIT",
-            confidence=0.0,
-            reasoning=(
-                f"Trader circuit breaker open for {symbol}:"
-                f" {failures} consecutive validation failures reached"
-                f" threshold {threshold}."
-                f" Suspending Trader calls until a successful"
-                f" decision resets the counter."
-            ),
-            suggested_entry=None,
-            suggested_stop_loss=None,
-            suggested_take_profit=None,
+        return _wait_decision(
+            f"Trader circuit breaker open for {symbol}:"
+            f" {failures} consecutive validation failures reached"
+            f" threshold {threshold}."
+            f" Suspending Trader calls until a successful"
+            f" decision resets the counter."
         )
 
     @staticmethod
@@ -258,12 +294,7 @@ class TraderPipeline:
         )
         if breakout_reject is not None:
             return breakout_reject
-        return self.pre_trader_rr_check(
-            symbol,
-            analyst_result,
-            deps.current_price,
-            deps.indicators.atr_14,
-        )
+        return self.pre_trader_viability_check(symbol, analyst_result, deps)
 
     async def _invoke_trader_llm(
         self,
@@ -276,8 +307,8 @@ class TraderPipeline:
     ) -> TraderPipelineResultSchema:
         """Call the Trader LLM with full error handling.
 
-        * Success -> cache result, reset failure counter.
-        * Timeout / UnexpectedModelBehavior -> WAIT, no cache (M1), counter
+        * Success -> derive geometry, cache, reset failure counter.
+        * Timeout / UnexpectedModelBehavior -> WAIT, no cache, counter
           increments on UnexpectedModelBehavior only.
         * Other Exception -> empty result, no cache.
         """
@@ -292,8 +323,9 @@ class TraderPipeline:
             elapsed_ms = (time.monotonic() - t0) * 1000
             self._log_llm_exception(symbol, "trader", exc, elapsed_ms)
             return TraderPipelineResultSchema(
-                decision=self._build_timeout_wait(symbol, elapsed_ms),
+                decision=self._build_timeout_wait(elapsed_ms),
                 deps=deps,
+                geometry=None,
                 cached=False,
                 reason="llm_timeout",
             )
@@ -301,6 +333,7 @@ class TraderPipeline:
             return TraderPipelineResultSchema(
                 decision=self._build_unexpected_model_wait(symbol, exc, t0),
                 deps=deps,
+                geometry=None,
                 cached=False,
                 reason="llm_unexpected_model",
             )
@@ -310,19 +343,105 @@ class TraderPipeline:
             return TraderPipelineResultSchema(
                 decision=None,
                 deps=None,
+                geometry=None,
                 cached=False,
                 reason="llm_error",
             )
+        return self._finalize_trader_decision(
+            symbol, deps, analyst_result, result, analyst_hash, current_bar
+        )
+
+    def _finalize_trader_decision(
+        self,
+        symbol: str,
+        deps: TradingDependenciesSchema,
+        analyst_result: AnalystDecisionSchema,
+        result: TradeDecisionSchema,
+        analyst_hash: str,
+        current_bar: datetime,
+    ) -> TraderPipelineResultSchema:
+        """Derive concrete geometry for actionable decisions.
+
+        * WAIT / CLOSE -> cache and pass through, no geometry needed.
+        * LONG / SHORT -> compute prices from the chosen structure.
+          INVALID_STRUCTURE (bad level index) counts as a Trader validation
+          failure and is NOT cached, so a fresh LLM call next cycle can pick
+          a valid anchor. Market-condition rejections (stop too wide, target
+          unreachable, liquidation budget) become cached WAITs — same bar,
+          same data, same outcome.
+        """
+        if result.action not in {"LONG", "SHORT"}:
+            self._dedup.cache_trader(
+                symbol,
+                analyst_hash=analyst_hash,
+                bar_close=current_bar,
+                decision=result,
+            )
+            self._reset_trader_failures(symbol)
+            return TraderPipelineResultSchema(
+                decision=result,
+                deps=deps,
+                geometry=None,
+                cached=False,
+                reason="ok",
+            )
+
+        outcome = self._geometry.compute(
+            result.to_structure(),
+            _geometry_inputs(analyst_result, deps),
+        )
+        if isinstance(outcome, GeometryRejectionSchema):
+            wait = _wait_decision(
+                f"Trader chose {result.action} but geometry was rejected"
+                f" ({outcome.code}): {outcome.detail}"
+            )
+            if outcome.code == "INVALID_STRUCTURE":
+                self._record_trader_validation_failure(symbol)
+                return TraderPipelineResultSchema(
+                    decision=wait,
+                    deps=deps,
+                    geometry=None,
+                    cached=False,
+                    reason="structure_invalid",
+                )
+            self._dedup.cache_trader(
+                symbol,
+                analyst_hash=analyst_hash,
+                bar_close=current_bar,
+                decision=wait,
+            )
+            self._reset_trader_failures(symbol)
+            return TraderPipelineResultSchema(
+                decision=wait,
+                deps=deps,
+                geometry=None,
+                cached=False,
+                reason="geometry_reject",
+            )
+
+        logger.info(
+            "Trader geometry for %s: %s entry=%s sl=%s tp=%s rr=%s adj=%s",
+            symbol,
+            result.action,
+            outcome.entry,
+            outcome.stop_loss,
+            outcome.take_profit,
+            outcome.rr_ratio,
+            outcome.adjustments,
+            extra={"symbol": symbol, "agent": "trader"},
+        )
         self._dedup.cache_trader(
             symbol,
             analyst_hash=analyst_hash,
             bar_close=current_bar,
             decision=result,
+            geometry=outcome,
         )
         self._reset_trader_failures(symbol)
         return TraderPipelineResultSchema(
             decision=result,
             deps=deps,
+            geometry=outcome,
             cached=False,
             reason="ok",
         )
@@ -338,20 +457,12 @@ class TraderPipeline:
             )
 
     @staticmethod
-    def _build_timeout_wait(symbol: str, elapsed_ms: float) -> TradeDecisionSchema:
-        _ = symbol  # logging handled by caller via _log_llm_exception
-        return TradeDecisionSchema(
-            action="WAIT",
-            confidence=0.0,
-            reasoning=(
-                f"Trader agent timed out after {elapsed_ms / 1000:.1f}s."
-                " Returning WAIT to avoid stale entry."
-                " Consider lowering trader timeout_s or using a"
-                " faster model."
-            ),
-            suggested_entry=None,
-            suggested_stop_loss=None,
-            suggested_take_profit=None,
+    def _build_timeout_wait(elapsed_ms: float) -> TradeDecisionSchema:
+        return _wait_decision(
+            f"Trader agent timed out after {elapsed_ms / 1000:.1f}s."
+            " Returning WAIT to avoid stale entry."
+            " Consider lowering trader timeout_s or using a"
+            " faster model."
         )
 
     def _build_unexpected_model_wait(
@@ -378,19 +489,10 @@ class TraderPipeline:
                 "exception_type": type(exc).__name__,
             },
         )
-        return TradeDecisionSchema.model_validate(
-            {
-                "action": "WAIT",
-                "confidence": 0,
-                "reasoning": (
-                    f"Trader model returned unparseable output after"
-                    f" {elapsed_ms / 1000:.1f}s. Raw body logged for debugging."
-                    f" Returning WAIT to avoid acting on malformed data."
-                ),
-                "suggested_entry": None,
-                "suggested_stop_loss": None,
-                "suggested_take_profit": None,
-            }
+        return _wait_decision(
+            f"Trader model returned unparseable output after"
+            f" {elapsed_ms / 1000:.1f}s. Raw body logged for debugging."
+            f" Returning WAIT to avoid acting on malformed data."
         )
 
     def _record_trader_validation_failure(self, symbol: str) -> int:
@@ -479,25 +581,18 @@ class TraderPipeline:
                 band_desc = "beyond the upper band"
             logger.info(
                 "Pre-Trader BREAKOUT reject for %s: %%B=%.2f,"
-                " direction=%s \u2014 price overextended %s",
+                " direction=%s — price overextended %s",
                 symbol,
                 float(percent_b),
                 analyst_direction,
                 band_desc,
             )
-            return TradeDecisionSchema(
-                action="WAIT",
-                confidence=0.0,
-                reasoning=(
-                    f"Deterministic pre-Trader reject: BREAKOUT pattern with"
-                    f" Bollinger %%B={float(percent_b):.2f} exceeds"
-                    f" {float(threshold):.2f} overextension"
-                    f" threshold. Price is too far {band_desc} for"
-                    f" a sustainable breakout entry."
-                ),
-                suggested_entry=None,
-                suggested_stop_loss=None,
-                suggested_take_profit=None,
+            return _wait_decision(
+                f"Deterministic pre-Trader reject: BREAKOUT pattern with"
+                f" Bollinger %%B={float(percent_b):.2f} exceeds"
+                f" {float(threshold):.2f} overextension"
+                f" threshold. Price is too far {band_desc} for"
+                f" a sustainable breakout entry."
             )
 
         if is_short:
@@ -509,107 +604,42 @@ class TraderPipeline:
         if in_caution:
             logger.warning(
                 "BREAKOUT caution for %s: %%B=%.2f, direction=%s"
-                " \u2014 approaching overextension zone",
+                " — approaching overextension zone",
                 symbol,
                 float(percent_b),
                 analyst_direction,
             )
         return None
 
-    @staticmethod
-    def estimate_rr(
-        direction: str,
-        current_price: Decimal,
-        key_levels: list[KeyLevelSchema],
-        atr: Decimal | None,
-    ) -> Decimal | None:
-        """Estimate risk/reward from key levels with ATR fallback."""
-        if atr is None or atr == 0:
-            return None
-        if direction == "NEUTRAL":
-            return None
-
-        supports = [lv.price for lv in key_levels if lv.level_type == "SUPPORT"]
-        resistances = [lv.price for lv in key_levels if lv.level_type == "RESISTANCE"]
-
-        if direction == "LONG":
-            sl_candidates = [p for p in supports if p < current_price]
-            tp_candidates = [p for p in resistances if p > current_price]
-            sl = max(sl_candidates) if sl_candidates else current_price - atr
-            tp = min(tp_candidates) if tp_candidates else current_price + 2 * atr
-        else:  # SHORT
-            sl_candidates = [p for p in resistances if p > current_price]
-            tp_candidates = [p for p in supports if p < current_price]
-            sl = min(sl_candidates) if sl_candidates else current_price + atr
-            tp = max(tp_candidates) if tp_candidates else current_price - 2 * atr
-
-        risk = abs(current_price - sl)
-        reward = abs(tp - current_price)
-        if risk == 0:
-            return None
-        return reward / risk
-
-    def pre_trader_rr_check(
+    def pre_trader_viability_check(
         self,
         symbol: str,
         analyst_result: AnalystDecisionSchema,
-        current_price: Decimal,
-        atr: Decimal | None,
+        deps: TradingDependenciesSchema,
     ) -> TradeDecisionSchema | None:
-        """Pre-Trader estimated R/R gate.
+        """Skip the Trader LLM when no legal geometry can reach min R:R.
 
-        * NEUTRAL direction or missing ATR -> fail open (return None).
-        * estimated R/R < ``rr_hard_block`` (0.5) -> return a WAIT
-          decision. The geometry implied by the Analyst's key levels is
-          statistically guaranteed to lose at current TP-hit rates, so we
-          skip the Trader LLM call entirely to conserve budget.
-        * ``rr_hard_block`` <= R/R < ``rr_min_prescreen`` -> log a warning
-          and proceed to the Trader for final assessment.
-        * R/R >= ``rr_min_prescreen`` -> proceed silently.
+        Uses the geometry calculator's estimate mode (tightest legal stop
+        against the best available target), so a block here means even the
+        most favourable structural choice cannot produce a viable trade.
+        NEUTRAL fails open — there is no direction to size against.
         """
         if analyst_result.direction == "NEUTRAL":
             return None
-        estimated_rr = TraderPipeline.estimate_rr(
+        viability = self._geometry.estimate(
             analyst_result.direction,
-            current_price,
-            analyst_result.key_levels.levels,
-            atr,
+            _geometry_inputs(analyst_result, deps),
         )
-        if estimated_rr is None:
-            return None  # Fail open when we cannot estimate
-
-        rr_hard_block = self._router_config.rr_hard_block
-        rr_min_prescreen = self._router_config.rr_min_prescreen
-
-        if estimated_rr < rr_hard_block:
-            logger.warning(
-                "Pre-Trader R/R hard block for %s: estimated R/R=%.2f < %.2f"
-                " \u2014 skipping Trader call and returning WAIT",
-                symbol,
-                float(estimated_rr),
-                float(rr_hard_block),
-            )
-            return TradeDecisionSchema(
-                action="WAIT",
-                confidence=0.0,
-                reasoning=(
-                    f"Pre-trader R/R {float(estimated_rr):.2f} below"
-                    f" {float(rr_hard_block):.2f} hard block; analyst key"
-                    f" levels yield insufficient reward relative to risk."
-                    f" Skipping Trader call to conserve budget and protect"
-                    f" against statistically-losing geometry."
-                ),
-                suggested_entry=None,
-                suggested_stop_loss=None,
-                suggested_take_profit=None,
-            )
-
-        if estimated_rr < rr_min_prescreen:
-            logger.warning(
-                "Pre-Trader R/R warning for %s: estimated R/R=%.2f < %.1f"
-                " \u2014 proceeding to Trader for final assessment",
-                symbol,
-                float(estimated_rr),
-                float(rr_min_prescreen),
-            )
-        return None
+        if viability.viable:
+            return None
+        logger.warning(
+            "Pre-Trader viability block for %s: %s",
+            symbol,
+            viability.reason,
+            extra={"symbol": symbol, "agent": "trader"},
+        )
+        return _wait_decision(
+            f"Pre-trader viability block: {viability.reason}"
+            f" Skipping Trader call — no structural choice can produce"
+            f" a valid trade here."
+        )

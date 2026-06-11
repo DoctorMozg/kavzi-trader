@@ -4,6 +4,9 @@ from typing import cast
 
 from pydantic import BaseModel, ConfigDict
 
+from kavzi_trader.brain.confluence_thresholds import (
+    confluence_enter_min_for_regime,
+)
 from kavzi_trader.brain.context.context_dicts import (
     AccountStateDict,
     AnalystContextDict,
@@ -21,9 +24,6 @@ from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
-)
-from kavzi_trader.orchestrator.loops.confluence_thresholds import (
-    confluence_enter_min_for_regime,
 )
 from kavzi_trader.spine.confluence import side_trim_confluence
 

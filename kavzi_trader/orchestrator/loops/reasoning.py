@@ -13,20 +13,21 @@ from kavzi_trader.brain.agent.router import (
     DependenciesProvider,
     PipelineResult,
 )
+from kavzi_trader.brain.confluence_thresholds import (
+    CONFLUENCE_REJECT_MAX,
+    confluence_enter_min_for_regime,
+)
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.orchestrator.loops.confluence_thresholds import (
-    CONFLUENCE_REJECT_MAX,
-    confluence_enter_min_for_regime,
-)
 from kavzi_trader.orchestrator.loops.reasoning_config import (
     ReasoningLoopConfigSchema,
 )
 from kavzi_trader.orchestrator.loops.symbol_state import SymbolStateTracker
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
+from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
 from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
@@ -544,6 +545,7 @@ class ReasoningLoop:
             result.trader,
             result.trader_deps,
             now_ms,
+            geometry=result.geometry,
         )
         symbol = result.trader_deps.symbol
         if decision is None:
@@ -639,49 +641,40 @@ class ReasoningLoop:
         trader: TradeDecisionSchema,
         deps: TradingDependenciesSchema,
         snapshot_at_ms: int,
+        geometry: TradeGeometrySchema | None = None,
     ) -> DecisionMessageSchema | None:
-        # Reject malformed Trader output at the Brain→Spine boundary. LONG
-        # and SHORT must carry full trade geometry; silently substituting
-        # entry_price for missing stop_loss/take_profit would construct a
-        # self-closing trade that the schema validator still accepts as
-        # geometry-skipped CLOSE-equivalent. Fail loud and increment the
-        # Trader circuit-breaker counter so repeated malformed output
-        # suspends the symbol.
+        # Reject geometry-less actionable decisions at the Brain→Spine
+        # boundary. The router computes geometry for every LONG/SHORT it
+        # emits, so a missing geometry here means a pipeline defect — fail
+        # loud and increment the Trader circuit-breaker counter rather than
+        # fabricate prices.
         action = trader.action
-        if action in {"LONG", "SHORT"}:
-            missing: list[str] = []
-            if trader.suggested_entry is None:
-                missing.append("suggested_entry")
-            if trader.suggested_stop_loss is None:
-                missing.append("suggested_stop_loss")
-            if trader.suggested_take_profit is None:
-                missing.append("suggested_take_profit")
-            if missing:
-                logger.error(
-                    "Trader %s decision for %s missing required fields: %s",
-                    action,
-                    deps.symbol,
-                    missing,
-                    extra={
-                        "symbol": deps.symbol,
-                        "action": action,
-                        "missing_fields": missing,
-                    },
-                )
-                self._router.record_trader_validation_failure(deps.symbol)
-                return None
+        if action in {"LONG", "SHORT"} and geometry is None:
+            logger.error(
+                "Trader %s decision for %s arrived without computed"
+                " geometry; refusing to enqueue",
+                action,
+                deps.symbol,
+                extra={"symbol": deps.symbol, "action": action},
+            )
+            self._router.record_trader_validation_failure(deps.symbol)
+            return None
 
         # Only LONG/SHORT/CLOSE should reach this method — WAIT is filtered
         # by _should_enqueue upstream. A narrow cast satisfies mypy without
         # an unreachable defensive raise.
         typed_action = cast("Literal['LONG', 'SHORT', 'CLOSE']", action)
 
-        # For CLOSE-only decisions the Trader may omit suggested prices;
-        # geometry validation is skipped, so fall back to current price so
-        # the schema can still be constructed.
-        entry_price = trader.suggested_entry or deps.current_price
-        stop_loss = trader.suggested_stop_loss or entry_price
-        take_profit = trader.suggested_take_profit or entry_price
+        # For CLOSE decisions no geometry exists; the execution layer only
+        # needs a price reference, so fall back to current price.
+        if geometry is not None:
+            entry_price = geometry.entry
+            stop_loss = geometry.stop_loss
+            take_profit = geometry.take_profit
+        else:
+            entry_price = deps.current_price
+            stop_loss = entry_price
+            take_profit = entry_price
         atr = deps.indicators.atr_14 or Decimal(0)
 
         return DecisionMessageSchema(

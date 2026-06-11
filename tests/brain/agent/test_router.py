@@ -84,9 +84,6 @@ class DummyTrader:
             action="WAIT",
             confidence=0.5,
             reasoning=_TRADER_REASONING,
-            suggested_entry=None,
-            suggested_stop_loss=None,
-            suggested_take_profit=None,
         )
 
 
@@ -1157,9 +1154,6 @@ class SpyTrader:
             action="WAIT",
             confidence=0.5,
             reasoning=_TRADER_REASONING,
-            suggested_entry=None,
-            suggested_stop_loss=None,
-            suggested_take_profit=None,
         )
 
 
@@ -1518,55 +1512,11 @@ def test_pre_trader_breakout_caution_short_zone(
 
 
 # ---------------------------------------------------------------------------
-# R/R pre-screen: deterministic estimate of risk/reward from key levels + ATR
+# Pre-Trader viability gate: the router skips the Trader LLM when no legal
+# geometry can reach min R:R. The geometry math itself is covered by
+# tests/spine/execution/test_geometry.py; here we assert the router wires
+# the gate correctly (proceeds when viable, blocks when not).
 # ---------------------------------------------------------------------------
-
-
-def test_estimate_rr_long_with_key_levels() -> None:
-    """Support=95, resistance=115, price=100 → R/R=3.0."""
-    levels = [
-        KeyLevelSchema(price=Decimal(95), level_type="SUPPORT", reason="test"),
-        KeyLevelSchema(price=Decimal(115), level_type="RESISTANCE", reason="test"),
-    ]
-    rr = AgentRouter._estimate_rr("LONG", Decimal(100), levels, Decimal(5))
-    assert rr is not None
-    assert float(rr) == 3.0
-
-
-def test_estimate_rr_long_atr_fallback() -> None:
-    """No key levels, ATR=5, price=100 → SL=95, TP=110 → R/R=2.0."""
-    rr = AgentRouter._estimate_rr("LONG", Decimal(100), [], Decimal(5))
-    assert rr is not None
-    assert float(rr) == 2.0
-
-
-def test_estimate_rr_short_with_key_levels() -> None:
-    """Resistance=105, support=90, price=100 → R/R=2.0."""
-    levels = [
-        KeyLevelSchema(price=Decimal(105), level_type="RESISTANCE", reason="test"),
-        KeyLevelSchema(price=Decimal(90), level_type="SUPPORT", reason="test"),
-    ]
-    rr = AgentRouter._estimate_rr("SHORT", Decimal(100), levels, Decimal(5))
-    assert rr is not None
-    assert float(rr) == 2.0
-
-
-def test_estimate_rr_returns_none_no_atr() -> None:
-    """ATR=None → cannot estimate."""
-    rr = AgentRouter._estimate_rr("LONG", Decimal(100), [], None)
-    assert rr is None
-
-
-def test_estimate_rr_returns_none_zero_atr() -> None:
-    """ATR=0 → cannot estimate."""
-    rr = AgentRouter._estimate_rr("LONG", Decimal(100), [], Decimal(0))
-    assert rr is None
-
-
-def test_estimate_rr_returns_none_neutral() -> None:
-    """Direction=NEUTRAL → no estimate."""
-    rr = AgentRouter._estimate_rr("NEUTRAL", Decimal(100), [], Decimal(5))
-    assert rr is None
 
 
 class DummyAnalystWithLevels:
@@ -1689,13 +1639,14 @@ async def test_router_passes_trader_on_neutral_direction(
 
 
 # ---------------------------------------------------------------------------
-# R/R hard block: estimated R/R below 0.5 must skip the Trader LLM call
-# and return a WAIT decision straight from the deterministic gate.
+# Viability block: when ATR is so compressed that no legal stop can clear the
+# percent floor, no geometry can reach min R:R — skip the Trader LLM call and
+# return a WAIT decision straight from the deterministic gate.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_router_blocks_trader_on_low_rr(
+async def test_router_blocks_trader_when_geometry_not_viable(
     candle,
     indicators,
     volatility_regime,
@@ -1704,18 +1655,20 @@ async def test_router_blocks_trader_on_low_rr(
     account_state,
     positions,
 ) -> None:
-    """estimated R/R < 0.5 → Trader NOT called, WAIT returned from gate."""
-    # price=105, SUPPORT=100 (risk=5), RESISTANCE=106 (reward=1) → R/R=0.2
+    """Compressed ATR → no viable geometry → Trader NOT called, WAIT returned."""
+    # price=105; ATR 0.05 makes the 0.15% percent floor (0.1575) exceed the
+    # 3x ATR max stop (0.15), so no legal stop exists → not viable.
+    compressed = indicators.model_copy(update={"atr_14": Decimal("0.05")})
     levels = [
         KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
-        KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
+        KeyLevelSchema(price=Decimal(120), level_type="RESISTANCE", reason="test"),
     ]
     spy_trader = SpyTrader()
     analyst = DummyAnalystWithLevels("LONG", levels)
     router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
     provider = _make_provider(
         candle,
-        indicators,
+        compressed,
         volatility_regime,
         order_flow,
         algorithm_confluence,
@@ -1724,11 +1677,11 @@ async def test_router_blocks_trader_on_low_rr(
     )
     result = await router.run("BTCUSDT", provider)
 
-    assert spy_trader.call_count == 0, "Trader must be bypassed on R/R hard block"
+    assert spy_trader.call_count == 0, "Trader must be bypassed when not viable"
     assert result.trader is not None
     assert result.trader.action == "WAIT"
     assert result.trader.confidence == 0.0
-    assert "hard block" in result.trader.reasoning.lower()
+    assert "viability block" in result.trader.reasoning.lower()
     assert len(result.trader.reasoning) >= 40
 
 
@@ -1766,7 +1719,7 @@ async def test_router_allows_trader_on_moderate_rr(
 
 
 @pytest.mark.asyncio
-async def test_router_caches_rr_hard_block_wait(
+async def test_router_caches_viability_block_wait(
     candle,
     indicators,
     volatility_regime,
@@ -1776,16 +1729,17 @@ async def test_router_caches_rr_hard_block_wait(
     positions,
 ) -> None:
     """Second call on the same bar must hit the dedup cache, not re-gate."""
+    compressed = indicators.model_copy(update={"atr_14": Decimal("0.05")})
     levels = [
         KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
-        KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
+        KeyLevelSchema(price=Decimal(120), level_type="RESISTANCE", reason="test"),
     ]
     spy_trader = SpyTrader()
     analyst = DummyAnalystWithLevels("LONG", levels)
     router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
     provider = _make_provider(
         candle,
-        indicators,
+        compressed,
         volatility_regime,
         order_flow,
         algorithm_confluence,
@@ -1805,54 +1759,34 @@ async def test_router_caches_rr_hard_block_wait(
     assert first.trader.reasoning == second.trader.reasoning
 
 
-def test_pre_trader_rr_check_ignores_neutral() -> None:
-    """NEUTRAL direction → no gate verdict regardless of estimated R/R."""
-    levels = [
-        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
-        KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
-    ]
-    analyst_result = AnalystDecisionSchema(
-        setup_valid=True,
-        direction="NEUTRAL",
-        confluence_score=8,
-        key_levels=KeyLevelsSchema(levels=levels),
-        reasoning=_ANALYST_REASONING,
+@pytest.mark.asyncio
+async def test_router_viability_gate_ignores_neutral(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    """NEUTRAL direction fails open past the viability gate to the Trader."""
+    compressed = indicators.model_copy(update={"atr_14": Decimal("0.05")})
+    spy_trader = SpyTrader()
+    analyst = DummyAnalystWithLevels("NEUTRAL", [], confluence_score=8)
+    router = AgentRouter(DummyScout("INTERESTING"), analyst, spy_trader)
+    provider = _make_provider(
+        candle,
+        compressed,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
     )
-    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    verdict = router._pre_trader_rr_check(
-        "BTCUSDT",
-        analyst_result,
-        current_price=Decimal(105),
-        atr=Decimal(5),
-    )
-    assert verdict is None
+    await router.run("BTCUSDT", provider)
 
-
-def test_pre_trader_rr_check_returns_wait_below_hard_block() -> None:
-    """Instance method returns a WAIT TradeDecisionSchema when R/R < 0.5."""
-    levels = [
-        KeyLevelSchema(price=Decimal(100), level_type="SUPPORT", reason="test"),
-        KeyLevelSchema(price=Decimal(106), level_type="RESISTANCE", reason="test"),
-    ]
-    analyst_result = AnalystDecisionSchema(
-        setup_valid=True,
-        direction="LONG",
-        confluence_score=8,
-        key_levels=KeyLevelsSchema(levels=levels),
-        reasoning=_ANALYST_REASONING,
-    )
-    router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    verdict = router._pre_trader_rr_check(
-        "BTCUSDT",
-        analyst_result,
-        current_price=Decimal(105),
-        atr=Decimal(5),
-    )
-    assert verdict is not None
-    assert verdict.action == "WAIT"
-    assert verdict.suggested_entry is None
-    assert verdict.suggested_stop_loss is None
-    assert verdict.suggested_take_profit is None
+    # Viability is direction-specific; NEUTRAL is not gated and reaches Trader.
+    assert spy_trader.call_count == 1
 
 
 # ---------------------------------------------------------------------------

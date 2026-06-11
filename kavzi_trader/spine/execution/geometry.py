@@ -16,7 +16,12 @@ from kavzi_trader.spine.risk.config import RiskConfigSchema
 
 logger = logging.getLogger(__name__)
 
-_HUNDRED = Decimal("100")
+_HUNDRED = Decimal(100)
+
+
+def _profit_side_desc(direction: TradeDirection) -> str:
+    """Human-readable level a LONG/SHORT anchors against, for reject messages."""
+    return "SUPPORT below" if direction == "LONG" else "RESISTANCE above"
 
 
 class _ResolvedStop:
@@ -76,6 +81,18 @@ class TradeGeometryCalculator:
         if isinstance(target, GeometryRejectionSchema):
             return target
 
+        return self._assemble(structure, inputs, entry, stop, target, atr)
+
+    def _assemble(
+        self,
+        structure: TradeStructureSchema,
+        inputs: GeometryInputsSchema,
+        entry: Decimal,
+        stop: "_ResolvedStop",
+        target: Decimal,
+        atr: Decimal,
+    ) -> TradeGeometrySchema | GeometryRejectionSchema:
+        """Combine resolved entry/stop/target into directional prices."""
         sign = Decimal(1) if structure.direction == "LONG" else Decimal(-1)
         stop_loss = entry - sign * stop.distance
         take_profit = entry + sign * target
@@ -199,15 +216,14 @@ class TradeGeometryCalculator:
             valid = level.level_type == "SUPPORT" and level.price < inputs.current_price
         else:
             valid = (
-                level.level_type == "RESISTANCE"
-                and level.price > inputs.current_price
+                level.level_type == "RESISTANCE" and level.price > inputs.current_price
             )
         if not valid:
             return self._reject(
                 inputs,
                 "INVALID_STRUCTURE",
                 f"Pullback entry for {structure.direction} requires a"
-                f" {'SUPPORT below' if structure.direction == 'LONG' else 'RESISTANCE above'}"
+                f" {_profit_side_desc(structure.direction)}"
                 f" current price; got {level.level_type} at {level.price}.",
             )
         return level.price
@@ -239,7 +255,7 @@ class TradeGeometryCalculator:
                     inputs,
                     "INVALID_STRUCTURE",
                     f"Stop anchor for {structure.direction} must be a"
-                    f" {'SUPPORT below' if structure.direction == 'LONG' else 'RESISTANCE above'}"
+                    f" {_profit_side_desc(structure.direction)}"
                     f" entry; got {level.level_type} at {level.price}.",
                 )
             buffer = SL_LEVEL_BUFFER_ATR * atr
@@ -258,8 +274,7 @@ class TradeGeometryCalculator:
             return self._reject(
                 inputs,
                 "INVALID_STRUCTURE",
-                "Stop anchor missing: provide stop_level_index or"
-                " stop_atr_multiplier.",
+                "Stop anchor missing: provide stop_level_index or stop_atr_multiplier.",
             )
 
         min_distance = self._min_stop_distance(entry, atr)
@@ -317,8 +332,8 @@ class TradeGeometryCalculator:
                 "no structural level reaches min R:R; extended to ATR target"
             )
         else:
-            atr_multiple = Decimal(2) if structure.target_style == "ATR_2X" else (
-                Decimal(3)
+            atr_multiple = (
+                Decimal(2) if structure.target_style == "ATR_2X" else (Decimal(3))
             )
             candidate = atr_multiple * atr
             if candidate >= required:
@@ -355,9 +370,7 @@ class TradeGeometryCalculator:
         return liquidation_distance * (1 - self._config.liquidation_sl_buffer_ratio)
 
     @staticmethod
-    def _level_at(
-        inputs: GeometryInputsSchema, index: int
-    ) -> KeyLevelSchema | None:
+    def _level_at(inputs: GeometryInputsSchema, index: int) -> KeyLevelSchema | None:
         if 0 <= index < len(inputs.key_levels):
             return inputs.key_levels[index]
         return None

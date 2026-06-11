@@ -9,6 +9,10 @@ import pytest
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.agent.router import PipelineResult
+from kavzi_trader.brain.confluence_thresholds import (
+    CONFLUENCE_ENTER_MIN,
+    CONFLUENCE_REJECT_MAX,
+)
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema, KeyLevelsSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
@@ -19,12 +23,9 @@ from kavzi_trader.brain.schemas.dependencies import (
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
-from kavzi_trader.orchestrator.loops.confluence_thresholds import (
-    CONFLUENCE_ENTER_MIN,
-    CONFLUENCE_REJECT_MAX,
-)
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
+from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
@@ -46,9 +47,35 @@ _ANALYST_REASONING = (
 )
 _TRADER_REASONING = (
     "Agree with Analyst direction LONG. Confluence score 4/6 with EMA alignment and"
-    " volume supporting. Entry at 105 near current price, SL at 95 below key support,"
-    " TP at 125 at next resistance. R:R is 2.0:1 which meets minimum threshold."
+    " volume supporting. Entry immediate near current price, ATR stop below key"
+    " support, conservative ATR target. R:R meets the minimum threshold."
 )
+
+# Geometry the router would compute for the LONG decision below: entry 105,
+# 1 ATR stop (95), 2x ATR target (125) → R:R 2.0. Threaded into PipelineResult
+# for tests that exercise the enqueue path.
+_LONG_GEOMETRY = TradeGeometrySchema(
+    entry=Decimal(105),
+    stop_loss=Decimal(95),
+    take_profit=Decimal(125),
+    rr_ratio=Decimal(2),
+    sl_atr_multiple=Decimal(5),
+    adjustments=[],
+)
+
+
+def _long_trader_decision() -> TradeDecisionSchema:
+    """Actionable LONG decision in the structure-based Trader contract."""
+    return TradeDecisionSchema(
+        action="LONG",
+        confidence=0.8,
+        reasoning=_TRADER_REASONING,
+        entry_tactic="IMMEDIATE",
+        entry_level_index=None,
+        stop_level_index=None,
+        stop_atr_multiplier=Decimal("1.0"),
+        target_style="ATR_2X",
+    )
 
 
 class DummyDepsProvider:
@@ -200,14 +227,8 @@ async def test_reasoning_loop_enqueues_decision() -> None:
                 key_levels=KeyLevelsSchema(levels=[]),
                 reasoning=_ANALYST_REASONING,
             ),
-            trader=TradeDecisionSchema(
-                action="LONG",
-                confidence=0.8,
-                reasoning=_TRADER_REASONING,
-                suggested_entry=Decimal(105),
-                suggested_stop_loss=Decimal(95),
-                suggested_take_profit=Decimal(125),
-            ),
+            trader=_long_trader_decision(),
+            geometry=_LONG_GEOMETRY,
             trader_deps=deps,
         ),
     )
@@ -252,14 +273,8 @@ async def test_decision_message_includes_leverage() -> None:
                 key_levels=KeyLevelsSchema(levels=[]),
                 reasoning=_ANALYST_REASONING,
             ),
-            trader=TradeDecisionSchema(
-                action="LONG",
-                confidence=0.8,
-                reasoning=_TRADER_REASONING,
-                suggested_entry=Decimal(105),
-                suggested_stop_loss=Decimal(95),
-                suggested_take_profit=Decimal(125),
-            ),
+            trader=_long_trader_decision(),
+            geometry=_LONG_GEOMETRY,
             trader_deps=deps,
         ),
     )
@@ -762,14 +777,8 @@ def test_should_enqueue_requires_confluence_entry_gate() -> None:
             direction="LONG",
             confluence_score=4,
         ),
-        trader=TradeDecisionSchema(
-            action="LONG",
-            confidence=0.8,
-            reasoning=_TRADER_REASONING,
-            suggested_entry=Decimal(105),
-            suggested_stop_loss=Decimal(95),
-            suggested_take_profit=Decimal(125),
-        ),
+        trader=_long_trader_decision(),
+        geometry=_LONG_GEOMETRY,
         trader_deps=deps,
     )
     assert loop._should_enqueue(borderline) is False
@@ -829,14 +838,8 @@ def test_should_enqueue_gated_by_regime_specific_min(
             direction="LONG",
             confluence_score=score,
         ),
-        trader=TradeDecisionSchema(
-            action="LONG",
-            confidence=0.8,
-            reasoning=_TRADER_REASONING,
-            suggested_entry=Decimal(105),
-            suggested_stop_loss=Decimal(95),
-            suggested_take_profit=Decimal(125),
-        ),
+        trader=_long_trader_decision(),
+        geometry=_LONG_GEOMETRY,
         trader_deps=deps,
     )
     assert loop._should_enqueue(result) is expected_enqueue
@@ -893,14 +896,8 @@ def _make_trade_result() -> PipelineResult:
             key_levels=KeyLevelsSchema(levels=[]),
             reasoning=_ANALYST_REASONING,
         ),
-        trader=TradeDecisionSchema(
-            action="LONG",
-            confidence=0.8,
-            reasoning=_TRADER_REASONING,
-            suggested_entry=Decimal(105),
-            suggested_stop_loss=Decimal(95),
-            suggested_take_profit=Decimal(125),
-        ),
+        trader=_long_trader_decision(),
+        geometry=_LONG_GEOMETRY,
         trader_deps=deps,
     )
 
@@ -1175,9 +1172,6 @@ def _make_wait_result(
             action="WAIT",
             confidence=0.5,
             reasoning=_TRADER_REASONING,
-            suggested_entry=None,
-            suggested_stop_loss=None,
-            suggested_take_profit=None,
         ),
     )
 
@@ -1343,14 +1337,8 @@ def test_should_enqueue_blocks_confluence_score_five_after_wu6() -> None:
             direction="LONG",
             confluence_score=5,
         ),
-        trader=TradeDecisionSchema(
-            action="LONG",
-            confidence=0.8,
-            reasoning=_TRADER_REASONING,
-            suggested_entry=Decimal(105),
-            suggested_stop_loss=Decimal(95),
-            suggested_take_profit=Decimal(125),
-        ),
+        trader=_long_trader_decision(),
+        geometry=_LONG_GEOMETRY,
         trader_deps=deps,
     )
     assert loop._should_enqueue(result) is False

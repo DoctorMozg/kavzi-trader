@@ -10,12 +10,49 @@ from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
+from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
 )
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.schemas import AccountStateSchema
+
+_LONG_GEOMETRY = TradeGeometrySchema(
+    entry=Decimal(105),
+    stop_loss=Decimal(95),
+    take_profit=Decimal(125),
+    rr_ratio=Decimal(2),
+    sl_atr_multiple=Decimal(5),
+    adjustments=[],
+)
+
+
+def _long_decision() -> TradeDecisionSchema:
+    return TradeDecisionSchema(
+        action="LONG",
+        confidence=0.8,
+        reasoning=_VALID_REASONING,
+        entry_tactic="IMMEDIATE",
+        entry_level_index=None,
+        stop_level_index=None,
+        stop_atr_multiplier=Decimal("1.5"),
+        target_style="ATR_2X",
+    )
+
+
+def _short_decision() -> TradeDecisionSchema:
+    return TradeDecisionSchema(
+        action="SHORT",
+        confidence=0.6,
+        reasoning=_VALID_REASONING,
+        entry_tactic="IMMEDIATE",
+        entry_level_index=None,
+        stop_level_index=None,
+        stop_atr_multiplier=Decimal("1.5"),
+        target_style="ATR_2X",
+    )
+
 
 _VALID_REASONING = (
     "Strong multi-factor setup with EMAs aligned, RSI neutral-bullish, and volume"
@@ -118,84 +155,75 @@ def _build_loop(router: MagicMock) -> ReasoningLoop:
 
 def test_build_decision_message_valid_long_returns_schema() -> None:
     deps = _build_deps()
-    trader = TradeDecisionSchema(
-        action="LONG",
-        confidence=0.8,
-        reasoning=_VALID_REASONING,
-        suggested_entry=Decimal(105),
-        suggested_stop_loss=Decimal(95),
-        suggested_take_profit=Decimal(125),
-    )
+    trader = _long_decision()
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._build_decision_message(trader, deps, snapshot_at_ms=1_000)
+    message = loop._build_decision_message(
+        trader, deps, snapshot_at_ms=1_000, geometry=_LONG_GEOMETRY
+    )
 
     assert message is not None
     assert message.action == "LONG"
+    # Prices come from the computed geometry, not the trader decision.
+    assert message.entry_price == _LONG_GEOMETRY.entry
+    assert message.stop_loss == _LONG_GEOMETRY.stop_loss
+    assert message.take_profit == _LONG_GEOMETRY.take_profit
     # Risk validator computes the actual size; we must NOT prefill a zero
     # quantity that the translator would sniff and accept as valid.
     assert message.quantity is None
     router.record_trader_validation_failure.assert_not_called()
 
 
-def test_build_decision_message_rejects_long_missing_stop() -> None:
+def test_build_decision_message_rejects_long_without_geometry() -> None:
+    # The router computes geometry for every actionable decision it emits;
+    # a LONG arriving here without geometry signals a pipeline defect, so the
+    # boundary guard rejects it and trips the Trader circuit breaker.
     deps = _build_deps()
-    # model_construct bypasses TradeDecisionSchema validation so we can
-    # simulate a malformed upstream output slipping past the schema — the
-    # boundary guard in ReasoningLoop must still reject it.
-    trader = TradeDecisionSchema.model_construct(
-        action="LONG",
-        confidence=0.8,
-        reasoning=_VALID_REASONING,
-        suggested_entry=Decimal(105),
-        suggested_stop_loss=None,
-        suggested_take_profit=Decimal(125),
-    )
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._build_decision_message(trader, deps, snapshot_at_ms=1_000)
+    message = loop._build_decision_message(
+        _long_decision(), deps, snapshot_at_ms=1_000, geometry=None
+    )
 
     assert message is None
     router.record_trader_validation_failure.assert_called_once_with("BTCUSDT")
 
 
-def test_build_decision_message_rejects_short_missing_take_profit() -> None:
+def test_build_decision_message_rejects_short_without_geometry() -> None:
     deps = _build_deps()
-    trader = TradeDecisionSchema.model_construct(
-        action="SHORT",
-        confidence=0.6,
-        reasoning=_VALID_REASONING,
-        suggested_entry=Decimal(105),
-        suggested_stop_loss=Decimal(115),
-        suggested_take_profit=None,
-    )
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._build_decision_message(trader, deps, snapshot_at_ms=1_000)
+    message = loop._build_decision_message(
+        _short_decision(), deps, snapshot_at_ms=1_000, geometry=None
+    )
 
     assert message is None
     router.record_trader_validation_failure.assert_called_once_with("BTCUSDT")
 
 
 def test_build_decision_message_close_allows_missing_geometry() -> None:
-    # CLOSE decisions legitimately carry no entry/stop/tp geometry and must
-    # not be treated as malformed.
+    # CLOSE decisions legitimately carry no geometry and must not be treated
+    # as malformed; prices fall back to current price.
     deps = _build_deps()
-    trader = TradeDecisionSchema.model_construct(
+    trader = TradeDecisionSchema(
         action="CLOSE",
         confidence=0.9,
         reasoning=_VALID_REASONING,
-        suggested_entry=None,
-        suggested_stop_loss=None,
-        suggested_take_profit=None,
+        entry_tactic=None,
+        entry_level_index=None,
+        stop_level_index=None,
+        stop_atr_multiplier=None,
+        target_style=None,
     )
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._build_decision_message(trader, deps, snapshot_at_ms=1_000)
+    message = loop._build_decision_message(
+        trader, deps, snapshot_at_ms=1_000, geometry=None
+    )
 
     assert message is not None
     assert message.action == "CLOSE"

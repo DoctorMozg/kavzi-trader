@@ -76,9 +76,6 @@ class _Trader:
             action="WAIT",
             confidence=0.1,
             reasoning=_TRADER_REASONING,
-            suggested_entry=None,
-            suggested_stop_loss=None,
-            suggested_take_profit=None,
         )
 
 

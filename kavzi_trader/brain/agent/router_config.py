@@ -37,32 +37,6 @@ class RouterConfigSchema(BaseModel):
         ),
     ] = Decimal("-0.20")
 
-    rr_min_prescreen: Annotated[
-        Decimal,
-        Field(
-            description=(
-                "Warn when estimated R/R falls below this pre-screen "
-                "threshold but still forward the setup to the Trader "
-                "LLM. The Analyst's key-level geometry can "
-                "under-represent reward, so we let the Trader make the "
-                "final call with full context."
-            ),
-        ),
-    ] = Decimal("1.2")
-
-    rr_hard_block: Annotated[
-        Decimal,
-        Field(
-            description=(
-                "Skip the Trader LLM entirely when estimated R/R is "
-                "below this floor. Geometry is statistically guaranteed "
-                "to lose at current TP-hit rates, so the call is "
-                "elided to conserve budget (see "
-                "reports/report_2026_04_10.md recommendation #6)."
-            ),
-        ),
-    ] = Decimal("0.5")
-
     body_preview_chars: Annotated[
         int,
         Field(

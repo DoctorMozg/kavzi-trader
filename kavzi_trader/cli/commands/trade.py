@@ -49,6 +49,7 @@ from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.paper.exchange import PaperExchangeClient
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.engine import ExecutionEngine
+from kavzi_trader.spine.execution.geometry import TradeGeometryCalculator
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
@@ -323,6 +324,7 @@ async def _start_orchestrator(
         scout,
         analyst,
         trader,
+        geometry_calculator=TradeGeometryCalculator(app_config.risk),
         confluence_override=fgi_gate,
         analyst_concurrency_limit=app_config.brain.analyst_concurrency_limit,
     )

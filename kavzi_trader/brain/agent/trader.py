@@ -47,13 +47,16 @@ class TraderAgent:
         output = cast("TradeDecisionSchema", result.output)
         logger.info(
             "Trader result for %s: action=%s confidence=%.2f "
-            "entry=%s SL=%s TP=%s elapsed_ms=%.1f",
+            "entry_tactic=%s entry_idx=%s stop_idx=%s stop_atr=%s "
+            "target=%s elapsed_ms=%.1f",
             deps.symbol,
             output.action,
             output.confidence,
-            output.suggested_entry,
-            output.suggested_stop_loss,
-            output.suggested_take_profit,
+            output.entry_tactic,
+            output.entry_level_index,
+            output.stop_level_index,
+            output.stop_atr_multiplier,
+            output.target_style,
             elapsed_ms,
             extra={"symbol": deps.symbol, "elapsed_ms": round(elapsed_ms, 1)},
         )

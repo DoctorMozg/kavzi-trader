@@ -80,20 +80,20 @@ class TestImmediateAtrGeometry:
         self, calc: TradeGeometryCalculator
     ) -> None:
         geometry = _expect_geometry(calc.compute(_structure(), _inputs()))
-        assert geometry.entry == Decimal("100")
-        assert geometry.stop_loss == Decimal("99")
-        assert geometry.take_profit == Decimal("102")
-        assert geometry.rr_ratio == Decimal("2")
+        assert geometry.entry == Decimal(100)
+        assert geometry.stop_loss == Decimal(99)
+        assert geometry.take_profit == Decimal(102)
+        assert geometry.rr_ratio == Decimal(2)
         assert geometry.adjustments == []
 
     def test_short_mirrors_long(self, calc: TradeGeometryCalculator) -> None:
         geometry = _expect_geometry(
             calc.compute(_structure(direction="SHORT"), _inputs())
         )
-        assert geometry.entry == Decimal("100")
-        assert geometry.stop_loss == Decimal("101")
-        assert geometry.take_profit == Decimal("98")
-        assert geometry.rr_ratio == Decimal("2")
+        assert geometry.entry == Decimal(100)
+        assert geometry.stop_loss == Decimal(101)
+        assert geometry.take_profit == Decimal(98)
+        assert geometry.rr_ratio == Decimal(2)
 
     def test_wide_stop_extends_target_to_exact_min_rr(
         self, calc: TradeGeometryCalculator
@@ -103,7 +103,7 @@ class TestImmediateAtrGeometry:
         )
         assert geometry.stop_loss == Decimal("98.5")
         assert geometry.take_profit == Decimal("103.0")
-        assert geometry.rr_ratio == Decimal("2")
+        assert geometry.rr_ratio == Decimal(2)
         assert any("extended" in note for note in geometry.adjustments)
 
     def test_stop_too_wide_for_realistic_target_rejected(
@@ -118,18 +118,14 @@ class TestImmediateAtrGeometry:
         geometry = _expect_geometry(
             calc.compute(_structure(target_style="ATR_3X"), _inputs())
         )
-        assert geometry.take_profit == Decimal("103")
-        assert geometry.rr_ratio == Decimal("3")
+        assert geometry.take_profit == Decimal(103)
+        assert geometry.rr_ratio == Decimal(3)
 
-    def test_multiplier_below_min_rejected(
-        self, calc: TradeGeometryCalculator
-    ) -> None:
+    def test_multiplier_below_min_rejected(self, calc: TradeGeometryCalculator) -> None:
         result = calc.compute(_structure(stop_atr_multiplier="0.3"), _inputs())
         _expect_rejection(result, "INVALID_STRUCTURE")
 
-    def test_missing_stop_anchor_rejected(
-        self, calc: TradeGeometryCalculator
-    ) -> None:
+    def test_missing_stop_anchor_rejected(self, calc: TradeGeometryCalculator) -> None:
         result = calc.compute(_structure(stop_atr_multiplier=None), _inputs())
         _expect_rejection(result, "INVALID_STRUCTURE")
 
@@ -149,8 +145,8 @@ class TestStructuralTargets:
                 _inputs(levels=levels),
             )
         )
-        assert geometry.take_profit == Decimal("104")
-        assert geometry.rr_ratio == Decimal("4")
+        assert geometry.take_profit == Decimal(104)
+        assert geometry.rr_ratio == Decimal(4)
 
     def test_no_qualifying_level_falls_back_to_extension(
         self, calc: TradeGeometryCalculator
@@ -162,8 +158,8 @@ class TestStructuralTargets:
                 _inputs(levels=levels),
             )
         )
-        assert geometry.take_profit == Decimal("102")
-        assert geometry.rr_ratio == Decimal("2")
+        assert geometry.take_profit == Decimal(102)
+        assert geometry.rr_ratio == Decimal(2)
         assert any("extended" in note for note in geometry.adjustments)
 
     def test_short_structural_support_target(
@@ -176,7 +172,7 @@ class TestStructuralTargets:
                 _inputs(levels=levels),
             )
         )
-        assert geometry.take_profit == Decimal("96")
+        assert geometry.take_profit == Decimal(96)
 
     def test_wrong_side_levels_ignored_for_targets(
         self, calc: TradeGeometryCalculator
@@ -189,7 +185,7 @@ class TestStructuralTargets:
             )
         )
         # Support below entry is not a LONG target; extension applies.
-        assert geometry.take_profit == Decimal("102")
+        assert geometry.take_profit == Decimal(102)
 
 
 class TestLevelAnchoredStops:
@@ -204,7 +200,7 @@ class TestLevelAnchoredStops:
             )
         )
         assert geometry.stop_loss == Decimal("98.9")
-        assert geometry.rr_ratio == Decimal("2")
+        assert geometry.rr_ratio == Decimal(2)
         assert geometry.take_profit == Decimal("102.2")
 
     def test_anchor_too_far_rejected(self, calc: TradeGeometryCalculator) -> None:
@@ -228,9 +224,7 @@ class TestLevelAnchoredStops:
         assert geometry.stop_loss == Decimal("99.5")
         assert any("widened" in note for note in geometry.adjustments)
 
-    def test_anchor_wrong_type_rejected(
-        self, calc: TradeGeometryCalculator
-    ) -> None:
+    def test_anchor_wrong_type_rejected(self, calc: TradeGeometryCalculator) -> None:
         levels = [_level("99", "RESISTANCE")]
         result = calc.compute(
             _structure(stop_level_index=0, stop_atr_multiplier=None),
@@ -253,19 +247,15 @@ class TestPullbackEntries:
         levels = [_level("99", "SUPPORT")]
         geometry = _expect_geometry(
             calc.compute(
-                _structure(
-                    entry_tactic="PULLBACK_TO_LEVEL", entry_level_index=0
-                ),
+                _structure(entry_tactic="PULLBACK_TO_LEVEL", entry_level_index=0),
                 _inputs(levels=levels),
             )
         )
-        assert geometry.entry == Decimal("99")
-        assert geometry.stop_loss == Decimal("98")
-        assert geometry.take_profit == Decimal("101")
+        assert geometry.entry == Decimal(99)
+        assert geometry.stop_loss == Decimal(98)
+        assert geometry.take_profit == Decimal(101)
 
-    def test_short_pullback_to_resistance(
-        self, calc: TradeGeometryCalculator
-    ) -> None:
+    def test_short_pullback_to_resistance(self, calc: TradeGeometryCalculator) -> None:
         levels = [_level("101", "RESISTANCE")]
         geometry = _expect_geometry(
             calc.compute(
@@ -277,9 +267,9 @@ class TestPullbackEntries:
                 _inputs(levels=levels),
             )
         )
-        assert geometry.entry == Decimal("101")
-        assert geometry.stop_loss == Decimal("102")
-        assert geometry.take_profit == Decimal("99")
+        assert geometry.entry == Decimal(101)
+        assert geometry.stop_loss == Decimal(102)
+        assert geometry.take_profit == Decimal(99)
 
     def test_pullback_without_index_rejected(
         self, calc: TradeGeometryCalculator
@@ -322,24 +312,20 @@ class TestLiquidationBudget:
         )
         _expect_rejection(result, "SL_BEYOND_LIQUIDATION")
 
-    def test_stop_within_budget_accepted(
-        self, calc: TradeGeometryCalculator
-    ) -> None:
+    def test_stop_within_budget_accepted(self, calc: TradeGeometryCalculator) -> None:
         geometry = _expect_geometry(
             calc.compute(
                 _structure(stop_atr_multiplier="1.5"),
                 _inputs(leverage=50),
             )
         )
-        assert geometry.rr_ratio == Decimal("2")
+        assert geometry.rr_ratio == Decimal(2)
 
     def test_default_leverage_skips_liquidation_check(
         self, calc: TradeGeometryCalculator
     ) -> None:
-        geometry = _expect_geometry(
-            calc.compute(_structure(), _inputs(leverage=5))
-        )
-        assert geometry.stop_loss == Decimal("99")
+        geometry = _expect_geometry(calc.compute(_structure(), _inputs(leverage=5)))
+        assert geometry.stop_loss == Decimal(99)
 
 
 class TestPercentFloor:
@@ -358,18 +344,16 @@ class TestPercentFloor:
         geometry = _expect_geometry(calc.compute(_structure(), _inputs(atr="0.1")))
         assert geometry.stop_loss == Decimal("99.85")
         assert geometry.take_profit == Decimal("100.30")
-        assert geometry.rr_ratio == Decimal("2")
+        assert geometry.rr_ratio == Decimal(2)
 
 
 class TestEstimate:
     def test_normal_conditions_viable(self, calc: TradeGeometryCalculator) -> None:
         viability = calc.estimate("LONG", _inputs())
         assert viability.viable
-        assert viability.best_rr == Decimal("6")
+        assert viability.best_rr == Decimal(6)
 
-    def test_compressed_atr_not_viable(
-        self, calc: TradeGeometryCalculator
-    ) -> None:
+    def test_compressed_atr_not_viable(self, calc: TradeGeometryCalculator) -> None:
         viability = calc.estimate("LONG", _inputs(atr="0.04"))
         assert not viability.viable
         assert viability.reason is not None
@@ -378,20 +362,14 @@ class TestEstimate:
     def test_far_structural_level_raises_best_rr(
         self, calc: TradeGeometryCalculator
     ) -> None:
-        viability = calc.estimate(
-            "LONG", _inputs(levels=[_level("110", "RESISTANCE")])
-        )
+        viability = calc.estimate("LONG", _inputs(levels=[_level("110", "RESISTANCE")]))
         assert viability.viable
-        assert viability.best_rr == Decimal("20")
+        assert viability.best_rr == Decimal(20)
 
-    def test_short_uses_supports_below(
-        self, calc: TradeGeometryCalculator
-    ) -> None:
-        viability = calc.estimate(
-            "SHORT", _inputs(levels=[_level("90", "SUPPORT")])
-        )
+    def test_short_uses_supports_below(self, calc: TradeGeometryCalculator) -> None:
+        viability = calc.estimate("SHORT", _inputs(levels=[_level("90", "SUPPORT")]))
         assert viability.viable
-        assert viability.best_rr == Decimal("20")
+        assert viability.best_rr == Decimal(20)
 
     def test_leverage_budget_blocks_min_stop(
         self, calc: TradeGeometryCalculator

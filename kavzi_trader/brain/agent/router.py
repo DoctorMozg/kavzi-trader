@@ -1,6 +1,5 @@
 import logging
 import time
-from decimal import Decimal
 from typing import Protocol
 
 import httpx
@@ -26,6 +25,9 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+from kavzi_trader.spine.execution.geometry import TradeGeometryCalculator
+from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
+from kavzi_trader.spine.risk.config import RiskConfigSchema
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +66,7 @@ class DependenciesProvider(Protocol):
 
 
 class PipelineResult:
-    __slots__ = ("analyst", "scout", "trader", "trader_deps")
+    __slots__ = ("analyst", "geometry", "scout", "trader", "trader_deps")
 
     def __init__(
         self,
@@ -72,11 +74,13 @@ class PipelineResult:
         analyst: AnalystDecisionSchema | None = None,
         trader: TradeDecisionSchema | None = None,
         trader_deps: TradingDependenciesSchema | None = None,
+        geometry: TradeGeometrySchema | None = None,
     ) -> None:
         self.scout = scout
         self.analyst = analyst
         self.trader = trader
         self.trader_deps = trader_deps
+        self.geometry = geometry
 
 
 # Minimum algorithm confluence to escalate to the Analyst LLM. The Analyst
@@ -234,6 +238,7 @@ class AgentRouter:
         trader_circuit_threshold: int = _DEFAULT_TRADER_CIRCUIT_THRESHOLD,
         analyst_concurrency_limit: int = _DEFAULT_ANALYST_CONCURRENCY_LIMIT,
         *,
+        geometry_calculator: TradeGeometryCalculator | None = None,
         router_config: RouterConfigSchema | None = None,
     ) -> None:
         self._scout = scout
@@ -243,6 +248,13 @@ class AgentRouter:
             threshold=trader_circuit_threshold,
         )
         self._router_config = router_config or RouterConfigSchema()
+        # Geometry computation is an injected collaborator. When omitted it
+        # defaults to one built from the default risk config; production
+        # injects app_config.risk so the calculator honours configured
+        # leverage and stop bounds.
+        self._geometry = geometry_calculator or TradeGeometryCalculator(
+            RiskConfigSchema()
+        )
         # Per-symbol bar-close dedup for Scout / Analyst / Trader tiers.
         # Scout is deterministic (safe to cache INTERESTING and SKIP within
         # the same candle); Analyst is LLM-based; Trader is keyed by the
@@ -270,15 +282,17 @@ class AgentRouter:
         )
         # Trader stage orchestrator — owns the circuit-breaker short-
         # circuit, 3-tuple dedup, deterministic pre-trade gates
-        # (breakout %B, R/R), LLM invocation with timeout /
-        # UnexpectedModelBehavior / generic-exception fallbacks, and the
-        # post-success cache + failure-counter reset.
+        # (breakout %B, geometry viability), LLM invocation with timeout /
+        # UnexpectedModelBehavior / generic-exception fallbacks, the
+        # geometry-derivation step, and the post-success cache +
+        # failure-counter reset.
         self._trader_pipeline = TraderPipeline(
             trader=self._trader,
             dedup=self._dedup,
             circuit_breaker=self._circuit_breaker,
             router_config=self._router_config,
             log_llm_exception=self._log_llm_exception,
+            geometry=self._geometry,
         )
 
     @property
@@ -366,9 +380,9 @@ class AgentRouter:
         )
 
     # ------------------------------------------------------------------
-    # Back-compat shims: tests call the pre-trade gate and R/R estimator
-    # directly on the router. The authoritative implementations now live
-    # in ``TraderPipeline``; these delegators preserve the public surface
+    # Back-compat shim: tests call the breakout pre-trade gate directly on
+    # the router. The authoritative implementation now lives in
+    # ``TraderPipeline``; this delegator preserves the public surface
     # without a second code path.
     # ------------------------------------------------------------------
 
@@ -386,19 +400,6 @@ class AgentRouter:
             deps,
             analyst_direction=analyst_direction,
         )
-
-    def _pre_trader_rr_check(
-        self,
-        symbol: str,
-        analyst_result: AnalystDecisionSchema,
-        current_price: Decimal,
-        atr: Decimal | None,
-    ) -> TradeDecisionSchema | None:
-        return self._trader_pipeline.pre_trader_rr_check(
-            symbol, analyst_result, current_price, atr
-        )
-
-    _estimate_rr = staticmethod(TraderPipeline.estimate_rr)
 
     async def run(
         self,
@@ -450,6 +451,7 @@ class AgentRouter:
             analyst=analyst_decision,
             trader=trader_run.decision,
             trader_deps=trader_run.deps,
+            geometry=trader_run.geometry,
         )
 
     @staticmethod

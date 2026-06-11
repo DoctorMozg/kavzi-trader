@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,11 @@ class TraderDedupEntry(BaseModel):
     bar_close: datetime
     analyst_hash: str
     decision: TradeDecisionSchema
+    # Concrete prices derived for actionable (LONG/SHORT) decisions. None for
+    # WAIT/CLOSE and for gate/circuit WAITs, which carry no geometry. Cached
+    # so a same-bar dedup hit on an actionable decision still reaches
+    # execution with entry/SL/TP instead of recomputing.
+    geometry: TradeGeometrySchema | None = None
     model_config = ConfigDict(frozen=True)
 
 
@@ -121,9 +127,12 @@ class DecisionDeduplicator:
         symbol: str,
         analyst_hash: str,
         bar_close: datetime,
-    ) -> TradeDecisionSchema | None:
-        """Return the cached Trader decision for (symbol, analyst_hash,
+    ) -> TraderDedupEntry | None:
+        """Return the cached Trader entry for (symbol, analyst_hash,
         bar_close) if still valid; otherwise None.
+
+        Returns the whole entry (not just the decision) so callers can
+        recover the cached geometry alongside the decision on a hit.
 
         Invariant: the cache key is the 3-tuple (symbol, bar_close,
         analyst_hash). All three must match for a hit. Changing the
@@ -138,7 +147,7 @@ class DecisionDeduplicator:
             or entry.bar_close != bar_close
         ):
             return None
-        return entry.decision
+        return entry
 
     def cache_trader(
         self,
@@ -146,10 +155,12 @@ class DecisionDeduplicator:
         analyst_hash: str,
         bar_close: datetime,
         decision: TradeDecisionSchema,
+        geometry: TradeGeometrySchema | None = None,
     ) -> None:
         """Single write path for the Trader dedup cache."""
         self._trader[symbol] = TraderDedupEntry(
             bar_close=bar_close,
             analyst_hash=analyst_hash,
             decision=decision,
+            geometry=geometry,
         )
