@@ -1,6 +1,7 @@
 """Progressive idle-ramp tests for ReasoningLoop.
 
-Verifies the staircase (3 -> 240s, 5 -> 480s, 8 -> 720s) and that an
+Verifies the staircase (3 -> 240s, 5 -> 480s, 8 -> 720s) where stairs
+exceeding the 450s cap are clamped (480 -> 450, 720 -> 450), and that an
 INTERESTING cycle fully resets the counter back to the base interval.
 """
 
@@ -98,10 +99,10 @@ async def test_idle_5_cycles_sleeps_480s(skip_result: PipelineResult) -> None:
     sleeps: list[float] = []
     await _run_until_sleeps(loop, sleeps, target_sleep_count=5)
 
-    # Stairs at idle counts 3, 5, 8 -> 240, 480, 720.
+    # Stair at 5 idle cycles: sleep_s=480 capped to max_idle_sleep_s=450.
     assert sleeps[2] == 240.0
     assert sleeps[3] == 240.0
-    assert sleeps[4] == 480.0
+    assert sleeps[4] == 450.0
 
 
 @pytest.mark.asyncio
@@ -113,10 +114,11 @@ async def test_idle_8_cycles_sleeps_720s(skip_result: PipelineResult) -> None:
     sleeps: list[float] = []
     await _run_until_sleeps(loop, sleeps, target_sleep_count=8)
 
-    assert sleeps[4] == 480.0
-    assert sleeps[5] == 480.0
-    assert sleeps[6] == 480.0
-    assert sleeps[7] == 720.0
+    # Both stair 2 (480s) and stair 3 (720s) are capped to max_idle_sleep_s=450.
+    assert sleeps[4] == 450.0
+    assert sleeps[5] == 450.0
+    assert sleeps[6] == 450.0
+    assert sleeps[7] == 450.0
 
 
 @pytest.mark.asyncio

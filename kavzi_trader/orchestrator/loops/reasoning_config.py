@@ -79,6 +79,20 @@ class ReasoningLoopConfigSchema(BaseModel):
         ),
     ] = _DEFAULT_IDLE_RAMP_STAIRS
 
+    max_idle_sleep_s: Annotated[
+        int,
+        Field(
+            ge=1,
+            description=(
+                "Hard ceiling on idle-ramp sleep regardless of stair depth. "
+                "Set to half the candle interval (450s for 15m bars) so the "
+                "loop always wakes at least twice per bar, preventing it from "
+                "sleeping through an entire candle's evaluation window when "
+                "the market transitions from quiet to active mid-stair."
+            ),
+        ),
+    ] = 450
+
     borderline_cooldown_cycles: Annotated[
         int,
         Field(

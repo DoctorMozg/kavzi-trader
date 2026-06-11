@@ -180,7 +180,8 @@ class ReasoningLoop:
         self._consecutive_idle_cycles += 1
         for index, stair in enumerate(self._reasoning_config.idle_ramp_stairs):
             if self._consecutive_idle_cycles >= stair.min_idle_cycles:
-                return float(stair.sleep_s), index
+                capped = min(stair.sleep_s, self._reasoning_config.max_idle_sleep_s)
+                return float(capped), index
         return float(self._interval_s), None
 
     async def _fetch_cycle_positions(self) -> list[PositionSchema]:

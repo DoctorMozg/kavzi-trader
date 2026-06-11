@@ -104,6 +104,12 @@ class ScoutPipeline:
 
         # Scout bar-close dedup: deterministic filter produces the same
         # verdict for the same candle, so cache both INTERESTING and SKIP.
+        #
+        # Key = last-closed candle's close_time. The in-progress bar is never
+        # appended to the deque (only is_closed=True events update it), so
+        # this key stays constant for the entire duration of the current
+        # open bar — correctly suppressing redundant re-evaluations until a
+        # new closed bar arrives and advances the key.
         current_scout_bar = scout_deps.recent_candles[-1].close_time
         cached_scout = self._dedup.scout_hit(symbol, current_scout_bar)
         if cached_scout is not None:

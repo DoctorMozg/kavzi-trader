@@ -143,12 +143,20 @@ class AnalystPipeline:
         conf = deps.algorithm_confluence
         max_algo = max(conf.long.score, conf.short.score)
         if max_algo < self._min_algo_confluence:
+            dominant_side = "LONG" if conf.long.score >= conf.short.score else "SHORT"
             logger.info(
                 "Analyst skipped for %s: max algorithm confluence %d < %d"
                 " — insufficient for valid setup even with LLM bonus",
                 symbol,
                 max_algo,
                 self._min_algo_confluence,
+                extra={
+                    "symbol": symbol,
+                    "agent": "analyst",
+                    "long_confluence": conf.long.score,
+                    "short_confluence": conf.short.score,
+                    "dominant_confluence_side": dominant_side,
+                },
             )
             synthetic = AnalystDecisionSchema(
                 setup_valid=False,
