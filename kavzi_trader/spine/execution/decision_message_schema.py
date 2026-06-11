@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kavzi_trader.commons.trading_constants import MIN_RR_RATIO
+from kavzi_trader.spine.execution.geometry_schemas import EntryTactic
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
@@ -14,6 +15,9 @@ class DecisionMessageSchema(BaseModel):
     decision_id: Annotated[str, Field(...)]
     symbol: Annotated[str, Field(...)]
     action: Annotated[Literal["LONG", "SHORT", "CLOSE"], Field(...)]
+    # How the entry should be placed: IMMEDIATE fills at/near current price;
+    # PULLBACK_TO_LEVEL rests a limit at entry_price and may expire unfilled.
+    entry_tactic: Annotated[EntryTactic, Field(default="IMMEDIATE")]
     entry_price: Annotated[Decimal, Field(...)]
     stop_loss: Annotated[Decimal, Field(...)]
     take_profit: Annotated[Decimal, Field(...)]

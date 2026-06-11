@@ -681,6 +681,7 @@ class ReasoningLoop:
             decision_id=str(uuid4()),
             symbol=deps.symbol,
             action=typed_action,
+            entry_tactic=trader.entry_tactic or "IMMEDIATE",
             entry_price=entry_price,
             stop_loss=stop_loss,
             take_profit=take_profit,
