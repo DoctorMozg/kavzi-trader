@@ -28,7 +28,11 @@ from kavzi_trader.spine.risk.schemas import (
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import OpenOrderSchema, PositionSchema
+from kavzi_trader.spine.state.schemas import (
+    OpenOrderSchema,
+    PendingEntrySchema,
+    PositionSchema,
+)
 
 _REGIME_SEVERITY = [
     VolatilityRegime.LOW,
@@ -56,6 +60,7 @@ class ExecutionEngine:
         report_populator: TradeReportPopulator | None = None,
         volatility_detector: VolatilityRegimeDetector | None = None,
         liquidation_calculator: LiquidationCalculator | None = None,
+        pullback_entry_expiry_ms: int = 1_800_000,
     ) -> None:
         self._exchange = exchange
         self._state_manager = state_manager
@@ -68,6 +73,7 @@ class ExecutionEngine:
         self._report_populator = report_populator
         self._volatility_detector = volatility_detector
         self._liquidation_calculator = liquidation_calculator
+        self._pullback_entry_expiry_ms = pullback_entry_expiry_ms
 
     async def execute(self, decision: DecisionMessageSchema) -> ExecutionResultSchema:
         logger.info(
@@ -359,6 +365,22 @@ class ExecutionEngine:
                 needs_reconciliation=False,
             )
 
+        if decision.entry_tactic == "PULLBACK_TO_LEVEL":
+            # A pullback limit rests away from price; do NOT block the
+            # execution loop waiting on it. Register it for the async
+            # pending-entry sweep, which protects it on fill and cancels it
+            # on candle expiry.
+            await self._register_pending_entry(decision, order_response)
+            return ExecutionResultSchema(
+                decision_id=decision.decision_id,
+                order_id=str(order_response.order_id),
+                status="SUBMITTED",
+                executed_qty=order_response.executed_qty,
+                executed_price=None,
+                error_message=None,
+                needs_reconciliation=True,
+            )
+
         monitored = await self._monitor.wait_for_completion(
             symbol=decision.symbol,
             order_id=order_response.order_id,
@@ -383,6 +405,114 @@ class ExecutionEngine:
             executed_price=order_response.price,
             error_message=None,
             needs_reconciliation=True,
+        )
+
+    async def _register_pending_entry(
+        self,
+        decision: DecisionMessageSchema,
+        order_response: OrderResponseSchema,
+    ) -> None:
+        """Persist a resting pullback entry for the async sweep to manage."""
+        entry = PendingEntrySchema(
+            order_id=str(order_response.order_id),
+            symbol=decision.symbol,
+            decision_json=decision.model_dump_json(),
+            expires_at_ms=decision.created_at_ms + self._pullback_entry_expiry_ms,
+        )
+        try:
+            await self._state_manager.save_pending_entry(entry)
+        except Exception:
+            logger.exception(
+                "Failed to persist pending entry %s for %s; the resting limit "
+                "will rely on reconciliation instead",
+                entry.order_id,
+                decision.symbol,
+                extra={"decision_id": decision.decision_id},
+            )
+            return
+        logger.info(
+            "Registered pending PULLBACK entry %s for %s, expires_at_ms=%s",
+            entry.order_id,
+            decision.symbol,
+            entry.expires_at_ms,
+            extra={"decision_id": decision.decision_id, "symbol": decision.symbol},
+        )
+
+    async def process_pending_entries(self, now_ms: int) -> None:
+        """Sweep resting pullback entries: protect on fill, cancel on expiry.
+
+        Invoked periodically by the execution loop. Each entry is polled
+        independently so one bad order cannot stall the others.
+        """
+        entries = await self._state_manager.list_pending_entries()
+        for entry in entries:
+            try:
+                await self._process_pending_entry(entry, now_ms)
+            except Exception:
+                logger.exception(
+                    "Failed to process pending entry %s for %s",
+                    entry.order_id,
+                    entry.symbol,
+                )
+
+    async def _process_pending_entry(
+        self,
+        entry: PendingEntrySchema,
+        now_ms: int,
+    ) -> None:
+        order = await self._exchange.get_order(
+            symbol=entry.symbol,
+            order_id=int(entry.order_id),
+        )
+        if order.status == OrderStatus.FILLED:
+            decision = DecisionMessageSchema.model_validate_json(entry.decision_json)
+            await self._on_order_filled(decision, order)
+            await self._state_manager.remove_pending_entry(entry.order_id)
+            logger.info(
+                "Pending PULLBACK entry %s filled for %s; position opened",
+                entry.order_id,
+                entry.symbol,
+                extra={"symbol": entry.symbol},
+            )
+            return
+        if order.status == OrderStatus.NEW:
+            if now_ms >= entry.expires_at_ms:
+                await self._expire_pending_entry(entry)
+            return
+        if order.status == OrderStatus.PARTIALLY_FILLED:
+            # Leave partial fills alone: cancelling would orphan the filled
+            # portion unprotected. Let it fill fully or be handled by the
+            # reconciler on the next pass.
+            return
+        # Terminal non-filled status (CANCELED / EXPIRED / REJECTED): the
+        # order has left the book, so stop tracking it.
+        await self._state_manager.remove_pending_entry(entry.order_id)
+        logger.info(
+            "Pending entry %s for %s ended with status %s; dropped from tracking",
+            entry.order_id,
+            entry.symbol,
+            order.status.value,
+            extra={"symbol": entry.symbol},
+        )
+
+    async def _expire_pending_entry(self, entry: PendingEntrySchema) -> None:
+        try:
+            await self._exchange.cancel_order(
+                symbol=entry.symbol,
+                order_id=int(entry.order_id),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to cancel expired pending entry %s for %s",
+                entry.order_id,
+                entry.symbol,
+            )
+        await self._state_manager.remove_pending_entry(entry.order_id)
+        logger.info(
+            "Expired unfilled PULLBACK entry %s for %s and cancelled the limit",
+            entry.order_id,
+            entry.symbol,
+            extra={"symbol": entry.symbol},
         )
 
     async def _close_position(

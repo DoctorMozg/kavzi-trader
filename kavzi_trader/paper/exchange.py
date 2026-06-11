@@ -160,6 +160,25 @@ class PaperExchangeClient(BinanceClient):
                 reduce_only=reduce_only,
             )
 
+        if (
+            order_type == OrderType.LIMIT
+            and price is not None
+            and not reduce_only
+            and not await self._limit_is_marketable(symbol, side, price)
+        ):
+            # Entry limit resting away from price (e.g. a pullback): sits NEW
+            # until the ticker crosses it. The pending-entry sweep polls it.
+            return self._store_resting_limit(
+                order_id=order_id,
+                client_order_id=client_oid,
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                price=price,
+                time_in_force=time_in_force or TimeInForce.GTC,
+                now=now,
+            )
+
         fill_price = await self._resolve_fill_price(symbol, price)
         self._apply_balance_change(symbol, side, quantity, fill_price, reduce_only)
 
@@ -202,6 +221,109 @@ class PaperExchangeClient(BinanceClient):
 
         await self._sync_balance_to_store()
         return order
+
+    async def _limit_is_marketable(
+        self,
+        symbol: str,
+        side: OrderSide,
+        price: Decimal,
+    ) -> bool:
+        """True when a LIMIT can fill immediately against the current ticker.
+
+        A BUY fills now when the market is at or below its price; a SELL when
+        the market is at or above its price. Otherwise the limit rests.
+        """
+        ticker = await self.get_ticker(symbol)
+        if side == OrderSide.BUY:
+            return ticker.last_price <= price
+        return ticker.last_price >= price
+
+    def _store_resting_limit(
+        self,
+        order_id: int,
+        client_order_id: str,
+        symbol: str,
+        side: OrderSide,
+        quantity: Decimal,
+        price: Decimal,
+        time_in_force: TimeInForce,
+        now: datetime,
+    ) -> OrderResponseSchema:
+        order = OrderResponseSchema(
+            symbol=symbol,
+            order_id=order_id,
+            client_order_id=client_order_id,
+            transact_time=now,
+            price=price,
+            orig_qty=quantity,
+            executed_qty=Decimal(0),
+            status=OrderStatus.NEW,
+            time_in_force=time_in_force,
+            type=OrderType.LIMIT,
+            side=side,
+            time=now,
+            update_time=now,
+            is_working=True,
+            reduce_only=False,
+        )
+        self._orders[order_id] = order
+        logger.info(
+            "Paper resting LIMIT stored: id=%s %s %s qty=%s price=%s",
+            order_id,
+            side.value,
+            symbol,
+            quantity,
+            price,
+        )
+        return order
+
+    async def _maybe_fill_resting_limit(
+        self,
+        order: OrderResponseSchema,
+    ) -> OrderResponseSchema:
+        """Fill a resting entry limit if the ticker has crossed its price.
+
+        Fills happen at the limit price (a realistic touch fill). Protective
+        and reduce-only orders are never touched by this path.
+        """
+        if (
+            order.status != OrderStatus.NEW
+            or order.type != OrderType.LIMIT
+            or order.reduce_only
+        ):
+            return order
+        if not await self._limit_is_marketable(order.symbol, order.side, order.price):
+            return order
+
+        fill_price = order.price
+        self._apply_balance_change(
+            order.symbol, order.side, order.orig_qty, fill_price, reduce_only=False
+        )
+        commission = order.orig_qty * fill_price * self._commission_rate
+        fill = OrderFillSchema(
+            price=fill_price,
+            qty=order.orig_qty,
+            commission=commission,
+            commission_asset="USDT",
+        )
+        filled = order.model_copy(
+            update={
+                "status": OrderStatus.FILLED,
+                "executed_qty": order.orig_qty,
+                "fills": [fill],
+                "update_time": utc_now(),
+                "is_working": False,
+            },
+        )
+        self._orders[order.order_id] = filled
+        logger.info(
+            "Paper resting LIMIT %s filled for %s at %s",
+            order.order_id,
+            order.symbol,
+            fill_price,
+        )
+        await self._sync_balance_to_store()
+        return filled
 
     async def _resolve_fill_price(
         self,
@@ -381,14 +503,14 @@ class PaperExchangeClient(BinanceClient):
         order_id: int | None = None,
         client_order_id: str | None = None,
     ) -> OrderResponseSchema:
-        """Look up a simulated order."""
+        """Look up a simulated order, lazily filling resting limits on cross."""
         if order_id is not None and order_id in self._orders:
-            return self._orders[order_id]
+            return await self._maybe_fill_resting_limit(self._orders[order_id])
 
         if client_order_id is not None:
             for order in self._orders.values():
                 if order.client_order_id == client_order_id:
-                    return order
+                    return await self._maybe_fill_resting_limit(order)
 
         raise ExchangeError(
             f"Paper order not found: order_id={order_id} "

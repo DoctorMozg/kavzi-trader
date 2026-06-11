@@ -6,12 +6,14 @@ from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.spine.state.account_store import AccountStore
 from kavzi_trader.spine.state.config import RedisConfigSchema
 from kavzi_trader.spine.state.order_store import OrderStore
+from kavzi_trader.spine.state.pending_entry_store import PendingEntryStore
 from kavzi_trader.spine.state.position_store import PositionStore
 from kavzi_trader.spine.state.reconciliation import ProtectiveOrderPlacer
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import (
     AccountStateSchema,
     OpenOrderSchema,
+    PendingEntrySchema,
     PositionSchema,
     ReconciliationResultSchema,
 )
@@ -30,6 +32,7 @@ class StateManager:
         self._position_store = PositionStore(self._redis_client)
         self._order_store = OrderStore(self._redis_client)
         self._account_store = AccountStore(self._redis_client)
+        self._pending_entry_store = PendingEntryStore(self._redis_client)
         self._protective_order_placer: ProtectiveOrderPlacer | None = None
 
     def set_protective_order_placer(
@@ -84,6 +87,15 @@ class StateManager:
     async def remove_order(self, order_id: str) -> None:
         await self._order_store.delete(order_id)
 
+    async def save_pending_entry(self, entry: PendingEntrySchema) -> None:
+        await self._pending_entry_store.save(entry)
+
+    async def list_pending_entries(self) -> list[PendingEntrySchema]:
+        return await self._pending_entry_store.get_all()
+
+    async def remove_pending_entry(self, order_id: str) -> None:
+        await self._pending_entry_store.delete(order_id)
+
     async def get_account_state(self) -> AccountStateSchema | None:
         return await self._account_store.get()
 
@@ -98,6 +110,7 @@ class StateManager:
         logger.info("Resetting Redis state for fresh paper session")
         await self._position_store.clear_all()
         await self._order_store.clear_all()
+        await self._pending_entry_store.clear_all()
         new_state = AccountStateSchema(
             total_balance_usdt=initial_balance,
             available_balance_usdt=initial_balance,

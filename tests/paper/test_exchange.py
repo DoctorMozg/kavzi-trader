@@ -246,7 +246,7 @@ async def test_commission_calculation(
         side=OrderSide.BUY,
         order_type=OrderType.LIMIT,
         quantity=Decimal("0.1"),
-        price=Decimal(10000),
+        price=Decimal(50000),
         time_in_force=TimeInForce.GTC,
     )
 
@@ -254,6 +254,61 @@ async def test_commission_calculation(
     expected_commission = Decimal("0.1") * Decimal(50000) * Decimal("0.001")
     assert fill.commission == expected_commission
     assert fill.commission_asset == "USDT"
+
+
+@pytest.mark.asyncio
+async def test_pullback_buy_limit_rests_below_market(
+    paper_client: PaperExchangeClient,
+) -> None:
+    """A BUY limit below the ticker rests NEW instead of filling at market."""
+    starting_balance = paper_client.balance_usdt
+    order = await paper_client.create_order(
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.1"),
+        price=Decimal(49000),
+        time_in_force=TimeInForce.GTC,
+    )
+
+    assert order.status == OrderStatus.NEW
+    assert order.executed_qty == Decimal(0)
+    assert not order.fills
+    # Nothing is locked or spent until the limit fills.
+    assert paper_client.balance_usdt == starting_balance
+
+
+@pytest.mark.asyncio
+async def test_resting_buy_limit_fills_when_price_crosses(
+    paper_client: PaperExchangeClient,
+) -> None:
+    """Polling a resting BUY limit fills it once the ticker touches its price."""
+    order = await paper_client.create_order(
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.1"),
+        price=Decimal(49000),
+        time_in_force=TimeInForce.GTC,
+    )
+    assert order.status == OrderStatus.NEW
+
+    # Price has not crossed yet: still resting.
+    still_resting = await paper_client.get_order("BTCUSDT", order_id=order.order_id)
+    assert still_resting.status == OrderStatus.NEW
+
+    # Market drops to the limit: the next poll fills at the limit price.
+    paper_client.get_ticker = AsyncMock(
+        return_value=TickerSchema(symbol="BTCUSDT", last_price=Decimal(48000)),
+    )
+    filled = await paper_client.get_order("BTCUSDT", order_id=order.order_id)
+
+    assert filled.status == OrderStatus.FILLED
+    assert filled.executed_qty == Decimal("0.1")
+    assert filled.fills[0].price == Decimal(49000)
+    position = paper_client._positions["BTCUSDT"]
+    assert position.side == "LONG"
+    assert position.entry_price == Decimal(49000)
 
 
 @pytest.mark.asyncio

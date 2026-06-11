@@ -5,6 +5,7 @@ import logging
 from decimal import Decimal
 from typing import Literal
 
+from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.execution.engine import ExecutionEngine
@@ -14,6 +15,11 @@ from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
+
+# How often the loop sweeps resting PULLBACK entry limits for fill/expiry.
+# Decoupled from decision consumption so a quiet queue still ages out
+# unfilled pullback entries promptly.
+_PENDING_SWEEP_INTERVAL_MS = 5_000
 
 
 class ExecutionLoop:
@@ -32,6 +38,7 @@ class ExecutionLoop:
         self._state_manager = state_manager
         self._queue_key = queue_key
         self._report_populator = report_populator
+        self._last_pending_sweep_ms = 0
 
     async def run(self) -> None:
         logger.info(
@@ -40,6 +47,7 @@ class ExecutionLoop:
         )
         while True:
             try:
+                await self._maybe_sweep_pending_entries()
                 item = await self._redis_client.client.brpop(
                     self._queue_key,
                     timeout=1,
@@ -118,6 +126,17 @@ class ExecutionLoop:
                     },
                 )
                 await asyncio.sleep(0.1)
+
+    async def _maybe_sweep_pending_entries(self) -> None:
+        """Run the pending-entry sweep at most once per sweep interval."""
+        now_ms = int(utc_now().timestamp() * 1000)
+        if now_ms - self._last_pending_sweep_ms < _PENDING_SWEEP_INTERVAL_MS:
+            return
+        self._last_pending_sweep_ms = now_ms
+        try:
+            await self._engine.process_pending_entries(now_ms)
+        except Exception:
+            logger.exception("Pending-entry sweep failed, continuing")
 
     async def _report_execution(
         self,
