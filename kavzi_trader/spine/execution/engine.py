@@ -685,12 +685,24 @@ class ExecutionEngine:
                 "position_id": position.id,
             },
         )
+        # Effective risk = what the filled size actually risks to the stop.
+        # Carried on the event (alongside decision_id) so outcome-attribution
+        # can join decisions to fills and audit per-trade risk after the fact.
+        effective_risk = order.executed_qty * abs(order.price - position.stop_loss)
         try:
             await self._record_event(
                 aggregate_id=position.id,
                 aggregate_type="position",
                 event_type="position_opened",
-                data={"symbol": position.symbol, "side": position.side},
+                data={
+                    "symbol": position.symbol,
+                    "side": position.side,
+                    "decision_id": decision.decision_id,
+                    "entry_price": float(order.price),
+                    "stop_loss": float(position.stop_loss),
+                    "quantity": float(order.executed_qty),
+                    "effective_risk_usdt": float(effective_risk),
+                },
             )
         except Exception:
             logger.exception(

@@ -120,16 +120,26 @@ class PositionSizer:
                     rounding=ROUND_DOWN,
                 )
 
-        logger.debug(
-            "Position sizer: balance=%s atr=%s sl_mult=%s regime=%s"
-            " base=%s adjusted=%s risk=%s",
+        # Effective risk is what the FINAL (post-cap) size actually risks to
+        # the stop — distinct from the intended risk_amount, which the
+        # notional/margin caps routinely override on small accounts. Logging
+        # both surfaces when risk_per_trade_percent is not actually binding.
+        effective_risk = adjusted_size * stop_distance
+        effective_risk_pct = (
+            effective_risk / account_balance * 100
+            if account_balance > 0
+            else Decimal(0)
+        )
+        logger.info(
+            "Position sizer: balance=%s regime=%s base=%s adjusted=%s"
+            " intended_risk=%s effective_risk=%s (%.2f%% of balance)",
             account_balance,
-            atr,
-            stop_loss_atr_multiplier,
             regime.regime.value,
             base_size,
             adjusted_size,
             risk_amount,
+            effective_risk,
+            float(effective_risk_pct),
         )
 
         return PositionSizeResultSchema(

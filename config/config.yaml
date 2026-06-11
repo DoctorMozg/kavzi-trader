@@ -205,11 +205,16 @@ futures:
 # Risk — per-trade sizing, drawdown limits, volatility regime detection
 # -----------------------------------------------------------------------------
 risk:
-  # Percentage of total account balance risked on a single trade.
-  # On a $100 micro account, 3% = $3 risk. Combined with R/R 2.0, a
-  # winner yields $6 — enough to meaningfully outweigh the ~$0.20
-  # round-trip commission on a $100-500 notional position.
-  risk_per_trade_percent: 15.0
+  # Percentage of total account balance risked on a single trade — the
+  # authoritative sizing knob. risk_amount = balance * pct/100, and
+  # position notional = risk_amount / stop_distance. The notional/margin
+  # caps below (max_notional_percent, per-tier exposure) are a SAFETY NET,
+  # not the primary sizer: at 15% the risk-based notional far exceeded the
+  # caps, so the caps silently set every position and effective risk
+  # collapsed to ~1.4%. 1.25% keeps the risk-based size at or near the cap
+  # so this knob actually binds. The sizer logs intended vs EFFECTIVE
+  # (post-cap) risk per trade — watch it to confirm this binds in practice.
+  risk_per_trade_percent: 1.25
 
   # With $100, spread across 2 positions max. More positions = each one
   # too small to overcome minimum order sizes and commission friction.
