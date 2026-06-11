@@ -990,8 +990,10 @@ class FakeConfluenceOverride:
 
     def __init__(self, override: int | None) -> None:
         self._override = override
+        self.last_direction: str | None = None
 
-    def get_confluence_override(self) -> int | None:
+    def get_confluence_override(self, direction: str) -> int | None:
+        self.last_direction = direction
         return self._override
 
 

@@ -24,6 +24,8 @@ class FearGreedGateFilter:
         self._greed_threshold = config.fgi_extreme_greed_threshold
         self._elevated_fear_threshold = config.fgi_elevated_fear_threshold
         self._elevated_fear_confluence_min = config.fgi_elevated_fear_confluence_min
+        self._elevated_greed_threshold = config.fgi_elevated_greed_threshold
+        self._elevated_greed_confluence_min = config.fgi_elevated_greed_confluence_min
 
     def evaluate(self) -> FilterResultSchema:
         snapshot = self._cache.get_snapshot()
@@ -76,17 +78,28 @@ class FearGreedGateFilter:
             reason=f"FGI={value} (normal range)",
         )
 
-    def get_confluence_override(self) -> int | None:
-        """Return raised confluence gate when FGI is in the elevated fear zone.
+    def get_confluence_override(self, direction: str) -> int | None:
+        """Return a raised confluence gate when sentiment opposes the trade.
 
-        Returns the elevated confluence minimum when FGI is in range
-        (extreme_fear_threshold, elevated_fear_threshold], else None.
+        Directional: LONGs are tightened in the elevated-fear zone
+        (extreme_fear, elevated_fear] and SHORTs in the elevated-greed zone
+        [elevated_greed, extreme_greed) — the directions that historically
+        chased sentiment into losses. The opposing direction (e.g. a SHORT in
+        fear) is left untouched. Returns None when nothing applies.
         """
         snapshot = self._cache.get_snapshot()
         fgi = snapshot.fear_greed
         if fgi is None:
             return None
         value = fgi.value
-        if self._fear_threshold < value <= self._elevated_fear_threshold:
+        if (
+            direction == "LONG"
+            and self._fear_threshold < value <= self._elevated_fear_threshold
+        ):
             return self._elevated_fear_confluence_min
+        if (
+            direction == "SHORT"
+            and self._elevated_greed_threshold <= value < self._greed_threshold
+        ):
+            return self._elevated_greed_confluence_min
         return None

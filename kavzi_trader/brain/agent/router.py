@@ -50,7 +50,7 @@ class TraderRunner(Protocol):
 
 
 class ConfluenceOverrideProvider(Protocol):
-    def get_confluence_override(self) -> int | None: ...
+    def get_confluence_override(self, direction: str) -> int | None: ...
 
 
 class DependenciesProvider(Protocol):

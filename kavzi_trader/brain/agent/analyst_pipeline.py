@@ -34,7 +34,7 @@ class AnalystDepsFetcher(Protocol):
 
 
 class ConfluenceOverrideProvider(Protocol):
-    def get_confluence_override(self) -> int | None: ...
+    def get_confluence_override(self, direction: str) -> int | None: ...
 
 
 class LLMExceptionLogger(Protocol):
@@ -250,7 +250,9 @@ class AnalystPipeline:
         """
         confluence_gate = confluence_enter_min_for_regime(regime)
         if self._confluence_override is not None:
-            override = self._confluence_override.get_confluence_override()
+            override = self._confluence_override.get_confluence_override(
+                decision.direction
+            )
             if override is not None:
                 confluence_gate = max(confluence_gate, override)
 

@@ -133,7 +133,7 @@ def test_confluence_override_extreme_fear_no_override(
 ) -> None:
     """FGI=5 (extreme fear, <= threshold) → no override (blocked by gate)."""
     _set_fgi(cache, 5)
-    assert gate.get_confluence_override() is None
+    assert gate.get_confluence_override("LONG") is None
 
 
 def test_confluence_override_at_fear_boundary_no_override(
@@ -142,7 +142,7 @@ def test_confluence_override_at_fear_boundary_no_override(
 ) -> None:
     """FGI=10 (== extreme fear threshold) → no override."""
     _set_fgi(cache, 10)
-    assert gate.get_confluence_override() is None
+    assert gate.get_confluence_override("LONG") is None
 
 
 def test_confluence_override_just_above_fear(
@@ -151,7 +151,7 @@ def test_confluence_override_just_above_fear(
 ) -> None:
     """FGI=11 (just above extreme fear) → returns elevated confluence min."""
     _set_fgi(cache, 11)
-    assert gate.get_confluence_override() == 7
+    assert gate.get_confluence_override("LONG") == 7
 
 
 def test_confluence_override_mid_elevated_fear(
@@ -160,7 +160,7 @@ def test_confluence_override_mid_elevated_fear(
 ) -> None:
     """FGI=15 (middle of elevated fear zone) → returns 7."""
     _set_fgi(cache, 15)
-    assert gate.get_confluence_override() == 7
+    assert gate.get_confluence_override("LONG") == 7
 
 
 def test_confluence_override_at_elevated_boundary(
@@ -169,7 +169,7 @@ def test_confluence_override_at_elevated_boundary(
 ) -> None:
     """FGI=25 (== elevated fear threshold) → returns 7."""
     _set_fgi(cache, 25)
-    assert gate.get_confluence_override() == 7
+    assert gate.get_confluence_override("LONG") == 7
 
 
 def test_confluence_override_above_elevated_zone(
@@ -178,7 +178,7 @@ def test_confluence_override_above_elevated_zone(
 ) -> None:
     """FGI=26 (above elevated fear zone) → no override."""
     _set_fgi(cache, 26)
-    assert gate.get_confluence_override() is None
+    assert gate.get_confluence_override("LONG") is None
 
 
 def test_confluence_override_normal_range(
@@ -187,11 +187,49 @@ def test_confluence_override_normal_range(
 ) -> None:
     """FGI=50 (normal range) → no override."""
     _set_fgi(cache, 50)
-    assert gate.get_confluence_override() is None
+    assert gate.get_confluence_override("LONG") is None
 
 
 def test_confluence_override_no_data(
     gate: FearGreedGateFilter,
 ) -> None:
     """No FGI data → no override (fail open)."""
-    assert gate.get_confluence_override() is None
+    assert gate.get_confluence_override("LONG") is None
+
+
+def test_confluence_override_elevated_fear_does_not_tighten_shorts(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """Elevated fear tightens LONGs but leaves SHORTs (the dip-shorter) free."""
+    _set_fgi(cache, 15)
+    assert gate.get_confluence_override("LONG") == 7
+    assert gate.get_confluence_override("SHORT") is None
+
+
+def test_confluence_override_elevated_greed_tightens_shorts(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """Elevated greed (>=75, <90) raises the SHORT bar, not the LONG bar."""
+    _set_fgi(cache, 80)
+    assert gate.get_confluence_override("SHORT") == 7
+    assert gate.get_confluence_override("LONG") is None
+
+
+def test_confluence_override_extreme_greed_no_override(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """FGI=95 (extreme greed, blocked by the gate) → no override."""
+    _set_fgi(cache, 95)
+    assert gate.get_confluence_override("SHORT") is None
+
+
+def test_confluence_override_neutral_direction_no_override(
+    gate: FearGreedGateFilter,
+    cache: ExternalDataCache,
+) -> None:
+    """A NEUTRAL analyst direction is never tightened by sentiment."""
+    _set_fgi(cache, 15)
+    assert gate.get_confluence_override("NEUTRAL") is None
