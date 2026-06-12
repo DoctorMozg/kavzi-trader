@@ -585,6 +585,99 @@ class TestDynamicRiskValidator:
         assert result.is_valid is False
         assert any("portfolio risk" in r.lower() for r in result.rejection_reasons)
 
+    # =========================================================================
+    # C5 — EXTREME regime confidence bypass (report_2026_06_11b)
+    # =========================================================================
+
+    @pytest.mark.asyncio
+    async def test_extreme_regime_blocked_without_confidence_override(
+        self, mock_state_manager
+    ) -> None:
+        """Default config does not allow confidence to override EXTREME block."""
+        validator = DynamicRiskValidator()
+        atr_history = [
+            Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
+        ]
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(120),
+            atr_history=atr_history,
+            state_manager=mock_state_manager,
+            confidence=Decimal("0.95"),
+        )
+
+        assert result.is_valid is False
+        assert result.volatility_regime == VolatilityRegime.EXTREME
+        assert any("extreme" in r.lower() for r in result.rejection_reasons)
+
+    @pytest.mark.asyncio
+    async def test_extreme_regime_passes_with_high_confidence_when_opt_in_enabled(
+        self, mock_state_manager
+    ) -> None:
+        """EXTREME regime passes when opt-in enabled and confidence >= threshold."""
+        from kavzi_trader.spine.risk.config import RiskConfigSchema
+
+        config = RiskConfigSchema(
+            extreme_high_confidence_pass=True,
+            extreme_min_confidence_override=Decimal("0.80"),
+        )
+        validator = DynamicRiskValidator(config=config)
+        atr_history = [
+            Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
+        ]
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(120),
+            atr_history=atr_history,
+            state_manager=mock_state_manager,
+            confidence=Decimal("0.85"),
+        )
+
+        assert result.volatility_regime == VolatilityRegime.EXTREME
+        assert not any("extreme" in r.lower() for r in result.rejection_reasons)
+
+    @pytest.mark.asyncio
+    async def test_extreme_regime_blocked_when_confidence_below_override_threshold(
+        self, mock_state_manager
+    ) -> None:
+        """Even with opt-in enabled, confidence < threshold keeps the block in place."""
+        from kavzi_trader.spine.risk.config import RiskConfigSchema
+
+        config = RiskConfigSchema(
+            extreme_high_confidence_pass=True,
+            extreme_min_confidence_override=Decimal("0.80"),
+        )
+        validator = DynamicRiskValidator(config=config)
+        atr_history = [
+            Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
+        ]
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(120),
+            atr_history=atr_history,
+            state_manager=mock_state_manager,
+            confidence=Decimal("0.70"),
+        )
+
+        assert result.is_valid is False
+        assert result.volatility_regime == VolatilityRegime.EXTREME
+        assert any("extreme" in r.lower() for r in result.rejection_reasons)
+
     @pytest.mark.asyncio
     async def test_allows_single_position_below_cap(self, mock_state_manager) -> None:
         """Zero open positions + single TIER_1 (4%) < 4.5% cap → no rejection."""

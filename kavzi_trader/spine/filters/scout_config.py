@@ -72,12 +72,13 @@ class ScoutConfigSchema(BaseModel):
     # Volume ratio below which SKIP is strongly favoured.
     # A criterion must still match to override this soft gate.
     #   0.5 = permissive
-    #   0.6 = default (allows quieter-but-not-dead volume)
+    #   0.6 = relaxed (pre-2026-06)
+    #   0.75 = default (raised per report_2026_06_11b: target 85-95% filter rate)
     #   0.8 = moderate
     #   1.0 = strict
     vol_ratio_soft_skip: Annotated[
         Decimal,
-        Field(default=Decimal("0.6")),
+        Field(default=Decimal("0.75")),
     ]
 
     # --- Criterion 1: BREAKOUT ---

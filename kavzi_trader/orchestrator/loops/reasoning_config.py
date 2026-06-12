@@ -178,4 +178,31 @@ class ReasoningLoopConfigSchema(BaseModel):
         ),
     ] = 12
 
+    geometry_reject_cooldown_threshold: Annotated[
+        int,
+        Field(
+            ge=1,
+            description=(
+                "Consecutive Trader geometry-reject cycles before a cooldown "
+                "is applied to both directions for the symbol. Prevents "
+                "burning LLM budget re-evaluating a setup whose SL/TP "
+                "cannot be computed (e.g. volatility too extreme for the "
+                "R:R constraint)."
+            ),
+        ),
+    ] = 3
+
+    geometry_reject_cooldown_cycles: Annotated[
+        int,
+        Field(
+            ge=1,
+            description=(
+                "Cooldown (in cycles) applied to both directions when the "
+                "geometry-reject threshold is crossed. Set equal to the "
+                "typical number of cycles per candle so the symbol is "
+                "re-evaluated on the next bar close."
+            ),
+        ),
+    ] = 4
+
     model_config = ConfigDict(frozen=True)

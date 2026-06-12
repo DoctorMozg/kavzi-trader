@@ -323,6 +323,8 @@ class ReasoningLoop:
                 self._regime_of(result),
             )
 
+        self._track_geometry_rejects(symbol, result)
+
         if not self._should_enqueue(result):
             self._track_consecutive_waits(symbol, result)
             return result.scout.verdict == "INTERESTING"
@@ -336,12 +338,14 @@ class ReasoningLoop:
             )
             return True
 
-        # After trade enqueue, cool down both directions and reset WAIT counters
+        # After trade enqueue, cool down both directions and reset WAIT/geometry
+        # counters.
         post_trade_cd = self._analyst_cooldown_cycles * 3
         self._state.set_cooldown(symbol, "LONG", post_trade_cd)
         self._state.set_cooldown(symbol, "SHORT", post_trade_cd)
         self._state.clear_waits(symbol, "LONG")
         self._state.clear_waits(symbol, "SHORT")
+        self._state.clear_geometry_rejects(symbol)
         await self._enqueue_decision(result)
         return True
 
@@ -441,6 +445,41 @@ class ReasoningLoop:
             cooldown,
         )
         return cooldown
+
+    def _track_geometry_rejects(
+        self,
+        symbol: str,
+        result: PipelineResult,
+    ) -> None:
+        """Apply a cooldown when the Trader geometry check fails repeatedly.
+
+        Geometry rejects fire when the LLM picks LONG/SHORT but the computed
+        SL/TP violates the R:R constraint — a consistent pattern in a given
+        regime means the symbol isn't tradeable right now regardless of how
+        many times we ask the LLM. Suppressing calls for a few cycles prevents
+        burning LLM budget on identical unprofitable setups.
+        """
+        if result.trader_stop_reason == "geometry_reject":
+            count = self._state.bump_geometry_reject(symbol)
+            cfg = self._reasoning_config
+            if count >= cfg.geometry_reject_cooldown_threshold:
+                self._state.set_cooldown(
+                    symbol, "LONG", cfg.geometry_reject_cooldown_cycles
+                )
+                self._state.set_cooldown(
+                    symbol, "SHORT", cfg.geometry_reject_cooldown_cycles
+                )
+                self._state.clear_geometry_rejects(symbol)
+                logger.info(
+                    "Geometry reject cooldown for %s: %d consecutive rejects"
+                    " → both directions suppressed for %d cycles",
+                    symbol,
+                    count,
+                    cfg.geometry_reject_cooldown_cycles,
+                    extra={"symbol": symbol},
+                )
+        elif result.trader_stop_reason in {"ok", "dedup_hit"}:
+            self._state.clear_geometry_rejects(symbol)
 
     def _track_consecutive_waits(
         self,

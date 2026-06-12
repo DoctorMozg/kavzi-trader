@@ -84,6 +84,19 @@ class SymbolStateSchema(BaseModel):
             ),
         ),
     ]
+    consecutive_geometry_rejects: Annotated[
+        int,
+        Field(
+            ge=0,
+            default=0,
+            description=(
+                "Consecutive Trader geometry-reject cycles for this symbol. "
+                "Drives the geometry-reject cooldown once the threshold is "
+                "crossed, preventing repeated LLM calls for a setup whose "
+                "SL/TP cannot be placed geometrically."
+            ),
+        ),
+    ]
 
     model_config = ConfigDict(frozen=False)
 
@@ -167,3 +180,15 @@ class SymbolStateTracker:
         state = self.get(symbol)
         state.consecutive_skips = 0
         state.skip_eval_interval = 0
+
+    # --- consecutive geometry rejects (per symbol) -------------------------
+    def geometry_rejects(self, symbol: str) -> int:
+        return self.get(symbol).consecutive_geometry_rejects
+
+    def bump_geometry_reject(self, symbol: str) -> int:
+        state = self.get(symbol)
+        state.consecutive_geometry_rejects += 1
+        return state.consecutive_geometry_rejects
+
+    def clear_geometry_rejects(self, symbol: str) -> None:
+        self.get(symbol).consecutive_geometry_rejects = 0

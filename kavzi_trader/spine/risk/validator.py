@@ -105,7 +105,7 @@ class DynamicRiskValidator:
             rejection_reasons.append(portfolio_risk_result)
         logger.debug("Portfolio risk check: result=%s", portfolio_risk_result)
 
-        regime_result = self._check_volatility_regime(regime, symbol_tier)
+        regime_result = self._check_volatility_regime(regime, symbol_tier, confidence)
         if regime_result:
             rejection_reasons.append(regime_result)
         logger.debug(
@@ -347,10 +347,25 @@ class DynamicRiskValidator:
         self,
         regime: VolatilityRegimeSchema,
         symbol_tier: str = "TIER_2",
+        confidence: Decimal | None = None,
     ) -> str | None:
         if regime.regime == VolatilityRegime.EXTREME:
             if symbol_tier == "TIER_1":
                 return None  # TIER_1 allowed through EXTREME with reduced sizing
+            # Opt-in: allow high-confidence TIER_2 setups through EXTREME.
+            # Off by default — must be explicitly enabled in config.
+            cfg = self._config
+            if (
+                cfg.extreme_high_confidence_pass
+                and confidence is not None
+                and confidence >= cfg.extreme_min_confidence_override
+            ):
+                logger.info(
+                    "EXTREME regime bypassed: confidence=%s >= threshold=%s",
+                    confidence,
+                    cfg.extreme_min_confidence_override,
+                )
+                return None
             return f"EXTREME volatility (Z-score: {regime.atr_zscore}) - blocked"
         if regime.regime == VolatilityRegime.LOW:
             return f"LOW volatility (Z-score: {regime.atr_zscore}) - no movement"

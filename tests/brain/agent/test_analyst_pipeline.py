@@ -1,13 +1,17 @@
-"""Tests for AnalystPipeline directional-conflict structured logging."""
+"""Tests for AnalystPipeline: directional-conflict logging and circuit breaker."""
 
 import logging
 from decimal import Decimal
 
 import pytest
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from kavzi_trader.brain.agent.analyst_pipeline import AnalystPipeline
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
+from kavzi_trader.brain.schemas.analyst import (
+    AnalystDecisionSchema,
+    KeyLevelsSchema,
+)
 from kavzi_trader.brain.schemas.dependencies import AnalystDependenciesSchema
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
@@ -156,3 +160,151 @@ async def test_pre_filter_block_dominant_side_long_when_long_leads(
     ]
     assert len(conflict_records) == 1
     assert conflict_records[0].dominant_confluence_side == "LONG"
+
+
+# ===========================================================================
+# Circuit breaker tests (C1 — report_2026_06_11b)
+# ===========================================================================
+
+
+class _FailingAnalyst:
+    """Always raises UnexpectedModelBehavior (simulates parse-failure exhaustion)."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema:
+        self.call_count += 1
+        raise UnexpectedModelBehavior("Exceeded maximum retries", body=None)
+
+
+class _SuccessAnalyst:
+    """Always returns a valid LONG decision."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema:
+        self.call_count += 1
+        return AnalystDecisionSchema(
+            setup_valid=True,
+            direction="LONG",
+            confluence_score=7,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning="Bullish EMA stack, RSI 55, volume confirms.",
+        )
+
+
+def _make_high_confluence_deps(candle) -> AnalystDependenciesSchema:
+    """Deps that pass the pre-filter (long_score=5 >= min_algo=3) so LLM is called."""
+    confluence = _make_dual_confluence(long_score=5, short_score=2)
+    return _make_analyst_deps(candle, confluence)
+
+
+def _make_circuit_pipeline(
+    analyst,
+    *,
+    threshold: int,
+    open_cycles: int,
+) -> AnalystPipeline:
+    return AnalystPipeline(
+        analyst=analyst,
+        dedup=DecisionDeduplicator(),
+        min_algo_confluence=3,
+        concurrency_limit=1,
+        confluence_override=None,
+        log_llm_exception=lambda symbol, agent, exc, elapsed_ms: None,
+        circuit_threshold=threshold,
+        circuit_open_cycles=open_cycles,
+    )
+
+
+@pytest.mark.asyncio
+async def test_analyst_circuit_single_failure_stays_closed(candle) -> None:
+    """One parse failure does not open the circuit — next call tries LLM again."""
+    analyst = _FailingAnalyst()
+    pipeline = _make_circuit_pipeline(analyst, threshold=2, open_cycles=2)
+    deps = _make_high_confluence_deps(candle)
+
+    result = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))
+
+    assert result.reason == "agent_error"
+    assert analyst.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_analyst_circuit_opens_after_threshold_failures(candle) -> None:
+    """Two parse failures open the circuit; third call returns circuit_open."""
+    analyst = _FailingAnalyst()
+    pipeline = _make_circuit_pipeline(analyst, threshold=2, open_cycles=2)
+    deps = _make_high_confluence_deps(candle)
+
+    r1 = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))
+    r2 = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))
+    r3 = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))
+
+    assert r1.reason == "agent_error"
+    assert r2.reason == "agent_error"
+    assert r3.reason == "circuit_open"
+    # LLM should NOT have been called on the third attempt
+    assert analyst.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_analyst_circuit_skip_cycles_count_down(candle) -> None:
+    """Skip cycles decrement each call; LLM is tried again after they expire."""
+    analyst = _FailingAnalyst()
+    pipeline = _make_circuit_pipeline(analyst, threshold=2, open_cycles=3)
+    deps = _make_high_confluence_deps(candle)
+
+    # Open the circuit with 2 failures
+    await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))  # fail 1
+    await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))  # fail 2 → opens (3 skip)
+
+    # 3 skip cycles
+    r3 = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))
+    r4 = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))
+    r5 = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))
+
+    # After skip cycles expire, LLM is tried again
+    r6 = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))
+
+    assert r3.reason == "circuit_open"
+    assert r4.reason == "circuit_open"
+    assert r5.reason == "circuit_open"
+    assert r6.reason == "agent_error"  # LLM tried again
+    assert analyst.call_count == 3  # calls 1, 2, and the first post-skip attempt
+
+
+@pytest.mark.asyncio
+async def test_analyst_circuit_resets_on_success_after_skip(candle) -> None:
+    """After skip cycles expire and the LLM succeeds, the circuit does not re-open."""
+    call_num = 0
+
+    class _FailTwiceThenSucceed:
+        async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema:
+            nonlocal call_num
+            call_num += 1
+            if call_num <= 2:
+                raise UnexpectedModelBehavior("boom", body=None)
+            return AnalystDecisionSchema(
+                setup_valid=False,
+                direction="NEUTRAL",
+                confluence_score=4,
+                key_levels=KeyLevelsSchema(levels=[]),
+                reasoning="Recovered.",
+            )
+
+    pipeline = _make_circuit_pipeline(
+        _FailTwiceThenSucceed(), threshold=2, open_cycles=1
+    )
+    deps = _make_high_confluence_deps(candle)
+
+    await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))  # fail 1
+    await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))  # fail 2 → opens (1 skip)
+    r3 = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))  # skip (last)
+    r4 = await pipeline.run("BTCUSDT", _StubDepsFetcher(deps))  # tries LLM → success
+
+    assert r3.reason == "circuit_open"
+    # After skip expires, LLM succeeds → result is not circuit_open
+    assert r4.reason != "circuit_open"

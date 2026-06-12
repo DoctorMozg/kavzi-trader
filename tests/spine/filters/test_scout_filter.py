@@ -977,3 +977,62 @@ async def test_extreme_tier1_still_exempt() -> None:
     result = await scout.run(deps)
     assert result.verdict == "INTERESTING"
     assert result.pattern_detected == "REVERSAL"
+
+
+# ------------------------------------------------------------------
+# Criterion 2: TREND_CONTINUATION — short-term momentum confirmation (C3)
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_trend_continuation_rejected_when_candles_contradict_alignment(
+    scout: ScoutFilter,
+) -> None:
+    """BULLISH EMA stack with falling recent closes must reject TREND_CONTINUATION.
+
+    With short_term_momentum_window=3 and min_confirming=2 (defaults), all 3
+    window candles have falling closes, giving 0 confirming moves < 2 required.
+    """
+    ind = _make_indicators(
+        ema_20=Decimal(110),
+        ema_50=Decimal(105),
+        ema_200=Decimal(90),
+        rsi_14=Decimal(55),
+        vol_ratio=Decimal("1.2"),
+    )
+    # 3 candles with falling close prices — contradicts BULLISH alignment
+    candles = [
+        _make_candle(Decimal(110), offset_min=0),
+        _make_candle(Decimal(108), offset_min=15),
+        _make_candle(Decimal(106), offset_min=30),
+    ]
+    deps = _make_deps(ind, candles=candles)
+    result = await scout.run(deps)
+    assert result.pattern_detected != "TREND_CONTINUATION", (
+        "TREND_CONTINUATION should be rejected when recent candles "
+        "contradict the EMA alignment direction"
+    )
+
+
+@pytest.mark.asyncio
+async def test_trend_continuation_accepted_when_candles_confirm_alignment(
+    scout: ScoutFilter,
+) -> None:
+    """BULLISH EMA stack with rising recent closes must accept TREND_CONTINUATION."""
+    ind = _make_indicators(
+        ema_20=Decimal(110),
+        ema_50=Decimal(105),
+        ema_200=Decimal(90),
+        rsi_14=Decimal(55),
+        vol_ratio=Decimal("1.2"),
+    )
+    # 3 candles with rising close prices — confirms BULLISH alignment
+    candles = [
+        _make_candle(Decimal(102), offset_min=0),
+        _make_candle(Decimal(104), offset_min=15),
+        _make_candle(Decimal(106), offset_min=30),
+    ]
+    deps = _make_deps(ind, candles=candles)
+    result = await scout.run(deps)
+    assert result.verdict == "INTERESTING"
+    assert result.pattern_detected == "TREND_CONTINUATION"

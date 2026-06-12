@@ -209,7 +209,7 @@ class ScoutFilter:
 
         checks = [
             self._check_breakout(ind, vol_ratio),
-            self._check_trend_continuation(ind, vol_ratio, alignment),
+            self._check_trend_continuation(ind, vol_ratio, alignment, candles),
             self._check_reversal(ind),
             self._check_volume_spike(ind, vol_ratio, candles, alignment),
             self._check_momentum_shift(ind, candles),
@@ -270,8 +270,9 @@ class ScoutFilter:
         ind: TechnicalIndicatorsSchema,
         vol_ratio: Decimal | None,
         alignment: str,
+        candles: list[CandlestickSchema],
     ) -> _ScoutCriterionResult:
-        """Criterion 2: EMA alignment + RSI mid-range + volume."""
+        """Criterion 2: EMA alignment + RSI mid-range + volume + short-term momentum."""
         cfg = self._cfg
         if alignment == "NEUTRAL":
             return _CRITERION_SKIP
@@ -281,6 +282,10 @@ class ScoutFilter:
         if not (cfg.trend_rsi_low <= rsi <= cfg.trend_rsi_high):
             return _CRITERION_SKIP
         if vol_ratio < cfg.trend_vol_ratio_min:
+            return _CRITERION_SKIP
+        # Reject when recent closes contradict EMA alignment — catches stale EMA
+        # stacks where price is already reversing (report_2026_06_11b C3).
+        if not self._short_term_momentum_confirms(candles, alignment):
             return _CRITERION_SKIP
         return _ScoutCriterionResult(
             verdict="INTERESTING",

@@ -51,7 +51,7 @@ brain:
     # comparable rubric-following quality for well-templated prompts.
     # Alternatives: openai/gpt-5.4-mini (higher latency), anthropic/claude-sonnet-4.5 (slower but stronger reasoning).
     model_id: "anthropic/claude-haiku-4.5"
-    retries: 3
+    retries: 1
     temperature: 0.0
     seed: 42
     timeout_s: 12
@@ -98,7 +98,7 @@ scout:
 
   # Volume ratio below which SKIP is favoured unless a criterion matches.
   #   0.5 = permissive    0.6 = relaxed    0.8 = default    1.0 = strict
-  vol_ratio_soft_skip: 0.6  # 0.8 blocked too many quieter-volume setups
+  vol_ratio_soft_skip: 0.75  # raised from 0.6 per report_2026_06_11b: 42.5% INTERESTING rate, target 85-95% filter
 
   # Criterion 1 BREAKOUT — price beyond Bollinger Band with volume.
   #   1.0 = permissive    1.5 = default    2.0 = strict
@@ -307,6 +307,14 @@ risk:
   #   0.20 = default (SL must be at least 20% of the distance from liq price)
   #   0.30 = conservative
   liquidation_sl_buffer_ratio: 0.10
+
+  # EXTREME volatility confidence bypass (opt-in, off by default).
+  # Set to true to allow TIER_2 symbols with Trader confidence >=
+  # extreme_min_confidence_override to trade through the EXTREME regime block.
+  # Only enable if you have validated that your model's high-confidence calls
+  # remain reliable during spike conditions.
+  extreme_high_confidence_pass: false
+  extreme_min_confidence_override: 0.80
 
 # -----------------------------------------------------------------------------
 # Position Management — partial exits and time-based exits

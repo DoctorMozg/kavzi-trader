@@ -182,6 +182,55 @@ def test_source_name() -> None:
     assert CCDataNewsSource().name == "ccdata_news"
 
 
+def _make_403_error() -> httpx.HTTPStatusError:
+    mock_response = Mock()
+    mock_response.status_code = 403
+    return httpx.HTTPStatusError(
+        "403 Forbidden",
+        request=Mock(),
+        response=mock_response,
+    )
+
+
+@pytest.mark.asyncio
+async def test_403_self_disables_source(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A 403 response permanently disables the source and returns None."""
+    source = CCDataNewsSource()
+    source._client = Mock()
+    mock_resp = Mock()
+    mock_resp.raise_for_status = Mock(side_effect=_make_403_error())
+    source._client.get = AsyncMock(return_value=mock_resp)
+
+    with caplog.at_level(logging.WARNING, logger=ccdata_news_module.logger.name):
+        result = await source.fetch()
+
+    assert result is None
+    assert source._permanently_disabled is True
+    assert source._client.get.await_count == 1  # no retries on 403
+    warning_records = [
+        r
+        for r in caplog.records
+        if "403" in r.getMessage() or "Forbidden" in r.getMessage()
+    ]
+    assert len(warning_records) >= 1
+
+
+@pytest.mark.asyncio
+async def test_disabled_source_skips_http_calls() -> None:
+    """After self-disabling, subsequent fetch() calls skip HTTP entirely."""
+    source = CCDataNewsSource()
+    source._client = Mock()
+    source._client.get = AsyncMock()
+    source._permanently_disabled = True
+
+    result = await source.fetch()
+
+    assert result is None
+    source._client.get.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_missing_sentiment_defaults_to_neutral() -> None:
     """Articles without SENTIMENT field should count as neutral."""

@@ -35,6 +35,14 @@ class RiskConfigSchema(BaseModel):
     liquidation_sl_buffer_ratio: Decimal = Decimal("0.20")
     max_margin_ratio: Decimal = Decimal("0.5")
 
+    # EXTREME volatility confidence bypass (opt-in, off by default).
+    # When True, TIER_2 symbols with Trader confidence >=
+    # extreme_min_confidence_override are allowed through the EXTREME regime
+    # block. Requires an explicit opt-in so the default behaviour (hard-block)
+    # is preserved for all existing deployments.
+    extreme_high_confidence_pass: bool = False
+    extreme_min_confidence_override: Decimal = Decimal("0.80")
+
     model_config = ConfigDict(frozen=True)
 
     @model_validator(mode="after")

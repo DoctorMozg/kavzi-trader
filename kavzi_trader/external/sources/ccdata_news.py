@@ -15,6 +15,7 @@ _CCDATA_NEWS_URL = "https://data-api.ccdata.io/news/v1/article/list"
 _TIMEOUT_S = 10.0
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE_S = 1.0
+_HTTP_FORBIDDEN = 403
 
 
 class CCDataNewsSource(ExternalSource):
@@ -22,6 +23,9 @@ class CCDataNewsSource(ExternalSource):
 
     No API key required. Each article includes a pre-computed SENTIMENT
     field (POSITIVE/NEGATIVE/NEUTRAL) which we aggregate into counts.
+
+    Self-disables on 403 responses: CCData has migrated its free tier to
+    require an API key, so 403 means no access — retrying is pointless.
     """
 
     def __init__(
@@ -32,12 +36,15 @@ class CCDataNewsSource(ExternalSource):
         self._max_results = max_results
         self._max_headlines = max_headlines
         self._client = httpx.AsyncClient(timeout=_TIMEOUT_S)
+        self._permanently_disabled = False
 
     @property
     def name(self) -> str:
         return "ccdata_news"
 
     async def fetch(self) -> CCDataNewsDataSchema | None:
+        if self._permanently_disabled:
+            return None
         logger.info("Fetching CCData news sentiment")
         articles = await self._fetch_articles_with_retry()
         if articles is None:
@@ -84,9 +91,39 @@ class CCDataNewsSource(ExternalSource):
                 resp.raise_for_status()
                 body = resp.json()
                 articles: list[dict[str, object]] = body.get("Data", [])
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == _HTTP_FORBIDDEN:
+                    # 403 means access denied — the free tier now requires an
+                    # API key. Retrying won't help; self-disable for the session
+                    # to avoid log spam and wasted cycles.
+                    self._permanently_disabled = True
+                    logger.warning(
+                        "CCData news API returned 403 Forbidden — "
+                        "source disabled for this session. "
+                        "Set external_sources.ccdata_news.enabled=false to suppress.",
+                        extra={"status_code": 403},
+                    )
+                    return None
+                if attempt < _MAX_RETRIES:
+                    backoff_s = _RETRY_BACKOFF_BASE_S * (2 ** (attempt - 1))
+                    logger.warning(
+                        "CCData news fetch attempt %d/%d failed: %s; retrying in %.1fs",
+                        attempt,
+                        _MAX_RETRIES,
+                        exc,
+                        backoff_s,
+                        extra={"attempt": attempt, "max_retries": _MAX_RETRIES},
+                    )
+                    await asyncio.sleep(backoff_s)
+                    continue
+                logger.exception(
+                    "CCData news fetch failed after %d attempts",
+                    attempt,
+                    extra={"attempts": attempt},
+                )
+                return None
             except (
                 httpx.RequestError,
-                httpx.HTTPStatusError,
                 json.JSONDecodeError,
                 ValueError,
                 KeyError,

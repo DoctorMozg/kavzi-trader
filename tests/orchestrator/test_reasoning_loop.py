@@ -1311,6 +1311,122 @@ async def test_pipeline_complete_event_recorded() -> None:
     assert "Trader=WAIT" in summary
 
 
+# ===========================================================================
+# C6 — Geometry reject suppression (report_2026_06_11b)
+# ===========================================================================
+
+
+def _make_geometry_reject_result() -> PipelineResult:
+    """Pipeline result where the Trader geometry check failed."""
+    return PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING", reason="vol", pattern_detected=None
+        ),
+        analyst=_make_analyst_decision(
+            setup_valid=True, direction="LONG", confluence_score=7
+        ),
+        trader=TradeDecisionSchema(
+            action="WAIT",
+            confidence=0.5,
+            reasoning=(
+                "Geometry reject — R:R unachievable with current ATR and price levels."
+            ),
+        ),
+        trader_stop_reason="geometry_reject",
+    )
+
+
+def test_geometry_reject_counter_increments_on_each_reject() -> None:
+    """_track_geometry_rejects increments the symbol counter on geometry_reject."""
+    from kavzi_trader.orchestrator.loops.reasoning_config import (
+        ReasoningLoopConfigSchema,
+    )
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        reasoning_config=ReasoningLoopConfigSchema(
+            geometry_reject_cooldown_threshold=3,
+            geometry_reject_cooldown_cycles=4,
+        ),
+    )
+    result = _make_geometry_reject_result()
+
+    loop._track_geometry_rejects("BTCUSDT", result)
+    assert loop._state.geometry_rejects("BTCUSDT") == 1
+
+    loop._track_geometry_rejects("BTCUSDT", result)
+    assert loop._state.geometry_rejects("BTCUSDT") == 2
+
+
+def test_geometry_reject_cooldown_applied_at_threshold() -> None:
+    """After threshold geometry rejects, both directions get a cooldown and the
+    counter resets to zero."""
+    from kavzi_trader.orchestrator.loops.reasoning_config import (
+        ReasoningLoopConfigSchema,
+    )
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        reasoning_config=ReasoningLoopConfigSchema(
+            geometry_reject_cooldown_threshold=3,
+            geometry_reject_cooldown_cycles=4,
+        ),
+    )
+    result = _make_geometry_reject_result()
+
+    for _ in range(3):
+        loop._track_geometry_rejects("BTCUSDT", result)
+
+    assert loop._state.cooldown("BTCUSDT", "LONG") == 4
+    assert loop._state.cooldown("BTCUSDT", "SHORT") == 4
+    assert loop._state.geometry_rejects("BTCUSDT") == 0
+
+
+def test_geometry_reject_counter_clears_on_successful_trader() -> None:
+    """When trader_stop_reason='ok', the geometry reject counter resets."""
+    from kavzi_trader.orchestrator.loops.reasoning_config import (
+        ReasoningLoopConfigSchema,
+    )
+
+    loop = ReasoningLoop(
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        reasoning_config=ReasoningLoopConfigSchema(
+            geometry_reject_cooldown_threshold=3,
+            geometry_reject_cooldown_cycles=4,
+        ),
+    )
+
+    reject_result = _make_geometry_reject_result()
+    loop._track_geometry_rejects("BTCUSDT", reject_result)
+    loop._track_geometry_rejects("BTCUSDT", reject_result)
+    assert loop._state.geometry_rejects("BTCUSDT") == 2
+
+    success_result = PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING", reason="vol", pattern_detected=None
+        ),
+        analyst=_make_analyst_decision(
+            setup_valid=True, direction="LONG", confluence_score=7
+        ),
+        trader=_long_trader_decision(),
+        geometry=_LONG_GEOMETRY,
+        trader_deps=_build_deps(),
+        trader_stop_reason="ok",
+    )
+    loop._track_geometry_rejects("BTCUSDT", success_result)
+
+    assert loop._state.geometry_rejects("BTCUSDT") == 0
+
+
 def test_confluence_thresholds_after_wu6_shift() -> None:
     assert CONFLUENCE_ENTER_MIN == 6
     assert CONFLUENCE_REJECT_MAX == 4

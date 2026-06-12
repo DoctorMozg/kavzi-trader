@@ -66,7 +66,14 @@ class DependenciesProvider(Protocol):
 
 
 class PipelineResult:
-    __slots__ = ("analyst", "geometry", "scout", "trader", "trader_deps")
+    __slots__ = (
+        "analyst",
+        "geometry",
+        "scout",
+        "trader",
+        "trader_deps",
+        "trader_stop_reason",
+    )
 
     def __init__(
         self,
@@ -75,12 +82,14 @@ class PipelineResult:
         trader: TradeDecisionSchema | None = None,
         trader_deps: TradingDependenciesSchema | None = None,
         geometry: TradeGeometrySchema | None = None,
+        trader_stop_reason: str | None = None,
     ) -> None:
         self.scout = scout
         self.analyst = analyst
         self.trader = trader
         self.trader_deps = trader_deps
         self.geometry = geometry
+        self.trader_stop_reason = trader_stop_reason
 
 
 # Minimum algorithm confluence to escalate to the Analyst LLM. The Analyst
@@ -452,6 +461,7 @@ class AgentRouter:
             trader=trader_run.decision,
             trader_deps=trader_run.deps,
             geometry=trader_run.geometry,
+            trader_stop_reason=trader_run.reason,
         )
 
     @staticmethod
