@@ -11,7 +11,7 @@ system:
   results_dir: "results/"      # Back-test and analysis output
 
 # -----------------------------------------------------------------------------
-# API — Binance credentials (override via BINANCE_API_KEY / BINANCE_API_SECRET)
+# API — Binance credentials (override via KT_BINANCE_API_KEY / KT_BINANCE_API_SECRET)
 # -----------------------------------------------------------------------------
 api:
   binance:

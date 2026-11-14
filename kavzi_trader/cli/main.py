@@ -1,5 +1,5 @@
 """
-KavziTrader - Neural Network-Based Crypto Trading Platform.
+KavziTrader - LLM-Based Crypto Futures Trading Platform.
 
 This module serves as the main entry point for the KavziTrader CLI.
 """
@@ -23,7 +23,7 @@ def cli(
     verbose: bool,
 ) -> None:
     """
-    KavziTrader - Neural Network-Based Crypto Trading Platform.
+    KavziTrader - LLM-Based Crypto Futures Trading Platform.
 
     You can pass hydra configuration overrides as key=value pairs after the command.
     """

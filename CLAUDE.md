@@ -54,7 +54,7 @@ cd docker && docker-compose up -d
 - `risk/`: ATR-based dynamic risk validator, volatility calculator, position sizer
 - `position/`: Active management — partial exits, time exits
 - `state/`: Redis-backed state management (positions, orders, account balance)
-- `filters/`: Pre-trade validation — liquidity, funding rate, correlation, news, movement
+- `filters/`: Pre-trade validation — liquidity, funding rate, correlation, movement, volatility, Fear & Greed gate, spike cooldown
 
 **Orchestrator** — `kavzi_trader/orchestrator/`
 - Coordinates 5 concurrent async loops: DataIngest, OrderFlow, Reasoning, Execution, PositionManagement
