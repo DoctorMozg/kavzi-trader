@@ -41,10 +41,13 @@ def make_config() -> Callable[..., AppConfig]:
 
 
 def _run(config: AppConfig, *args: str) -> Result:
+    # Non-standalone keeps ClickException on result.exception: pytest's log_cli
+    # swaps stderr when the command logs, so result.output would come back empty.
     return CliRunner().invoke(
         config_command,
         ["--validate", *args],
         obj={"app_config": config},
+        standalone_mode=False,
     )
 
 
@@ -65,7 +68,7 @@ def test_validate_fails_when_live_secrets_missing(
     result = _run(make_config(binance_key=""))
 
     assert result.exit_code != 0
-    assert "KT_BINANCE_API_KEY" in result.output
+    assert "KT_BINANCE_API_KEY" in str(result.exception)
 
 
 def test_validate_paper_does_not_need_binance_keys(
@@ -84,4 +87,4 @@ def test_validate_fails_without_openrouter_key(
     result = _run(make_config(openrouter_key=""), *mode_args)
 
     assert result.exit_code != 0
-    assert "KT_OPENROUTER_API_KEY" in result.output
+    assert "KT_OPENROUTER_API_KEY" in str(result.exception)
