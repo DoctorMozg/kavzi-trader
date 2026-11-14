@@ -34,7 +34,7 @@ class SymbolTierRegistry:
         return self._tier_configs[tier]
 
     @classmethod
-    def from_yaml(cls, path: Path) -> "SymbolTierRegistry":
+    def from_yaml(cls, path: Path) -> SymbolTierRegistry:
         """Load tier configuration from a YAML file."""
         raw = yaml.safe_load(path.read_text())
         tiers_raw: dict[str, Any] = raw["tiers"]

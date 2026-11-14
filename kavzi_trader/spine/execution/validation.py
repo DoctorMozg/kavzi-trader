@@ -20,7 +20,7 @@ class ValidationOutcomeSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     @model_validator(mode="after")
-    def require_reason_when_failed(self) -> "ValidationOutcomeSchema":
+    def require_reason_when_failed(self) -> ValidationOutcomeSchema:
         if not self.passed and not self.reason:
             raise ValueError("reason is required when passed is False")
         return self

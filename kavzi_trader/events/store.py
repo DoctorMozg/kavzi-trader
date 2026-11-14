@@ -1,12 +1,18 @@
 import logging
 from datetime import datetime, timedelta
+from typing import cast
 
 from pydantic import BaseModel, ConfigDict
+from redis.typing import EncodableT, FieldT
 
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.events.config import EventStoreConfigSchema
 from kavzi_trader.events.event_schema import EventSchema
-from kavzi_trader.events.serialization import deserialize_event, serialize_event
+from kavzi_trader.events.serialization import (
+    SerializedEventDict,
+    deserialize_event,
+    serialize_event,
+)
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 
 logger = logging.getLogger(__name__)
@@ -35,7 +41,7 @@ class RedisEventStore:
             fields = serialize_event(event)
             event_id = await self._redis.client.xadd(
                 stream,
-                fields,
+                cast("dict[FieldT, EncodableT]", fields),
                 maxlen=self._config.stream_max_length,
                 approximate=True,
             )
@@ -101,10 +107,11 @@ class RedisEventStore:
         count: int | None = None,
     ) -> list[_EventEntry]:
         entries = await self._redis.client.xrange(stream, start, end, count=count)
+        # decode_responses=True: redis returns str ids and fields at runtime.
         return [
             _EventEntry(
-                stream_id=entry[0],
-                event=deserialize_event(entry[1]),
+                stream_id=str(entry_id),
+                event=deserialize_event(cast("SerializedEventDict", fields)),
             )
-            for entry in entries
+            for entry_id, fields in entries or []
         ]

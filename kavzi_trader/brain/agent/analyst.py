@@ -1,7 +1,6 @@
 import hashlib
 import logging
 import time
-from typing import cast
 
 from pydantic_ai import Agent
 
@@ -20,7 +19,7 @@ class AnalystAgent:
 
     def __init__(
         self,
-        agent: Agent,
+        agent: Agent[AnalystDependenciesSchema, AnalystDecisionSchema],
         prompt_loader: PromptLoader,
         context_builder: ContextBuilder,
     ) -> None:
@@ -36,20 +35,20 @@ class AnalystAgent:
         t0 = time.monotonic()
         result = await self._agent.run(user_prompt, deps=deps)
         elapsed_ms = (time.monotonic() - t0) * 1000
-        output = cast("AnalystDecisionSchema", result.output)
-        usage = result.usage()
+        output = result.output
+        usage = result.usage
         logger.info(
-            "Analyst usage for %s: request_tokens=%d response_tokens=%d "
+            "Analyst usage for %s: input_tokens=%d output_tokens=%d "
             "total_tokens=%d elapsed_ms=%.1f",
             deps.symbol,
-            usage.request_tokens or 0,
-            usage.response_tokens or 0,
-            usage.total_tokens or 0,
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.total_tokens,
             elapsed_ms,
             extra={
                 "symbol": deps.symbol,
-                "request_tokens": usage.request_tokens,
-                "response_tokens": usage.response_tokens,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
                 "total_tokens": usage.total_tokens,
                 "elapsed_ms": round(elapsed_ms, 1),
             },

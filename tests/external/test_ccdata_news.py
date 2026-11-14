@@ -2,7 +2,7 @@ import logging
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
 
-import httpx
+import httpx2
 import pytest
 
 from kavzi_trader.external.sources import ccdata_news as ccdata_news_module
@@ -91,7 +91,7 @@ async def test_sentiment_score_calculation() -> None:
 async def test_fetch_returns_none_on_error() -> None:
     source = CCDataNewsSource()
     source._client = Mock()
-    source._client.get = AsyncMock(side_effect=httpx.ConnectError("API error"))
+    source._client.get = AsyncMock(side_effect=httpx2.ConnectError("API error"))
     result = await source.fetch()
     assert result is None
 
@@ -105,8 +105,8 @@ async def test_fetch_retries_on_transient_failure(
     source._client = Mock()
     source._client.get = AsyncMock(
         side_effect=[
-            httpx.ConnectError("transient boom 1"),
-            httpx.ConnectError("transient boom 2"),
+            httpx2.ConnectError("transient boom 1"),
+            httpx2.ConnectError("transient boom 2"),
             _mock_response(),
         ]
     )
@@ -134,7 +134,7 @@ async def test_fetch_returns_none_after_max_retries(
     """All three attempts fail — must return None and log exactly once."""
     source = CCDataNewsSource()
     source._client = Mock()
-    source._client.get = AsyncMock(side_effect=httpx.ConnectError("persistent boom"))
+    source._client.get = AsyncMock(side_effect=httpx2.ConnectError("persistent boom"))
 
     with caplog.at_level(logging.WARNING, logger=ccdata_news_module.logger.name):
         result = await source.fetch()
@@ -182,10 +182,10 @@ def test_source_name() -> None:
     assert CCDataNewsSource().name == "ccdata_news"
 
 
-def _make_403_error() -> httpx.HTTPStatusError:
+def _make_403_error() -> httpx2.HTTPStatusError:
     mock_response = Mock()
     mock_response.status_code = 403
-    return httpx.HTTPStatusError(
+    return httpx2.HTTPStatusError(
         "403 Forbidden",
         request=Mock(),
         response=mock_response,

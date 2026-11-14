@@ -5,6 +5,7 @@ This module serves as the main entry point for the KavziTrader CLI.
 """
 
 import click
+import pydantic_ai
 
 from kavzi_trader.cli.commands.config import config_command
 from kavzi_trader.cli.commands.data import data
@@ -27,6 +28,8 @@ def cli(
 
     You can pass hydra configuration overrides as key=value pairs after the command.
     """
+    # Stdout carries structured logs; suppress pydantic-ai's first-run banner.
+    pydantic_ai.BANNER_ENABLED = False
     setup_cli_environment(ctx, verbose)
 
 

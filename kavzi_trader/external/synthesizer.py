@@ -141,7 +141,7 @@ class SentimentSynthesizer:
                 result = await self._agent.run(user_prompt)
             # Broad catch: PydanticAI Agent.run() wraps OpenRouter/LLM provider
             # calls that can surface arbitrary provider-specific errors
-            # (httpx errors, rate-limit exceptions, malformed JSON,
+            # (httpx2 errors, rate-limit exceptions, malformed JSON,
             # ModelRetry, validation failures, etc.). Each retry must be
             # resilient regardless of the specific upstream failure mode.
             except Exception as exc:  # noqa: BLE001
@@ -172,7 +172,7 @@ class SentimentSynthesizer:
             )
             return summary
 
-        logger.exception(
+        logger.error(
             "Sentiment synthesis failed after %d attempts",
             _MAX_RETRIES,
             exc_info=last_error,

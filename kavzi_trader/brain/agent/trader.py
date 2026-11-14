@@ -1,6 +1,5 @@
 import logging
 import time
-from typing import cast
 
 from pydantic_ai import Agent
 
@@ -20,7 +19,7 @@ class TraderAgent:
 
     def __init__(
         self,
-        agent: Agent,
+        agent: Agent[TradingDependenciesSchema, TradeDecisionSchema],
         prompt_loader: PromptLoader,
         context_builder: ContextBuilder,
     ) -> None:
@@ -44,7 +43,7 @@ class TraderAgent:
         t0 = time.monotonic()
         result = await self._agent.run(user_prompt, deps=deps)
         elapsed_ms = (time.monotonic() - t0) * 1000
-        output = cast("TradeDecisionSchema", result.output)
+        output = result.output
         logger.info(
             "Trader result for %s: action=%s confidence=%.2f "
             "entry_tactic=%s entry_idx=%s stop_idx=%s stop_atr=%s "

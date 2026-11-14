@@ -3,7 +3,7 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-from redis.asyncio import Redis  # type: ignore[import-untyped]
+from redis.asyncio import Redis
 
 from kavzi_trader.events.config import EventStoreConfigSchema
 from kavzi_trader.events.event_schema import EventSchema

@@ -1,6 +1,6 @@
 import logging
 
-import redis.asyncio.client  # type: ignore[import-untyped]
+import redis.asyncio.client
 from pydantic import ValidationError
 
 from kavzi_trader.spine.state.redis_client import RedisStateClient
@@ -22,7 +22,7 @@ class PositionStore:
     def _parse_position(self, key: str, data: dict[str, str]) -> PositionSchema | None:
         try:
             return PositionSchema.model_validate_json(data["data"])
-        except (ValidationError, KeyError):
+        except ValidationError, KeyError:
             logger.exception("Corrupt position data in Redis key %s", key)
             return None
 

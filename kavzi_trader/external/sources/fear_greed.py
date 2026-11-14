@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
-import httpx
+import httpx2
 
 from kavzi_trader.external.base import ExternalSource
 from kavzi_trader.external.schemas import FearGreedDataSchema
@@ -17,7 +17,7 @@ class FearGreedSource(ExternalSource):
     """Fetches the Crypto Fear & Greed Index from Alternative.me."""
 
     def __init__(self) -> None:
-        self._client = httpx.AsyncClient(timeout=_TIMEOUT_S)
+        self._client = httpx2.AsyncClient(timeout=_TIMEOUT_S)
 
     @property
     def name(self) -> str:
@@ -50,9 +50,9 @@ class FearGreedSource(ExternalSource):
                 fetched_at=datetime.now(UTC),
             )
         except (
-            httpx.RequestError,
-            httpx.HTTPStatusError,
-            httpx.TimeoutException,
+            httpx2.RequestError,
+            httpx2.HTTPStatusError,
+            httpx2.TimeoutException,
             json.JSONDecodeError,
             ValueError,
             KeyError,

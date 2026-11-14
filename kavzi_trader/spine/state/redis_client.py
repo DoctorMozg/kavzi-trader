@@ -6,13 +6,15 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, cast
 
-import redis.asyncio  # type: ignore[import-untyped]
-import redis.asyncio.client  # type: ignore[import-untyped]
-from redis.asyncio import Redis  # type: ignore[import-untyped]
+import redis.asyncio
+import redis.asyncio.client
+from redis.asyncio import Redis
+from redis.asyncio.retry import Retry
+from redis.backoff import NoBackoff
 from redis.exceptions import (
-    ConnectionError as RedisConnectionError,  # type: ignore[import-untyped]
+    ConnectionError as RedisConnectionError,
 )
-from redis.exceptions import RedisError  # type: ignore[import-untyped]
+from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from kavzi_trader.spine.state.config import RedisConfigSchema
@@ -32,6 +34,7 @@ class RedisStateClient:
         self._retry_backoff_s = config.retry_backoff_s
 
     async def connect(self) -> None:
+        # retry=0: _retry owns the retry policy; library retries would multiply it.
         self._client = Redis(
             host=self._config.host,
             port=self._config.port,
@@ -40,7 +43,7 @@ class RedisStateClient:
             decode_responses=True,
             socket_connect_timeout=5,
             socket_timeout=5,
-            retry_on_timeout=True,
+            retry=Retry(NoBackoff(), 0),
         )
         await self._client.ping()
         logger.info(
@@ -51,7 +54,7 @@ class RedisStateClient:
 
     async def close(self) -> None:
         if self._client:
-            await self._client.close()
+            await self._client.aclose()
             self._client = None
             logger.info("Disconnected from Redis")
 
@@ -98,7 +101,7 @@ class RedisStateClient:
         """Attempt to re-establish the Redis connection."""
         try:
             if self._client:
-                await self._client.close()
+                await self._client.aclose()
             self._client = Redis(
                 host=self._config.host,
                 port=self._config.port,
@@ -107,7 +110,7 @@ class RedisStateClient:
                 decode_responses=True,
                 socket_connect_timeout=5,
                 socket_timeout=5,
-                retry_on_timeout=True,
+                retry=Retry(NoBackoff(), 0),
             )
             await self._client.ping()
             logger.info("Reconnected to Redis")

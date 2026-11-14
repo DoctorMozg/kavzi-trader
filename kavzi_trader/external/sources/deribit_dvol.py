@@ -4,7 +4,7 @@ import logging
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
-import httpx
+import httpx2
 
 from kavzi_trader.external.base import ExternalSource
 from kavzi_trader.external.schemas import DeribitDvolDataSchema
@@ -24,7 +24,7 @@ class DeribitDvolSource(ExternalSource):
     """Fetches BTC DVOL index and put/call ratio from Deribit public API."""
 
     def __init__(self) -> None:
-        self._client = httpx.AsyncClient(timeout=_TIMEOUT_S)
+        self._client = httpx2.AsyncClient(timeout=_TIMEOUT_S)
 
     @property
     def name(self) -> str:
@@ -51,9 +51,9 @@ class DeribitDvolSource(ExternalSource):
                 fetched_at=datetime.now(UTC),
             )
         except (
-            httpx.RequestError,
-            httpx.HTTPStatusError,
-            httpx.TimeoutException,
+            httpx2.RequestError,
+            httpx2.HTTPStatusError,
+            httpx2.TimeoutException,
             json.JSONDecodeError,
             ValueError,
             KeyError,
@@ -67,14 +67,14 @@ class DeribitDvolSource(ExternalSource):
         self,
         url: str,
         params: dict[str, str],
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         """GET with simple retry on transient HTTP/timeout errors."""
-        last_exc: httpx.HTTPStatusError | httpx.TimeoutException | None = None
+        last_exc: httpx2.HTTPStatusError | httpx2.TimeoutException | None = None
         for attempt in range(_MAX_RETRIES + 1):
             try:
                 resp = await self._client.get(url, params=params)
                 resp.raise_for_status()
-            except (httpx.HTTPStatusError, httpx.TimeoutException) as exc:
+            except (httpx2.HTTPStatusError, httpx2.TimeoutException) as exc:
                 last_exc = exc
                 if attempt < _MAX_RETRIES:
                     delay = _RETRY_BACKOFF_S * (attempt + 1)

@@ -1,6 +1,6 @@
 from unittest.mock import AsyncMock, Mock
 
-import httpx
+import httpx2
 import pytest
 
 from kavzi_trader.external.sources.fear_greed import FearGreedSource
@@ -49,7 +49,7 @@ async def test_fetch_empty_data_returns_none() -> None:
 async def test_fetch_returns_none_on_error() -> None:
     source = FearGreedSource()
     source._client = Mock()
-    source._client.get = AsyncMock(side_effect=httpx.ConnectError("timeout"))
+    source._client.get = AsyncMock(side_effect=httpx2.ConnectError("timeout"))
     result = await source.fetch()
     assert result is None
 

@@ -22,7 +22,7 @@ class PendingEntryStore:
     def _parse(self, key: str, data: dict[str, str]) -> PendingEntrySchema | None:
         try:
             return PendingEntrySchema.model_validate_json(data["data"])
-        except (ValidationError, KeyError):
+        except ValidationError, KeyError:
             logger.exception("Corrupt pending-entry data in Redis key %s", key)
             return None
 

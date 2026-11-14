@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-KavziTrader is an LLM-based cryptocurrency trading platform for Binance using a **Brain-Spine Architecture**. The Brain (Scout deterministic filter + Analyst LLM → Trader LLM) handles intelligent market analysis; the Spine handles deterministic, high-speed async execution. Python 3.13+, async-first, event-sourced via Redis Streams.
+KavziTrader is an LLM-based cryptocurrency trading platform for Binance using a **Brain-Spine Architecture**. The Brain (Scout deterministic filter + Analyst LLM → Trader LLM) handles intelligent market analysis; the Spine handles deterministic, high-speed async execution. Python 3.14+, async-first, event-sourced via Redis Streams.
 
 ## Commands
 
@@ -21,13 +21,13 @@ uv run pytest tests/indicators/test_ema.py
 # Run a single test
 uv run pytest tests/indicators/test_ema.py::test_function_name -v
 
-# Pre-commit checks (ruff lint + format, mypy, trailing whitespace, absolufy-imports)
+# Pre-commit checks (ruff lint + format, mypy, trailing whitespace)
 uv run pre-commit run --all-files
 
 # Individual quality checks
-uv run ruff check .
-uv run ruff format .
-uv run mypy .
+uv run pre-commit run ruff-check --all-files
+uv run pre-commit run ruff-format --all-files
+uv run pre-commit run mypy --all-files
 
 # CLI
 uv run kavzitrader --help
@@ -104,8 +104,8 @@ Do **not** add `Co-Authored-By` trailers to commit messages.
 - **Time variables** must have `_ms` or `_s` suffix indicating units.
 - **Logging**: Use `logger.exception()` in exception handlers (not `logger.error()`). Use `%`-style formatting in log messages, not f-strings. Include contextual `extra={}` for structured data.
 - **All functions require complete type hints**. mypy strict mode with Pydantic plugin enforced.
-- **Absolute imports only** (enforced by absolufy-imports hook).
+- **Absolute imports only** (enforced by ruff TID252, `ban-relative-imports = "all"`).
 - **Line length**: 88 chars. 4-space indentation. Ruff for lint + format.
 - **No bare tuples** for structured data — use Pydantic models with named fields instead.
 - **No `dict[str, Any]`** for fixed-structure data — use TypedDicts (for external API shapes, Redis serialization) or Pydantic models. Plain `dict[K, V]` is fine for genuine dynamic mappings (e.g., `dict[str, Decimal]` for symbol → price lookups).
-- **After every change**: Always run `uv run pre-commit run --all-files` and `uv run pytest` after making changes. Pre-commit covers ruff lint/format, mypy, trailing whitespace, and absolufy-imports — use it instead of running ruff/mypy individually. Do not consider a change complete until both pre-commit and tests pass.
+- **After every change**: Always run `uv run pre-commit run --all-files` and `uv run pytest` after making changes. Pre-commit covers ruff lint/format, mypy and trailing whitespace — use it instead of running ruff/mypy individually. Do not consider a change complete until both pre-commit and tests pass.

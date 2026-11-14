@@ -1,135 +1,116 @@
 """Unit tests for the LLM-failure log dispatcher in router.py.
 
-Covers per-type branches (httpx, openai, pydantic_ai) so operators can
-distinguish rate limits, timeouts, schema-retry exhaustion, and generic
-failures in the log stream.
+Errors are produced by a real pydantic-ai agent over a mock transport, so the
+tests cover the exception types production actually sees.
 """
 
 import logging
+from collections.abc import Callable
 
-import httpx
-import openai
+import httpx2
 import pytest
+from openai import AsyncOpenAI
+from pydantic import BaseModel
+from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 from kavzi_trader.brain.agent.router import _log_llm_exception
 
+Handler = Callable[[httpx2.Request], httpx2.Response]
 
-def _make_httpx_response(
-    status_code: int, retry_after: str | None = None
-) -> httpx.Response:
+
+class _OutputSchema(BaseModel):
+    value: int
+
+
+async def _raise_from_agent(handler: Handler) -> Exception:
+    client = AsyncOpenAI(
+        base_url="https://openrouter.test/api/v1",
+        api_key="test",
+        max_retries=0,
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    )
+    model = OpenAIChatModel("test-model", provider=OpenAIProvider(openai_client=client))
+    agent = Agent(model, output_type=_OutputSchema)
+    with pytest.raises(Exception) as exc_info:
+        await agent.run("hi")
+    raised: Exception = exc_info.value
+    return raised
+
+
+def _status_handler(status_code: int, retry_after: str | None = None) -> Handler:
     headers = {"retry-after": retry_after} if retry_after is not None else {}
-    return httpx.Response(
-        status_code=status_code,
-        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
-        headers=headers,
+
+    def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            status_code, json={"error": {"message": "nope"}}, headers=headers
+        )
+
+    return handler
+
+
+def _timeout_handler(request: httpx2.Request) -> httpx2.Response:
+    raise httpx2.ReadTimeout("timed out", request=request)
+
+
+def _log(exc: BaseException, symbol: str = "BTCUSDT", agent: str = "analyst") -> None:
+    _log_llm_exception(
+        symbol,
+        agent,
+        exc,
+        elapsed_ms=1234.5,
+        body_preview_chars=500,
+        exc_message_preview_chars=200,
     )
 
 
-def test_http_status_error_logs_status_code(
+async def test_server_error_logs_status_code(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    response = _make_httpx_response(502, retry_after="30")
-    exc = httpx.HTTPStatusError(
-        "bad gateway", request=response.request, response=response
-    )
+    exc = await _raise_from_agent(_status_handler(502, retry_after="30"))
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception(
-            "BTCUSDT",
-            "analyst",
-            exc,
-            elapsed_ms=1234.5,
-            body_preview_chars=500,
-            exc_message_preview_chars=200,
-        )
+        _log(exc)
 
     matching = [r for r in caplog.records if "HTTP 502" in r.message]
     assert len(matching) == 1
     record = matching[0]
     assert record.http_status == 502
-    assert record.retry_after == "30"
+    assert record.retry_after == 30.0
     assert record.symbol == "BTCUSDT"
     assert record.agent == "analyst"
-    assert record.exception_type == "HTTPStatusError"
     assert record.elapsed_ms == 1234.5
 
 
-def test_openai_rate_limit_logs_retry_after(
+async def test_rate_limit_logs_retry_after(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    response = _make_httpx_response(429, retry_after="60")
-    exc = openai.RateLimitError(
-        "rate limit exceeded",
-        response=response,
-        body=None,
-    )
+    exc = await _raise_from_agent(_status_handler(429, retry_after="60"))
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception(
-            "ETHUSDT",
-            "analyst",
-            exc,
-            elapsed_ms=500.0,
-            body_preview_chars=500,
-            exc_message_preview_chars=200,
-        )
+        _log(exc, symbol="ETHUSDT")
 
     matching = [r for r in caplog.records if "rate-limited" in r.message]
     assert len(matching) == 1
     record = matching[0]
     assert record.http_status == 429
-    assert record.retry_after == "60"
+    assert record.retry_after == 60.0
     assert record.symbol == "ETHUSDT"
 
 
-def test_openai_api_status_error_logs_status(
+async def test_transport_timeout_logged_as_timeout(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    response = _make_httpx_response(500)
-    exc = openai.APIStatusError(
-        "internal error",
-        response=response,
-        body={"error": {"message": "boom"}},
-    )
+    exc = await _raise_from_agent(_timeout_handler)
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception(
-            "SOLUSDT",
-            "trader",
-            exc,
-            elapsed_ms=250.0,
-            body_preview_chars=500,
-            exc_message_preview_chars=200,
-        )
+        _log(exc, symbol="BNBUSDT", agent="trader")
 
-    matching = [r for r in caplog.records if "HTTP 500" in r.message]
+    matching = [r for r in caplog.records if "LLM timed out" in r.message]
     assert len(matching) == 1
-    record = matching[0]
-    assert record.http_status == 500
-    assert record.symbol == "SOLUSDT"
-
-
-def test_timeout_logs_elapsed_and_type(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    exc = httpx.ReadTimeout("timed out")
-
-    with caplog.at_level(logging.WARNING):
-        _log_llm_exception(
-            "BNBUSDT",
-            "trader",
-            exc,
-            elapsed_ms=12_000.0,
-            body_preview_chars=500,
-            exc_message_preview_chars=200,
-        )
-
-    matching = [r for r in caplog.records if "timed out" in r.message]
-    assert len(matching) == 1
-    record = matching[0]
-    assert record.exception_type == "ReadTimeout"
-    assert record.elapsed_ms == 12000.0
+    assert matching[0].elapsed_ms == 1234.5
 
 
 def test_builtin_timeout_error_logged_as_timeout(

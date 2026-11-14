@@ -122,7 +122,7 @@ class TradingOrchestrator:
                     continue
                 exc = task.exception()
                 if exc is not None:
-                    logger.exception(
+                    logger.error(
                         "Task %s crashed, restarting",
                         name,
                         exc_info=exc,

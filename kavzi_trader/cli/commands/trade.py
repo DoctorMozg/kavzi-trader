@@ -8,8 +8,9 @@ from decimal import Decimal
 from pathlib import Path
 
 import click
-import httpx
+import httpx2
 from openai import AsyncOpenAI
+from pydantic_ai.settings import ModelSettings
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
@@ -24,6 +25,7 @@ from kavzi_trader.brain.schemas.dependencies import rebuild_deferred_models
 from kavzi_trader.config import AppConfig
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.external.cache import ExternalDataCache
+from kavzi_trader.external.config import SynthesizerConfigSchema
 from kavzi_trader.external.loop import ExternalSentimentLoop
 from kavzi_trader.external.sources import build_enabled_sources
 from kavzi_trader.external.synthesizer import SentimentSynthesizer
@@ -100,6 +102,13 @@ def _build_exchange(app_config: AppConfig) -> BinanceClient:
         api_key=app_config.api.binance.api_key,
         api_secret=app_config.api.binance.api_secret,
     )
+
+
+def _synth_model_settings(config: SynthesizerConfigSchema) -> ModelSettings:
+    settings = ModelSettings(temperature=config.temperature)
+    if config.seed is not None:
+        settings["seed"] = config.seed
+    return settings
 
 
 async def _start_orchestrator(
@@ -232,7 +241,7 @@ async def _start_orchestrator(
                 openai_client=AsyncOpenAI(
                     base_url=app_config.brain.openrouter_base_url,
                     api_key=app_config.brain.openrouter_api_key,
-                    timeout=httpx.Timeout(30.0, connect=10.0),
+                    timeout=httpx2.Timeout(30.0, connect=10.0),
                     default_headers={
                         "HTTP-Referer": "https://github.com/kavzitrader",
                         "X-Title": "KavziTrader-Synthesizer",
@@ -244,12 +253,7 @@ async def _start_orchestrator(
                 provider=synth_provider,
             )
             synth_system_prompt = prompt_loader.render_system_prompt("synthesizer")
-            from pydantic_ai.settings import ModelSettings
-
-            synth_settings = ModelSettings(
-                temperature=synth_config.temperature,
-                seed=synth_config.seed,
-            )
+            synth_settings = _synth_model_settings(synth_config)
             synth_agent: Agent[None, _SynthesizerOutputSchema] = Agent(
                 synth_model,
                 output_type=_SynthesizerOutputSchema,

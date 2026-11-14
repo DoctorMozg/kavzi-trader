@@ -45,7 +45,7 @@ class TradeDecisionSchema(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def validate_trade_structure(self) -> "TradeDecisionSchema":
+    def validate_trade_structure(self) -> TradeDecisionSchema:
         if self.action not in {"LONG", "SHORT"}:
             return self
         if self.target_style is None:

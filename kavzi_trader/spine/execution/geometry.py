@@ -88,7 +88,7 @@ class TradeGeometryCalculator:
         structure: TradeStructureSchema,
         inputs: GeometryInputsSchema,
         entry: Decimal,
-        stop: "_ResolvedStop",
+        stop: _ResolvedStop,
         target: Decimal,
         atr: Decimal,
     ) -> TradeGeometrySchema | GeometryRejectionSchema:

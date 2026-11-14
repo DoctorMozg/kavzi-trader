@@ -2,9 +2,11 @@ import logging
 import time
 from typing import Protocol
 
-import httpx
-import openai
-from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.exceptions import (
+    ModelHTTPError,
+    ModelRateLimitError,
+    UnexpectedModelBehavior,
+)
 
 from kavzi_trader.brain.agent.analyst_pipeline import AnalystPipeline
 from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
@@ -14,6 +16,7 @@ from kavzi_trader.brain.agent.decision_dedup import (
     ScoutDedupEntry,
     TraderDedupEntry,
 )
+from kavzi_trader.brain.agent.llm_errors import LLM_TIMEOUT_ERRORS
 from kavzi_trader.brain.agent.router_config import RouterConfigSchema
 from kavzi_trader.brain.agent.scout_pipeline import ScoutPipeline
 from kavzi_trader.brain.agent.trader_pipeline import TraderPipeline
@@ -109,37 +112,6 @@ _DEFAULT_TRADER_CIRCUIT_THRESHOLD = 3
 _DEFAULT_ANALYST_CONCURRENCY_LIMIT = 3
 
 
-def _http_status_of(exc: BaseException) -> int | None:
-    """Best-effort extraction of HTTP status code from LLM / HTTP errors."""
-    response = getattr(exc, "response", None)
-    if response is not None:
-        status = getattr(response, "status_code", None)
-        if isinstance(status, int):
-            return status
-    status = getattr(exc, "status_code", None)
-    is_status_int = isinstance(status, int)
-    if is_status_int:
-        return status
-    return None
-
-
-def _retry_after_of(exc: BaseException) -> str | None:
-    """Best-effort extraction of the Retry-After header from HTTP errors."""
-    response = getattr(exc, "response", None)
-    if response is None:
-        return None
-    headers = getattr(response, "headers", None)
-    if headers is None:
-        return None
-    try:
-        value = headers.get("retry-after")
-    except AttributeError:
-        return None
-    if value is None:
-        return None
-    return str(value)
-
-
 def _log_llm_exception(
     symbol: str,
     agent: str,
@@ -161,48 +133,35 @@ def _log_llm_exception(
         "exception_type": type(exc).__name__,
         "elapsed_ms": round(elapsed_ms, 1),
     }
-    if isinstance(exc, openai.RateLimitError):
-        retry_after = _retry_after_of(exc)
-        extra = base_extra | {"http_status": 429, "retry_after": retry_after}
+    if isinstance(exc, ModelRateLimitError):
+        extra = base_extra | {"http_status": 429, "retry_after": exc.retry_after}
         logger.warning(
             "%s LLM rate-limited for %s after %.1fms (retry_after=%s): %s",
             agent,
             symbol,
             elapsed_ms,
-            retry_after,
+            exc.retry_after,
             str(exc)[:exc_message_preview_chars],
             extra=extra,
         )
         return
-    if isinstance(exc, openai.APIStatusError):
-        status = _http_status_of(exc)
-        extra = base_extra | {"http_status": status}
-        logger.warning(
-            "%s LLM HTTP %s for %s after %.1fms: %s",
-            agent,
-            status,
-            symbol,
-            elapsed_ms,
-            str(exc)[:exc_message_preview_chars],
-            extra=extra,
-        )
-        return
-    if isinstance(exc, httpx.HTTPStatusError):
-        status = _http_status_of(exc)
-        retry_after = _retry_after_of(exc)
-        extra = base_extra | {"http_status": status, "retry_after": retry_after}
+    if isinstance(exc, ModelHTTPError):
+        extra = base_extra | {
+            "http_status": exc.status_code,
+            "retry_after": exc.retry_after,
+        }
         logger.warning(
             "%s LLM HTTP %s for %s after %.1fms (retry_after=%s): %s",
             agent,
-            status,
+            exc.status_code,
             symbol,
             elapsed_ms,
-            retry_after,
+            exc.retry_after,
             str(exc)[:exc_message_preview_chars],
             extra=extra,
         )
         return
-    if isinstance(exc, httpx.TimeoutException | TimeoutError):
+    if isinstance(exc, LLM_TIMEOUT_ERRORS):
         logger.warning(
             "%s LLM timed out for %s after %.1fms (type=%s)",
             agent,
@@ -225,13 +184,14 @@ def _log_llm_exception(
             extra=extra,
         )
         return
-    logger.exception(
+    logger.error(
         "%s LLM failed for %s after %.1fms (type=%s): %s",
         agent,
         symbol,
         elapsed_ms,
         type(exc).__name__,
         str(exc)[:exc_message_preview_chars],
+        exc_info=exc,
         extra=base_extra,
     )
 

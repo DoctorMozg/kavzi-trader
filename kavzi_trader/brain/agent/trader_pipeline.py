@@ -5,12 +5,12 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal, Protocol
 
-import httpx
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
+from kavzi_trader.brain.agent.llm_errors import LLM_TIMEOUT_ERRORS
 from kavzi_trader.brain.agent.router_config import RouterConfigSchema
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
@@ -319,7 +319,7 @@ class TraderPipeline:
                 analyst_result=analyst_result,
                 scout_pattern=scout_pattern,
             )
-        except (TimeoutError, httpx.TimeoutException) as exc:
+        except LLM_TIMEOUT_ERRORS as exc:
             elapsed_ms = (time.monotonic() - t0) * 1000
             self._log_llm_exception(symbol, "trader", exc, elapsed_ms)
             return TraderPipelineResultSchema(

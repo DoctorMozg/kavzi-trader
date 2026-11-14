@@ -198,13 +198,13 @@ class AppConfig(BaseModel):
             )
 
     @classmethod
-    def from_file(cls, path: Path) -> "AppConfig":
+    def from_file(cls, path: Path) -> AppConfig:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         cls._apply_env_overrides(data)
         return cls.model_validate(data)
 
     @classmethod
-    def from_env(cls) -> "AppConfig":
+    def from_env(cls) -> AppConfig:
         config_path = Path(__file__).resolve().parents[2] / "config" / "config.yaml"
         return cls.from_file(config_path)
 

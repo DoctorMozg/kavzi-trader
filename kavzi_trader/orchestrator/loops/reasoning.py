@@ -109,7 +109,7 @@ class ReasoningLoop:
             results: list[bool] = []
             for symbol, result in zip(self._symbols, raw_results, strict=True):
                 if isinstance(result, BaseException):
-                    logger.exception(
+                    logger.error(
                         "ReasoningLoop symbol %s raised, treating as non-interesting",
                         symbol,
                         exc_info=result,

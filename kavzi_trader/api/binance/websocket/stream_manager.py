@@ -135,7 +135,7 @@ class StreamManager:
     ) -> None:
         """Connect the socket, start a recv loop, and track both."""
         self.stream_callbacks[stream_name] = callback
-        task = asyncio.get_event_loop().create_task(
+        task = asyncio.create_task(
             self._recv_loop(stream_name, socket),
         )
         self._streams[stream_name] = _StreamEntry(socket=socket, task=task)

@@ -4,7 +4,7 @@ import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 
-import httpx
+import httpx2
 
 from kavzi_trader.external.base import ExternalSource
 from kavzi_trader.external.schemas import CCDataNewsDataSchema
@@ -35,7 +35,7 @@ class CCDataNewsSource(ExternalSource):
     ) -> None:
         self._max_results = max_results
         self._max_headlines = max_headlines
-        self._client = httpx.AsyncClient(timeout=_TIMEOUT_S)
+        self._client = httpx2.AsyncClient(timeout=_TIMEOUT_S)
         self._permanently_disabled = False
 
     @property
@@ -91,7 +91,7 @@ class CCDataNewsSource(ExternalSource):
                 resp.raise_for_status()
                 body = resp.json()
                 articles: list[dict[str, object]] = body.get("Data", [])
-            except httpx.HTTPStatusError as exc:
+            except httpx2.HTTPStatusError as exc:
                 if exc.response.status_code == _HTTP_FORBIDDEN:
                     # 403 means access denied — the free tier now requires an
                     # API key. Retrying won't help; self-disable for the session
@@ -123,7 +123,7 @@ class CCDataNewsSource(ExternalSource):
                 )
                 return None
             except (
-                httpx.RequestError,
+                httpx2.RequestError,
                 json.JSONDecodeError,
                 ValueError,
                 KeyError,

@@ -32,8 +32,10 @@ def test_trade_status_outputs_counts(monkeypatch, capsys) -> None:
         lambda _: mock_manager,
     )
     ctx = click.Context(trade, obj={"app_config": AppConfig.from_env()})
+    callback = trade_module.status.callback
+    assert callback is not None
     with ctx:
-        trade_module.status.callback()
+        callback()
     captured = capsys.readouterr()
     assert "Positions: 0" in captured.out
     assert "Open orders: 0" in captured.out

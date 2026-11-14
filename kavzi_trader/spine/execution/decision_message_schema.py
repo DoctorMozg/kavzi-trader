@@ -37,7 +37,7 @@ class DecisionMessageSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     @model_validator(mode="after")
-    def validate_trade_geometry(self) -> "DecisionMessageSchema":
+    def validate_trade_geometry(self) -> DecisionMessageSchema:
         # Defense-in-depth: mirrors TradeDecisionSchema.validate_trade_logic so
         # malformed Trader output cannot construct an execution message even if
         # upstream guards are bypassed or refactored.

@@ -20,7 +20,7 @@ class OrderStore:
     def _parse_order(self, key: str, data: dict[str, str]) -> OpenOrderSchema | None:
         try:
             return OpenOrderSchema.model_validate_json(data["data"])
-        except (ValidationError, KeyError):
+        except ValidationError, KeyError:
             logger.exception("Corrupt order data in Redis key %s", key)
             return None
 

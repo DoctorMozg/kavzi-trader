@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Literal
 
 import pytest
+from pydantic_ai.exceptions import ModelTimeoutError
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
@@ -2305,7 +2306,16 @@ async def test_router_caches_breakout_reject_gate(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "timeout_exc",
+    [
+        TimeoutError("Trader timed out"),
+        ModelTimeoutError("trader-model", "read timed out", phase="read"),
+    ],
+    ids=["builtin", "pydantic_ai_transport"],
+)
 async def test_router_does_not_cache_timeout_wait(
+    timeout_exc: Exception,
     candle,
     indicators,
     volatility_regime,
@@ -2330,7 +2340,7 @@ async def test_router_does_not_cache_timeout_wait(
         ) -> TradeDecisionSchema:
             nonlocal call_count
             call_count += 1
-            raise TimeoutError("Trader timed out")
+            raise timeout_exc
 
     router = AgentRouter(
         DummyScout("INTERESTING"),

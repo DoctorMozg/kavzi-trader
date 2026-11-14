@@ -118,7 +118,7 @@ class ExternalSentimentLoop:
 
         for source, result in zip(self._sources, results, strict=True):
             if isinstance(result, BaseException):
-                logger.exception(
+                logger.error(
                     "External source %s raised an exception",
                     source.name,
                     exc_info=result,

@@ -3,6 +3,7 @@ Tests for async utility functions.
 """
 
 import asyncio
+import inspect
 import time
 
 import pytest
@@ -21,8 +22,8 @@ def test_to_async_decorator() -> None:
     async_function = to_async(sync_function)
 
     # Verify it's now an async function
-    assert asyncio.iscoroutinefunction(async_function)
-    assert not asyncio.iscoroutinefunction(sync_function)
+    assert inspect.iscoroutinefunction(async_function)
+    assert not inspect.iscoroutinefunction(sync_function)
 
     # Test the function works correctly
     result = asyncio.run(async_function(5, 3))
@@ -65,8 +66,8 @@ def test_to_sync_decorator() -> None:
     sync_function = to_sync(async_function)
 
     # Verify it's now a sync function
-    assert not asyncio.iscoroutinefunction(sync_function)
-    assert asyncio.iscoroutinefunction(async_function)
+    assert not inspect.iscoroutinefunction(sync_function)
+    assert inspect.iscoroutinefunction(async_function)
 
     # Test the function works correctly
     result = sync_function(5, 3)
