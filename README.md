@@ -143,8 +143,9 @@ Environment variables:
 - `KT_BINANCE_API_KEY`
 - `KT_BINANCE_API_SECRET`
 - `KT_OPENROUTER_API_KEY`
+- `KT_ANTHROPIC_API_KEY` (only when an agent sets `provider: anthropic` in `config.yaml`)
 
-Paper validation (`config --validate --paper`) needs only the OpenRouter key.
+Paper validation (`config --validate --paper`) needs only the LLM keys for the providers in use.
 
 ## Usage
 

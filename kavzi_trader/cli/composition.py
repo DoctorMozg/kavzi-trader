@@ -337,10 +337,8 @@ class OrchestratorComposer:
         if not sources:
             return None
         synthesizer = None
-        if (
-            external.synthesizer.enabled
-            and self._config.brain.openrouter_api_key.get_secret_value()
-        ):
+        synth_key = self._config.brain.api_key_for(external.synthesizer.provider)
+        if external.synthesizer.enabled and synth_key.get_secret_value():
             synthesizer = SentimentSynthesizer(
                 factory.create_synthesizer_agent(external.synthesizer),
                 prompt_loader,
@@ -361,8 +359,10 @@ class OrchestratorComposer:
         fgi_gate: FearGreedGateFilter | None,
     ) -> AgentRouter:
         logger.info(
-            "Creating brain agents (Analyst/Trader) via OpenRouter; "
+            "Creating brain agents (Analyst via %s, Trader via %s); "
             "Scout is algorithmic",
+            self._config.brain.analyst.provider,
+            self._config.brain.trader.provider,
         )
         context_builder = ContextBuilder()
         router = AgentRouter(

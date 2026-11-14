@@ -29,6 +29,15 @@ brain:
   openrouter_api_key: ""       # Override via KT_OPENROUTER_API_KEY env var
   openrouter_base_url: "https://openrouter.ai/api/v1"
 
+  # Direct Anthropic API. Required only when an agent below (or the external
+  # synthesizer) sets provider: anthropic. Never put the key in this file:
+  # export KT_ANTHROPIC_API_KEY in your environment / .env instead.
+  anthropic_api_key: ""        # Override via KT_ANTHROPIC_API_KEY env var
+
+  # SDK-level retries (429/5xx) for the Anthropic client. Each retry can use a
+  # full per-agent timeout_s, so keep it low against the Analyst latency budget.
+  anthropic_max_retries: 2
+
   # Maximum seconds to wait for an OpenRouter API response before timing out.
   #   60  = aggressive (may timeout on slower models)
   #   120 = default
@@ -41,7 +50,16 @@ brain:
   # failure rate is near zero and you want shorter tail-latency.
   analyst_concurrency_limit: 3
 
+  # Per-agent provider: "openrouter" (default) or "anthropic" (direct API).
+  # With anthropic, model_id uses Anthropic's own format (no "anthropic/" prefix)
+  # and may be omitted: analyst -> claude-sonnet-5-5, trader -> claude-opus-5-5.
+  # Anthropic agents ignore temperature/seed (Claude 5.5 rejects sampling
+  # params), always use adaptive thinking, and are steered by `effort`
+  # (low | medium | high | xhigh | max; default medium analyst/trader, low
+  # synthesizer). Thinking cannot be disabled, so budget latency with timeout_s:
+  # the 12s Analyst timeout below is tight for Sonnet 5.5, raise it when switching.
   analyst:
+    provider: "openrouter"
     # Tier 2 — Structured confluence scoring against a fixed rubric.
     # Haiku 4.5 targets ~1.5s p50 latency vs ~6.3s on gpt-5.4-mini with
     # comparable rubric-following quality for well-templated prompts.
@@ -53,6 +71,7 @@ brain:
     timeout_s: 12
 
   trader:
+    provider: "openrouter"
     # Tier 3 — Final decision: 87.82% accuracy, most token-efficient ($5.00/$25.00 per M tokens)
     # Alternatives: openai/gpt-5 (88.23%), openai/gpt-4.1 (best tool-calling value)
     # or "anthropic/claude-opus-4.6"
@@ -532,9 +551,11 @@ external_sources:
 
   # Sentiment Synthesizer — cheap LLM that pre-digests raw external data
   # into a compact summary for Analyst/Trader consumption.
-  # Uses OpenRouter (same KT_OPENROUTER_API_KEY as brain agents).
+  # Uses OpenRouter (same KT_OPENROUTER_API_KEY as brain agents) unless
+  # provider is "anthropic" (default model claude-sonnet-5-5, effort low).
   synthesizer:
     enabled: true
+    provider: "openrouter"
     model_id: "deepseek/deepseek-chat-v3-0324"
     temperature: 0.0
     retries: 1

@@ -55,3 +55,6 @@ def config_command(ctx: click.Context, validate: bool, paper: bool) -> None:
     click.echo(
         f"OpenRouter API key: {_secret_state(app_config.brain.openrouter_api_key)}",
     )
+    click.echo(
+        f"Anthropic API key: {_secret_state(app_config.brain.anthropic_api_key)}",
+    )

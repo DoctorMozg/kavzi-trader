@@ -8,9 +8,15 @@ import logging
 import click
 from openai import AsyncOpenAI
 
+from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS, AgentModelConfigSchema
 from kavzi_trader.config import AppConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _describe(tier: AgentModelConfigSchema, role: str) -> str:
+    model_id = tier.model_id or ANTHROPIC_AGENT_DEFAULTS[role].model_id
+    return f"{model_id} ({tier.provider})"
 
 
 @click.group()
@@ -31,8 +37,8 @@ def model_status(ctx: click.Context) -> None:
 
     click.echo(f"OpenRouter base URL: {brain.openrouter_base_url}")
     click.echo("Scout:         algorithmic (no LLM)")
-    click.echo(f"Analyst model: {brain.analyst.model_id}")
-    click.echo(f"Trader model:  {brain.trader.model_id}")
+    click.echo(f"Analyst model: {_describe(brain.analyst, 'analyst')}")
+    click.echo(f"Trader model:  {_describe(brain.trader, 'trader')}")
 
     async def _check() -> bool:
         client = AsyncOpenAI(

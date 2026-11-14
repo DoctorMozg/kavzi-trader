@@ -37,18 +37,23 @@ class PromptedAgent[TDeps, TOutput]:
         usage = result.usage
         logger.info(
             "%s usage for %s: input_tokens=%d output_tokens=%d "
-            "total_tokens=%d elapsed_ms=%.1f",
+            "total_tokens=%d cache_read_tokens=%d cache_write_tokens=%d "
+            "elapsed_ms=%.1f",
             self._label,
             symbol,
             usage.input_tokens,
             usage.output_tokens,
             usage.total_tokens,
+            usage.cache_read_tokens,
+            usage.cache_write_tokens,
             elapsed_ms,
             extra={
                 "symbol": symbol,
                 "input_tokens": usage.input_tokens,
                 "output_tokens": usage.output_tokens,
                 "total_tokens": usage.total_tokens,
+                "cache_read_tokens": usage.cache_read_tokens,
+                "cache_write_tokens": usage.cache_write_tokens,
                 "elapsed_ms": round(elapsed_ms, 1),
             },
         )

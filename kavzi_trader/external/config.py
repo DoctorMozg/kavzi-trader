@@ -1,6 +1,10 @@
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from kavzi_trader.commons.llm_provider import AnthropicEffort, LlmProvider
+
+_DEFAULT_OPENROUTER_SYNTH_MODEL = "deepseek/deepseek-chat-v3-0324"
 
 
 class DeribitDvolConfigSchema(BaseModel):
@@ -33,12 +37,26 @@ class SynthesizerConfigSchema(BaseModel):
     """Configuration for the Sentiment Synthesizer LLM agent."""
 
     enabled: Annotated[bool, Field(default=True)]
-    model_id: Annotated[str, Field(default="deepseek/deepseek-chat-v3-0324")]
+    provider: Annotated[LlmProvider, Field(default=LlmProvider.OPENROUTER)]
+    # None with Anthropic means the factory's default synthesizer model.
+    model_id: Annotated[str | None, Field(default=None, min_length=1)]
+    # Anthropic only; None means the factory's default synthesizer effort.
+    effort: Annotated[AnthropicEffort | None, Field(default=None)]
     temperature: Annotated[float, Field(default=0.0, ge=0.0, le=2.0)]
     retries: Annotated[int, Field(default=1, ge=0, le=5)]
     seed: Annotated[int | None, Field(default=42)]
 
     model_config = ConfigDict(frozen=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_openrouter_model(cls, data: object) -> object:
+        if not isinstance(data, dict) or data.get("model_id") is not None:
+            return data
+        provider = LlmProvider(data.get("provider", LlmProvider.OPENROUTER))
+        if provider is LlmProvider.OPENROUTER:
+            return {**data, "model_id": _DEFAULT_OPENROUTER_SYNTH_MODEL}
+        return data
 
 
 class CircuitBreakerConfigSchema(BaseModel):

@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from kavzi_trader.brain.config import BrainConfigSchema
+from kavzi_trader.commons.llm_provider import LlmProvider
 from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
 from kavzi_trader.events.config import EventStoreConfigSchema
@@ -127,10 +128,7 @@ class AppConfig(BaseModel):
             errors.append(
                 "KT_BINANCE_API_SECRET (or api.binance.api_secret) is required",
             )
-        if not self.brain.openrouter_api_key.get_secret_value():
-            errors.append(
-                "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key) is required",
-            )
+        errors.extend(self._llm_key_errors())
         if not self.trading.symbols:
             errors.append(
                 "trading.symbols must contain at least one symbol",
@@ -142,11 +140,7 @@ class AppConfig(BaseModel):
 
     def validate_for_paper_trading(self) -> None:
         """Raise if config is insufficient for paper trading."""
-        errors: list[str] = []
-        if not self.brain.openrouter_api_key.get_secret_value():
-            errors.append(
-                "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key) is required",
-            )
+        errors: list[str] = list(self._llm_key_errors())
         if not self.trading.symbols:
             errors.append(
                 "trading.symbols must contain at least one symbol",
@@ -155,6 +149,31 @@ class AppConfig(BaseModel):
             raise ValueError(
                 "Paper trading configuration errors:\n  - " + "\n  - ".join(errors),
             )
+
+    def llm_providers_in_use(self) -> set[LlmProvider]:
+        """Providers of every agent that will actually run."""
+        providers = {self.brain.analyst.provider, self.brain.trader.provider}
+        external = self.external_sources
+        if external.enabled and external.synthesizer.enabled:
+            providers.add(external.synthesizer.provider)
+        return providers
+
+    def _llm_key_errors(self) -> list[str]:
+        messages = {
+            LlmProvider.OPENROUTER: (
+                "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key) is required"
+            ),
+            LlmProvider.ANTHROPIC: (
+                "KT_ANTHROPIC_API_KEY (or brain.anthropic_api_key) is required "
+                "because an agent uses provider anthropic"
+            ),
+        }
+        return [
+            messages[provider]
+            for provider in LlmProvider
+            if provider in self.llm_providers_in_use()
+            and not self.brain.api_key_for(provider).get_secret_value()
+        ]
 
     @classmethod
     def from_file(cls, path: Path) -> AppConfig:
@@ -181,3 +200,6 @@ class AppConfig(BaseModel):
         env_openrouter_key = os.getenv("KT_OPENROUTER_API_KEY")
         if env_openrouter_key is not None:
             brain["openrouter_api_key"] = env_openrouter_key
+        env_anthropic_key = os.getenv("KT_ANTHROPIC_API_KEY")
+        if env_anthropic_key is not None:
+            brain["anthropic_api_key"] = env_anthropic_key

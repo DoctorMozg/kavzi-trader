@@ -1,6 +1,7 @@
 import logging
 
 from pydantic_ai.exceptions import (
+    ContentFilterError,
     ModelHTTPError,
     ModelRateLimitError,
     UnexpectedModelBehavior,
@@ -68,6 +69,16 @@ def log_llm_exception(
             elapsed_ms,
             type(exc).__name__,
             extra=base_extra,
+        )
+        return
+    if isinstance(exc, ContentFilterError):
+        logger.warning(
+            "%s LLM refused for %s after %.1fms, treating as no decision: %s",
+            agent,
+            symbol,
+            elapsed_ms,
+            exc.message,
+            extra=base_extra | {"refused": True},
         )
         return
     if isinstance(exc, UnexpectedModelBehavior):
