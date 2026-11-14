@@ -110,22 +110,3 @@ class AccountStore:
         if not account:
             return Decimal(0)
         return account.current_drawdown_percent
-
-    async def reset_peak_balance(self) -> None:
-        async with self._lock:
-            account = await self.get()
-            if account:
-                now = utc_now()
-                new_state = AccountStateSchema(
-                    total_balance_usdt=account.total_balance_usdt,
-                    available_balance_usdt=account.available_balance_usdt,
-                    locked_balance_usdt=account.locked_balance_usdt,
-                    unrealized_pnl=account.unrealized_pnl,
-                    peak_balance=account.total_balance_usdt,
-                    peak_balance_updated_at=now,
-                    current_drawdown_percent=Decimal(0),
-                    total_margin_balance=account.total_margin_balance,
-                    margin_ratio=account.margin_ratio,
-                    updated_at=now,
-                )
-                await self.save(new_state)

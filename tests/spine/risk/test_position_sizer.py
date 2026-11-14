@@ -13,7 +13,6 @@ def normal_regime() -> VolatilityRegimeSchema:
         regime=VolatilityRegime.NORMAL,
         atr_zscore=Decimal(0),
         size_multiplier=Decimal("1.0"),
-        is_tradeable=True,
     )
 
 
@@ -23,7 +22,6 @@ def high_regime() -> VolatilityRegimeSchema:
         regime=VolatilityRegime.HIGH,
         atr_zscore=Decimal("1.5"),
         size_multiplier=Decimal("0.5"),
-        is_tradeable=True,
     )
 
 
@@ -226,7 +224,6 @@ class TestPositionSizer:
             regime=VolatilityRegime.LOW,
             atr_zscore=Decimal("-2.0"),
             size_multiplier=Decimal(0),
-            is_tradeable=False,
         )
         config = RiskConfigSchema(min_position_notional_usd=Decimal("10.0"))
         sizer = PositionSizer(config)

@@ -8,9 +8,7 @@ import click
 import pydantic_ai
 
 from kavzi_trader.cli.commands.config import config_command
-from kavzi_trader.cli.commands.data import data
 from kavzi_trader.cli.commands.model import model
-from kavzi_trader.cli.commands.system import system
 from kavzi_trader.cli.commands.trade import trade
 from kavzi_trader.cli.core import setup_cli_environment
 
@@ -34,10 +32,8 @@ def cli(
 
 
 # Register command groups
-cli.add_command(data)
 cli.add_command(model)
 cli.add_command(trade)
-cli.add_command(system)
 cli.add_command(config_command)
 
 

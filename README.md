@@ -34,7 +34,7 @@ KavziTrader is an algorithmic trading platform designed for cryptocurrency tradi
 - **Active Position Management**: Trailing stops, break-even, partial exits, scaling
 - **Paper Trading**: Binance Testnet mode with full API mechanics
 - **Confidence Calibration**: Statistical tracking of LLM decision accuracy
-- **Event Sourcing**: Redis Streams audit trail with projections
+- **Event Sourcing**: Redis Streams audit trail
 - **Structured Logging**: JSON logs and decision audit records
 
 ## How It Works

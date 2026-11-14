@@ -1348,7 +1348,7 @@ def test_pre_trader_breakout_rejects_long_overextended(
         positions,
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    result = router._pre_trader_breakout_check(
+    result = router._trader_pipeline.pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1380,7 +1380,7 @@ def test_pre_trader_breakout_allows_short_at_high_b(
         positions,
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    result = router._pre_trader_breakout_check(
+    result = router._trader_pipeline.pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1410,7 +1410,7 @@ def test_pre_trader_breakout_rejects_short_overextended(
         positions,
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    result = router._pre_trader_breakout_check(
+    result = router._trader_pipeline.pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1442,7 +1442,7 @@ def test_pre_trader_breakout_allows_long_at_low_b(
         positions,
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    result = router._pre_trader_breakout_check(
+    result = router._trader_pipeline.pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1474,7 +1474,7 @@ def test_pre_trader_breakout_caution_long_zone(
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
     with caplog.at_level(logging.WARNING):
-        result = router._pre_trader_breakout_check(
+        result = router._trader_pipeline.pre_trader_breakout_check(
             "BTCUSDT",
             "BREAKOUT",
             deps,
@@ -1507,7 +1507,7 @@ def test_pre_trader_breakout_caution_short_zone(
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
     with caplog.at_level(logging.WARNING):
-        result = router._pre_trader_breakout_check(
+        result = router._trader_pipeline.pre_trader_breakout_check(
             "BTCUSDT",
             "BREAKOUT",
             deps,
@@ -1922,12 +1922,12 @@ async def test_router_counts_trader_validation_failures(
             )
             # Reset per-symbol bar-close dedup state so each pass reaches the
             # Trader tier regardless of cached Scout/Analyst/Trader verdicts.
-            router._scout_dedup.clear()
-            router._analyst_dedup.clear()
-            router._trader_dedup.clear()
+            router._dedup.scout_entries.clear()
+            router._dedup.analyst_entries.clear()
+            router._dedup.trader_entries.clear()
             await router.run("BTCUSDT", provider)
 
-    assert router._trader_validation_failures["BTCUSDT"] == 3
+    assert router._circuit_breaker.failures["BTCUSDT"] == 3
 
     matching = [
         r for r in caplog.records if "Trader validation retries exhausted" in r.message
@@ -1981,8 +1981,8 @@ async def test_router_trader_validation_failures_are_per_symbol(
     await router.run("BTCUSDT", provider_btc)
     await router.run("ETHUSDT", provider_eth)
 
-    assert router._trader_validation_failures["BTCUSDT"] == 2
-    assert router._trader_validation_failures["ETHUSDT"] == 1
+    assert router._circuit_breaker.failures["BTCUSDT"] == 2
+    assert router._circuit_breaker.failures["ETHUSDT"] == 1
 
 
 @pytest.mark.asyncio
@@ -2015,8 +2015,8 @@ async def test_router_successful_trader_does_not_increment_counter(
 
     assert result.trader is not None
     assert result.trader.action == "WAIT"
-    assert "BTCUSDT" not in router._trader_validation_failures
-    assert router._trader_validation_failures == {}
+    assert "BTCUSDT" not in router._circuit_breaker.failures
+    assert router._circuit_breaker.failures == {}
 
 
 # ---------------------------------------------------------------------------
@@ -2121,7 +2121,7 @@ async def test_router_reinvokes_trader_on_new_analyst_result(
     # Swap in a different analyst result; also clear the Analyst memo so the
     # new result actually reaches _run_trader.
     analyst.set_result(_analyst_decision(confluence_score=9))
-    router._analyst_dedup.clear()
+    router._dedup.analyst_entries.clear()
 
     await router.run("BTCUSDT", provider)
     assert spy_trader.call_count == 2, (
@@ -2204,7 +2204,7 @@ async def test_router_does_not_cache_unexpected_model_wait(
     assert first.trader.action == "WAIT"
     assert second.trader is not None
     assert second.trader.action == "WAIT"
-    assert "BTCUSDT" not in router._trader_dedup
+    assert "BTCUSDT" not in router._dedup.trader_entries
 
 
 class ExplodingTrader:
@@ -2258,7 +2258,7 @@ async def test_router_does_not_cache_on_unhandled_exception(
     )
     assert first.trader is None
     assert second.trader is None
-    assert "BTCUSDT" not in router._trader_dedup
+    assert "BTCUSDT" not in router._dedup.trader_entries
 
 
 @pytest.mark.asyncio
@@ -2369,7 +2369,7 @@ async def test_router_does_not_cache_timeout_wait(
     assert first.trader.action == "WAIT"
     assert second.trader is not None
     assert second.trader.action == "WAIT"
-    assert "BTCUSDT" not in router._trader_dedup
+    assert "BTCUSDT" not in router._dedup.trader_entries
 
 
 @pytest.mark.asyncio

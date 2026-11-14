@@ -1,18 +1,15 @@
-from typing import Annotated, Self
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class OrchestratorConfigSchema(BaseModel):
     """Configuration for orchestrator loop timing and shutdown behavior."""
 
-    ws_reconnect_delay_s: Annotated[float, Field(ge=0.0)] = 1.0
-    ws_max_reconnect_delay_s: Annotated[float, Field(ge=1.0)] = 60.0
     order_flow_fetch_interval_s: Annotated[int, Field(ge=1)] = 300
     reasoning_interval_s: Annotated[int, Field(ge=1)] = 60
     position_check_interval_s: Annotated[int, Field(ge=1)] = 5
     position_cycle_timeout_s: Annotated[int, Field(ge=1)] = 30
-    health_check_interval_s: Annotated[int, Field(ge=1)] = 30
     graceful_shutdown_timeout_s: Annotated[float, Field(gt=0.0)] = 10.0
     loop_restart_base_delay_s: Annotated[float, Field(ge=0.0)] = 1.0
     loop_restart_max_delay_s: Annotated[float, Field(ge=0.0)] = 60.0
@@ -21,10 +18,3 @@ class OrchestratorConfigSchema(BaseModel):
     loop_crash_window_s: Annotated[float, Field(gt=0.0)] = 600.0
 
     model_config = ConfigDict(frozen=True)
-
-    @model_validator(mode="after")
-    def _validate_delays(self) -> Self:
-        if self.ws_reconnect_delay_s >= self.ws_max_reconnect_delay_s:
-            msg = "ws_reconnect_delay_s must be < ws_max_reconnect_delay_s"
-            raise ValueError(msg)
-        return self

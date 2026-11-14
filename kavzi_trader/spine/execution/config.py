@@ -18,8 +18,6 @@ class ExecutionConfigSchema(BaseModel):
     """Execution engine runtime configuration."""
 
     timeout_s: Annotated[int, Field(ge=1)] = 30
-    max_retry_attempts: Annotated[int, Field(ge=0)] = 3
-    immediate_sl_tp: Annotated[bool, Field()] = True
     # How long a resting PULLBACK_TO_LEVEL entry limit may wait for a fill
     # before it is cancelled. Default 30 min = 2x 15-minute candles.
     pullback_entry_expiry_ms: Annotated[int, Field(ge=1)] = 1_800_000

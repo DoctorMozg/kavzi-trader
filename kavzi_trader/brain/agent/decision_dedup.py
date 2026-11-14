@@ -44,7 +44,7 @@ class DecisionDeduplicator:
 
     Intentionally not a Pydantic model: this is mutable in-process state,
     not a domain value object. The backing dicts are exposed by reference
-    so legacy callers (and tests) that read or mutate them directly
+    so callers (and tests) that read or mutate them directly
     (``scout_entries.clear()``, ``"BTCUSDT" in trader_entries``) observe
     live state without a second code path.
     """

@@ -176,7 +176,6 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         "PositionManagementLoop",
         build_position_loop,
     )
-    monkeypatch.setattr(trade_module, "HealthChecker", lambda: object())
 
     class FakeTradingOrchestrator:
         async def start(self) -> None:

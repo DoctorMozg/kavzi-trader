@@ -65,6 +65,3 @@ class ExternalDataCache:
 
     def set_sources_degraded(self, names: list[str]) -> None:
         self._sources_degraded = names
-
-    def get_sources_degraded(self) -> list[str]:
-        return list(self._sources_degraded)

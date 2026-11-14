@@ -30,7 +30,6 @@ from kavzi_trader.external.loop import ExternalSentimentLoop
 from kavzi_trader.external.sources import build_enabled_sources
 from kavzi_trader.external.synthesizer import SentimentSynthesizer
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
-from kavzi_trader.orchestrator.health import HealthChecker
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
@@ -490,7 +489,6 @@ async def _start_orchestrator(
             report_populator=report_populator,
             cycle_timeout_s=app_config.orchestrator.position_cycle_timeout_s,
         ),
-        health_checker=HealthChecker(),
         report_populator=report_populator,
         is_paper=is_paper,
         external_sentiment_loop=external_sentiment_loop,
@@ -551,12 +549,6 @@ def start(
             paper_balance=paper_balance,
         ),
     )
-
-
-@trade.command()
-def stop() -> None:
-    """Stop the trading orchestrator."""
-    click.echo("Stop requested. Use CTRL+C to terminate running process.")
 
 
 @trade.command()

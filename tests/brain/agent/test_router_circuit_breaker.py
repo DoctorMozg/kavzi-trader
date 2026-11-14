@@ -150,11 +150,11 @@ def _build_provider(
 
 def test_record_trader_validation_failure_increments_counter() -> None:
     router = AgentRouter(_Scout(), _Analyst(), _SuccessTrader())
-    assert router.is_trader_circuit_open("BTCUSDT") is False
+    assert router._circuit_breaker.is_open("BTCUSDT") is False
 
     for expected in (1, 2):
         assert router.record_trader_validation_failure("BTCUSDT") == expected
-    assert router.is_trader_circuit_open("BTCUSDT") is False
+    assert router._circuit_breaker.is_open("BTCUSDT") is False
 
 
 def test_circuit_opens_at_threshold() -> None:
@@ -165,9 +165,9 @@ def test_circuit_opens_at_threshold() -> None:
         trader_circuit_threshold=2,
     )
     router.record_trader_validation_failure("BTCUSDT")
-    assert router.is_trader_circuit_open("BTCUSDT") is False
+    assert router._circuit_breaker.is_open("BTCUSDT") is False
     router.record_trader_validation_failure("BTCUSDT")
-    assert router.is_trader_circuit_open("BTCUSDT") is True
+    assert router._circuit_breaker.is_open("BTCUSDT") is True
 
 
 @pytest.mark.asyncio
@@ -203,7 +203,7 @@ async def test_unexpected_model_behavior_increments_failure_counter(
 
     await router.run("BTCUSDT", provider)
     assert failing.call_count == 1
-    assert router._trader_validation_failures["BTCUSDT"] == 1
+    assert router._circuit_breaker.failures["BTCUSDT"] == 1
 
 
 @pytest.mark.asyncio
@@ -235,7 +235,7 @@ async def test_open_circuit_skips_trader_llm(
     # Pre-seed to threshold so circuit is already open on this run
     router.record_trader_validation_failure("BTCUSDT")
     router.record_trader_validation_failure("BTCUSDT")
-    assert router.is_trader_circuit_open("BTCUSDT")
+    assert router._circuit_breaker.is_open("BTCUSDT")
 
     result = await router.run("BTCUSDT", provider)
     assert failing.call_count == 0, "Trader LLM called while circuit was open"
@@ -278,5 +278,5 @@ async def test_successful_decision_resets_circuit(
     assert result.trader is not None
     assert result.trader.action == "WAIT"
     # Counter must be cleared after a successful Trader decision
-    assert router.is_trader_circuit_open("BTCUSDT") is False
-    assert router._trader_validation_failures.get("BTCUSDT", 0) == 0
+    assert router._circuit_breaker.is_open("BTCUSDT") is False
+    assert router._circuit_breaker.failures.get("BTCUSDT", 0) == 0

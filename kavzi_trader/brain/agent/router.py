@@ -11,10 +11,7 @@ from pydantic_ai.exceptions import (
 from kavzi_trader.brain.agent.analyst_pipeline import AnalystPipeline
 from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
 from kavzi_trader.brain.agent.decision_dedup import (
-    AnalystDedupEntry,
     DecisionDeduplicator,
-    ScoutDedupEntry,
-    TraderDedupEntry,
 )
 from kavzi_trader.brain.agent.llm_errors import LLM_TIMEOUT_ERRORS
 from kavzi_trader.brain.agent.router_config import RouterConfigSchema
@@ -264,41 +261,6 @@ class AgentRouter:
             geometry=self._geometry,
         )
 
-    @property
-    def _trader_validation_failures(self) -> dict[str, int]:
-        """Back-compat alias for the circuit breaker's failure map.
-
-        Exposes the underlying dict by reference so callers that read or
-        mutate raw counts (e.g. tests that assert ``== {}`` or clear the
-        map) continue to see live state without a second code path.
-        """
-        return self._circuit_breaker.failures
-
-    @property
-    def _trader_circuit_threshold(self) -> int:
-        """Back-compat alias for the circuit breaker's configured threshold."""
-        return self._circuit_breaker.threshold
-
-    @property
-    def _scout_dedup(self) -> dict[str, ScoutDedupEntry]:
-        """Back-compat alias for the deduplicator's Scout entry map.
-
-        Exposes the underlying dict by reference so callers that read or
-        mutate raw entries (e.g. tests that call ``.clear()`` or assert
-        membership) continue to see live state without a second code path.
-        """
-        return self._dedup.scout_entries
-
-    @property
-    def _analyst_dedup(self) -> dict[str, AnalystDedupEntry]:
-        """Back-compat alias for the deduplicator's Analyst entry map."""
-        return self._dedup.analyst_entries
-
-    @property
-    def _trader_dedup(self) -> dict[str, TraderDedupEntry]:
-        """Back-compat alias for the deduplicator's Trader entry map."""
-        return self._dedup.trader_entries
-
     def record_trader_validation_failure(self, symbol: str) -> int:
         """Increment the per-symbol Trader failure counter and return the new
         count. Called by the reasoning loop when downstream schema validation
@@ -320,13 +282,6 @@ class AgentRouter:
         )
         return count
 
-    def is_trader_circuit_open(self, symbol: str) -> bool:
-        """Return True when consecutive Trader validation failures have met
-        or exceeded the circuit breaker threshold for this symbol. The
-        circuit resets automatically on the next successful Trader decision.
-        """
-        return self._circuit_breaker.is_open(symbol)
-
     def _log_llm_exception(
         self,
         symbol: str,
@@ -346,28 +301,6 @@ class AgentRouter:
             elapsed_ms,
             body_preview_chars=self._router_config.body_preview_chars,
             exc_message_preview_chars=(self._router_config.exc_message_preview_chars),
-        )
-
-    # ------------------------------------------------------------------
-    # Back-compat shim: tests call the breakout pre-trade gate directly on
-    # the router. The authoritative implementation now lives in
-    # ``TraderPipeline``; this delegator preserves the public surface
-    # without a second code path.
-    # ------------------------------------------------------------------
-
-    def _pre_trader_breakout_check(
-        self,
-        symbol: str,
-        scout_pattern: str | None,
-        deps: TradingDependenciesSchema,
-        *,
-        analyst_direction: str,
-    ) -> TradeDecisionSchema | None:
-        return self._trader_pipeline.pre_trader_breakout_check(
-            symbol,
-            scout_pattern,
-            deps,
-            analyst_direction=analyst_direction,
         )
 
     async def run(

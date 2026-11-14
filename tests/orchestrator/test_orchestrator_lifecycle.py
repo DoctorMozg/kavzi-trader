@@ -10,7 +10,6 @@ import pytest
 
 from kavzi_trader.orchestrator import orchestrator as orchestrator_module
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
-from kavzi_trader.orchestrator.health import HealthChecker
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
@@ -49,7 +48,6 @@ def _config(**overrides: float) -> OrchestratorConfigSchema:
         "loop_restart_base_delay_s": 0.0,
         "loop_restart_max_delay_s": 0.0,
         "graceful_shutdown_timeout_s": 1,
-        "health_check_interval_s": 1,
     }
     values.update(overrides)
     return OrchestratorConfigSchema.model_validate(values)
@@ -69,7 +67,6 @@ def _orchestrator(
         reasoning_loop=cast("ReasoningLoop", _Loop()),
         execution_loop=cast("ExecutionLoop", _Loop()),
         position_loop=cast("PositionManagementLoop", _Loop()),
-        health_checker=HealthChecker(),
         shutdown_hooks=shutdown_hooks,
     )
 

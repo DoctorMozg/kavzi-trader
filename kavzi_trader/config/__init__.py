@@ -30,7 +30,6 @@ class BinanceApiConfigSchema(BaseModel):
 
     api_key: Annotated[SecretStr, Field(default=SecretStr(""))]
     api_secret: Annotated[SecretStr, Field(default=SecretStr(""))]
-    use_proxy: Annotated[bool, Field(default=False)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -46,10 +45,7 @@ class ApiConfigSchema(BaseModel):
 class SystemConfigSchema(BaseModel):
     """System-wide configuration."""
 
-    data_dir: Annotated[Path, Field(default=Path("data"))]
-    models_dir: Annotated[Path, Field(default=Path("models"))]
     results_dir: Annotated[Path, Field(default=Path("results"))]
-    timezone: Annotated[str, Field(default="UTC")]
 
     model_config = ConfigDict(frozen=True)
 
@@ -78,22 +74,11 @@ class TradingConfigSchema(BaseModel):
         return v
 
 
-class OrderFlowConfigSchema(BaseModel):
-    """Order flow fetch and threshold settings."""
-
-    funding_extreme_threshold: Annotated[float, Field(default=2.0)]
-
-    model_config = ConfigDict(frozen=True)
-
-
 class MonitoringConfigSchema(BaseModel):
     """Monitoring and logging configuration."""
 
     log_format: Annotated[str, Field(default="json")]
     log_level: Annotated[str, Field(default="DEBUG")]
-    decision_log_enabled: Annotated[bool, Field(default=True)]
-    decision_log_retention_days: Annotated[int, Field(default=30, ge=1)]
-    metrics_enabled: Annotated[bool, Field(default=True)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -116,10 +101,8 @@ class FuturesConfigSchema(BaseModel):
 
     default_leverage: Annotated[int, Field(default=5, ge=1, le=125)]
     margin_type: Annotated[str, Field(default="ISOLATED")]
-    position_mode: Annotated[str, Field(default="ONE_WAY")]
     symbol_leverage: Annotated[dict[str, int], Field(default_factory=dict)]
     liquidation_emergency_percent: Annotated[Decimal, Field(default=Decimal("5.0"))]
-    max_margin_ratio: Annotated[Decimal, Field(default=Decimal("0.5"))]
 
     model_config = ConfigDict(frozen=True)
 
@@ -141,7 +124,6 @@ class AppConfig(BaseModel):
         Field(default_factory=FuturesConfigSchema),
     ]
     position_management: Annotated[PositionManagementConfigSchema, Field(...)]
-    order_flow: Annotated[OrderFlowConfigSchema, Field(...)]
     filters: Annotated[FilterConfigSchema, Field(...)]
     redis: Annotated[RedisConfigSchema, Field(...)]
     execution: Annotated[ExecutionConfigSchema, Field(...)]

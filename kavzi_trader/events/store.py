@@ -1,11 +1,8 @@
 import logging
-from datetime import datetime, timedelta
 from typing import cast
 
-from pydantic import BaseModel, ConfigDict
 from redis.typing import EncodableT, FieldT
 
-from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.events.aggregate_type import UnknownAggregateTypeError
 from kavzi_trader.events.config import EventStoreConfigSchema
 from kavzi_trader.events.event_schema import EventSchema
@@ -17,12 +14,6 @@ from kavzi_trader.events.serialization import (
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 
 logger = logging.getLogger(__name__)
-
-
-class _EventEntry(BaseModel):
-    stream_id: str
-    event: EventSchema
-    model_config = ConfigDict(frozen=True)
 
 
 class RedisEventStore:
@@ -67,36 +58,12 @@ class RedisEventStore:
         end: str = "+",
         count: int | None = None,
     ) -> list[EventSchema]:
-        entries = await self._read_entries(stream, start, end, count)
-        return [entry.event for entry in entries]
-
-    async def query(
-        self,
-        stream: str,
-        after: datetime | None = None,
-        symbol: str | None = None,
-        count: int | None = None,
-    ) -> list[EventSchema]:
-        events = await self.read(stream, count=count)
-        filtered = []
-        for event in events:
-            if after and event.timestamp < after:
-                continue
-            if symbol and event.data.get("symbol") != symbol:
-                continue
-            filtered.append(event)
-        return filtered
-
-    async def trim_expired(self) -> None:
-        cutoff = utc_now() - timedelta(days=self._config.retention_days)
-        for stream in self._config.streams.values():
-            await self._trim_stream(stream, cutoff)
-
-    async def _trim_stream(self, stream: str, cutoff: datetime) -> None:
-        entries = await self._read_entries(stream)
-        for entry in entries:
-            if entry.event.timestamp < cutoff:
-                await self._redis.client.xdel(stream, entry.stream_id)
+        entries = await self._redis.client.xrange(stream, start, end, count=count)
+        # decode_responses=True: redis returns str ids and fields at runtime.
+        return [
+            deserialize_event(cast("SerializedEventDict", fields))
+            for _, fields in entries or []
+        ]
 
     def _stream_for_event(self, event: EventSchema) -> str:
         stream = self._config.streams.get(event.aggregate_type)
@@ -109,20 +76,3 @@ class RedisEventStore:
             msg = f"No stream configured for aggregate type {event.aggregate_type!r}"
             raise UnknownAggregateTypeError(msg)
         return stream
-
-    async def _read_entries(
-        self,
-        stream: str,
-        start: str = "-",
-        end: str = "+",
-        count: int | None = None,
-    ) -> list[_EventEntry]:
-        entries = await self._redis.client.xrange(stream, start, end, count=count)
-        # decode_responses=True: redis returns str ids and fields at runtime.
-        return [
-            _EventEntry(
-                stream_id=str(entry_id),
-                event=deserialize_event(cast("SerializedEventDict", fields)),
-            )
-            for entry_id, fields in entries or []
-        ]

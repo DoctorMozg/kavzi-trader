@@ -53,7 +53,6 @@ def _make_provider(
         regime=VolatilityRegime.NORMAL,
         atr_zscore=Decimal(0),
         size_multiplier=Decimal(1),
-        is_tradeable=True,
     )
     cache = Mock()
     candles = [_build_candle(minute) for minute in range(60)]

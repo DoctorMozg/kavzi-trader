@@ -19,9 +19,6 @@ from kavzi_trader.spine.state.schemas import OpenOrderSchema, PositionSchema
 
 logger = logging.getLogger(__name__)
 
-_STOP_ORDER_TYPES = frozenset(
-    {OrderType.STOP, OrderType.STOP_MARKET},
-)
 _TAKE_PROFIT_ORDER_TYPES = frozenset(
     {OrderType.TAKE_PROFIT, OrderType.TAKE_PROFIT_MARKET},
 )

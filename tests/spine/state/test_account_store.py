@@ -109,17 +109,6 @@ class TestAccountStore:
 
         assert drawdown == Decimal(0)
 
-    async def test_reset_peak_balance(
-        self,
-        store: AccountStore,
-        sample_account_state: AccountStateSchema,
-    ):
-        store._redis.get.return_value = sample_account_state.model_dump_json()
-
-        await store.reset_peak_balance()
-
-        store._redis.set.assert_called_once()
-
     async def test_update_balance_populates_margin_ratio(self, store: AccountStore):
         store._redis.get.return_value = None
 

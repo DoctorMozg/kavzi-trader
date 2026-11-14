@@ -14,7 +14,7 @@ class AgentCircuitBreaker:
     Intentionally not a Pydantic model: this is mutable in-process state,
     not a domain value object. The backing ``_failures`` dict is exposed
     for read access via :meth:`failure_count` and direct callers that
-    need dict semantics (e.g. legacy tests asserting on the raw store).
+    need dict semantics (e.g. tests asserting on the raw store).
     """
 
     def __init__(self, threshold: int) -> None:
@@ -30,9 +30,8 @@ class AgentCircuitBreaker:
     def failures(self) -> dict[str, int]:
         """Live reference to the per-symbol failure counts.
 
-        Returned by reference on purpose so callers (notably the router's
-        backward-compatible ``_trader_validation_failures`` attribute)
-        observe mutations without extra plumbing.
+        Returned by reference on purpose so callers (notably tests) can
+        read and clear the raw counts.
         """
         return self._failures
 

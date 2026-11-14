@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
-from kavzi_trader.orchestrator.health import HealthChecker
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
@@ -27,9 +26,8 @@ class DummyLoop:
 
 @pytest.mark.asyncio
 async def test_orchestrator_start_runs_loops() -> None:
-    config = OrchestratorConfigSchema(health_check_interval_s=1)
+    config = OrchestratorConfigSchema()
     state_manager = AsyncMock()
-    health = HealthChecker()
     orchestrator = TradingOrchestrator(
         config=config,
         state_manager=state_manager,
@@ -38,7 +36,6 @@ async def test_orchestrator_start_runs_loops() -> None:
         reasoning_loop=cast("ReasoningLoop", DummyLoop()),
         execution_loop=cast("ExecutionLoop", DummyLoop()),
         position_loop=cast("PositionManagementLoop", DummyLoop()),
-        health_checker=health,
     )
 
     task = asyncio.create_task(orchestrator.start())
@@ -69,7 +66,6 @@ def test_build_position_snapshots_computes_pnl() -> None:
         reasoning_loop=cast("ReasoningLoop", DummyLoop()),
         execution_loop=cast("ExecutionLoop", DummyLoop()),
         position_loop=cast("PositionManagementLoop", DummyLoop()),
-        health_checker=HealthChecker(),
         price_provider=price_provider,
     )
     positions = [
@@ -109,7 +105,6 @@ def test_build_position_snapshots_long_pnl() -> None:
         reasoning_loop=cast("ReasoningLoop", DummyLoop()),
         execution_loop=cast("ExecutionLoop", DummyLoop()),
         position_loop=cast("PositionManagementLoop", DummyLoop()),
-        health_checker=HealthChecker(),
         price_provider=price_provider,
     )
     positions = [

@@ -15,7 +15,6 @@ class VolatilityRegimeSchema(BaseModel):
     regime: VolatilityRegime
     atr_zscore: Decimal
     size_multiplier: Decimal
-    is_tradeable: bool
 
     model_config = ConfigDict(frozen=True)
 

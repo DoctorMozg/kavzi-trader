@@ -6,7 +6,6 @@ This module provides functionality for managing WebSocket connections and stream
 
 import asyncio
 import contextlib
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, NamedTuple, cast
@@ -74,15 +73,6 @@ class StreamManager:
         self._is_running: bool = False
         # Streams whose feed is dead and will not recover without a restart
         self._dead_streams: set[str] = set()
-
-    # ------------------------------------------------------------------
-    # Public helpers kept for backward compat with handler / client code
-    # ------------------------------------------------------------------
-
-    @property
-    def active_streams(self) -> dict[str, ReconnectingWebsocket]:
-        """Map of stream_name → socket (kept for backward compat)."""
-        return {name: entry.socket for name, entry in self._streams.items()}
 
     @property
     def bsm(self) -> BinanceSocketManager:
@@ -278,22 +268,6 @@ class StreamManager:
             return f"{symbol}@depth"
 
         return None
-
-    # ------------------------------------------------------------------
-    # Convenience (kept for backward compat)
-    # ------------------------------------------------------------------
-
-    def create_message_handler(
-        self,
-    ) -> Callable[[dict[str, Any]], Awaitable[None]]:
-        async def handle_message(msg: dict[str, Any]) -> None:
-            logger.debug(
-                "Received WebSocket message: %s",
-                json.dumps(msg)[:200],
-            )
-            await self._process_message(msg)
-
-        return handle_message
 
     def list_active_streams(self) -> list[str]:
         return list(self._streams.keys())

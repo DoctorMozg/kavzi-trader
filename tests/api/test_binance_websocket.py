@@ -313,7 +313,7 @@ def test_stream_manager_init() -> None:
     # Verify the manager's properties
     assert manager.api_key == "test_key"
     assert manager.api_secret == "test_secret"  # noqa: S105
-    assert manager.active_streams == {}
+    assert manager.list_active_streams() == []
     assert manager.stream_callbacks == {}
     assert manager._is_running is False
     # bsm is not yet created — accessing it should raise
@@ -349,7 +349,7 @@ async def test_stream_manager_start_stop() -> None:
         # Test stop
         await manager.stop()
         assert manager._is_running is False
-        assert manager.active_streams == {}  # type: ignore
+        assert manager.list_active_streams() == []  # type: ignore
         assert manager.stream_callbacks == {}  # type: ignore
         mock_client.close_connection.assert_called_once()
 

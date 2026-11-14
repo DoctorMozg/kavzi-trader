@@ -11,7 +11,6 @@ from typing import Any, Protocol
 
 from kavzi_trader.external.loop import ExternalSentimentLoop
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
-from kavzi_trader.orchestrator.health import HealthChecker
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
@@ -59,7 +58,6 @@ class TradingOrchestrator:
         reasoning_loop: ReasoningLoop,
         execution_loop: ExecutionLoop,
         position_loop: PositionManagementLoop,
-        health_checker: HealthChecker,
         report_populator: TradeReportPopulator | None = None,
         is_paper: bool = False,
         price_provider: ReportPriceProvider | None = None,
@@ -74,7 +72,6 @@ class TradingOrchestrator:
         self._reasoning_loop = reasoning_loop
         self._execution_loop = execution_loop
         self._position_loop = position_loop
-        self._health_checker = health_checker
         self._report_populator = report_populator
         self._is_paper = is_paper
         self._price_provider = price_provider
@@ -128,7 +125,6 @@ class TradingOrchestrator:
             "reasoning": self._reasoning_loop.run,
             "execution": self._execution_loop.run,
             "position": self._position_loop.run,
-            "health": self._health_loop,
         }
         if self._report_populator is not None:
             self._loop_factories["report"] = self._report_loop
@@ -275,24 +271,6 @@ class TradingOrchestrator:
                 await close()
         except Exception:
             logger.exception("Failed to close %s during shutdown", name)
-
-    async def _health_loop(self) -> None:
-        cycle = 0
-        while True:
-            cycle += 1
-            try:
-                await asyncio.sleep(self._config.health_check_interval_s)
-                if not self._health_checker.is_healthy():
-                    logger.warning("Health check failed")
-            except Exception:
-                logger.exception(
-                    "Health check loop encountered an error",
-                    extra={
-                        "loop": "health",
-                        "cycle": cycle,
-                        "interval_s": self._config.health_check_interval_s,
-                    },
-                )
 
     async def _report_loop(self) -> None:
         """Periodically refreshes balance, positions, and prices in the report."""

@@ -13,7 +13,6 @@ class EventStoreConfigSchema(BaseModel):
     """Configuration for Redis Streams event store."""
 
     stream_max_length: Annotated[int, Field(ge=1)] = 100_000
-    retention_days: Annotated[int, Field(ge=1)] = 90
     streams: Annotated[dict[AggregateType, str], Field()] = Field(
         default_factory=_default_streams,
     )

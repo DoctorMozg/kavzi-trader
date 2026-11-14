@@ -15,7 +15,6 @@ class TestVolatilityRegimeDetector:
         result = detector.detect_regime(Decimal(100), atr_history_normal)
 
         assert result.regime == VolatilityRegime.NORMAL
-        assert result.is_tradeable is True
         assert result.size_multiplier == Decimal("1.0")
 
     def test_high_regime_detected(self, risk_config: RiskConfigSchema) -> None:
@@ -26,7 +25,6 @@ class TestVolatilityRegimeDetector:
         result = detector.detect_regime(Decimal(105), history)
 
         assert result.regime == VolatilityRegime.HIGH
-        assert result.is_tradeable is True
         assert result.size_multiplier == Decimal("0.5")
 
     def test_extreme_regime_detected(self, risk_config: RiskConfigSchema) -> None:
@@ -37,7 +35,6 @@ class TestVolatilityRegimeDetector:
         result = detector.detect_regime(Decimal(120), history)
 
         assert result.regime == VolatilityRegime.EXTREME
-        assert result.is_tradeable is True
         assert result.size_multiplier == Decimal(0)
 
     def test_low_regime_detected(self, risk_config: RiskConfigSchema) -> None:
@@ -48,7 +45,6 @@ class TestVolatilityRegimeDetector:
         result = detector.detect_regime(Decimal(92), history)
 
         assert result.regime == VolatilityRegime.LOW
-        assert result.is_tradeable is False
         assert result.size_multiplier == Decimal(0)
 
     def test_insufficient_history_returns_normal(

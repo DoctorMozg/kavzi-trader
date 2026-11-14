@@ -8,8 +8,6 @@ the KavziTrader platform, ensuring consistent timestamp handling.
 from datetime import UTC, datetime
 from pathlib import Path
 
-import dateparser
-
 MILLISECONDS_IN_SECOND = 1000
 
 
@@ -26,24 +24,6 @@ def utc_now() -> datetime:
         UTC
     """
     return datetime.now(UTC)
-
-
-def normalize_datetime_to_utc(value: datetime) -> datetime:
-    """
-    Ensure a datetime is timezone-aware in UTC.
-
-    Naive datetimes are assumed to represent UTC and are tagged with the
-    UTC tzinfo. Aware datetimes are converted to UTC.
-
-    Args:
-        value: Datetime to normalize (naive or aware).
-
-    Returns:
-        Timezone-aware datetime in UTC.
-    """
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 def utc_timestamp(time: float) -> datetime:
@@ -97,20 +77,6 @@ def timestamp_path(prefix: str, directory: Path, extension: str = "json") -> Pat
     return directory / filename
 
 
-def date_to_milliseconds(date_str: str) -> int:
-    """
-    Convert a date string to milliseconds.
-
-    Args:
-        date_str: Date string in readable format,
-            e.g., "1 Jan, 2020", "1 hour ago UTC"
-
-    Returns:
-        Milliseconds since epoch
-    """
-    return int(parse_date_string(date_str).timestamp() * MILLISECONDS_IN_SECOND)
-
-
 def milliseconds_to_datetime(milliseconds: int) -> datetime:
     """
     Convert milliseconds to datetime.
@@ -122,29 +88,3 @@ def milliseconds_to_datetime(milliseconds: int) -> datetime:
         Datetime object
     """
     return utc_timestamp(milliseconds / MILLISECONDS_IN_SECOND)
-
-
-def parse_date_string(date_str: str) -> datetime:
-    """
-    Parse a date string into a datetime object with UTC timezone.
-
-    This function handles various date formats and ensures the result
-    has proper timezone information.
-
-    Args:
-        date_str: Date string in various formats (e.g., YYYY-MM-DD,
-                 YYYY-MM-DD HH:MM:SS, "1 day ago", etc.)
-
-    Returns:
-        datetime: Parsed datetime object with UTC timezone
-
-    Raises:
-        ValueError: If the date string cannot be parsed
-    """
-    parsed_date = dateparser.parse(
-        date_str,
-        settings={"TIMEZONE": "UTC", "RETURN_AS_TIMEZONE_AWARE": True},
-    )
-    if not parsed_date:
-        raise ValueError(f"Could not parse date: {date_str}")
-    return parsed_date

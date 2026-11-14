@@ -8,10 +8,7 @@
 # System — directory paths and global defaults
 # -----------------------------------------------------------------------------
 system:
-  data_dir: "data/"            # Market data storage (candles, order book snapshots)
-  models_dir: "models/"        # Serialised ML / calibration artefacts
   results_dir: "results/"      # Back-test and analysis output
-  timezone: "UTC"              # All internal timestamps use this timezone
 
 # -----------------------------------------------------------------------------
 # API — Binance credentials (override via BINANCE_API_KEY / BINANCE_API_SECRET)
@@ -20,7 +17,6 @@ api:
   binance:
     api_key: ""
     api_secret: ""
-    use_proxy: false           # true = route traffic through a configured HTTP proxy
 
 # -----------------------------------------------------------------------------
 # Brain — LLM tier configuration via OpenRouter
@@ -181,11 +177,6 @@ futures:
   #   "CROSSED"  = all positions share margin (dangerous — one bad trade drains account)
   margin_type: "ISOLATED"
 
-  # Position mode on Binance Futures.
-  #   "ONE_WAY" = one position per symbol (default — simpler)
-  #   "HEDGE"   = can hold both LONG and SHORT simultaneously (not supported)
-  position_mode: "ONE_WAY"
-
   # Per-symbol leverage overrides (symbol → leverage).
   # If a symbol is not listed here, default_leverage is used.
   # No overrides needed — removed high-vol alts from the symbol list.
@@ -194,13 +185,6 @@ futures:
   # Distance from liquidation price (%) at which position manager triggers
   # emergency exit as a safety net (in case SL order fails to fill).
   liquidation_emergency_percent: 5.0
-
-  # Maximum account margin ratio (maintenance margin / margin balance).
-  # New trades are rejected when this threshold is exceeded.
-  #   0.3 = conservative
-  #   0.5 = default
-  #   0.8 = permissive (dangerous)
-  max_margin_ratio: 0.5
 
 # -----------------------------------------------------------------------------
 # Risk — per-trade sizing, drawdown limits, volatility regime detection
@@ -255,7 +239,7 @@ risk:
   max_sl_atr: 5.0
 
   # Volatility regime detection via ATR Z-score.
-  # Z-score = (current_ATR - mean_ATR) / stdev_ATR over atr_zscore_period candles.
+  # Z-score = (current_ATR - mean_ATR) / stdev_ATR over the recent ATR history.
   # Regimes: LOW → NORMAL → HIGH → EXTREME
   #
   # LOW regime (z < low_threshold): insufficient price movement, trading blocked.
@@ -294,12 +278,6 @@ risk:
   #   10.0  = default (covers all current USDT-M perp minimums with headroom)
   #   20.0  = strict (reject micro trades)
   min_position_notional_usd: 10.0
-
-  # Number of historical ATR values for Z-score mean/stdev calculation.
-  #   14 = responsive (reacts quickly to regime changes)
-  #   30 = default (balanced smoothing)
-  #   50 = stable (slow to change regime, fewer false signals)
-  atr_zscore_period: 30
 
   # Fraction of entry-to-liquidation distance that the SL must stay away from
   # the liquidation price. Prevents fills near the liquidation boundary where
@@ -340,18 +318,6 @@ position_management:
   # toward TP within 8 hours of open, the setup failed without stopping out.
   stall_check_after_hours: 8
   stall_min_progress_atr: 0.5
-
-# -----------------------------------------------------------------------------
-# Order Flow — funding rate and open interest monitoring
-# Fetch interval is configured in orchestrator.order_flow_fetch_interval_s
-# -----------------------------------------------------------------------------
-order_flow:
-  # Z-score threshold for flagging extreme funding rate conditions.
-  # Extreme funding often precedes mean-reversion moves.
-  #   1.5 = sensitive
-  #   2.0 = default
-  #   3.0 = only flag severe extremes
-  funding_extreme_threshold: 2.0
 
 # -----------------------------------------------------------------------------
 # Filters — pre-trade validation gates (all must pass before execution)
@@ -437,17 +403,6 @@ execution:
     HIGH: 90000    # 30s guaranteed expiry vs 180s reasoning loop; raised to 90s
     EXTREME: 30000  # 10s was too aggressive — most decisions expired before execution
 
-  # Whether to place SL and TP orders immediately after entry fill.
-  # true  = place SL/TP right away (recommended — protects against sudden moves)
-  # false = defer SL/TP placement (e.g. for manual management)
-  immediate_sl_tp: true
-
-  # Maximum retry attempts for failed order submissions (e.g. network errors).
-  #   1 = no retries (fail fast)
-  #   3 = default
-  #   5 = aggressive retrying
-  max_retry_attempts: 3
-
 # -----------------------------------------------------------------------------
 # Events — Redis Streams event sourcing (immutable audit trail)
 # -----------------------------------------------------------------------------
@@ -459,12 +414,6 @@ events:
   #   1000000 = large history (hundreds of MB)
   stream_max_length: 100000
 
-  # Days to retain events before periodic pruning removes them.
-  #   30  = one month
-  #   90  = default (one quarter)
-  #   365 = one year (large storage)
-  retention_days: 90
-
   # Redis Stream key names for each event aggregate type.
   # Change these only if you need to avoid key collisions in a shared Redis instance.
   streams:
@@ -475,25 +424,11 @@ events:
     liquidations: "kt:events:liquidations"
 
 # -----------------------------------------------------------------------------
-# Orchestrator — async loop intervals and WebSocket reconnection
+# Orchestrator — async loop intervals and shutdown
 # Manages 5 concurrent loops: DataIngest, OrderFlow, Reasoning, Execution,
 # PositionManagement.
 # -----------------------------------------------------------------------------
 orchestrator:
-  # Initial delay (seconds) before first WebSocket reconnection attempt.
-  # Backs off exponentially on repeated failures up to ws_max_reconnect_delay_s.
-  #   0.5 = fast first retry
-  #   1.0 = default
-  #   5.0 = cautious
-  ws_reconnect_delay_s: 1.0
-
-  # Maximum delay cap (seconds) for exponential WebSocket reconnection backoff.
-  # Prevents backoff from growing indefinitely.
-  #   30  = aggressive cap (reconnects sooner)
-  #   60  = default
-  #   120 = patient
-  ws_max_reconnect_delay_s: 60.0
-
   # How often (seconds) the OrderFlowLoop fetches funding rate / open interest.
   # Underlying data refreshes every 15 min (OI/L-S ratio) or 8h (funding).
   #   60  = aggressive polling
@@ -513,13 +448,6 @@ orchestrator:
   #   15 = relaxed
   position_check_interval_s: 5
 
-  # How often (seconds) the orchestrator runs a health check on all loops.
-  # Logs warnings if any loop becomes unresponsive.
-  #   10 = frequent monitoring
-  #   30 = default
-  #   60 = infrequent
-  health_check_interval_s: 30
-
   # Timeout (seconds) for graceful shutdown — waits for loops to finish
   # before force-cancelling remaining tasks.
   #   5  = fast shutdown
@@ -528,7 +456,7 @@ orchestrator:
   graceful_shutdown_timeout_s: 10
 
 # -----------------------------------------------------------------------------
-# Monitoring — logging format, decision audit trail, metrics
+# Monitoring — logging format and level
 # -----------------------------------------------------------------------------
 monitoring:
   # Log output format.
@@ -539,18 +467,6 @@ monitoring:
   # Application log level (can be overridden with --verbose CLI flag → DEBUG).
   # DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_level: "DEBUG"
-
-  # Whether to log every trader decision to the decision audit trail.
-  decision_log_enabled: true
-
-  # Days to retain decision logs before cleanup.
-  #   7   = one week
-  #   30  = default (one month)
-  #   90  = one quarter
-  decision_log_retention_days: 30
-
-  # Whether system metrics collection is enabled (for future Prometheus / etc.).
-  metrics_enabled: true
 
 # -----------------------------------------------------------------------------
 # Reporting — live HTML session reports

@@ -31,21 +31,6 @@ class OrderType(StrEnum):
     TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
 
 
-class MarginType(StrEnum):
-    """Futures margin type enum."""
-
-    ISOLATED = "ISOLATED"
-    CROSSED = "CROSSED"
-
-
-class PositionSide(StrEnum):
-    """Futures position side enum."""
-
-    BOTH = "BOTH"
-    LONG = "LONG"
-    SHORT = "SHORT"
-
-
 class OrderStatus(StrEnum):
     """Order status enum."""
 

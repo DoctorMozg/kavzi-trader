@@ -20,8 +20,6 @@ class RiskConfigSchema(BaseModel):
     volatility_high_threshold: Decimal = Decimal("1.0")
     volatility_extreme_threshold: Decimal = Decimal("2.0")
 
-    atr_zscore_period: int = 30
-
     max_notional_percent: Decimal = Decimal("50.0")
 
     # Minimum position notional (in USDT) the sizer will emit.
