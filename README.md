@@ -1,6 +1,8 @@
+<p align="center"><img src="assets/hero/kavzitrader.webp" alt="KavziTrader: LLM-powered crypto futures trading" width="100%"></p>
+
 # KavziTrader
 
-LLM-Based Crypto Trading Platform for Binance
+LLM-based trading platform for Binance USDT-M perpetual futures.
 
 ## About
 
@@ -12,75 +14,84 @@ not financial advice.
 
 Trading cryptocurrencies carries significant risk, including possible total
 loss of capital. This software is experimental and provided "as is" with no
-warranty — use at your own risk. See [DISCLAIMER.md](DISCLAIMER.md) for the
+warranty. Use at your own risk. See [DISCLAIMER.md](DISCLAIMER.md) for the
 full statement.
 
 ## Overview
 
-KavziTrader is an algorithmic trading platform designed for cryptocurrency trading on Binance. The platform implements a **Brain-Spine Architecture** that leverages Large Language Models (LLMs) for intelligent market analysis while maintaining deterministic, real-time execution.
+KavziTrader uses a **Brain-Spine** split. The Brain is a tiered pipeline that decides *whether* and *what* to trade. The Spine is deterministic async Python that decides *how* and *when* to execute safely.
 
-**Key Architectural Concepts:**
-
-- **The Brain**: Tiered PydanticAI agents (Haiku → Sonnet → Opus) for cost-optimized reasoning
-- **The Spine**: High-speed async execution with dynamic risk and position management
-- **Order Flow Edge**: Funding rates, OI, and liquidation levels for informed decisions
-- **Validation Firewall**: Multi-layer safety with confidence calibration
+- **The Brain**: a rule-based Scout, then an Analyst LLM, then a Trader LLM. Both LLMs run through OpenRouter via PydanticAI.
+- **The Spine**: pre-trade filters (funding, liquidity, correlation, volatility, Fear & Greed, spike cooldown), ATR-based risk validation, an execution engine and position management.
+- **Order flow and external data**: funding rate and open interest per symbol, plus market-wide sentiment (DVOL, put/call ratio, Fear & Greed, news).
+- **Event sourcing**: decisions and orders go to Redis Streams as an audit trail.
 
 ## Features
 
-- **Tiered LLM Agents**: Cost-optimized analysis (90%+ filter rate with cheap Scout)
-- **Order Flow Analysis**: Funding rates, OI changes, liquidation level detection
-- **Dynamic Risk**: Volatility-aware position sizing with ATR-based stops
-- **Active Position Management**: Trailing stops, break-even, partial exits, scaling
-- **Paper Trading**: Binance Testnet mode with full API mechanics
-- **Confidence Calibration**: Statistical tracking of LLM decision accuracy
-- **Event Sourcing**: Redis Streams audit trail
-- **Structured Logging**: JSON logs and decision audit records
+- **Tiered pipeline**: Scout is a deterministic filter (no LLM, under 1 ms) that drops about 90% of candles before any token is spent.
+- **Risk**: ATR-based sizing, a leverage liquidation-price calculator used by the risk validator, drawdown limits.
+- **Position management**: partial exits, time exits and stall exits.
+- **Paper trading**: local simulated orders against live market data.
+- **External sources**: Deribit DVOL and put/call ratio, Fear & Greed index and CCData news.
+- **Realtime dashboard**: React UI fed by Redis streams over WebSocket.
+- **Structured logging**: JSON logs and decision audit records.
 
-## How It Works
+## How it works
 
-KavziTrader is built around a **Brain-Spine** split. The Brain is tiered LLM
-reasoning — Scout (Haiku) → Analyst (Sonnet) → Trader (Opus) — that decides
-*whether* and *what* to trade. Each tier is cheaper and faster than the next;
-Scout filters out ~90% of candles before the platform pays for deeper
-reasoning, so cost scales with opportunity rather than with market activity.
+Trading runs on 15m candles of USDT-M perpetual futures (default leverage 5x, symbols in `trading.symbols`).
 
-The Spine is deterministic async Python that decides *how* and *when* to
-execute safely: pre-trade filters, ATR-based risk validation, an execution
-engine talking to Binance, and active position management (trailing stops,
-break-even, partial exits, scaling). Every decision and order is written to a
-Redis Streams event store, which both audits the system and drives the
-position-management loops. Latency separation is deliberate: the Brain
-operates at 0.5–5 s, the Spine responds in under 100 ms.
+Scout (`kavzi_trader/spine/filters/scout.py`) returns INTERESTING or SKIP. Analyst (about 1.5 s) validates the setup. Trader (a few seconds) produces the signal. The Brain works at 0.5-5 s per decision. The Spine reacts in under 100 ms.
+
+Model IDs are configurable. The current defaults in `config/config.yaml` are `anthropic/claude-haiku-4.5` for Analyst and `openai/gpt-5.4` for Trader.
+
+Every 5 minutes a cheap LLM synthesizer (`deepseek/deepseek-chat-v3-0324` via OpenRouter) condenses the external sources into a summary. It goes into the Analyst and Trader prompts. Scout doesn't use it.
 
 ```mermaid
 flowchart LR
-    C[Candle close] --> S{Scout<br/>Haiku ~500ms}
+    C[Candle close] --> S{Scout<br/>rules, under 1ms}
     S -- SKIP --> X[Drop]
-    S -- INTERESTING --> A{Analyst<br/>Sonnet ~2s}
+    S -- INTERESTING --> A{Analyst<br/>Haiku 4.5 ~1.5s}
     A -- invalid --> X
-    A -- valid setup --> T{Trader<br/>Opus ~5s}
-    T -- signal --> F[Pre-trade filters<br/>liquidity funding correlation news]
-    F --> R[Risk validation<br/>ATR sizing drawdown]
+    A -- valid setup --> T{Trader<br/>GPT-5.4 few s}
+    T -- signal --> F[Pre-trade filters<br/>funding liquidity correlation<br/>volatility F&G spike cooldown]
+    F --> R[Risk validation<br/>ATR sizing drawdown liquidation]
     R --> E[Execution engine]
     E --> B[(Binance API)]
     E --> ES[(Redis Streams<br/>event store)]
-    ES --> PM[Position management<br/>trailing break-even partials scaling]
+    ES --> PM[Position management<br/>partial time stall exits]
     PM --> E
+    EXT[External sources<br/>DVOL F&G news] -.-> A
+    EXT -.-> T
 ```
 
-## Project Structure
+The orchestrator (`kavzi_trader/orchestrator/loops/`) runs concurrent async loops: ingest, order flow, reasoning, execution, position management and a UI snapshot loop.
+
+## Project structure
 
 ```text
 kavzitrader/
-├── kavzi_trader/           # Source code
-│   ├── api/                # API connectors
-│   ├── cli/                # Command line interfaces
-│   ├── commons/            # Shared utilities
-│   └── config/             # Configuration management
-├── config/                 # Configuration files
-├── tests/                  # Test suite
-└── docs/                   # Documentation
+├── kavzi_trader/
+│   ├── api/            # Binance REST and WebSocket clients
+│   ├── brain/          # Agents, prompts, output schemas
+│   ├── cli/            # Click CLI
+│   ├── commons/        # Logging, time and async helpers
+│   ├── config/         # AppConfig (YAML + env)
+│   ├── domain/         # Shared Pydantic schemas and enums
+│   ├── events/         # Redis Streams event store
+│   ├── external/       # Sentiment and options data sources, synthesizer
+│   ├── indicators/     # EMA, RSI, MACD, ATR and others
+│   ├── infra/          # Redis client and config
+│   ├── orchestrator/   # Async loops
+│   ├── order_flow/     # Funding rate and open interest
+│   ├── paper/          # Local paper-trading exchange
+│   ├── spine/          # Filters, risk, execution, positions, state
+│   └── ui/             # Dashboard backend (WebSocket server, publisher)
+├── config/             # config.yaml
+├── docker/             # Redis via docker-compose
+├── reports/            # Post-session run analyses
+├── results/            # Logs and run output
+├── tests/              # Test suite
+└── ui/web/             # Dashboard frontend (Vite, React, TypeScript)
 ```
 
 ## Installation
@@ -88,7 +99,8 @@ kavzitrader/
 ### Prerequisites
 
 - Python 3.14+
-- Redis (for caching)
+- Docker (for Redis)
+- Node.js (only to build the dashboard)
 
 ### Setup
 
@@ -109,10 +121,10 @@ kavzitrader/
 
    ```bash
    cp .env.example .env
-   # Edit .env with your Binance API keys
+   # Add your OpenRouter key, plus Binance keys for live trading
    ```
 
-4. Start Docker services:
+4. Start Redis 7.4, which holds state, the event store and the dashboard streams:
 
    ```bash
    cd docker && docker-compose up -d
@@ -120,68 +132,72 @@ kavzitrader/
 
 ## Configuration
 
-Main configuration lives in `config/config.yaml`. The CLI loads it through
-`kavzi_trader.config.AppConfig` and applies environment overrides for Binance.
+Main configuration lives in `config/config.yaml`, loaded through `kavzi_trader.config.AppConfig`.
 
-Key sections:
+Top-level sections: `system`, `api`, `brain`, `scout`, `trading`, `futures`, `risk`, `position_management`, `filters`, `redis`, `execution`, `events`, `orchestrator`, `monitoring`, `ui`, `external_sources`, `paper`.
 
-- `system`: data/model/result dirs, log level
-- `api.binance`: API keys, testnet flag
-- `trading`: symbols, interval, max positions
-- `risk`: ATR thresholds, drawdown limits, volatility thresholds
-- `position_management`: trailing/break-even/partial exits
-- `filters`: liquidity, funding, correlation, news windows
-- `redis`: connection settings
-- `execution`: staleness thresholds, timeouts
-- `events`: stream names, retention policy
-- `orchestrator`: loop intervals
-- `monitoring`: logging format, decision audit logging
-- `paper`: testnet settings
+`paper.mode` is `PAPER`, `LIVE` or `DISABLED`. It also sets the initial balance and commission rate.
 
-Environment overrides:
+Environment variables:
 
 - `KT_BINANCE_API_KEY`
 - `KT_BINANCE_API_SECRET`
-- `KT_BINANCE_TESTNET`
+- `KT_OPENROUTER_API_KEY`
+
+Paper validation (`config --validate --paper`) needs only the OpenRouter key.
 
 ## Usage
 
-### CLI Commands
-
 ```bash
-# View available commands
+# List commands
 uv run kavzitrader --help
 
-# Start orchestrator (dry-run)
-uv run kavzitrader trade start --dry-run
+# Paper trading: simulated orders, live market data
+uv run kavzitrader trade start --paper --paper-balance 1000
 
-# Check trade status
+# Live trading
+uv run kavzitrader trade start
+
+# Check the config (add --paper for paper mode)
+uv run kavzitrader config --validate
+
+# Status, open positions, recent events
 uv run kavzitrader trade status
-
-# List positions
 uv run kavzitrader trade positions
-
-# Recent event history
 uv run kavzitrader trade history
 
-# Model status
+# Check the OpenRouter connection
 uv run kavzitrader model status
 ```
 
-## Development
+`trade start --dry-run` only prints a message and exits without starting the orchestrator.
 
-Run pre-commit checks:
+### Dashboard
+
+```bash
+# Build the frontend once (writes ui/web/dist)
+cd ui/web && npm install && npm run build && cd ../..
+
+# Serve it on 127.0.0.1:8780, streaming trader events from Redis
+uv run kavzitrader ui serve
+
+# Or try it with synthetic events, no trading needed
+uv run kavzitrader ui demo
+```
+
+`ui export-schema` regenerates the JSON Schema that the frontend builds its TypeScript types from.
+
+## Development
 
 ```bash
 uv run pre-commit run --all-files
-```
-
-Run tests:
-
-```bash
 uv run pytest
+
+# Frontend, from ui/web
+npm run typecheck
+npm test
 ```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
