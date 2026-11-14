@@ -4,7 +4,9 @@ from typing import cast
 
 from kavzi_trader.brain.confluence_thresholds import (
     COUNTER_TREND_GATE_BUMP,
+    HIGH_CONFLUENCE_SCORE,
     effective_regime_gate,
+    signal_adjusted_threshold,
 )
 from kavzi_trader.brain.context.confluence_trimmer import side_trim_confluence
 from kavzi_trader.brain.context.context_dicts import (
@@ -258,6 +260,12 @@ class ContextBuilder:
                 deps.volatility_regime,
                 available_signals,
             ),
+            available_signals=available_signals,
+            high_confluence_min=signal_adjusted_threshold(
+                HIGH_CONFLUENCE_SCORE, available_signals
+            ),
+            # "All but one signal" keeps the breakout cue reachable at 5/8 data.
+            breakout_algo_min=max(0, available_signals - 1),
             sentiment_summary=sentiment.summary if sentiment else None,
             sentiment_bias=(sentiment.sentiment_bias if sentiment else None),
             sentiment_confidence_adjustment=(

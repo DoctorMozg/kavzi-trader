@@ -14,10 +14,10 @@ from kavzi_trader.brain.agent.protocols import (
     ConfluenceOverrideProvider,
     LLMExceptionLogger,
 )
+from kavzi_trader.brain.confluence_gates_schema import ConfluenceGatesSchema
 from kavzi_trader.brain.confluence_thresholds import (
     COUNTER_TREND_GATE_BUMP,
     confluence_enter_min_for_regime,
-    effective_min_algo_confluence,
     effective_regime_gate,
 )
 from kavzi_trader.brain.schemas.dependencies import AnalystDependenciesSchema
@@ -60,9 +60,9 @@ class AnalystPipelineResultSchema(BaseModel):
     stop: Annotated[bool, Field(...)]
     cached: Annotated[bool, Field(default=False)]
     reason: Annotated[_AnalystStopReason, Field(...)]
-    # Regime entry gate scaled to the signals available for this evaluation.
-    # Downstream cooldown/enqueue checks read it instead of recomputing.
-    regime_gate: Annotated[int | None, Field(default=None)]
+    # Gates scaled to the signals available for this evaluation; downstream
+    # cooldown/enqueue checks read them instead of recomputing.
+    gates: Annotated[ConfluenceGatesSchema | None, Field(default=None)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -139,7 +139,7 @@ class AnalystPipeline:
                 stop=True,
                 cached=False,
                 reason="circuit_open",
-                regime_gate=None,
+                gates=None,
             )
 
         deps = await deps_provider.get_analyst(symbol)
@@ -147,7 +147,10 @@ class AnalystPipeline:
         regime = deps.volatility_regime
         available = deps.algorithm_confluence.dominant.available_signals
         regime_gate = effective_regime_gate(regime, available)
-        min_algo = effective_min_algo_confluence(self._min_algo_confluence, available)
+        gates = ConfluenceGatesSchema.model_validate(
+            {"regime_gate": regime_gate, "available_signals": available}
+        )
+        min_algo = gates.adjusted(self._min_algo_confluence)
         self._log_scaled_gates(
             symbol, regime, available, regime_gate, min_algo=min_algo
         )
@@ -195,7 +198,7 @@ class AnalystPipeline:
                 stop=True,
                 cached=False,
                 reason="below_min_algo_confluence",
-                regime_gate=regime_gate,
+                gates=gates,
             )
 
         if not deps.recent_candles:
@@ -208,7 +211,7 @@ class AnalystPipeline:
                 stop=True,
                 cached=False,
                 reason="no_candles",
-                regime_gate=regime_gate,
+                gates=gates,
             )
 
         # Bar-close dedup: if the latest closed candle hasn't changed since
@@ -231,7 +234,7 @@ class AnalystPipeline:
                 decision=cached,
                 regime=regime,
                 htf_trend=deps.htf_trend,
-                regime_gate=regime_gate,
+                gates=gates,
                 cached=True,
             )
 
@@ -259,7 +262,7 @@ class AnalystPipeline:
                 stop=True,
                 cached=False,
                 reason="agent_error",
-                regime_gate=regime_gate,
+                gates=gates,
             )
 
         # Record the bar we just analyzed so subsequent cycles within the
@@ -271,7 +274,7 @@ class AnalystPipeline:
             decision=result,
             regime=regime,
             htf_trend=deps.htf_trend,
-            regime_gate=regime_gate,
+            gates=gates,
             cached=False,
         )
 
@@ -282,17 +285,16 @@ class AnalystPipeline:
         decision: AnalystDecisionSchema,
         regime: VolatilityRegime,
         htf_trend: HtfTrendSchema | None,
-        regime_gate: int,
+        gates: ConfluenceGatesSchema,
         cached: bool,
     ) -> AnalystPipelineResultSchema:
         """Apply the regime-specific escalation gate + optional override.
 
-        ``regime_gate`` is the regime's gate (NORMAL=6, HIGH=7, EXTREME=8,
-        LOW=7) already scaled to the available signals. The confluence
-        override (e.g. elevated-fear FGI gate) can tighten the gate further
-        but never loosen it.
+        ``gates.regime_gate`` is the regime's gate (NORMAL=6, HIGH=7,
+        EXTREME=8, LOW=7) already scaled to the available signals. The
+        override (e.g. elevated-fear FGI gate) can tighten it, never loosen it.
         """
-        confluence_gate = regime_gate
+        confluence_gate = gates.regime_gate
         if self._confluence_override is not None:
             override = self._confluence_override.get_confluence_override(
                 decision.direction
@@ -343,7 +345,7 @@ class AnalystPipeline:
                 stop=True,
                 cached=cached,
                 reason="invalid_or_below_gate",
-                regime_gate=regime_gate,
+                gates=gates,
             )
         return AnalystPipelineResultSchema(
             decision=decision,
@@ -351,7 +353,7 @@ class AnalystPipeline:
             stop=False,
             cached=cached,
             reason="ok",
-            regime_gate=regime_gate,
+            gates=gates,
         )
 
     @staticmethod

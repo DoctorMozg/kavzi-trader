@@ -35,6 +35,9 @@ _REGIME_ENTER_MIN: dict[VolatilityRegime, int] = {
 }
 
 
+# Raw score the Trader prompt treats as "high confluence" with all signals.
+HIGH_CONFLUENCE_SCORE = 7
+
 # Extra raw points a setup needs when it fights the 1h trend.
 COUNTER_TREND_GATE_BUMP = 1
 
@@ -66,12 +69,13 @@ def effective_regime_gate(regime: VolatilityRegime, available_signals: int) -> i
     return _scale_gate(confluence_enter_min_for_regime(regime), available_signals)
 
 
-def effective_min_algo_confluence(
-    min_algo_confluence: int,
-    available_signals: int,
-) -> int:
-    """Analyst pre-filter threshold, lowered by the NORMAL gate's scaling."""
+def signal_adjusted_threshold(threshold: int, available_signals: int) -> int:
+    """Lower a fixed score threshold by the NORMAL gate's signal scaling.
+
+    Used for thresholds tied to the NORMAL gate: the Analyst pre-filter, the
+    cooldown bands and the Trader's high-confluence cue.
+    """
     reduction = CONFLUENCE_ENTER_MIN - effective_regime_gate(
         VolatilityRegime.NORMAL, available_signals
     )
-    return max(0, min_algo_confluence - reduction)
+    return max(0, threshold - reduction)

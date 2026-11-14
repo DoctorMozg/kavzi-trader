@@ -1,6 +1,7 @@
 import logging
 
 from kavzi_trader.brain.agent.router import PipelineResult
+from kavzi_trader.brain.confluence_gates_schema import ConfluenceGatesSchema
 from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_REJECT_MAX,
 )
@@ -89,11 +90,12 @@ class CooldownPolicy:
         self,
         symbol: str,
         analyst: AnalystDecisionSchema,
-        regime_gate: int,
+        gates: ConfluenceGatesSchema,
     ) -> None:
         """Apply a hysteresis-banded cooldown based on the Analyst verdict.
 
-        ``regime_gate`` is the signal-scaled gate from the Analyst stage.
+        ``gates`` are the signal-scaled thresholds from the Analyst stage; the
+        reject and low bands shift down with them when signals are missing.
 
         Score <= 3 and invalid escalates per direction; borderline or
         high-confluence-but-invalid gets one light cooldown; a valid setup at
@@ -104,10 +106,11 @@ class CooldownPolicy:
         direction = analyst.direction
         cooldown_dirs = list(_DIRECTIONS) if direction == "NEUTRAL" else [direction]
 
-        if not setup_valid and score <= CONFLUENCE_REJECT_MAX:
+        regime_gate = gates.regime_gate
+        if not setup_valid and score <= gates.adjusted(CONFLUENCE_REJECT_MAX):
             for d in cooldown_dirs:
                 count = self._state.bump_rejection(symbol, d)
-                base_cooldown = self.compute_rejection_cooldown(score)
+                base_cooldown = self.compute_rejection_cooldown(score, gates)
                 multiplier = min(count, self._max_rejection_multiplier)
                 self._state.set_cooldown(symbol, d, base_cooldown * multiplier)
                 logger.debug(
@@ -141,9 +144,11 @@ class CooldownPolicy:
         for d in cooldown_dirs:
             self._state.clear_rejections(symbol, d)
 
-    def compute_rejection_cooldown(self, confluence_score: int) -> int:
+    def compute_rejection_cooldown(
+        self, confluence_score: int, gates: ConfluenceGatesSchema
+    ) -> int:
         """Scale rejection cooldown within the aggressive band (score <= 3)."""
-        low_band = self._config.cooldown_low_confluence_threshold
+        low_band = gates.adjusted(self._config.cooldown_low_confluence_threshold)
         multiplier = 3 if confluence_score <= low_band else 2
         cooldown = self._analyst_cooldown_cycles * multiplier
         logger.debug(

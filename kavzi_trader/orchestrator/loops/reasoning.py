@@ -269,12 +269,12 @@ class ReasoningLoop:
 
         self._cooldowns.track_skip_suspension(symbol, result.scout.verdict)
 
-        # PipelineResult guarantees a gate whenever an Analyst decision exists.
-        if result.analyst is not None and result.regime_gate is not None:
+        # PipelineResult guarantees gates whenever an Analyst decision exists.
+        if result.analyst is not None and result.gates is not None:
             self._cooldowns.apply_analyst_cooldown(
                 symbol,
                 result.analyst,
-                result.regime_gate,
+                result.gates,
             )
 
         self._cooldowns.track_geometry_rejects(symbol, result)
@@ -307,9 +307,9 @@ class ReasoningLoop:
             return False
         if result.analyst is None or not result.analyst.setup_valid:
             return False
-        if result.regime_gate is None:
+        if result.gates is None:
             return False
-        if result.analyst.confluence_score < result.regime_gate:
+        if result.analyst.confluence_score < result.gates.regime_gate:
             return False
         if result.trader is None:
             return False

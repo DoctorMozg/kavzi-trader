@@ -112,6 +112,9 @@ class TraderContextDict(MarketContextDict):
     symbol_tier: str
     tier_min_confidence: str
     confluence_enter_min: int
+    available_signals: int
+    high_confluence_min: int
+    breakout_algo_min: int
     sentiment_summary: str | None
     sentiment_bias: str | None
     sentiment_confidence_adjustment: str | None

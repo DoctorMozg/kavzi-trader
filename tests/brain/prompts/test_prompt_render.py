@@ -223,3 +223,46 @@ def test_analyst_system_prompt_mentions_gate_scaling(
     rendered = prompt_loader.render_system_prompt("analyst", system_context)
 
     assert "scale down proportionally" in rendered
+
+
+@pytest.mark.parametrize(
+    ("available", "expected_line"),
+    [
+        (8, "Analyst confluence >= 7 | algorithm confluence >= 7/8"),
+        (5, "Analyst confluence >= 6 | algorithm confluence >= 4/5"),
+    ],
+)
+def test_trader_prompt_high_confluence_thresholds_scale_with_signals(
+    prompt_loader: PromptLoader,
+    make_deps: Callable[
+        [VolatilityRegime],
+        tuple[AnalystDependenciesSchema, TradingDependenciesSchema],
+    ],
+    available: int,
+    expected_line: str,
+) -> None:
+    _, trader_deps = make_deps(VolatilityRegime.NORMAL)
+    dual = trader_deps.algorithm_confluence
+    scaled = dual.model_copy(
+        update={
+            "long": dual.long.model_copy(update={"available_signals": available}),
+            "short": dual.short.model_copy(update={"available_signals": available}),
+        }
+    )
+    deps = trader_deps.model_copy(update={"algorithm_confluence": scaled})
+
+    prompt = prompt_loader.render_user_prompt(
+        "make_decision", ContextBuilder().build_trader_context(deps)
+    )
+
+    assert f"High-confluence thresholds: {expected_line}" in prompt
+
+
+def test_trader_system_prompt_has_no_fixed_high_confluence_numbers(
+    prompt_loader: PromptLoader,
+    system_context: SystemPromptContextDict,
+) -> None:
+    rendered = prompt_loader.render_system_prompt("trader", system_context)
+
+    assert "7/8" not in rendered
+    assert "confluence >= 7" not in rendered

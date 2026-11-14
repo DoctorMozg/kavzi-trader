@@ -17,6 +17,7 @@ from kavzi_trader.brain.agent.protocols import (
 from kavzi_trader.brain.agent.router_config import RouterConfigSchema
 from kavzi_trader.brain.agent.scout_pipeline import ScoutPipeline
 from kavzi_trader.brain.agent.trader_pipeline import TraderPipeline
+from kavzi_trader.brain.confluence_gates_schema import ConfluenceGatesSchema
 from kavzi_trader.brain.geometry.calculator import TradeGeometryCalculator
 from kavzi_trader.brain.geometry.schemas import TradeGeometrySchema
 from kavzi_trader.brain.schemas.dependencies import (
@@ -33,8 +34,8 @@ logger = logging.getLogger(__name__)
 class PipelineResult:
     __slots__ = (
         "analyst",
+        "gates",
         "geometry",
-        "regime_gate",
         "scout",
         "trader",
         "trader_deps",
@@ -49,7 +50,7 @@ class PipelineResult:
         trader_deps: TradingDependenciesSchema | None = None,
         geometry: TradeGeometrySchema | None = None,
         trader_stop_reason: str | None = None,
-        regime_gate: int | None = None,
+        gates: ConfluenceGatesSchema | None = None,
     ) -> None:
         self.scout = scout
         self.analyst = analyst
@@ -57,19 +58,19 @@ class PipelineResult:
         self.trader_deps = trader_deps
         self.geometry = geometry
         self.trader_stop_reason = trader_stop_reason
-        # Signal-scaled regime gate from the Analyst stage; set whenever an
-        # Analyst decision is, so downstream gates never recompute it.
-        if analyst is not None and regime_gate is None:
-            msg = "regime_gate is required when an Analyst decision is present"
+        # Signal-scaled gates from the Analyst stage; set whenever an Analyst
+        # decision is, so downstream gates never recompute them.
+        if analyst is not None and gates is None:
+            msg = "gates are required when an Analyst decision is present"
             raise ValueError(msg)
-        self.regime_gate = regime_gate
+        self.gates = gates
 
 
 # Minimum algorithm confluence to escalate to the Analyst LLM. The Analyst
 # can add at most +3 points to the final confluence_score, so threshold is
 # (CONFLUENCE_ENTER_MIN - 3) = 3 with all 8 signals — below this, even a
 # perfect LLM bonus cannot reach the entry gate. Lowered when fewer signals
-# are available (see effective_min_algo_confluence).
+# are available (see signal_adjusted_threshold).
 _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 3
 
 # Number of consecutive Trader validation failures (UnexpectedModelBehavior
@@ -204,7 +205,7 @@ class AgentRouter:
             return PipelineResult(
                 scout=scout_result,
                 analyst=analyst_decision,
-                regime_gate=analyst_result.regime_gate,
+                gates=analyst_result.gates,
             )
         # ``stop=False`` guarantees the Analyst pipeline produced a
         # gate-passing decision; the explicit None check keeps the type
@@ -222,7 +223,7 @@ class AgentRouter:
             return PipelineResult(
                 scout=scout_result,
                 analyst=analyst_decision,
-                regime_gate=analyst_result.regime_gate,
+                gates=analyst_result.gates,
             )
 
         total_ms = (time.monotonic() - total_start) * 1000
@@ -238,7 +239,7 @@ class AgentRouter:
             trader_deps=trader_run.deps,
             geometry=trader_run.geometry,
             trader_stop_reason=trader_run.reason,
-            regime_gate=analyst_result.regime_gate,
+            gates=analyst_result.gates,
         )
 
     @staticmethod

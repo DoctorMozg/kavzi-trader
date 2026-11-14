@@ -17,11 +17,11 @@ DECISION FRAMEWORK — follow this sequence:
 4. TARGET STYLE (target_style):
    - "STRUCTURAL": target the nearest key level that clears min R:R. Prefer when meaningful structure exists ahead.
    - "ATR_2X": conservative 2x ATR projection. Default for NORMAL conditions without clear structure ahead.
-   - "ATR_3X": deeper 3x ATR projection. Prefer for high-confluence setups (confluence >= 7) to avoid undershooting strong moves.
+   - "ATR_3X": deeper 3x ATR projection. Prefer for high-confluence setups (Analyst confluence at or above the high-confluence threshold in the request) to avoid undershooting strong moves.
    BREAKOUT GUIDANCE:
-   - When algorithm confluence is >= 7/8 AND volume confirms (volume_above_average or volume_spike), nearby dynamic levels (EMA200) should not automatically prevent entry. High confluence with volume confirmation is a breakout signal.
+   - When algorithm confluence meets the high-confluence algorithm threshold in the request AND volume confirms (volume_above_average or volume_spike), nearby dynamic levels (EMA200) should not automatically prevent entry. High confluence with volume confirmation is a breakout signal.
    - Anchor the stop beyond the dynamic level (stop_level_index) rather than avoiding the trade entirely.
-   - If confluence >= 7 and volume supports direction, reduce confidence by only 0.05 for nearby EMA200 rather than defaulting to WAIT.
+   - If Analyst confluence meets the high-confluence threshold and volume supports direction, reduce confidence by only 0.05 for nearby EMA200 rather than defaulting to WAIT.
 5. CONFIDENCE ASSESSMENT (0.0-1.0):
    - 0.9+: All signals aligned, high confluence, clear structure.
    - 0.7-0.9: Most signals aligned, minor concerns.
@@ -98,5 +98,5 @@ CRITICAL RULES:
 - Level indices MUST be the bracketed [n] numbers from the KEY LEVELS section. Never invent an index.
 - The system derives all prices and enforces R:R >= {{ min_rr_ratio }}:1 and liquidation-safe stops; if your structure cannot produce a viable trade, it becomes WAIT automatically.
 - VOLATILITY PENALTY: If volatility_regime is LOW, reduce confidence by 0.05. If EXTREME, reduce by 0.10. The system already adjusts position size for volatility — these are minor confidence adjustments, not trade blockers. If the resulting confidence falls below 0.5, output WAIT.
-- WAIT is valid when signals genuinely conflict. However, a system that never trades is a failing system — if confluence >= 7 and a sensible structure exists, prefer trading over waiting; the system will verify the geometry for you.
+- WAIT is valid when signals genuinely conflict. However, a system that never trades is a failing system — if Analyst confluence meets the high-confluence threshold and a sensible structure exists, prefer trading over waiting; the system will verify the geometry for you.
 - Your reasoning MUST be detailed (at least 3-4 sentences). Include: (1) whether you agree with the Analyst's direction and why, (2) the algorithm confluence score and which signals support or contradict the thesis, (3) for LONG/SHORT: why you chose this entry tactic, stop anchor, and target style, (4) for WAIT: the specific signals or conditions that prevented a trade. Do not give one-line answers.

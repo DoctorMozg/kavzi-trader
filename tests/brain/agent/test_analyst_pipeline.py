@@ -386,7 +386,8 @@ async def test_raw_5_passes_normal_gate_without_order_flow(run_pipeline) -> None
     result, _ = await run_pipeline(algo_score=3, available_signals=5, analyst_score=5)
 
     assert not result.stop
-    assert result.regime_gate == 5
+    assert result.gates is not None
+    assert result.gates.regime_gate == 5
 
 
 @pytest.mark.asyncio
@@ -395,7 +396,8 @@ async def test_raw_5_fails_normal_gate_with_order_flow(run_pipeline) -> None:
 
     assert result.stop
     assert result.reason == "invalid_or_below_gate"
-    assert result.regime_gate == 6
+    assert result.gates is not None
+    assert result.gates.regime_gate == 6
 
 
 @pytest.mark.asyncio
@@ -415,7 +417,8 @@ async def test_counter_trend_bump_applies_after_scaling(
     )
 
     assert result.stop is expect_stop
-    assert result.regime_gate == 5
+    assert result.gates is not None
+    assert result.gates.regime_gate == 5
 
 
 @pytest.mark.asyncio

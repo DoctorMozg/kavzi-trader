@@ -4,8 +4,8 @@ from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_ENTER_MIN,
     CONFLUENCE_REJECT_MAX,
     confluence_enter_min_for_regime,
-    effective_min_algo_confluence,
     effective_regime_gate,
+    signal_adjusted_threshold,
 )
 from kavzi_trader.domain.algorithm_confluence import ALGO_SIGNAL_COUNT
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
@@ -78,4 +78,4 @@ def test_effective_min_algo_follows_normal_gate_reduction(
     available: int,
     expected: int,
 ) -> None:
-    assert effective_min_algo_confluence(3, available) == expected
+    assert signal_adjusted_threshold(3, available) == expected
