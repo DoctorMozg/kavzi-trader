@@ -205,10 +205,10 @@ class TestAnonymizationInPrompts:
         assert agents.log.trader
         decided = datetime.fromtimestamp(case.decision_open_time_ms / 1000, tz=UTC)
         user = agents.log.user_text()
-        # Instructions carry a tier legend that names BTC/ETH/BNB; only the full
-        # symbol must be absent there.
-        assert SYMBOL not in agents.log.all_text()
-        assert "BTC" not in user
+        everything = agents.log.all_text()
+        assert SYMBOL not in everything
+        for base_asset in ("BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "LINK", "AVAX"):
+            assert base_asset not in everything
         assert "ASSET" in user
         for date_text in (
             decided.strftime("%Y-%m-%d"),
