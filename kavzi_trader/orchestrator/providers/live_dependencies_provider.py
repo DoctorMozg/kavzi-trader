@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypedDict, cast
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.models import CandlestickSchema
@@ -29,6 +29,12 @@ from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.schemas import AccountStateSchema, PositionSchema
 
 logger = logging.getLogger(__name__)
+
+
+class _TierFieldsDict(TypedDict, total=False):
+    symbol_tier: str
+    tier_min_confidence: Decimal
+
 
 SCOUT_CANDLES_COUNT = 50
 ANALYSIS_CANDLES_COUNT = 12
@@ -74,7 +80,7 @@ class LiveDependenciesProvider:
             return min(configured, tier_config.max_leverage)
         return configured
 
-    def _get_tier_kwargs(self, symbol: str) -> dict[str, Any]:
+    def _get_tier_fields(self, symbol: str) -> _TierFieldsDict:
         if self._tier_registry is None:
             return {}
         tier = self._tier_registry.get_tier(symbol)
@@ -234,20 +240,22 @@ class LiveDependenciesProvider:
         indicators, candles, order_flow, confluence = self._resolve_analysis_context(
             symbol
         )
-        tier_kwargs = self._get_tier_kwargs(symbol)
-        return AnalystDependenciesSchema(
-            symbol=symbol,
-            current_price=self._cache.get_current_price(symbol),
-            timeframe=self._timeframe,
-            recent_candles=candles[-ANALYSIS_CANDLES_COUNT:],
-            indicators=indicators,
-            order_flow=order_flow,
-            algorithm_confluence=confluence,
-            volatility_regime=self._get_regime(symbol),
-            htf_trend=self._get_htf_trend(symbol, candles),
-            leverage=self._get_leverage(symbol),
-            sentiment_summary=self._get_sentiment(),
-            **tier_kwargs,
+        tier_fields = self._get_tier_fields(symbol)
+        return AnalystDependenciesSchema.model_validate(
+            {
+                "symbol": symbol,
+                "current_price": self._cache.get_current_price(symbol),
+                "timeframe": self._timeframe,
+                "recent_candles": candles[-ANALYSIS_CANDLES_COUNT:],
+                "indicators": indicators,
+                "order_flow": order_flow,
+                "algorithm_confluence": confluence,
+                "volatility_regime": self._get_regime(symbol),
+                "htf_trend": self._get_htf_trend(symbol, candles),
+                "leverage": self._get_leverage(symbol),
+                "sentiment_summary": self._get_sentiment(),
+                **tier_fields,
+            }
         )
 
     async def get_trader(self, symbol: str) -> TradingDependenciesSchema:
@@ -257,25 +265,27 @@ class LiveDependenciesProvider:
         account_state = await self._get_cached_account_state()
         open_positions = await self._get_cached_positions()
 
-        tier_kwargs = self._get_tier_kwargs(symbol)
-        return TradingDependenciesSchema(
-            symbol=symbol,
-            current_price=self._cache.get_current_price(symbol),
-            timeframe=self._timeframe,
-            recent_candles=candles[-ANALYSIS_CANDLES_COUNT:],
-            indicators=indicators,
-            order_flow=order_flow,
-            algorithm_confluence=confluence,
-            volatility_regime=self._get_regime(symbol),
-            htf_trend=self._get_htf_trend(symbol, candles),
-            account_state=account_state,
-            open_positions=open_positions,
-            leverage=self._get_leverage(symbol),
-            exchange_client=self._exchange,
-            event_store=self._event_store,
-            atr_history=self._cache.get_atr_history(symbol),
-            sentiment_summary=self._get_sentiment(),
-            **tier_kwargs,
+        tier_fields = self._get_tier_fields(symbol)
+        return TradingDependenciesSchema.model_validate(
+            {
+                "symbol": symbol,
+                "current_price": self._cache.get_current_price(symbol),
+                "timeframe": self._timeframe,
+                "recent_candles": candles[-ANALYSIS_CANDLES_COUNT:],
+                "indicators": indicators,
+                "order_flow": order_flow,
+                "algorithm_confluence": confluence,
+                "volatility_regime": self._get_regime(symbol),
+                "htf_trend": self._get_htf_trend(symbol, candles),
+                "account_state": account_state,
+                "open_positions": open_positions,
+                "leverage": self._get_leverage(symbol),
+                "exchange_client": self._exchange,
+                "event_store": self._event_store,
+                "atr_history": self._cache.get_atr_history(symbol),
+                "sentiment_summary": self._get_sentiment(),
+                **tier_fields,
+            }
         )
 
     async def _get_cached_account_state(self) -> AccountStateSchema:

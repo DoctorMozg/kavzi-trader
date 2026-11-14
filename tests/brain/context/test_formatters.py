@@ -247,3 +247,22 @@ class TestFormatOrderFlowCompact:
 
         assert result is not None
         assert "OI_24h=N/A" in result
+
+    def test_format_order_flow_without_long_short_data(self) -> None:
+        of = OrderFlowSchema(
+            symbol="BTCUSDT",
+            timestamp=_NOW,
+            funding_rate=Decimal("0.0001"),
+            funding_zscore=Decimal("0.5"),
+            next_funding_time=_NOW,
+            open_interest=Decimal(100000),
+            oi_change_1h_percent=Decimal("1.0"),
+            oi_change_24h_percent=Decimal("2.0"),
+        )
+        result = format_order_flow_compact(of)
+
+        assert result is not None
+        assert "L/S=unavailable" in result
+        assert "L%=" not in result
+        assert "S%=" not in result
+        assert "div=none" in result

@@ -4,6 +4,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import pytest_asyncio
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 
 from kavzi_trader.api.binance.client import BinanceClient
@@ -25,9 +26,11 @@ def _api_exception(code: int, msg: str = "boom") -> BinanceAPIException:
     )
 
 
-@pytest.fixture
-def client() -> BinanceClient:
+@pytest_asyncio.fixture
+async def client() -> BinanceClient:
     binance_client = BinanceClient()
+    # Close the real aiohttp session before swapping in the mock
+    await binance_client.client.close_connection()
     binance_client.client = AsyncMock()
     return binance_client
 

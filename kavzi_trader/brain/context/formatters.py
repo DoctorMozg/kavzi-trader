@@ -76,15 +76,21 @@ def format_order_flow_compact(
         return None
     of = order_flow
     div = of.oi_funding_divergence_direction or "none"
+    if of.long_short_ratio is None:
+        long_short = " L/S=unavailable"
+    else:
+        long_short = (
+            f" L/S={_fmt_decimal(of.long_short_ratio, 2)}"
+            f" L%={_fmt_decimal(of.long_account_percent, 1)}"
+            f" S%={_fmt_decimal(of.short_account_percent, 1)}"
+        )
     return (
         f"funding={float(of.funding_rate):.4f}"
         f" zscore={_fmt_decimal(of.funding_zscore, 1)}"
         f" OI={float(of.open_interest):.0f}"
         f" OI_1h={float(of.oi_change_1h_percent):+.1f}%"
         f" OI_24h={_fmt_signed_pct(of.oi_change_24h_percent)}"
-        f" L/S={_fmt_decimal(of.long_short_ratio, 2)}"
-        f" L%={_fmt_decimal(of.long_account_percent, 1)}"
-        f" S%={_fmt_decimal(of.short_account_percent, 1)}"
+        f"{long_short}"
         f" div={div}"
         f" squeeze={of.squeeze_alert}"
         f" crowded_l={of.is_crowded_long}"

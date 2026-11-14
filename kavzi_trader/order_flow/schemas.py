@@ -66,9 +66,10 @@ class OrderFlowSchema(BaseModel):
     oi_change_1h_percent: Decimal
     oi_change_24h_percent: Decimal | None
 
-    long_short_ratio: Decimal
-    long_account_percent: Decimal
-    short_account_percent: Decimal
+    # None means the exchange returned no L/S data, not a neutral market
+    long_short_ratio: Decimal | None = None
+    long_account_percent: Decimal | None = None
+    short_account_percent: Decimal | None = None
 
     price_change_1h_percent: Decimal | None = None
 

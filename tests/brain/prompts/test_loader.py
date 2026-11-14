@@ -121,3 +121,39 @@ def test_trader_prompt_has_output_contract() -> None:
         " rule is read before the reasoning framework."
     )
     assert contract_pos < schema_pos
+
+
+def test_order_flow_context_renders_without_long_short_data() -> None:
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from kavzi_trader.brain.context.formatters import format_order_flow_compact
+    from kavzi_trader.order_flow.schemas import OrderFlowSchema
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    order_flow = OrderFlowSchema(
+        symbol="BTCUSDT",
+        timestamp=now,
+        funding_rate=Decimal("0.0001"),
+        funding_zscore=Decimal("0.5"),
+        next_funding_time=now,
+        open_interest=Decimal(100000),
+        oi_change_1h_percent=Decimal("1.0"),
+        oi_change_24h_percent=Decimal("2.0"),
+    )
+    loader = PromptLoader()
+
+    rendered = loader._env.get_template("user/context/order_flow.j2").render(
+        order_flow_compact=format_order_flow_compact(order_flow),
+    )
+
+    assert "L/S=unavailable" in rendered
+    assert "Order flow data unavailable" not in rendered
+
+
+def test_order_flow_guide_explains_unavailable_long_short() -> None:
+    rendered = PromptLoader().render_system_prompt(
+        "analyst", context=_make_system_prompt_context()
+    )
+
+    assert "L/S=unavailable" in rendered

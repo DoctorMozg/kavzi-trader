@@ -3,7 +3,7 @@
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
+import pytest_asyncio
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.paper.exchange import PaperExchangeClient
@@ -43,9 +43,11 @@ _FUTURES_TICKER = {
 }
 
 
-@pytest.fixture
-def client() -> BinanceClient:
+@pytest_asyncio.fixture
+async def client() -> BinanceClient:
     binance_client = BinanceClient()
+    # Close the real aiohttp session before swapping in the mock
+    await binance_client.client.close_connection()
     binance_client.client = AsyncMock()
     return binance_client
 

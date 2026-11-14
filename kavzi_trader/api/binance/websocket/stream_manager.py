@@ -73,6 +73,7 @@ class StreamManager:
         self._is_running: bool = False
         # Streams whose feed is dead and will not recover without a restart
         self._dead_streams: set[str] = set()
+        self._lifecycle_lock = asyncio.Lock()
 
     @property
     def bsm(self) -> BinanceSocketManager:
@@ -87,8 +88,10 @@ class StreamManager:
     # ------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Start the WebSocket connection."""
-        if not self._is_running:
+        """Start the WebSocket connection (safe under concurrent callers)."""
+        async with self._lifecycle_lock:
+            if self._is_running:
+                return
             self._async_client = await AsyncClient.create(
                 api_key=self.api_key,
                 api_secret=self.api_secret,
@@ -98,20 +101,15 @@ class StreamManager:
             logger.info("Binance WebSocket client started")
 
     async def stop(self) -> None:
-        """Stop the WebSocket connection and all recv loops."""
-        if self._is_running:
+        """Stop all recv loops and close the client; state is reset even on failure."""
+        async with self._lifecycle_lock:
+            if not self._is_running:
+                return
             try:
                 for stream_name in list(self._streams):
                     await self.unregister_stream(stream_name)
-
-                self._streams.clear()
-                self._dead_streams.clear()
-                self.stream_callbacks.clear()
                 if self._async_client is not None:
                     await self._async_client.close_connection()
-                    self._async_client = None
-                self._bsm = None
-                self._is_running = False
                 logger.info("Binance WebSocket client stopped")
             except Exception as ws_error:
                 logger.exception(
@@ -119,6 +117,13 @@ class StreamManager:
                     extra={"active_streams": list(self._streams.keys())},
                 )
                 raise APIError("Failed to stop WebSocket client") from ws_error
+            finally:
+                self._streams.clear()
+                self._dead_streams.clear()
+                self.stream_callbacks.clear()
+                self._async_client = None
+                self._bsm = None
+                self._is_running = False
 
     # ------------------------------------------------------------------
     # Stream registration
@@ -147,6 +152,9 @@ class StreamManager:
     async def unregister_stream(self, stream_name: str) -> None:
         """Cancel the recv loop (which closes the socket via async with)."""
         entry = self._streams.pop(stream_name, None)
+        # Multiplex ids are "/"-joined; callbacks are keyed per component stream
+        for callback_key in (stream_name, *stream_name.split("/")):
+            self.stream_callbacks.pop(callback_key, None)
         if entry is None:
             logger.warning(
                 "Attempted to unsubscribe from a non-active stream: %s",
@@ -157,7 +165,6 @@ class StreamManager:
         entry.task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await entry.task
-        self.stream_callbacks.pop(stream_name, None)
         logger.info("Unsubscribed from stream: %s", stream_name)
 
     # ------------------------------------------------------------------

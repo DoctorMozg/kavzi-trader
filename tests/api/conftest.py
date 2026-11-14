@@ -4,6 +4,7 @@ Pytest configuration for API tests.
 This module contains fixtures and setup for testing the API connectors.
 """
 
+import asyncio
 import os
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
@@ -25,8 +26,14 @@ skip_integration = pytest.mark.skipif(
 )
 
 
+async def _close_client(client: BinanceClient) -> None:
+    await client.client.close_connection()
+    # aiohttp needs a loop tick to finish closing SSL transports
+    await asyncio.sleep(0.25)
+
+
 @pytest_asyncio.fixture()
-async def binance_testnet_client() -> BinanceClient:
+async def binance_testnet_client() -> AsyncGenerator[BinanceClient]:
     """
     Create a Binance client for integration testing.
 
@@ -34,14 +41,17 @@ async def binance_testnet_client() -> BinanceClient:
     """
     client = BinanceClient()
     try:
-        await client.ping()
-    except Exception:
-        pytest.skip("Binance unreachable")
-    return client
+        try:
+            await client.ping()
+        except Exception:
+            pytest.skip("Binance unreachable")
+        yield client
+    finally:
+        await _close_client(client)
 
 
 @pytest_asyncio.fixture()
-async def binance_client() -> BinanceClient:
+async def binance_client() -> AsyncGenerator[BinanceClient]:
     """
     Create a Binance client with API keys for integration testing.
 
@@ -53,10 +63,11 @@ async def binance_client() -> BinanceClient:
     if not api_key or not api_secret:
         pytest.skip("Binance API credentials not available")
 
-    return BinanceClient(
-        api_key=api_key,
-        api_secret=api_secret,
-    )
+    client = BinanceClient(api_key=api_key, api_secret=api_secret)
+    try:
+        yield client
+    finally:
+        await _close_client(client)
 
 
 @pytest.fixture

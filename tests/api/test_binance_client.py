@@ -11,7 +11,12 @@ import pytest
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.exceptions import APIError
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.api.common.models import (
+    CandlestickSchema,
+    OrderSide,
+    OrderType,
+    TimeInForce,
+)
 from kavzi_trader.commons.time_utility import utc_now
 
 
@@ -133,11 +138,11 @@ async def test_create_test_order(binance_testnet_client: BinanceClient) -> None:
 
     test_order = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
-        side="BUY",
-        order_type="LIMIT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
         quantity=Decimal("0.001"),
         price=Decimal(20000),
-        time_in_force="GTC",
+        time_in_force=TimeInForce.GTC,
         test=True,
     )
 
@@ -154,11 +159,11 @@ async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
     # Test limit buy
     test_limit_buy = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
-        side="BUY",
-        order_type="LIMIT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
         quantity=Decimal("0.001"),
         price=Decimal(20000),
-        time_in_force="GTC",
+        time_in_force=TimeInForce.GTC,
         test=True,
     )
     assert test_limit_buy.side.value == "BUY"
@@ -167,11 +172,11 @@ async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
     # Test limit sell
     test_limit_sell = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
-        side="SELL",
-        order_type="LIMIT",
+        side=OrderSide.SELL,
+        order_type=OrderType.LIMIT,
         quantity=Decimal("0.001"),
         price=Decimal(50000),
-        time_in_force="GTC",
+        time_in_force=TimeInForce.GTC,
         test=True,
     )
     assert test_limit_sell.side.value == "SELL"
@@ -180,8 +185,8 @@ async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
     # Test market buy
     test_market_buy = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
-        side="BUY",
-        order_type="MARKET",
+        side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
         quantity=Decimal("0.001"),
         test=True,
     )
@@ -191,8 +196,8 @@ async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
     # Test market sell
     test_market_sell = await binance_testnet_client.create_order(
         symbol="BTCUSDT",
-        side="SELL",
-        order_type="MARKET",
+        side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
         quantity=Decimal("0.001"),
         test=True,
     )

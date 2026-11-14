@@ -50,7 +50,7 @@ def test_calculator_returns_none_with_empty_oi_history(sample_funding_rates):
     assert result is None
 
 
-def test_calculator_uses_default_long_short_ratio_when_none(
+def test_calculator_leaves_long_short_none_when_no_data(
     sample_funding_rates,
     sample_oi_history,
 ):
@@ -64,8 +64,9 @@ def test_calculator_uses_default_long_short_ratio_when_none(
     )
 
     assert result is not None
-    assert result.long_short_ratio == Decimal("1.0")
-    assert result.long_account_percent == Decimal("50.0")
+    assert result.long_short_ratio is None
+    assert result.long_account_percent is None
+    assert result.short_account_percent is None
 
 
 def test_calculator_computed_fields(sample_funding_rates, sample_oi_history):
@@ -75,12 +76,29 @@ def test_calculator_computed_fields(sample_funding_rates, sample_oi_history):
         symbol="BTCUSDT",
         funding_rates=sample_funding_rates,
         oi_history=sample_oi_history,
+        price_change_1h_percent=Decimal("0.2"),
+    )
+
+    # Fixture: zscore ~1.72 (below crowded threshold), OI +9.77% 1h, price +0.2%
+    assert result is not None
+    assert result.is_crowded_long is False
+    assert result.is_crowded_short is False
+    assert result.squeeze_alert is True
+    assert result.oi_funding_divergence is False
+
+
+def test_calculator_squeeze_alert_off_without_price_change(
+    sample_funding_rates,
+    sample_oi_history,
+):
+    result = OrderFlowCalculator().calculate(
+        symbol="BTCUSDT",
+        funding_rates=sample_funding_rates,
+        oi_history=sample_oi_history,
     )
 
     assert result is not None
-    assert isinstance(result.is_crowded_long, bool)
-    assert isinstance(result.is_crowded_short, bool)
-    assert isinstance(result.squeeze_alert, bool)
+    assert result.squeeze_alert is False
 
 
 def test_calculator_with_price_change(sample_funding_rates, sample_oi_history):

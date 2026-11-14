@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from decimal import Decimal
 from functools import wraps
-from typing import Any, cast
+from typing import Any, Concatenate, cast
 
 from binance.async_client import AsyncClient as BinanceAPIClient
 from binance.exceptions import BinanceAPIException, BinanceRequestException
@@ -53,13 +53,13 @@ from kavzi_trader.commons.time_utility import (
 logger = logging.getLogger(__name__)
 
 
-def handle_api_errors[T](
-    func: Callable[..., Awaitable[T]],
-) -> Callable[..., Awaitable[T]]:
+def handle_api_errors[**P, R](
+    func: Callable[Concatenate[BinanceClient, P], Awaitable[R]],
+) -> Callable[Concatenate[BinanceClient, P], Awaitable[R]]:
     """Map Binance library exceptions raised by an async method to our own."""
 
     @wraps(func)
-    async def wrapper(self: BinanceClient, *args: Any, **kwargs: Any) -> T:  # noqa: ANN401
+    async def wrapper(self: BinanceClient, *args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return await func(self, *args, **kwargs)
         except (BinanceAPIException, BinanceRequestException) as error:
@@ -85,7 +85,7 @@ class BinanceClient:
         self,
         api_key: str | None = None,
         api_secret: str | None = None,
-        timeout: int = 30,
+        timeout_s: int = 30,
         proxies: dict[str, str] | None = None,
         show_limit_usage: bool = False,
     ) -> None:
@@ -95,13 +95,13 @@ class BinanceClient:
         Args:
             api_key: API key for authenticated endpoints
             api_secret: API secret for authenticated endpoints
-            timeout: Request timeout in seconds
+            timeout_s: Request timeout in seconds
             proxies: Proxy configuration for requests
             show_limit_usage: Whether to log rate limit usage
         """
         self.api_key = api_key
         self.api_secret = api_secret
-        self.timeout = timeout
+        self.timeout_s = timeout_s
         self.show_limit_usage = show_limit_usage
 
         # Initialize the python-binance client
@@ -109,8 +109,8 @@ class BinanceClient:
         requests_params: dict[str, Any] = {}
         if proxies:
             requests_params["proxies"] = proxies
-        if timeout:
-            requests_params["timeout"] = timeout
+        if timeout_s:
+            requests_params["timeout"] = timeout_s
 
         self.client = BinanceAPIClient(
             api_key=api_key,
@@ -118,7 +118,7 @@ class BinanceClient:
             requests_params=requests_params or None,
         )
 
-        logger.info("Initialized Binance client, timeout=%s", timeout)
+        logger.info("Initialized Binance client, timeout_s=%s", timeout_s)
 
     def _handle_error(self, error: Exception) -> None:
         """
