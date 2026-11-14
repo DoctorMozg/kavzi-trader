@@ -16,7 +16,10 @@ from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     DualConfluenceSchema,
 )
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.state.schemas import AccountStateSchema
+from kavzi_trader.spine.state.schemas import (
+    AccountStateSchema,
+    PositionManagementConfigSchema,
+)
 
 _LONG_GEOMETRY = TradeGeometrySchema(
     entry=Decimal(105),
@@ -145,6 +148,7 @@ def _build_deps() -> TradingDependenciesSchema:
 
 def _build_loop(router: MagicMock) -> ReasoningLoop:
     return ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=MagicMock(),

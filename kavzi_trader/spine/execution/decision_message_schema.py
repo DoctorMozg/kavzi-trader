@@ -33,6 +33,8 @@ class DecisionMessageSchema(BaseModel):
     atr_history: Annotated[list[Decimal], Field(default_factory=list)]
     leverage: Annotated[int, Field(default=3, ge=1, le=125)]
     symbol_tier: Annotated[str, Field(default="TIER_2")]
+    # Product of the pre-trade filter reductions (weekend, correlation, funding, FGI).
+    size_multiplier: Annotated[Decimal, Field(default=Decimal(1), gt=0, le=1)]
 
     model_config = ConfigDict(frozen=True)
 

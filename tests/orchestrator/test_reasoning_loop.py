@@ -25,6 +25,7 @@ from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
+from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
 from kavzi_trader.spine.filters.algorithm_confluence_schema import (
     AlgorithmConfluenceSchema,
@@ -236,6 +237,7 @@ async def test_reasoning_loop_enqueues_decision() -> None:
     redis_client.client.lpush = AsyncMock()
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -282,6 +284,7 @@ async def test_decision_message_includes_leverage() -> None:
     redis_client.client.lpush = AsyncMock()
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -330,6 +333,7 @@ async def test_backoff_on_all_skip() -> None:
         await original_sleep(0)
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -395,6 +399,7 @@ async def test_backoff_resets_on_interesting() -> None:
         await original_sleep(0)
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -458,6 +463,7 @@ async def test_cooldown_after_analyst_skips_cycles() -> None:
     redis_client.client.lpush = AsyncMock()
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -521,6 +527,7 @@ async def test_skip_symbol_with_open_position() -> None:
     )
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -573,6 +580,7 @@ async def test_volatility_gate_reports_as_scout_scan() -> None:
     mock_populator.record_action = AsyncMock()
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -627,6 +635,7 @@ def _make_analyst_result_with_confluence(confluence_score: int) -> PipelineResul
 def test_graduated_cooldown_low_confluence() -> None:
     """Confluence <= 2 should produce 3x the base cooldown."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -640,6 +649,7 @@ def test_graduated_cooldown_low_confluence() -> None:
 def test_graduated_cooldown_reject_band_high_side() -> None:
     """Confluence 3 (top of reject band) should produce 2x the base cooldown."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -667,6 +677,7 @@ def _make_analyst_decision(
 def test_analyst_cooldown_reject_band_escalates() -> None:
     """Score <= 3 + invalid increments rejection counter and uses base*multiplier."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -691,6 +702,7 @@ def test_analyst_cooldown_reject_band_escalates() -> None:
 def test_analyst_cooldown_borderline_band_no_escalation() -> None:
     """Borderline band + invalid gets a light cooldown and does NOT escalate counts."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -715,6 +727,7 @@ def test_analyst_cooldown_borderline_band_no_escalation() -> None:
 def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
     """Score >= 6 but setup_valid=False also lands in the light-cooldown branch."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -735,6 +748,7 @@ def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
 def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
     """A valid setup at/above the entry gate resets rejection counters."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -759,6 +773,7 @@ def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
 def test_should_enqueue_requires_confluence_entry_gate() -> None:
     """_should_enqueue must block scores below the entry gate even if valid."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -820,6 +835,7 @@ def test_should_enqueue_gated_by_regime_specific_min(
 ) -> None:
     """The escalation gate must track the regime-specific minimum score."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -861,6 +877,7 @@ def test_analyst_cooldown_borderline_uses_regime_gate(
     HIGH (gate=7) lands in the borderline band, not the "valid" branch.
     """
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -928,6 +945,7 @@ async def test_filter_chain_blocks_trade() -> None:
     )
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -986,6 +1004,7 @@ async def test_filter_chain_allows_trade() -> None:
     )
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -1016,6 +1035,7 @@ async def test_no_filter_chain_passes_through() -> None:
     redis_client.client.lpush = AsyncMock()
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -1037,6 +1057,7 @@ async def test_no_filter_chain_passes_through() -> None:
 def test_consecutive_rejections_escalate_cooldown() -> None:
     """Repeated analyst rejections for the same symbol+direction increase cooldown."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1069,6 +1090,7 @@ def test_consecutive_rejections_escalate_cooldown() -> None:
 def test_consecutive_rejections_reset_on_valid_analyst() -> None:
     """A valid analyst result resets the rejection counter for that direction."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1095,6 +1117,7 @@ def test_consecutive_rejections_reset_on_valid_analyst() -> None:
 def test_direction_aware_cooldown_allows_opposite_direction() -> None:
     """SHORT cooldown should not block LONG evaluation on the same symbol."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["TAOUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1113,6 +1136,7 @@ def test_direction_aware_cooldown_allows_opposite_direction() -> None:
 def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
     """When both LONG and SHORT are on cooldown, the symbol should be skipped."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["TAOUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1134,6 +1158,7 @@ def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
 def test_neutral_rejection_blocks_both_directions() -> None:
     """A NEUTRAL rejection should set cooldown for both LONG and SHORT."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1179,6 +1204,7 @@ def _make_wait_result(
 def test_consecutive_waits_apply_cooldown() -> None:
     """After 5 consecutive WAITs, cooldown is set for (symbol, direction)."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1197,6 +1223,7 @@ def test_consecutive_waits_apply_cooldown() -> None:
 def test_consecutive_waits_reset_on_trade() -> None:
     """Trade enqueue clears WAIT counters for the symbol."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1220,6 +1247,7 @@ def test_consecutive_waits_reset_on_trade() -> None:
 def test_consecutive_waits_escalate() -> None:
     """6th+ WAITs increase cooldown, capped at max."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1247,6 +1275,7 @@ def test_consecutive_waits_escalate() -> None:
 def test_consecutive_waits_no_cooldown_below_threshold() -> None:
     """Fewer than 5 WAITs should not set any cooldown."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1274,6 +1303,7 @@ async def test_pipeline_complete_event_recorded() -> None:
     mock_populator.record_action = AsyncMock()
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
@@ -1343,6 +1373,7 @@ def test_geometry_reject_counter_increments_on_each_reject() -> None:
     )
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1369,6 +1400,7 @@ def test_geometry_reject_cooldown_applied_at_threshold() -> None:
     )
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1395,6 +1427,7 @@ def test_geometry_reject_counter_clears_on_successful_trader() -> None:
     )
 
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1436,6 +1469,7 @@ def test_should_enqueue_blocks_confluence_score_five_after_wu6() -> None:
     """WU-6: score=5 used to pass the old ENTER=5 gate; after the shift
     it lives inside the hysteresis band and must NOT enqueue."""
     loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
@@ -1458,3 +1492,97 @@ def test_should_enqueue_blocks_confluence_score_five_after_wu6() -> None:
         trader_deps=deps,
     )
     assert loop._should_enqueue(result) is False
+
+
+def _make_loop(
+    redis_client: AsyncMock,
+    filter_chain: AsyncMock | None = None,
+    position_management: PositionManagementConfigSchema | None = None,
+) -> ReasoningLoop:
+    return ReasoningLoop(
+        position_management=position_management or PositionManagementConfigSchema(),
+        symbols=["BTCUSDT"],
+        router=AsyncMock(run=AsyncMock(return_value=_make_trade_result())),
+        deps_provider=DummyDepsProvider(_build_deps()),
+        redis_client=redis_client,
+        interval_s=1,
+        filter_chain=filter_chain,
+    )
+
+
+def _allowing_chain(size_multiplier: Decimal) -> AsyncMock:
+    chain = AsyncMock()
+    chain.evaluate = AsyncMock(
+        return_value=FilterChainResultSchema(
+            is_allowed=True,
+            size_multiplier=size_multiplier,
+            volatility_regime=VolatilityRegime.NORMAL,
+            volatility_zscore=Decimal("0.5"),
+        ),
+    )
+    return chain
+
+
+def _enqueued_decision(redis_client: AsyncMock) -> DecisionMessageSchema:
+    payload = redis_client.client.lpush.call_args.args[1]
+    return DecisionMessageSchema.model_validate_json(payload)
+
+
+@pytest.mark.asyncio
+async def test_filter_size_multiplier_is_carried_into_decision() -> None:
+    redis_client = AsyncMock()
+    loop = _make_loop(redis_client, _allowing_chain(Decimal("0.4")))
+
+    await loop._handle_symbol("BTCUSDT", [])
+
+    assert _enqueued_decision(redis_client).size_multiplier == Decimal("0.4")
+
+
+@pytest.mark.asyncio
+async def test_decision_without_filter_chain_keeps_full_size() -> None:
+    redis_client = AsyncMock()
+    loop = _make_loop(redis_client)
+
+    await loop._handle_symbol("BTCUSDT", [])
+
+    assert _enqueued_decision(redis_client).size_multiplier == Decimal(1)
+
+
+@pytest.mark.asyncio
+async def test_configured_position_management_reaches_decision() -> None:
+    redis_client = AsyncMock()
+    tuned = PositionManagementConfigSchema(
+        partial_exit_at_fraction=Decimal("0.80"),
+        partial_exit_size=Decimal("0.25"),
+        partial_exit_min_profit_atr=Decimal("1.5"),
+        stall_min_progress_atr=Decimal("0.5"),
+    )
+    loop = _make_loop(redis_client, position_management=tuned)
+
+    await loop._handle_symbol("BTCUSDT", [])
+
+    assert _enqueued_decision(redis_client).position_management == tuned
+
+
+@pytest.mark.asyncio
+async def test_cooldown_set_only_after_successful_enqueue() -> None:
+    redis_client = AsyncMock()
+    loop = _make_loop(redis_client)
+
+    await loop._handle_symbol("BTCUSDT", [])
+
+    # post-trade cooldown is analyst_cooldown_cycles (3) x 3
+    assert loop._state.cooldown("BTCUSDT", "LONG") == 9
+    assert loop._state.cooldown("BTCUSDT", "SHORT") == 9
+
+
+@pytest.mark.asyncio
+async def test_failed_enqueue_does_not_burn_cooldown() -> None:
+    redis_client = AsyncMock()
+    redis_client.client.lpush = AsyncMock(side_effect=RuntimeError("redis down"))
+    loop = _make_loop(redis_client)
+
+    await loop._handle_symbol("BTCUSDT", [])
+
+    assert loop._state.cooldown("BTCUSDT", "LONG") == 0
+    assert loop._state.cooldown("BTCUSDT", "SHORT") == 0

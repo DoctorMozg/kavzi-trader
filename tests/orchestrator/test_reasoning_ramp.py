@@ -14,6 +14,7 @@ import pytest
 from kavzi_trader.brain.agent.router import PipelineResult
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
 
 @pytest.fixture
@@ -68,6 +69,7 @@ def _build_skip_loop(router: AsyncMock) -> ReasoningLoop:
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
     return ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=deps_provider,

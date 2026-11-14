@@ -19,10 +19,12 @@ class PositionManager:
         partial_exit: PartialExitChecker,
         time_exit: TimeExitChecker,
         stall_exit: StallExitChecker,
+        liquidation_emergency_percent: Decimal,
     ) -> None:
         self._partial_exit = partial_exit
         self._time_exit = time_exit
         self._stall_exit = stall_exit
+        self._liquidation_emergency_percent = liquidation_emergency_percent
 
     async def evaluate_position(
         self,
@@ -30,7 +32,6 @@ class PositionManager:
         current_price: Decimal,
         current_atr: Decimal,
         mark_price: Decimal | None = None,
-        liquidation_emergency_percent: Decimal = Decimal("5.0"),
     ) -> list[PositionActionSchema]:
         logger.debug(
             "Evaluating position %s %s: price=%s atr=%s mark=%s",
@@ -47,7 +48,7 @@ class PositionManager:
             entry_to_liq = abs(position.entry_price - position.liquidation_price)
             if entry_to_liq > 0:
                 dist_pct = (liq_dist / entry_to_liq) * Decimal(100)
-                if dist_pct <= liquidation_emergency_percent:
+                if dist_pct <= self._liquidation_emergency_percent:
                     logger.warning(
                         "LIQUIDATION PROXIMITY: position %s %s is %.1f%% "
                         "from liquidation (mark=%s liq=%s)",

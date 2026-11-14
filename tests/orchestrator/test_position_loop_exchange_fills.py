@@ -81,6 +81,7 @@ class _Scenario:
                 partial_exit=PartialExitChecker(),
                 time_exit=TimeExitChecker(),
                 stall_exit=StallExitChecker(),
+                liquidation_emergency_percent=Decimal("5.0"),
             ),
             state_manager=state,
             atr_provider=AsyncMock(get_atr=AsyncMock(return_value=Decimal(2))),

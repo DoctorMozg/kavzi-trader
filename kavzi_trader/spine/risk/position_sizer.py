@@ -34,6 +34,7 @@ class PositionSizer:
         leverage: int = 1,
         available_balance: Decimal | None = None,
         symbol: str | None = None,
+        filter_size_multiplier: Decimal = Decimal(1),
     ) -> PositionSizeResultSchema:
         if atr <= 0 or entry_price <= 0:
             logger.warning(
@@ -61,8 +62,7 @@ class PositionSizer:
 
         base_size = risk_amount / stop_distance
 
-        size_multiplier = regime.size_multiplier
-        adjusted_size = base_size * size_multiplier
+        adjusted_size = base_size * regime.size_multiplier
 
         # Notional floor: bump below-floor sizes up to the configured minimum
         # so the order clears Binance's per-symbol MIN_NOTIONAL filter.
@@ -81,6 +81,11 @@ class PositionSizer:
                     entry_price,
                 )
                 adjusted_size = min_size_by_notional
+
+        # Applied after the floor bump on purpose: a filter reduction that pushes
+        # the trade under the floor must reject it, not be bumped back up.
+        size_multiplier = regime.size_multiplier * filter_size_multiplier
+        adjusted_size *= filter_size_multiplier
 
         # Notional cap: apply early so downstream clamps see a bounded size
         if entry_price > 0 and max_exposure_pct > 0:

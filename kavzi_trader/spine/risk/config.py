@@ -31,7 +31,6 @@ class RiskConfigSchema(BaseModel):
     # honour the floor, the validator rejects the trade outright.
     min_position_notional_usd: Decimal = Decimal("10.0")
 
-    liquidation_emergency_percent: Decimal = Decimal("5.0")
     liquidation_sl_buffer_ratio: Decimal = Decimal("0.20")
     max_margin_ratio: Decimal = Decimal("0.5")
 

@@ -85,3 +85,31 @@ class TestVolatilityRegimeDetector:
 
         result = detector.detect_regime(Decimal(104), history)
         assert result.regime in (VolatilityRegime.NORMAL, VolatilityRegime.HIGH)
+
+
+_EXTREME_HISTORY = [
+    Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
+]
+
+
+class TestTierAwareRegime:
+    def test_tier1_extreme_multiplier_is_quarter(self) -> None:
+        detector = VolatilityRegimeDetector(RiskConfigSchema())
+        result = detector.detect_regime(
+            Decimal(120),
+            _EXTREME_HISTORY,
+            symbol_tier="TIER_1",
+        )
+
+        assert result.regime == VolatilityRegime.EXTREME
+        assert result.size_multiplier == Decimal("0.25")
+
+    def test_tier2_extreme_multiplier_stays_zero(self) -> None:
+        detector = VolatilityRegimeDetector(RiskConfigSchema())
+        result = detector.detect_regime(
+            Decimal(120),
+            _EXTREME_HISTORY,
+            symbol_tier="TIER_2",
+        )
+
+        assert result.size_multiplier == Decimal(0)

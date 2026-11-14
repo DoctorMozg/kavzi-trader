@@ -3,8 +3,8 @@ from decimal import Decimal
 from statistics import mean, stdev
 
 from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.schemas import (
-    REGIME_SIZE_MULTIPLIERS,
     VolatilityRegime,
     VolatilityRegimeSchema,
 )
@@ -15,13 +15,20 @@ MIN_HISTORY_LENGTH = 2
 
 
 class VolatilityRegimeDetector:
-    def __init__(self, config: RiskConfigSchema | None = None) -> None:
+    def __init__(
+        self,
+        config: RiskConfigSchema | None = None,
+        policy: RegimePolicy | None = None,
+    ) -> None:
         self._config = config or RiskConfigSchema()
+        self._policy = policy or RegimePolicy(self._config)
 
     def detect_regime(
         self,
         current_atr: Decimal,
         atr_history: list[Decimal],
+        symbol_tier: str = "TIER_2",
+        confidence: Decimal | None = None,
     ) -> VolatilityRegimeSchema:
         if len(atr_history) < MIN_HISTORY_LENGTH:
             logger.warning(
@@ -32,7 +39,7 @@ class VolatilityRegimeDetector:
             )
         zscore = self._calculate_zscore(current_atr, atr_history)
         regime = self._classify_regime(zscore)
-        multiplier = REGIME_SIZE_MULTIPLIERS[regime]
+        multiplier = self._policy.size_multiplier(regime, symbol_tier, confidence)
         logger.debug(
             "Volatility regime: regime=%s zscore=%s multiplier=%s",
             regime.value,

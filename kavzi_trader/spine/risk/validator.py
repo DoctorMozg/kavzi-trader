@@ -54,6 +54,7 @@ class DynamicRiskValidator:
         leverage: int = 1,
         confidence: Decimal | None = None,
         symbol_tier: str = "TIER_2",
+        size_multiplier: Decimal = Decimal(1),
     ) -> RiskValidationResultSchema:
         rejection_reasons: list[str] = []
         warnings: list[str] = []
@@ -71,12 +72,17 @@ class DynamicRiskValidator:
 
         if current_atr <= 0:
             logger.warning(
-                "ATR is %s for %s, SL validation will be skipped",
+                "ATR is %s for %s, trade will be rejected",
                 current_atr,
                 symbol,
             )
 
-        regime = self._volatility_detector.detect_regime(current_atr, atr_history)
+        regime = self._volatility_detector.detect_regime(
+            current_atr,
+            atr_history,
+            symbol_tier,
+            confidence,
+        )
 
         drawdown_result = await self._check_drawdown(state_manager)
         rejection_reasons.extend(drawdown_result.rejections)
@@ -105,7 +111,7 @@ class DynamicRiskValidator:
             rejection_reasons.append(portfolio_risk_result)
         logger.debug("Portfolio risk check: result=%s", portfolio_risk_result)
 
-        regime_result = self._check_volatility_regime(regime, symbol_tier, confidence)
+        regime_result = self._check_volatility_regime(regime)
         if regime_result:
             rejection_reasons.append(regime_result)
         logger.debug(
@@ -155,6 +161,7 @@ class DynamicRiskValidator:
                 leverage=leverage,
                 state_manager=state_manager,
                 rejection_reasons=rejection_reasons,
+                filter_size_multiplier=size_multiplier,
             )
 
         if regime.regime == VolatilityRegime.HIGH:
@@ -190,6 +197,7 @@ class DynamicRiskValidator:
         leverage: int,
         state_manager: StateManager,
         rejection_reasons: list[str],
+        filter_size_multiplier: Decimal,
     ) -> Decimal:
         account = await state_manager.get_account_state()
         if account is None:
@@ -210,6 +218,7 @@ class DynamicRiskValidator:
             entry_price=entry_price,
             leverage=leverage,
             symbol=symbol,
+            filter_size_multiplier=filter_size_multiplier,
         )
         recommended_size = size_result.adjusted_size
         logger.debug(
@@ -230,7 +239,8 @@ class DynamicRiskValidator:
             if final_notional < min_notional_floor:
                 rejection_reasons.append(
                     f"Position notional ${final_notional:.2f} below "
-                    f"minimum ${min_notional_floor} — account cannot "
+                    f"minimum ${min_notional_floor} (filter size multiplier "
+                    f"{filter_size_multiplier}) — account cannot "
                     f"afford a floor-sized trade",
                 )
                 return Decimal(0)
@@ -346,27 +356,17 @@ class DynamicRiskValidator:
     def _check_volatility_regime(
         self,
         regime: VolatilityRegimeSchema,
-        symbol_tier: str = "TIER_2",
-        confidence: Decimal | None = None,
     ) -> str | None:
         if regime.regime == VolatilityRegime.EXTREME:
-            if symbol_tier == "TIER_1":
-                return None  # TIER_1 allowed through EXTREME with reduced sizing
-            # Opt-in: allow high-confidence TIER_2 setups through EXTREME.
-            # Off by default — must be explicitly enabled in config.
-            cfg = self._config
-            if (
-                cfg.extreme_high_confidence_pass
-                and confidence is not None
-                and confidence >= cfg.extreme_min_confidence_override
-            ):
-                logger.info(
-                    "EXTREME regime bypassed: confidence=%s >= threshold=%s",
-                    confidence,
-                    cfg.extreme_min_confidence_override,
-                )
-                return None
-            return f"EXTREME volatility (Z-score: {regime.atr_zscore}) - blocked"
+            # The detector already folded tier and confidence override into the
+            # multiplier, so zero here means the policy blocks this trade.
+            if regime.size_multiplier <= 0:
+                return f"EXTREME volatility (Z-score: {regime.atr_zscore}) - blocked"
+            logger.info(
+                "EXTREME regime allowed at reduced size: multiplier=%s",
+                regime.size_multiplier,
+            )
+            return None
         if regime.regime == VolatilityRegime.LOW:
             return f"LOW volatility (Z-score: {regime.atr_zscore}) - no movement"
         return None
@@ -380,16 +380,17 @@ class DynamicRiskValidator:
     ) -> list[str]:
         errors: list[str] = []
 
-        if current_atr <= 0:
-            return errors
-
-        sl_distance = abs(entry_price - stop_loss)
-        sl_atr_ratio = sl_distance / current_atr
-
         if side == "LONG" and stop_loss >= entry_price:
             errors.append("Stop loss must be below entry for LONG position")
         elif side == "SHORT" and stop_loss <= entry_price:
             errors.append("Stop loss must be above entry for SHORT position")
+
+        if current_atr <= 0:
+            errors.append(f"ATR unavailable ({current_atr}), cannot validate stop loss")
+            return errors
+
+        sl_distance = abs(entry_price - stop_loss)
+        sl_atr_ratio = sl_distance / current_atr
 
         min_sl = self._config.min_sl_atr
         max_sl = self._config.max_sl_atr

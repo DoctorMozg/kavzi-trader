@@ -17,7 +17,9 @@ from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
 from kavzi_trader.spine.filters.funding import FundingRateFilter
 from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
+from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
+from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 
 
@@ -312,3 +314,137 @@ async def test_fgi_no_confluence_still_blocks(
     )
 
     assert result.is_allowed is False
+
+
+_WEDNESDAY_NOON = datetime(2026, 1, 7, 12, 0, tzinfo=UTC)
+_SATURDAY_NOON = datetime(2026, 1, 10, 12, 0, tzinfo=UTC)
+_HIGH_ATR_HISTORY = [Decimal(str(i)) for i in [3, 4, 5, 4, 3, 4, 5, 4, 3, 4]]
+_EXTREME_ATR_HISTORY = [
+    Decimal(str(i)) for i in ["2", "2", "2.1", "1.9", "2", "2", "2.1", "1.9", "2", "2"]
+]
+
+
+def _make_chain(
+    filter_config: FilterConfigSchema,
+    now: datetime = _WEDNESDAY_NOON,
+    risk_config: RiskConfigSchema | None = None,
+) -> PreTradeFilterChain:
+    return PreTradeFilterChain(
+        volatility_detector=VolatilityRegimeDetector(risk_config),
+        funding_filter=FundingRateFilter(filter_config),
+        movement_filter=MinimumMovementFilter(filter_config),
+        exposure_limiter=ExposureLimiter(),
+        liquidity_filter=LiquidityFilter(filter_config, time_provider=lambda: now),
+        correlation_filter=CorrelationFilter(filter_config),
+        confluence_calculator=ConfluenceCalculator(),
+        config=filter_config,
+    )
+
+
+@pytest.mark.asyncio
+async def test_chain_size_multiplier_combines_weekend_and_funding(
+    filter_config,
+    sample_candle,
+    sample_indicators,
+    sample_order_flow,
+) -> None:
+    """Weekend 0.5 x adverse funding (z=1.0) 0.8 = 0.4."""
+    chain = _make_chain(filter_config, now=_SATURDAY_NOON)
+
+    result = await chain.evaluate(
+        symbol="BTCUSDT",
+        side="LONG",
+        candle=sample_candle,
+        indicators=sample_indicators,
+        order_flow=sample_order_flow,
+        positions=[],
+        atr_history=[Decimal(5)] * 10,
+    )
+
+    assert result.is_allowed is True
+    assert result.size_multiplier == Decimal("0.4")
+
+
+@pytest.mark.asyncio
+async def test_chain_size_multiplier_excludes_regime_multiplier(
+    filter_config,
+    sample_candle,
+    sample_indicators,
+    sample_order_flow,
+) -> None:
+    """The sizer applies the HIGH 0.5 itself; the chain must not apply it twice."""
+    chain = _make_chain(filter_config)
+    flat_funding = sample_order_flow.model_copy(
+        update={"funding_zscore": Decimal(0)},
+    )
+
+    result = await chain.evaluate(
+        symbol="BTCUSDT",
+        side="LONG",
+        candle=sample_candle,
+        indicators=sample_indicators,
+        order_flow=flat_funding,
+        positions=[],
+        atr_history=_HIGH_ATR_HISTORY,
+    )
+
+    liquidity = LiquidityFilter(filter_config).evaluate(_WEDNESDAY_NOON)
+    assert result.is_allowed is True
+    assert result.volatility_regime == VolatilityRegime.HIGH
+    assert result.size_multiplier == liquidity.size_multiplier
+
+
+@pytest.mark.asyncio
+async def test_chain_extreme_allows_tier1_and_blocks_tier2(
+    filter_config,
+    sample_candle,
+    sample_indicators,
+    sample_order_flow,
+) -> None:
+    chain = _make_chain(filter_config)
+    common = {
+        "symbol": "BTCUSDT",
+        "side": "LONG",
+        "candle": sample_candle,
+        "indicators": sample_indicators,
+        "order_flow": sample_order_flow,
+        "positions": [],
+        "atr_history": _EXTREME_ATR_HISTORY,
+    }
+
+    tier1 = await chain.evaluate(**common, symbol_tier="TIER_1")
+    tier2 = await chain.evaluate(**common, symbol_tier="TIER_2")
+
+    assert tier1.is_allowed is True
+    assert tier1.volatility_regime == VolatilityRegime.EXTREME
+    assert tier2.is_allowed is False
+    assert tier2.rejection_reason == "EXTREME"
+
+
+@pytest.mark.asyncio
+async def test_chain_extreme_confidence_override_matches_validator(
+    filter_config,
+    sample_candle,
+    sample_indicators,
+    sample_order_flow,
+) -> None:
+    chain = _make_chain(
+        filter_config,
+        risk_config=RiskConfigSchema(extreme_high_confidence_pass=True),
+    )
+    common = {
+        "symbol": "SOLUSDT",
+        "side": "LONG",
+        "candle": sample_candle,
+        "indicators": sample_indicators,
+        "order_flow": sample_order_flow,
+        "positions": [],
+        "atr_history": _EXTREME_ATR_HISTORY,
+        "symbol_tier": "TIER_2",
+    }
+
+    confident = await chain.evaluate(**common, confidence=Decimal("0.85"))
+    unsure = await chain.evaluate(**common, confidence=Decimal("0.70"))
+
+    assert confident.is_allowed is True
+    assert unsure.is_allowed is False

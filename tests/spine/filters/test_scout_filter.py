@@ -13,9 +13,12 @@ from kavzi_trader.indicators.schemas import (
 )
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
+from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
+_OVERRIDE_ON = RiskConfigSchema(extreme_high_confidence_pass=True)
 
 
 def _make_candle(
@@ -117,6 +120,14 @@ def _make_deps(
     )
 
 
+def _make_scout(
+    cfg: ScoutConfigSchema,
+    risk: RiskConfigSchema | None = None,
+) -> ScoutFilter:
+    policy = RegimePolicy(risk or RiskConfigSchema(), cfg.extreme_allowed_patterns)
+    return ScoutFilter(cfg, policy)
+
+
 @pytest.fixture
 def cfg() -> ScoutConfigSchema:
     return ScoutConfigSchema()
@@ -124,7 +135,7 @@ def cfg() -> ScoutConfigSchema:
 
 @pytest.fixture
 def scout(cfg: ScoutConfigSchema) -> ScoutFilter:
-    return ScoutFilter(cfg)
+    return _make_scout(cfg)
 
 
 # ------------------------------------------------------------------
@@ -200,7 +211,7 @@ async def test_atr_none_passes(scout: ScoutFilter) -> None:
 async def test_atr_custom_threshold() -> None:
     """Custom stricter ATR threshold blocks a marginal setup."""
     cfg = ScoutConfigSchema(atr_pct_min=Decimal("1.0"))
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg)
     # atr_pct = 0.5 / 105 * 100 ≈ 0.476%, below 1.0%
     ind = _make_indicators(atr_14=Decimal("0.5"))
     deps = _make_deps(ind)
@@ -237,7 +248,7 @@ async def test_atr_adaptive_percentile_above_floor_wins() -> None:
         atr_pct_percentile=Decimal(50),
         atr_pct_percentile_min_samples=5,
     )
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg)
     # atr_pct of the current candle ≈ 0.286%
     ind = _make_indicators(atr_14=Decimal("0.3"))
     # Median of history = 0.5% > current 0.286% → block
@@ -256,7 +267,7 @@ async def test_atr_adaptive_floor_above_percentile_wins() -> None:
         atr_pct_percentile=Decimal(25),
         atr_pct_percentile_min_samples=5,
     )
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg)
     # atr_pct ≈ 0.381% — above the quiet percentile but below the 0.5% floor
     ind = _make_indicators(atr_14=Decimal("0.4"))
     history = [Decimal("0.1")] * 20
@@ -279,7 +290,7 @@ async def test_atr_adaptive_btc_quiet_regime_passes() -> None:
         atr_pct_percentile=Decimal(25),
         atr_pct_percentile_min_samples=20,
     )
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg)
     # atr_pct = 0.084 / 105 * 100 = 0.08% — at the quiet regime level
     ind = _make_indicators(atr_14=Decimal("0.084"))
     history = [Decimal("0.08")] * 60
@@ -718,7 +729,7 @@ async def test_null_volume(scout: ScoutFilter) -> None:
 async def test_custom_blocked_regimes() -> None:
     """Only EXTREME blocked; LOW regime should proceed."""
     cfg = ScoutConfigSchema(blocked_regimes=["EXTREME"])
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg)
     ind = _make_indicators(
         ema_20=Decimal(110),
         ema_50=Decimal(105),
@@ -736,7 +747,7 @@ async def test_custom_blocked_regimes() -> None:
 async def test_custom_breakout_threshold() -> None:
     """Stricter breakout volume threshold blocks a marginal breakout."""
     cfg = ScoutConfigSchema(breakout_vol_ratio_min=Decimal("2.0"))
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg)
     ind = _make_indicators(percent_b=Decimal("1.1"), vol_ratio=Decimal("1.5"))
     deps = _make_deps(ind)
     result = await scout.run(deps)
@@ -910,11 +921,11 @@ async def test_breakout_vol_ratio_raised(scout: ScoutFilter) -> None:
 
 @pytest.mark.asyncio
 async def test_extreme_blocks_non_allowed_pattern() -> None:
-    """EXTREME regime, TIER_2, REVERSAL pattern — not in allowed list → SKIP."""
+    """With the override on, TIER_2 REVERSAL is not in the allowed list -> SKIP."""
     cfg = ScoutConfigSchema(
         extreme_allowed_patterns=["TREND_CONTINUATION", "BREAKOUT"],
     )
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg, _OVERRIDE_ON)
     # Indicators that trigger REVERSAL (criterion 3): RSI oversold + %B at lower band
     ind = _make_indicators(
         rsi_14=Decimal(25),
@@ -928,11 +939,11 @@ async def test_extreme_blocks_non_allowed_pattern() -> None:
 
 @pytest.mark.asyncio
 async def test_extreme_allows_configured_pattern() -> None:
-    """EXTREME regime, TIER_2, BREAKOUT pattern — in allowed list → INTERESTING."""
+    """With the override on, TIER_2 BREAKOUT in the allowed list -> INTERESTING."""
     cfg = ScoutConfigSchema(
         extreme_allowed_patterns=["BREAKOUT"],
     )
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg, _OVERRIDE_ON)
     ind = _make_indicators(
         percent_b=Decimal("1.06"),
         vol_ratio=Decimal("1.5"),
@@ -944,12 +955,30 @@ async def test_extreme_allows_configured_pattern() -> None:
 
 
 @pytest.mark.asyncio
+async def test_extreme_allowed_pattern_skipped_without_override() -> None:
+    """Without the override the chain and validator reject TIER_2 in EXTREME,
+    so Scout must not spend LLM calls on it even for a listed pattern."""
+    cfg = ScoutConfigSchema(
+        extreme_allowed_patterns=["TREND_CONTINUATION", "BREAKOUT"],
+    )
+    scout = _make_scout(cfg)
+    ind = _make_indicators(
+        percent_b=Decimal("1.06"),
+        vol_ratio=Decimal("1.5"),
+    )
+    deps = _make_deps(ind, regime=VolatilityRegime.EXTREME, symbol_tier="TIER_2")
+    result = await scout.run(deps)
+    assert result.verdict == "SKIP"
+    assert "Volatility regime EXTREME" in result.reason
+
+
+@pytest.mark.asyncio
 async def test_extreme_empty_allowed_blocks_all() -> None:
     """EXTREME regime, TIER_2, empty allowed list → SKIP (backward compat)."""
     cfg = ScoutConfigSchema(
         extreme_allowed_patterns=[],
     )
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg)
     ind = _make_indicators(
         percent_b=Decimal("1.06"),
         vol_ratio=Decimal("1.5"),
@@ -966,7 +995,7 @@ async def test_extreme_tier1_still_exempt() -> None:
     cfg = ScoutConfigSchema(
         extreme_allowed_patterns=["BREAKOUT"],
     )
-    scout = ScoutFilter(cfg)
+    scout = _make_scout(cfg)
     # REVERSAL pattern — not in allowed list, but TIER_1 bypasses the gate entirely
     ind = _make_indicators(
         rsi_14=Decimal(25),

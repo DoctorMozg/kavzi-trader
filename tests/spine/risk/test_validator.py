@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
@@ -14,6 +15,10 @@ from kavzi_trader.spine.state.schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
+
+_EXTREME_ATR_HISTORY = [
+    Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
+]
 
 
 def make_tier_registry() -> SymbolTierRegistry:
@@ -707,3 +712,125 @@ class TestDynamicRiskValidator:
         )
 
         assert not any("portfolio risk" in r.lower() for r in result.rejection_reasons)
+
+    # =========================================================================
+    # Regime policy, SL side check and filter multiplier (M3)
+    # =========================================================================
+
+    @pytest.mark.asyncio
+    async def test_tier1_extreme_gets_quarter_size(self, mock_state_manager) -> None:
+        """TIER_1 passes EXTREME and is sized at 0.25x, not zero."""
+        config = RiskConfigSchema(risk_per_trade_percent=Decimal("0.1"))
+        validator = DynamicRiskValidator(config=config)
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(120),
+            atr_history=_EXTREME_ATR_HISTORY,
+            state_manager=mock_state_manager,
+            symbol_tier="TIER_1",
+        )
+
+        assert result.is_valid is True
+        assert result.volatility_regime == VolatilityRegime.EXTREME
+        # risk 10 / stop 100 = 0.1 BTC, x0.25
+        assert result.recommended_size == Decimal("0.025")
+
+    @pytest.mark.asyncio
+    async def test_confidence_override_in_extreme_gets_quarter_size(
+        self, mock_state_manager
+    ) -> None:
+        config = RiskConfigSchema(
+            risk_per_trade_percent=Decimal("0.1"),
+            extreme_high_confidence_pass=True,
+        )
+        validator = DynamicRiskValidator(config=config)
+
+        result = await validator.validate_trade(
+            symbol="SOLUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(120),
+            atr_history=_EXTREME_ATR_HISTORY,
+            state_manager=mock_state_manager,
+            confidence=Decimal("0.85"),
+            symbol_tier="TIER_2",
+        )
+
+        assert result.is_valid is True
+        assert result.recommended_size == Decimal("0.025")
+
+    @pytest.mark.asyncio
+    async def test_wrong_side_stop_rejected_when_atr_is_zero(
+        self, mock_state_manager
+    ) -> None:
+        validator = DynamicRiskValidator()
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(50100),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(0),
+            atr_history=[Decimal(5)] * 10,
+            state_manager=mock_state_manager,
+        )
+
+        assert result.is_valid is False
+        assert any(
+            "must be below entry for LONG" in r for r in result.rejection_reasons
+        )
+        assert any("ATR unavailable" in r for r in result.rejection_reasons)
+
+    @pytest.mark.asyncio
+    async def test_filter_size_multiplier_scales_recommended_size(
+        self, mock_state_manager
+    ) -> None:
+        config = RiskConfigSchema(risk_per_trade_percent=Decimal("0.1"))
+        validator = DynamicRiskValidator(config=config)
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 9 + [Decimal(101)],
+            state_manager=mock_state_manager,
+            size_multiplier=Decimal("0.5"),
+        )
+
+        # risk 10 / stop 100 = 0.1 BTC, halved by the filters
+        assert result.is_valid is True
+        assert result.recommended_size == Decimal("0.05")
+
+    @pytest.mark.asyncio
+    async def test_filter_reduction_below_min_notional_is_rejected(
+        self, mock_state_manager
+    ) -> None:
+        config = RiskConfigSchema(risk_per_trade_percent=Decimal("0.1"))
+        validator = DynamicRiskValidator(config=config)
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(50000),
+            stop_loss=Decimal(49900),
+            take_profit=Decimal(50200),
+            current_atr=Decimal(100),
+            atr_history=[Decimal(100)] * 9 + [Decimal(101)],
+            state_manager=mock_state_manager,
+            size_multiplier=Decimal("0.001"),
+        )
+
+        # 0.1 BTC x 0.001 = 0.0001 BTC = $5 < $10 floor
+        assert result.is_valid is False
+        assert any("below minimum" in r for r in result.rejection_reasons)

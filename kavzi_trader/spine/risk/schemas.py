@@ -11,31 +11,6 @@ class VolatilityRegime(StrEnum):
     EXTREME = "EXTREME"
 
 
-REGIME_SIZE_MULTIPLIERS: dict[VolatilityRegime, Decimal] = {
-    VolatilityRegime.LOW: Decimal(0),
-    VolatilityRegime.NORMAL: Decimal("1.0"),
-    VolatilityRegime.HIGH: Decimal("0.5"),
-    VolatilityRegime.EXTREME: Decimal(0),
-}
-
-# TIER_1 symbols get reduced sizing in EXTREME instead of full block
-_EXTREME_TIER1_MULTIPLIER = Decimal("0.25")
-
-
-def get_regime_size_multiplier(
-    regime: VolatilityRegime,
-    symbol_tier: str = "TIER_2",
-) -> Decimal:
-    """Return position size multiplier considering both regime and tier.
-
-    TIER_1 symbols trade at 25% size in EXTREME regime instead of being
-    fully blocked, allowing high-liquidity assets to capture large moves.
-    """
-    if regime == VolatilityRegime.EXTREME and symbol_tier == "TIER_1":
-        return _EXTREME_TIER1_MULTIPLIER
-    return REGIME_SIZE_MULTIPLIERS[regime]
-
-
 class VolatilityRegimeSchema(BaseModel):
     regime: VolatilityRegime
     atr_zscore: Decimal

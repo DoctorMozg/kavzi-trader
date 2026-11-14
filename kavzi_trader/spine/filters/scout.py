@@ -9,6 +9,7 @@ from kavzi_trader.brain.schemas.dependencies import ScoutDependenciesSchema
 from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
+from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,9 @@ class ScoutFilter:
     Satisfies the ``ScoutRunner`` protocol used by ``AgentRouter``.
     """
 
-    def __init__(self, config: ScoutConfigSchema) -> None:
+    def __init__(self, config: ScoutConfigSchema, regime_policy: RegimePolicy) -> None:
         self._cfg = config
+        self._regime_policy = regime_policy
 
     # ------------------------------------------------------------------
     # Public interface (satisfies ScoutRunner protocol)
@@ -124,18 +126,13 @@ class ScoutFilter:
         self,
         deps: ScoutDependenciesSchema,
     ) -> _GateOutcomeSchema:
-        """Volatility regime gate (TIER_1 allowed through EXTREME)."""
-        cfg = self._cfg
+        """Volatility regime gate; EXTREME admission is decided by RegimePolicy."""
         regime = deps.volatility_regime.value
-        tier1_extreme = regime == "EXTREME" and deps.symbol_tier == "TIER_1"
-        blocked = regime in cfg.blocked_regimes and not tier1_extreme
-        extreme_pattern_gate = (
-            blocked and regime == "EXTREME" and bool(cfg.extreme_allowed_patterns)
-        )
-
-        # Non-EXTREME blocked regimes (LOW) short-circuit immediately.
-        # EXTREME with allowed_patterns falls through to criteria checks.
-        if blocked and not extreme_pattern_gate:
+        if regime == "EXTREME":
+            blocked = not self._regime_policy.extreme_open_for_scout(deps.symbol_tier)
+        else:
+            blocked = regime in self._cfg.blocked_regimes
+        if blocked:
             return _GateOutcomeSchema(
                 passed=False,
                 reason=f"Volatility regime {regime} blocks trading",
@@ -197,12 +194,7 @@ class ScoutFilter:
         """
         cfg = self._cfg
         ind = deps.indicators
-        regime = deps.volatility_regime.value
-        tier1_extreme = regime == "EXTREME" and deps.symbol_tier == "TIER_1"
-        blocked = regime in cfg.blocked_regimes and not tier1_extreme
-        extreme_pattern_gate = (
-            blocked and regime == "EXTREME" and bool(cfg.extreme_allowed_patterns)
-        )
+        in_extreme = deps.volatility_regime.value == "EXTREME"
         vol_ratio = self._vol_ratio(ind)
         alignment = self._ema_alignment(ind)
         candles = deps.recent_candles
@@ -218,9 +210,9 @@ class ScoutFilter:
 
         for check in checks:
             if check.verdict == "INTERESTING":
-                if (
-                    extreme_pattern_gate
-                    and check.pattern_detected not in cfg.extreme_allowed_patterns
+                if in_extreme and not self._regime_policy.extreme_pattern_allowed(
+                    deps.symbol_tier,
+                    check.pattern_detected,
                 ):
                     continue
                 return _GateOutcomeSchema(passed=True, matched=check)

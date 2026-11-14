@@ -72,6 +72,7 @@ from kavzi_trader.spine.position.stall_exit import StallExitChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
+from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -280,10 +281,16 @@ async def _start_orchestrator(
                 [s.name for s in ext_sources],
             )
 
+    regime_policy = RegimePolicy(
+        app_config.risk,
+        app_config.scout.extreme_allowed_patterns,
+    )
+    volatility_detector = VolatilityRegimeDetector(app_config.risk, regime_policy)
+
     deps_provider = LiveDependenciesProvider(
         cache=cache,
         confluence_calculator=ConfluenceCalculator(),
-        volatility_detector=VolatilityRegimeDetector(),
+        volatility_detector=volatility_detector,
         state_manager=state_manager,
         exchange=exchange,
         event_store=event_store,
@@ -306,7 +313,7 @@ async def _start_orchestrator(
         risk_config=app_config.risk,
         tier_registry=tier_registry,
     )
-    scout = ScoutFilter(app_config.scout)
+    scout = ScoutFilter(app_config.scout, regime_policy)
     analyst = AnalystAgent(
         factory.create_analyst_agent(),
         prompt_loader,
@@ -338,6 +345,7 @@ async def _start_orchestrator(
         partial_exit=PartialExitChecker(),
         time_exit=TimeExitChecker(),
         stall_exit=StallExitChecker(),
+        liquidation_emergency_percent=app_config.futures.liquidation_emergency_percent,
     )
 
     # --- Reporting ---
@@ -369,7 +377,6 @@ async def _start_orchestrator(
 
     # --- Execution engine ---
     logger.info("Creating execution engine")
-    volatility_detector = VolatilityRegimeDetector(app_config.risk)
     liquidation_calculator = LiquidationCalculator(exchange)
     engine = ExecutionEngine(
         exchange=exchange,
@@ -384,9 +391,11 @@ async def _start_orchestrator(
         monitor=OrderMonitor(exchange, app_config.execution.timeout_s),
         event_store=event_store,
         leverage=app_config.futures.default_leverage,
+        symbol_leverage=app_config.futures.symbol_leverage,
         report_populator=report_populator,
         volatility_detector=volatility_detector,
         liquidation_calculator=liquidation_calculator,
+        pullback_entry_expiry_ms=app_config.execution.pullback_entry_expiry_ms,
     )
 
     # Wire reconciler -> engine for self-healing missing SL/TP (H10). The
@@ -444,6 +453,7 @@ async def _start_orchestrator(
             report_populator=report_populator,
             state_manager=state_manager,
             filter_chain=filter_chain,
+            position_management=app_config.position_management,
         ),
         execution_loop=ExecutionLoop(
             redis_client=redis_client,

@@ -15,6 +15,7 @@ class ScoutConfigSchema(BaseModel):
 
     # Volatility regimes that block trading outright.
     # Any regime listed here causes an immediate SKIP before criteria are checked.
+    # EXTREME is decided by RegimePolicy instead of this list.
     #   ["LOW", "EXTREME"] = default (blocks very quiet and spiking markets)
     #   ["EXTREME"]        = permissive (only blocks spikes, allows quiet markets)
     blocked_regimes: Annotated[
@@ -22,8 +23,9 @@ class ScoutConfigSchema(BaseModel):
         Field(default_factory=lambda: ["LOW", "EXTREME"]),
     ]
 
-    # Patterns allowed through EXTREME regime (non-TIER_1 symbols).
-    # Empty = block all in EXTREME (backward compat).
+    # Patterns Scout lets through EXTREME for non-TIER_1 symbols. Only used when
+    # risk.extreme_high_confidence_pass is on (RegimePolicy owns the EXTREME
+    # rules); otherwise only TIER_1 passes. EXTREME ignores blocked_regimes.
     extreme_allowed_patterns: Annotated[list[str], Field(default_factory=list)]
 
     # --- ATR compression gate (adaptive per-symbol) ---

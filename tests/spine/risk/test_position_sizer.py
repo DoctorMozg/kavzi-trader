@@ -334,3 +334,57 @@ class TestPositionSizer:
         notional = result.adjusted_size * Decimal(50000)
         # Cap = 5% of 100 = $5; floor cannot be honoured
         assert notional <= Decimal("5.0")
+
+
+class TestFilterSizeMultiplier:
+    def test_filter_multiplier_scales_size(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+    ) -> None:
+        sizer = PositionSizer(RiskConfigSchema(max_notional_percent=Decimal(999)))
+        result = sizer.calculate_size(
+            account_balance=Decimal(9000),
+            atr=Decimal(2),
+            stop_loss_atr_multiplier=Decimal("1.5"),
+            regime=normal_regime,
+            entry_price=Decimal(100),
+            filter_size_multiplier=Decimal("0.5"),
+        )
+
+        # risk 90 / stop distance 3 = 30 units, halved by the filters
+        assert result.base_size == Decimal(30)
+        assert result.adjusted_size == Decimal(15)
+        assert result.size_multiplier == Decimal("0.5")
+
+    def test_filter_multiplier_stacks_with_regime(
+        self,
+        high_regime: VolatilityRegimeSchema,
+    ) -> None:
+        sizer = PositionSizer(RiskConfigSchema(max_notional_percent=Decimal(999)))
+        result = sizer.calculate_size(
+            account_balance=Decimal(9000),
+            atr=Decimal(2),
+            stop_loss_atr_multiplier=Decimal("1.5"),
+            regime=high_regime,
+            entry_price=Decimal(100),
+            filter_size_multiplier=Decimal("0.5"),
+        )
+
+        assert result.adjusted_size == Decimal("7.5")
+
+    def test_filter_reduction_below_floor_is_not_bumped_back(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+    ) -> None:
+        sizer = PositionSizer(RiskConfigSchema(max_notional_percent=Decimal(999)))
+        result = sizer.calculate_size(
+            account_balance=Decimal(150),
+            atr=Decimal(2),
+            stop_loss_atr_multiplier=Decimal(5),
+            regime=normal_regime,
+            entry_price=Decimal(100),
+            filter_size_multiplier=Decimal("0.5"),
+        )
+
+        # 1.5 risk / 10 stop = 0.15 units; halved = 0.075 ($7.50 < $10 floor)
+        assert result.adjusted_size == Decimal("0.075")

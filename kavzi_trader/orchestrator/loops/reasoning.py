@@ -60,6 +60,7 @@ class ReasoningLoop:
         filter_chain: PreTradeFilterChain | None = None,
         max_consecutive_rejection_multiplier: int = 3,
         *,
+        position_management: PositionManagementConfigSchema,
         reasoning_config: ReasoningLoopConfigSchema | None = None,
     ) -> None:
         self._symbols = symbols
@@ -72,6 +73,7 @@ class ReasoningLoop:
         self._state_manager = state_manager
         self._analyst_cooldown_cycles = analyst_cooldown_cycles
         self._filter_chain = filter_chain
+        self._position_management = position_management
         self._max_rejection_multiplier = max_consecutive_rejection_multiplier
         self._reasoning_config = reasoning_config or ReasoningLoopConfigSchema()
         self._state = SymbolStateTracker()
@@ -338,15 +340,21 @@ class ReasoningLoop:
             )
             return True
 
-        # After trade enqueue, cool down both directions and reset WAIT/geometry
-        # counters.
+        size_multiplier = (
+            filter_result.size_multiplier if filter_result is not None else Decimal(1)
+        )
+        if not await self._enqueue_decision(result, size_multiplier):
+            # No trade went out, so the symbol must stay eligible next cycle.
+            return True
+
+        # After a successful enqueue, cool down both directions and reset
+        # WAIT/geometry counters.
         post_trade_cd = self._analyst_cooldown_cycles * 3
         self._state.set_cooldown(symbol, "LONG", post_trade_cd)
         self._state.set_cooldown(symbol, "SHORT", post_trade_cd)
         self._state.clear_waits(symbol, "LONG")
         self._state.clear_waits(symbol, "SHORT")
         self._state.clear_geometry_rejects(symbol)
-        await self._enqueue_decision(result)
         return True
 
     @staticmethod
@@ -550,6 +558,7 @@ class ReasoningLoop:
             atr_history=deps.atr_history,
             analyst_confluence_score=confluence_score,
             symbol_tier=deps.symbol_tier,
+            confidence=Decimal(str(result.trader.confidence)),
         )
 
     async def _report_filter_rejection(
@@ -577,15 +586,18 @@ class ReasoningLoop:
     async def _enqueue_decision(
         self,
         result: PipelineResult,
-    ) -> None:
+        size_multiplier: Decimal = Decimal(1),
+    ) -> bool:
+        """Push the decision to the execution queue; True only if it was queued."""
         if result.trader is None or result.trader_deps is None:
-            return
+            return False
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
         decision = self._build_decision_message(
             result.trader,
             result.trader_deps,
             now_ms,
             geometry=result.geometry,
+            size_multiplier=size_multiplier,
         )
         symbol = result.trader_deps.symbol
         if decision is None:
@@ -595,7 +607,7 @@ class ReasoningLoop:
                 symbol,
                 extra={"symbol": symbol},
             )
-            return
+            return False
         try:
             await self._redis_client.client.lpush(
                 self._queue_key,
@@ -613,7 +625,7 @@ class ReasoningLoop:
                     "queue_key": self._queue_key,
                 },
             )
-            return
+            return False
         logger.info(
             "Enqueuing decision for %s: action=%s confidence=%.2f decision_id=%s",
             symbol,
@@ -626,6 +638,7 @@ class ReasoningLoop:
                 "action": decision.action,
             },
         )
+        return True
 
     async def _report_decisions(
         self,
@@ -682,6 +695,7 @@ class ReasoningLoop:
         deps: TradingDependenciesSchema,
         snapshot_at_ms: int,
         geometry: TradeGeometrySchema | None = None,
+        size_multiplier: Decimal = Decimal(1),
     ) -> DecisionMessageSchema | None:
         # Reject geometry-less actionable decisions at the Brain→Spine
         # boundary. The router computes geometry for every LONG/SHORT it
@@ -730,11 +744,12 @@ class ReasoningLoop:
             raw_confidence=trader.confidence,
             calibrated_confidence=trader.confidence,
             volatility_regime=deps.volatility_regime,
-            position_management=PositionManagementConfigSchema(),
+            position_management=self._position_management,
             created_at_ms=snapshot_at_ms,
             expires_at_ms=snapshot_at_ms + 300_000,
             current_atr=atr,
             atr_history=deps.atr_history,
             leverage=deps.leverage,
             symbol_tier=deps.symbol_tier,
+            size_multiplier=size_multiplier,
         )

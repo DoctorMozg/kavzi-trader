@@ -77,7 +77,8 @@ scout:
   blocked_regimes: ["LOW", "EXTREME"]
 
   # Patterns allowed through EXTREME volatility regime (non-TIER_1 symbols).
-  # Empty list = block all patterns in EXTREME (backward compatible default).
+  # Only used when risk.extreme_high_confidence_pass is true; otherwise only
+  # TIER_1 symbols pass Scout in EXTREME. Empty list = block all non-TIER_1.
   #   []                                = strictest (block all)
   #   ["TREND_CONTINUATION", "BREAKOUT"] = production default
   extreme_allowed_patterns: ["TREND_CONTINUATION", "BREAKOUT"]

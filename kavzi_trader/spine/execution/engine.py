@@ -61,6 +61,7 @@ class ExecutionEngine:
         volatility_detector: VolatilityRegimeDetector | None = None,
         liquidation_calculator: LiquidationCalculator | None = None,
         pullback_entry_expiry_ms: int = 1_800_000,
+        symbol_leverage: dict[str, int] | None = None,
     ) -> None:
         self._exchange = exchange
         self._state_manager = state_manager
@@ -70,10 +71,15 @@ class ExecutionEngine:
         self._monitor = monitor
         self._event_store = event_store
         self._leverage = leverage
+        self._symbol_leverage = symbol_leverage or {}
         self._report_populator = report_populator
         self._volatility_detector = volatility_detector
         self._liquidation_calculator = liquidation_calculator
         self._pullback_entry_expiry_ms = pullback_entry_expiry_ms
+
+    def _leverage_for(self, symbol: str) -> int:
+        # Mirrors the leverage trade.py sets on the exchange for each symbol.
+        return self._symbol_leverage.get(symbol, self._leverage)
 
     async def execute(self, decision: DecisionMessageSchema) -> ExecutionResultSchema:
         logger.info(
@@ -212,9 +218,10 @@ class ExecutionEngine:
             current_atr=decision.current_atr,
             atr_history=decision.atr_history,
             state_manager=self._state_manager,
-            leverage=self._leverage,
+            leverage=self._leverage_for(decision.symbol),
             confidence=Decimal(str(decision.calibrated_confidence)),
             symbol_tier=decision.symbol_tier,
+            size_multiplier=decision.size_multiplier,
         )
         if not result.is_valid:
             return (
@@ -698,7 +705,7 @@ class ExecutionEngine:
         order: OrderResponseSchema,
     ) -> None:
         now = utc_now()
-        leverage = self._leverage
+        leverage = self._leverage_for(decision.symbol)
         initial_margin = (
             (order.price * order.executed_qty) / Decimal(leverage)
             if leverage > 0
