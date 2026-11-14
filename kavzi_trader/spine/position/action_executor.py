@@ -1,9 +1,9 @@
 import logging
 from decimal import Decimal
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.domain.order_enums import OrderSide, OrderType
+from kavzi_trader.domain.order_enums import OrderType
 from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.domain.state_schemas import PositionSchema
@@ -20,7 +20,7 @@ _TAKE_PROFIT_ORDER_TYPES = frozenset(
 class PositionActionExecutor:
     def __init__(
         self,
-        exchange: BinanceClient,
+        exchange: ExchangeClient,
         state_manager: StateManager,
     ) -> None:
         self._exchange = exchange
@@ -72,7 +72,7 @@ class PositionActionExecutor:
         if any(o.order_type in _TAKE_PROFIT_ORDER_TYPES for o in linked):
             return
         # The earlier attempt may have reached the exchange and only failed to save.
-        exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        exit_side = position.exit_side
         for resting in await self._exchange.get_open_orders(position.symbol):
             if (
                 resting.type in _TAKE_PROFIT_ORDER_TYPES
@@ -104,7 +104,7 @@ class PositionActionExecutor:
     ) -> None:
         if action.exit_quantity is None:
             return
-        exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        exit_side = position.exit_side
         try:
             await self._exchange.create_order(
                 symbol=position.symbol,
@@ -180,7 +180,7 @@ class PositionActionExecutor:
                 )
 
     async def _full_exit(self, position: PositionSchema) -> Decimal | None:
-        exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        exit_side = position.exit_side
         try:
             order_response = await self._exchange.create_order(
                 symbol=position.symbol,
@@ -207,7 +207,7 @@ class PositionActionExecutor:
         stop_loss: Decimal,
         quantity: Decimal,
     ) -> None:
-        stop_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        stop_side = position.exit_side
         response = await self._exchange.create_order(
             symbol=position.symbol,
             side=stop_side,
@@ -224,7 +224,7 @@ class PositionActionExecutor:
         take_profit: Decimal,
         quantity: Decimal,
     ) -> None:
-        tp_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        tp_side = position.exit_side
         response = await self._exchange.create_order(
             symbol=position.symbol,
             side=tp_side,

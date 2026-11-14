@@ -1,3 +1,5 @@
+import asyncio
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -6,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 from pydantic import SecretStr
 
+from kavzi_trader.cli import composition, spine_composition
 from kavzi_trader.cli.commands import trade as trade_module
 from kavzi_trader.cli.commands.trade import trade
 from kavzi_trader.config import AppConfig
@@ -30,7 +33,7 @@ def test_trade_status_outputs_counts(monkeypatch, capsys) -> None:
     mock_manager.get_open_orders = AsyncMock(return_value=[])
 
     monkeypatch.setattr(
-        "kavzi_trader.cli.commands.trade._build_state_manager",
+        "kavzi_trader.cli.commands.trade.build_state_manager",
         lambda _: mock_manager,
     )
     ctx = click.Context(trade, obj={"app_config": AppConfig.from_env()})
@@ -41,6 +44,66 @@ def test_trade_status_outputs_counts(monkeypatch, capsys) -> None:
     captured = capsys.readouterr()
     assert "Positions: 0" in captured.out
     assert "Open orders: 0" in captured.out
+
+
+class _LoopRecorder:
+    """Records which event loop each awaited call runs on, and whether it closed."""
+
+    def __init__(self) -> None:
+        self.loops: list[asyncio.AbstractEventLoop] = []
+        self.closed = False
+
+    def note(self) -> None:
+        self.loops.append(asyncio.get_running_loop())
+
+    async def connect(self) -> None:
+        self.note()
+
+    async def close(self) -> None:
+        self.note()
+        self.closed = True
+
+    async def get_all_positions(self) -> list[object]:
+        self.note()
+        return []
+
+    async def get_open_orders(self) -> list[object]:
+        self.note()
+        return []
+
+    async def read(self, *_args: object, **_kwargs: object) -> list[object]:
+        self.note()
+        return []
+
+
+@pytest.mark.parametrize("command", ["status", "positions"])
+def test_state_commands_use_one_event_loop_and_close(monkeypatch, command) -> None:
+    recorder = _LoopRecorder()
+    monkeypatch.setattr(trade_module, "build_state_manager", lambda _: recorder)
+
+    result = CliRunner().invoke(
+        trade, [command], obj={"app_config": AppConfig.from_env()}
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(recorder.loops) >= 3
+    assert len(set(recorder.loops)) == 1, "calls ran on different event loops"
+    assert recorder.closed
+
+
+def test_history_uses_one_event_loop_and_closes(monkeypatch) -> None:
+    recorder = _LoopRecorder()
+    monkeypatch.setattr(trade_module, "RedisStateClient", lambda *_: recorder)
+    monkeypatch.setattr(trade_module, "RedisEventStore", lambda *_: recorder)
+
+    result = CliRunner().invoke(
+        trade, ["history"], obj={"app_config": AppConfig.from_env()}
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(recorder.loops) >= 3
+    assert len(set(recorder.loops)) == 1, "calls ran on different event loops"
+    assert recorder.closed
 
 
 @pytest.mark.asyncio
@@ -88,16 +151,16 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         return manager
 
     monkeypatch.setattr(
-        trade_module,
-        "_build_state_manager",
+        composition,
+        "build_state_manager",
         _build_fake_state_manager,
     )
     mock_exchange = AsyncMock()
-    monkeypatch.setattr(trade_module, "_build_exchange", lambda _: mock_exchange)
-    monkeypatch.setattr(trade_module, "RedisStateClient", lambda *_: redis_client)
-    monkeypatch.setattr(trade_module, "RedisEventStore", lambda *_: object())
+    monkeypatch.setattr(composition, "build_exchange", lambda _: mock_exchange)
+    monkeypatch.setattr(composition, "RedisStateClient", lambda *_: redis_client)
+    monkeypatch.setattr(composition, "RedisEventStore", lambda *_: object())
     monkeypatch.setattr(
-        trade_module,
+        composition,
         "TechnicalIndicatorCalculator",
         lambda: object(),
     )
@@ -118,23 +181,27 @@ async def test_start_orchestrator_uses_configured_runtime_values(
             _ = exchange
             captured["cache_interval"] = interval
 
-    monkeypatch.setattr(trade_module, "MarketDataCache", FakeCache)
+    monkeypatch.setattr(composition, "MarketDataCache", FakeCache)
     ws_client = Mock()
     stream_manager = Mock()
-    monkeypatch.setattr(trade_module, "BinanceWebsocketClient", lambda **_: ws_client)
-    monkeypatch.setattr(trade_module, "LiveStreamManager", lambda **_: stream_manager)
+    monkeypatch.setattr(composition, "BinanceWebsocketClient", lambda **_: ws_client)
+    monkeypatch.setattr(composition, "LiveStreamManager", lambda **_: stream_manager)
 
     monkeypatch.setattr(
-        trade_module,
+        composition,
         "LiveOrderFlowFetcher",
         lambda **_: object(),
     )
-    monkeypatch.setattr(trade_module, "LiveDependenciesProvider", lambda **_: object())
-    monkeypatch.setattr(trade_module, "LiveAtrProvider", lambda *_: object())
-    monkeypatch.setattr(trade_module, "LivePriceProvider", lambda *_: object())
-    monkeypatch.setattr(trade_module, "ExecutionEngine", lambda **_: object())
-    monkeypatch.setattr(trade_module, "PromptLoader", Mock)
-    monkeypatch.setattr(trade_module, "ContextBuilder", lambda: object())
+    monkeypatch.setattr(composition, "LiveDependenciesProvider", lambda **_: object())
+    monkeypatch.setattr(spine_composition, "LiveAtrProvider", lambda *_: object())
+    monkeypatch.setattr(spine_composition, "LivePriceProvider", lambda *_: object())
+    monkeypatch.setattr(
+        spine_composition,
+        "ExecutionEngine",
+        lambda **_: SimpleNamespace(protective_orders=object()),
+    )
+    monkeypatch.setattr(composition, "PromptLoader", Mock)
+    monkeypatch.setattr(composition, "ContextBuilder", lambda: object())
 
     class FakeFactory:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
@@ -146,13 +213,16 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         def create_trader_agent(self) -> object:
             return object()
 
-    monkeypatch.setattr(trade_module, "AgentFactory", FakeFactory)
-    monkeypatch.setattr(trade_module, "ScoutFilter", lambda *_: object())
-    monkeypatch.setattr(trade_module, "AnalystAgent", lambda *_: object())
-    monkeypatch.setattr(trade_module, "TraderAgent", lambda *_: object())
-    monkeypatch.setattr(trade_module, "AgentRouter", lambda *_a, **_kw: object())
-    monkeypatch.setattr(trade_module, "PositionManager", lambda **_: object())
-    monkeypatch.setattr(trade_module, "DataIngestLoop", lambda *_: object())
+        def create_synthesizer_agent(self, _config: object) -> object:
+            return object()
+
+    monkeypatch.setattr(composition, "AgentFactory", FakeFactory)
+    monkeypatch.setattr(composition, "ScoutFilter", lambda *_: object())
+    monkeypatch.setattr(composition, "AnalystAgent", lambda *_: object())
+    monkeypatch.setattr(composition, "TraderAgent", lambda *_: object())
+    monkeypatch.setattr(composition, "AgentRouter", lambda *_a, **_kw: object())
+    monkeypatch.setattr(spine_composition, "PositionManager", lambda **_: object())
+    monkeypatch.setattr(composition, "DataIngestLoop", lambda *_: object())
 
     def build_order_flow_loop(_fetcher, interval_s: int) -> object:
         captured["order_flow_interval_s"] = interval_s
@@ -166,11 +236,11 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         captured["position_interval_s"] = kwargs["interval_s"]
         return object()
 
-    monkeypatch.setattr(trade_module, "OrderFlowLoop", build_order_flow_loop)
-    monkeypatch.setattr(trade_module, "ReasoningLoop", build_reasoning_loop)
-    monkeypatch.setattr(trade_module, "ExecutionLoop", lambda **_: object())
+    monkeypatch.setattr(composition, "OrderFlowLoop", build_order_flow_loop)
+    monkeypatch.setattr(composition, "ReasoningLoop", build_reasoning_loop)
+    monkeypatch.setattr(composition, "ExecutionLoop", lambda **_: object())
     monkeypatch.setattr(
-        trade_module,
+        spine_composition,
         "PositionManagementLoop",
         build_position_loop,
     )
@@ -183,7 +253,7 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         captured["shutdown_hooks"] = kwargs["shutdown_hooks"]
         return FakeTradingOrchestrator()
 
-    monkeypatch.setattr(trade_module, "TradingOrchestrator", build_orchestrator)
+    monkeypatch.setattr(composition, "TradingOrchestrator", build_orchestrator)
 
     await trade_module._start_orchestrator(app_config)
 

@@ -3,11 +3,11 @@ import logging
 from decimal import Decimal
 from typing import Literal, cast
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.schemas.data_dicts import (
     LeverageBracketDict,
     LeverageBracketEntryDict,
 )
+from kavzi_trader.api.exchange_client import ExchangeClient
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class LiquidationCalculator:
     subsequent calls are served locally.
     """
 
-    def __init__(self, exchange: BinanceClient) -> None:
+    def __init__(self, exchange: ExchangeClient) -> None:
         self._exchange = exchange
         self._bracket_cache: dict[str, list[LeverageBracketEntryDict]] = {}
         self._lock = asyncio.Lock()

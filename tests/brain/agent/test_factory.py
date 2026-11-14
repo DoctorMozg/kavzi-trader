@@ -9,6 +9,7 @@ from kavzi_trader.brain.config import AgentModelConfigSchema, BrainConfigSchema
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.external.config import SynthesizerConfigSchema
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 
 
@@ -70,3 +71,15 @@ def test_shared_openai_client() -> None:
     assert isinstance(analyst.model, OpenAIChatModel)
     assert isinstance(trader.model, OpenAIChatModel)
     assert analyst.model.client is trader.model.client
+
+
+def test_create_synthesizer_agent_keeps_model_settings_and_timeout() -> None:
+    synth_config = SynthesizerConfigSchema(
+        model_id="test/synth", temperature=0.2, retries=2, seed=7
+    )
+
+    agent = _make_factory().create_synthesizer_agent(synth_config)
+
+    assert isinstance(agent.model, OpenAIChatModel)
+    assert agent.model.model_name == "test/synth"
+    assert agent.model_settings == {"temperature": 0.2, "timeout": 30.0, "seed": 7}

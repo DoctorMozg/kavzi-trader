@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from kavzi_trader.cli.commands.trade import _load_tier_registry
+from kavzi_trader.cli.composition import load_tier_registry
 
 
 def test_tier_registry_loads_from_any_cwd(
@@ -11,6 +11,6 @@ def test_tier_registry_loads_from_any_cwd(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    registry = _load_tier_registry()
+    registry = load_tier_registry()
 
     assert registry.get_tier("BTCUSDT") is not None

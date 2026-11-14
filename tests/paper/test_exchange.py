@@ -4,8 +4,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.exceptions import ExchangeError
 from kavzi_trader.api.common.models import TickerSchema
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.domain.order_enums import (
     OrderSide,
     OrderStatus,
@@ -672,3 +674,18 @@ async def test_orphaned_protective_order_is_cancelled_not_raised(
 
     assert order.status == OrderStatus.CANCELED
     assert paper_client._positions == {}
+
+
+async def test_paper_client_satisfies_exchange_client_without_binance_inheritance(
+    paper_client: PaperExchangeClient,
+) -> None:
+    # The annotations are the check: mypy rejects either assignment if a
+    # protocol method is missing or has a different signature.
+    paper: ExchangeClient = paper_client
+    live: ExchangeClient = BinanceClient(api_key="", api_secret="")
+    try:
+        assert not isinstance(paper, BinanceClient)
+        assert paper is paper_client
+        assert live is not None
+    finally:
+        await live.close()

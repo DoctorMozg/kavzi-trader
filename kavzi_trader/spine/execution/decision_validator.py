@@ -8,6 +8,9 @@ from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.validation import ValidationOutcomeSchema
 from kavzi_trader.spine.risk.schemas import RiskValidationResultSchema
+from kavzi_trader.spine.risk.trade_validation_params_schema import (
+    TradeValidationParamsSchema,
+)
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
@@ -106,19 +109,24 @@ class DecisionValidator:
         result (so ``execute()`` can read ``recommended_size`` on success).
         """
         side: Literal["LONG", "SHORT"] = decision.action  # type: ignore[assignment]
+        params = TradeValidationParamsSchema.model_validate(
+            {
+                "symbol": decision.symbol,
+                "side": side,
+                "entry_price": decision.entry_price,
+                "stop_loss": decision.stop_loss,
+                "take_profit": decision.take_profit,
+                "current_atr": decision.current_atr,
+                "atr_history": decision.atr_history,
+                "leverage": self._leverage_for(decision.symbol),
+                "confidence": Decimal(str(decision.calibrated_confidence)),
+                "symbol_tier": decision.symbol_tier,
+                "size_multiplier": decision.size_multiplier,
+            },
+        )
         result = await self._risk_validator.validate_trade(
-            symbol=decision.symbol,
-            side=side,
-            entry_price=decision.entry_price,
-            stop_loss=decision.stop_loss,
-            take_profit=decision.take_profit,
-            current_atr=decision.current_atr,
-            atr_history=decision.atr_history,
-            state_manager=self._state_manager,
-            leverage=self._leverage_for(decision.symbol),
-            confidence=Decimal(str(decision.calibrated_confidence)),
-            symbol_tier=decision.symbol_tier,
-            size_multiplier=decision.size_multiplier,
+            params,
+            self._state_manager,
         )
         if not result.is_valid:
             return (

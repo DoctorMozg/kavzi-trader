@@ -1,10 +1,10 @@
 import logging
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.exceptions import (
     UNKNOWN_ORDER_ERROR_CODE,
     ExchangeError,
 )
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.domain.order_response import OrderResponseSchema
 from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
@@ -18,7 +18,7 @@ class LinkedOrderService:
 
     def __init__(
         self,
-        exchange: BinanceClient,
+        exchange: ExchangeClient,
         state_manager: StateManager,
     ) -> None:
         self._exchange = exchange

@@ -17,7 +17,7 @@ _MAX_RETRIES = 3
 _RETRY_BACKOFF_S = 2.0
 
 
-class _SynthesizerOutputSchema(BaseModel):
+class SynthesizerOutputSchema(BaseModel):
     """Simplified output schema for the LLM agent.
 
     Uses float instead of Decimal and omits generated_at so the tool
@@ -109,7 +109,7 @@ class SentimentSynthesizer:
 
     def __init__(
         self,
-        agent: Agent[None, _SynthesizerOutputSchema],
+        agent: Agent[None, SynthesizerOutputSchema],
         prompt_loader: SynthesisPromptRenderer,
     ) -> None:
         self._agent = agent

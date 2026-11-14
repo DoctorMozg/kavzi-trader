@@ -88,11 +88,13 @@ class TestFuturesMarketData:
     async def test_paper_client_uses_futures_ticker(self) -> None:
         with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
             paper = PaperExchangeClient()
-        paper.client = MagicMock(
+        paper._market_data.client = MagicMock(
             futures_ticker=AsyncMock(return_value=_FUTURES_TICKER),
         )
 
         ticker = await paper.get_ticker("BTCUSDT")
 
-        paper.client.futures_ticker.assert_awaited_once_with(symbol="BTCUSDT")
+        paper._market_data.client.futures_ticker.assert_awaited_once_with(
+            symbol="BTCUSDT"
+        )
         assert paper._last_prices["BTCUSDT"] == ticker.last_price

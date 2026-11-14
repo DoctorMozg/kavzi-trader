@@ -1,6 +1,6 @@
 import logging
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.execution_result import ExecutionResultSchema
 from kavzi_trader.domain.order_enums import OrderStatus
@@ -17,7 +17,7 @@ class UnfilledEntryResolver:
 
     def __init__(
         self,
-        exchange: BinanceClient,
+        exchange: ExchangeClient,
         state_manager: StateManager,
         fill_handler: FillHandler,
         pending_entries: PendingEntryManager,

@@ -1,0 +1,44 @@
+from datetime import UTC, datetime
+from decimal import Decimal
+
+import pytest
+
+from kavzi_trader.domain.order_enums import OrderSide
+from kavzi_trader.domain.state_schemas import (
+    PositionManagementConfigSchema,
+    PositionSchema,
+)
+
+
+def _position(side: str) -> PositionSchema:
+    now = datetime.now(UTC)
+    return PositionSchema.model_validate(
+        {
+            "id": "p1",
+            "symbol": "BTCUSDT",
+            "side": side,
+            "quantity": Decimal(1),
+            "entry_price": Decimal(100),
+            "stop_loss": Decimal(95),
+            "take_profit": Decimal(110),
+            "current_stop_loss": Decimal(95),
+            "management_config": PositionManagementConfigSchema(),
+            "opened_at": now,
+            "updated_at": now,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("side", "expected"),
+    [("LONG", OrderSide.SELL), ("SHORT", OrderSide.BUY)],
+)
+def test_exit_side_is_opposite_of_position_side(
+    side: str,
+    expected: OrderSide,
+) -> None:
+    assert _position(side).exit_side == expected
+
+
+def test_exit_side_is_not_serialized() -> None:
+    assert "exit_side" not in _position("LONG").model_dump()

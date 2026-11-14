@@ -1,11 +1,10 @@
 import logging
 from decimal import Decimal
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.execution_result import ExecutionResultSchema
-from kavzi_trader.domain.order_enums import OrderSide, OrderStatus, OrderType
-from kavzi_trader.domain.state_schemas import PositionSchema
+from kavzi_trader.domain.order_enums import OrderStatus, OrderType
 from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.spine.execution.close_recorder import PositionCloseRecorder
@@ -33,7 +32,7 @@ class ExecutionEngine:
 
     def __init__(
         self,
-        exchange: BinanceClient,
+        exchange: ExchangeClient,
         state_manager: StateManager,
         risk_validator: DynamicRiskValidator,
         staleness_checker: StalenessChecker,
@@ -96,6 +95,11 @@ class ExecutionEngine:
             self._fill_handler,
             self._pending_entries,
         )
+
+    @property
+    def protective_orders(self) -> ProtectiveOrderPlacer:
+        """Placer the reconciler uses to restore missing SL/TP legs."""
+        return self._placer
 
     def _leverage_for(self, symbol: str) -> int:
         # Mirrors the leverage trade.py sets on the exchange for each symbol.
@@ -303,20 +307,6 @@ class ExecutionEngine:
         """
         await self._pending_entries.sweep(now_ms)
 
-    async def _place_protective_subset(
-        self,
-        position: PositionSchema,
-        *,
-        place_stop_loss: bool,
-        place_take_profit: bool,
-    ) -> None:
-        """Reconciler recovery entry point; see ProtectiveOrderPlacer.place_subset."""
-        await self._placer.place_subset(
-            position,
-            place_stop_loss=place_stop_loss,
-            place_take_profit=place_take_profit,
-        )
-
     async def _close_position(
         self,
         decision: DecisionMessageSchema,
@@ -331,7 +321,7 @@ class ExecutionEngine:
         if position is None:
             logger.error("No open position found for %s", decision.symbol)
             return self._rejected(decision, f"No open position for {decision.symbol}")
-        side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        side = position.exit_side
         try:
             order_response = await self._exchange.create_order(
                 symbol=decision.symbol,

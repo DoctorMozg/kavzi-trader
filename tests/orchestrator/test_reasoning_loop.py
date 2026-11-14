@@ -641,8 +641,8 @@ def test_graduated_cooldown_low_confluence() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
-    assert loop._compute_rejection_cooldown(1) == 9
-    assert loop._compute_rejection_cooldown(2) == 9
+    assert loop._cooldowns.compute_rejection_cooldown(1) == 9
+    assert loop._cooldowns.compute_rejection_cooldown(2) == 9
 
 
 def test_graduated_cooldown_reject_band_high_side() -> None:
@@ -655,7 +655,7 @@ def test_graduated_cooldown_reject_band_high_side() -> None:
         redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
-    assert loop._compute_rejection_cooldown(3) == 6
+    assert loop._cooldowns.compute_rejection_cooldown(3) == 6
 
 
 def _make_analyst_decision(
@@ -689,11 +689,11 @@ def test_analyst_cooldown_reject_band_escalates() -> None:
         confluence_score=2,
     )
 
-    loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
+    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 1
     assert loop._state.cooldown("BTCUSDT", "LONG") == 9  # base=9 * mult=1
 
-    loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
+    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 2
     assert loop._state.cooldown("BTCUSDT", "LONG") == 18  # base=9 * mult=2
 
@@ -716,7 +716,9 @@ def test_analyst_cooldown_borderline_band_no_escalation() -> None:
             direction="LONG",
             confluence_score=score,
         )
-        loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
+        loop._cooldowns.apply_analyst_cooldown(
+            "BTCUSDT", analyst, VolatilityRegime.NORMAL
+        )
         assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
         assert (
             loop._state.cooldown("BTCUSDT", "LONG") == 1
@@ -738,7 +740,7 @@ def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
         direction="LONG",
         confluence_score=9,
     )
-    loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
+    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
 
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
     assert loop._state.cooldown("BTCUSDT", "LONG") == 1
@@ -764,7 +766,7 @@ def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
         direction="LONG",
         confluence_score=7,
     )
-    loop._apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
+    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
 
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
 
@@ -892,7 +894,7 @@ def test_analyst_cooldown_borderline_uses_regime_gate(
         confluence_score=6,
     )
 
-    loop._apply_analyst_cooldown("BTCUSDT", analyst, regime)
+    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, regime)
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
     # Every regime funnels an invalid setup at score=6 into the borderline
     # cooldown because the NORMAL branch only fires when setup_valid=True.
@@ -1063,14 +1065,14 @@ def test_consecutive_rejections_escalate_cooldown() -> None:
 
     # First rejection: confluence=2 → base=9, multiplier=min(1,5)=1
     count = loop._state.bump_rejection("BTCUSDT", "LONG")
-    base = loop._compute_rejection_cooldown(2)
-    multiplier = min(count, loop._max_rejection_multiplier)
+    base = loop._cooldowns.compute_rejection_cooldown(2)
+    multiplier = min(count, loop._cooldowns.max_rejection_multiplier)
     assert base == 9
     assert base * multiplier == 9  # 9 * 1
 
     # Second rejection: multiplier=min(2,5)=2
     count = loop._state.bump_rejection("BTCUSDT", "LONG")
-    multiplier = min(count, loop._max_rejection_multiplier)
+    multiplier = min(count, loop._cooldowns.max_rejection_multiplier)
     assert base * multiplier == 18  # 9 * 2
 
     # Sixth rejection: capped at 5
@@ -1078,7 +1080,7 @@ def test_consecutive_rejections_escalate_cooldown() -> None:
     for _ in range(5 - loop._state.consecutive_rejections("BTCUSDT", "LONG")):
         loop._state.bump_rejection("BTCUSDT", "LONG")
     count = loop._state.bump_rejection("BTCUSDT", "LONG")
-    multiplier = min(count, loop._max_rejection_multiplier)
+    multiplier = min(count, loop._cooldowns.max_rejection_multiplier)
     assert base * multiplier == 45  # 9 * 5 (capped)
 
 
@@ -1103,8 +1105,8 @@ def test_consecutive_rejections_reset_on_valid_analyst() -> None:
 
     # Next rejection starts fresh from multiplier=1
     count = loop._state.bump_rejection("BTCUSDT", "LONG")
-    base = loop._compute_rejection_cooldown(2)
-    multiplier = min(count, loop._max_rejection_multiplier)
+    base = loop._cooldowns.compute_rejection_cooldown(2)
+    multiplier = min(count, loop._cooldowns.max_rejection_multiplier)
     assert multiplier == 1
     assert base * multiplier == 9
 
@@ -1125,7 +1127,7 @@ def test_direction_aware_cooldown_allows_opposite_direction() -> None:
     loop._state.set_cooldown("TAOUSDT", "LONG", 0)
 
     # tick_cooldowns should return False (not all blocked)
-    assert loop._tick_cooldowns("TAOUSDT") is False
+    assert loop._cooldowns.tick("TAOUSDT") is False
 
 
 def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
@@ -1144,7 +1146,7 @@ def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
     loop._state.set_cooldown("TAOUSDT", "SHORT", 10)
 
     # Should block
-    assert loop._tick_cooldowns("TAOUSDT") is True
+    assert loop._cooldowns.tick("TAOUSDT") is True
     # Cooldowns should have decremented
     assert loop._state.cooldown("TAOUSDT", "LONG") == 4
     assert loop._state.cooldown("TAOUSDT", "SHORT") == 9
@@ -1166,8 +1168,8 @@ def test_neutral_rejection_blocks_both_directions() -> None:
     cooldown_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
     for d in cooldown_dirs:
         count = loop._state.bump_rejection("BTCUSDT", d)
-        base = loop._compute_rejection_cooldown(3)  # top of reject band
-        multiplier = min(count, loop._max_rejection_multiplier)
+        base = loop._cooldowns.compute_rejection_cooldown(3)  # top of reject band
+        multiplier = min(count, loop._cooldowns.max_rejection_multiplier)
         loop._state.set_cooldown("BTCUSDT", d, base * multiplier)
 
     assert loop._state.cooldown("BTCUSDT", "LONG") == 6  # base=6 * mult=1
@@ -1209,7 +1211,7 @@ def test_consecutive_waits_apply_cooldown() -> None:
 
     # Simulate 5 consecutive WAITs (threshold=5)
     for _ in range(5):
-        loop._track_consecutive_waits("TONUSDT", result)
+        loop._cooldowns.track_consecutive_waits("TONUSDT", result)
 
     assert loop._state.consecutive_waits("TONUSDT", "LONG") == 5
     assert loop._state.cooldown("TONUSDT", "LONG") > 0
@@ -1252,7 +1254,7 @@ def test_consecutive_waits_escalate() -> None:
 
     # 7 consecutive WAITs (threshold=5, base=2)
     for _ in range(7):
-        loop._track_consecutive_waits("TONUSDT", result)
+        loop._cooldowns.track_consecutive_waits("TONUSDT", result)
 
     assert loop._state.consecutive_waits("TONUSDT", "LONG") == 7
     # count=7, excess=7-5+1=3, cooldown=min(2*3, 12)=6
@@ -1260,7 +1262,7 @@ def test_consecutive_waits_escalate() -> None:
 
     # Push to cap (15+ waits)
     for _ in range(8):
-        loop._track_consecutive_waits("TONUSDT", result)
+        loop._cooldowns.track_consecutive_waits("TONUSDT", result)
 
     assert loop._state.consecutive_waits("TONUSDT", "LONG") == 15
     # excess=15-5+1=11, cooldown=min(2*11, 12)=12
@@ -1278,8 +1280,8 @@ def test_consecutive_waits_no_cooldown_below_threshold() -> None:
     )
     result = _make_wait_result("LONG")
 
-    loop._track_consecutive_waits("TONUSDT", result)
-    loop._track_consecutive_waits("TONUSDT", result)
+    loop._cooldowns.track_consecutive_waits("TONUSDT", result)
+    loop._cooldowns.track_consecutive_waits("TONUSDT", result)
 
     assert loop._state.consecutive_waits("TONUSDT", "LONG") == 2
     assert loop._state.cooldown("TONUSDT", "LONG") == 0
@@ -1376,10 +1378,10 @@ def test_geometry_reject_counter_increments_on_each_reject() -> None:
     )
     result = _make_geometry_reject_result()
 
-    loop._track_geometry_rejects("BTCUSDT", result)
+    loop._cooldowns.track_geometry_rejects("BTCUSDT", result)
     assert loop._state.geometry_rejects("BTCUSDT") == 1
 
-    loop._track_geometry_rejects("BTCUSDT", result)
+    loop._cooldowns.track_geometry_rejects("BTCUSDT", result)
     assert loop._state.geometry_rejects("BTCUSDT") == 2
 
 
@@ -1404,7 +1406,7 @@ def test_geometry_reject_cooldown_applied_at_threshold() -> None:
     result = _make_geometry_reject_result()
 
     for _ in range(3):
-        loop._track_geometry_rejects("BTCUSDT", result)
+        loop._cooldowns.track_geometry_rejects("BTCUSDT", result)
 
     assert loop._state.cooldown("BTCUSDT", "LONG") == 4
     assert loop._state.cooldown("BTCUSDT", "SHORT") == 4
@@ -1430,8 +1432,8 @@ def test_geometry_reject_counter_clears_on_successful_trader() -> None:
     )
 
     reject_result = _make_geometry_reject_result()
-    loop._track_geometry_rejects("BTCUSDT", reject_result)
-    loop._track_geometry_rejects("BTCUSDT", reject_result)
+    loop._cooldowns.track_geometry_rejects("BTCUSDT", reject_result)
+    loop._cooldowns.track_geometry_rejects("BTCUSDT", reject_result)
     assert loop._state.geometry_rejects("BTCUSDT") == 2
 
     success_result = PipelineResult(
@@ -1446,7 +1448,7 @@ def test_geometry_reject_counter_clears_on_successful_trader() -> None:
         trader_deps=_build_deps(),
         trader_stop_reason="ok",
     )
-    loop._track_geometry_rejects("BTCUSDT", success_result)
+    loop._cooldowns.track_geometry_rejects("BTCUSDT", success_result)
 
     assert loop._state.geometry_rejects("BTCUSDT") == 0
 

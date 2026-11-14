@@ -14,6 +14,9 @@ from kavzi_trader.spine.risk.schemas import (
     VolatilityRegimeSchema,
 )
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
+from kavzi_trader.spine.risk.trade_validation_params_schema import (
+    TradeValidationParamsSchema,
+)
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 
@@ -43,19 +46,20 @@ class DynamicRiskValidator:
 
     async def validate_trade(
         self,
-        symbol: str,
-        side: Literal["LONG", "SHORT"],
-        entry_price: Decimal,
-        stop_loss: Decimal,
-        take_profit: Decimal,
-        current_atr: Decimal,
-        atr_history: list[Decimal],
+        params: TradeValidationParamsSchema,
         state_manager: StateManager,
-        leverage: int = 1,
-        confidence: Decimal | None = None,
-        symbol_tier: str = "TIER_2",
-        size_multiplier: Decimal = Decimal(1),
     ) -> RiskValidationResultSchema:
+        symbol = params.symbol
+        side = params.side
+        entry_price = params.entry_price
+        stop_loss = params.stop_loss
+        take_profit = params.take_profit
+        current_atr = params.current_atr
+        atr_history = params.atr_history
+        leverage = params.leverage
+        confidence = params.confidence
+        symbol_tier = params.symbol_tier
+        size_multiplier = params.size_multiplier
         rejection_reasons: list[str] = []
         warnings: list[str] = []
 

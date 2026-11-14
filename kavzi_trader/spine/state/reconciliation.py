@@ -4,7 +4,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.domain.order_response import OrderResponseSchema
 from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
 from kavzi_trader.spine.state.account_store import AccountStore
@@ -49,7 +49,7 @@ class _ProtectiveOrderRecoverySchema(BaseModel):
 class ReconciliationService:
     def __init__(
         self,
-        exchange_client: BinanceClient,
+        exchange_client: ExchangeClient,
         position_store: PositionStore,
         order_store: OrderStore,
         account_store: AccountStore,

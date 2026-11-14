@@ -1,8 +1,8 @@
 import logging
 from decimal import Decimal
 
-from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.domain.order_enums import OrderSide, OrderType
+from kavzi_trader.api.exchange_client import ExchangeClient
+from kavzi_trader.domain.order_enums import OrderType
 from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.spine.execution.close_recorder import PositionCloseRecorder
@@ -17,7 +17,7 @@ class EmergencyCloser:
 
     def __init__(
         self,
-        exchange: BinanceClient,
+        exchange: ExchangeClient,
         state_manager: StateManager,
         events: ExecutionEventRecorder,
         close_recorder: PositionCloseRecorder | None,
@@ -28,7 +28,7 @@ class EmergencyCloser:
         self._close_recorder = close_recorder
 
     async def close(self, position: PositionSchema) -> None:
-        close_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        close_side = position.exit_side
         exit_price: Decimal | None = None
         try:
             order_response = await self._exchange.create_order(

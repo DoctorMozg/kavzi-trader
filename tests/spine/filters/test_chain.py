@@ -16,6 +16,9 @@ from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.filters.correlation import CorrelationFilter
 from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
+from kavzi_trader.spine.filters.filter_chain_params_schema import (
+    FilterChainParamsSchema,
+)
 from kavzi_trader.spine.filters.funding import FundingRateFilter
 from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
@@ -41,13 +44,17 @@ async def test_chain_allows_and_returns_confluence(
     )
 
     result = await chain.evaluate(
-        symbol="BTCUSDT",
-        side="LONG",
-        candle=sample_candle,
-        indicators=sample_indicators,
-        order_flow=sample_order_flow,
-        positions=[],
-        atr_history=[Decimal(5)] * 10,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "BTCUSDT",
+                "side": "LONG",
+                "candle": sample_candle,
+                "indicators": sample_indicators,
+                "order_flow": sample_order_flow,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+            }
+        ),
     )
 
     assert result.is_allowed is True, "Expected chain to allow trade"
@@ -76,13 +83,17 @@ async def test_chain_blocks_on_funding(
     )
 
     result = await chain.evaluate(
-        symbol="BTCUSDT",
-        side="LONG",
-        candle=sample_candle,
-        indicators=sample_indicators,
-        order_flow=crowded,
-        positions=[],
-        atr_history=[Decimal(5)] * 10,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "BTCUSDT",
+                "side": "LONG",
+                "candle": sample_candle,
+                "indicators": sample_indicators,
+                "order_flow": crowded,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+            }
+        ),
     )
 
     assert result.is_allowed is False, "Expected chain to block on funding"
@@ -127,14 +138,18 @@ async def test_chain_bypasses_movement_on_high_confluence(
     )
 
     result = await chain.evaluate(
-        symbol="NEARUSDT",
-        side="LONG",
-        candle=_small_body_candle(),
-        indicators=sample_indicators,
-        order_flow=sample_order_flow,
-        positions=[],
-        atr_history=[Decimal(5)] * 10,
-        analyst_confluence_score=9,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "NEARUSDT",
+                "side": "LONG",
+                "candle": _small_body_candle(),
+                "indicators": sample_indicators,
+                "order_flow": sample_order_flow,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+                "analyst_confluence_score": 9,
+            }
+        ),
     )
 
     assert result.is_allowed is True
@@ -158,14 +173,18 @@ async def test_chain_still_blocks_movement_on_low_confluence(
     )
 
     result = await chain.evaluate(
-        symbol="NEARUSDT",
-        side="LONG",
-        candle=_small_body_candle(),
-        indicators=sample_indicators,
-        order_flow=sample_order_flow,
-        positions=[],
-        atr_history=[Decimal(5)] * 10,
-        analyst_confluence_score=5,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "NEARUSDT",
+                "side": "LONG",
+                "candle": _small_body_candle(),
+                "indicators": sample_indicators,
+                "order_flow": sample_order_flow,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+                "analyst_confluence_score": 5,
+            }
+        ),
     )
 
     assert result.is_allowed is False
@@ -190,13 +209,17 @@ async def test_chain_blocks_movement_when_no_confluence_provided(
     )
 
     result = await chain.evaluate(
-        symbol="NEARUSDT",
-        side="LONG",
-        candle=_small_body_candle(),
-        indicators=sample_indicators,
-        order_flow=sample_order_flow,
-        positions=[],
-        atr_history=[Decimal(5)] * 10,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "NEARUSDT",
+                "side": "LONG",
+                "candle": _small_body_candle(),
+                "indicators": sample_indicators,
+                "order_flow": sample_order_flow,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+            }
+        ),
     )
 
     assert result.is_allowed is False
@@ -254,14 +277,18 @@ async def test_fgi_bypass_high_confluence_allows(
     chain = _make_chain_with_fgi(filter_config, fgi_value=8)
 
     result = await chain.evaluate(
-        symbol="BTCUSDT",
-        side="LONG",
-        candle=sample_candle,
-        indicators=sample_indicators,
-        order_flow=sample_order_flow,
-        positions=[],
-        atr_history=[Decimal(5)] * 10,
-        analyst_confluence_score=10,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "BTCUSDT",
+                "side": "LONG",
+                "candle": sample_candle,
+                "indicators": sample_indicators,
+                "order_flow": sample_order_flow,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+                "analyst_confluence_score": 10,
+            }
+        ),
     )
 
     assert result.is_allowed is True
@@ -279,14 +306,18 @@ async def test_fgi_still_blocks_low_confluence(
     chain = _make_chain_with_fgi(filter_config, fgi_value=8)
 
     result = await chain.evaluate(
-        symbol="BTCUSDT",
-        side="LONG",
-        candle=sample_candle,
-        indicators=sample_indicators,
-        order_flow=sample_order_flow,
-        positions=[],
-        atr_history=[Decimal(5)] * 10,
-        analyst_confluence_score=7,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "BTCUSDT",
+                "side": "LONG",
+                "candle": sample_candle,
+                "indicators": sample_indicators,
+                "order_flow": sample_order_flow,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+                "analyst_confluence_score": 7,
+            }
+        ),
     )
 
     assert result.is_allowed is False
@@ -304,13 +335,17 @@ async def test_fgi_no_confluence_still_blocks(
     chain = _make_chain_with_fgi(filter_config, fgi_value=8)
 
     result = await chain.evaluate(
-        symbol="BTCUSDT",
-        side="LONG",
-        candle=sample_candle,
-        indicators=sample_indicators,
-        order_flow=sample_order_flow,
-        positions=[],
-        atr_history=[Decimal(5)] * 10,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "BTCUSDT",
+                "side": "LONG",
+                "candle": sample_candle,
+                "indicators": sample_indicators,
+                "order_flow": sample_order_flow,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+            }
+        ),
     )
 
     assert result.is_allowed is False
@@ -352,13 +387,17 @@ async def test_chain_size_multiplier_combines_weekend_and_funding(
     chain = _make_chain(filter_config, now=_SATURDAY_NOON)
 
     result = await chain.evaluate(
-        symbol="BTCUSDT",
-        side="LONG",
-        candle=sample_candle,
-        indicators=sample_indicators,
-        order_flow=sample_order_flow,
-        positions=[],
-        atr_history=[Decimal(5)] * 10,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "BTCUSDT",
+                "side": "LONG",
+                "candle": sample_candle,
+                "indicators": sample_indicators,
+                "order_flow": sample_order_flow,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+            }
+        ),
     )
 
     assert result.is_allowed is True
@@ -379,13 +418,17 @@ async def test_chain_size_multiplier_excludes_regime_multiplier(
     )
 
     result = await chain.evaluate(
-        symbol="BTCUSDT",
-        side="LONG",
-        candle=sample_candle,
-        indicators=sample_indicators,
-        order_flow=flat_funding,
-        positions=[],
-        atr_history=_HIGH_ATR_HISTORY,
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "BTCUSDT",
+                "side": "LONG",
+                "candle": sample_candle,
+                "indicators": sample_indicators,
+                "order_flow": flat_funding,
+                "positions": [],
+                "atr_history": _HIGH_ATR_HISTORY,
+            }
+        ),
     )
 
     liquidity = LiquidityFilter(filter_config).evaluate(_WEDNESDAY_NOON)
@@ -412,8 +455,12 @@ async def test_chain_extreme_allows_tier1_and_blocks_tier2(
         "atr_history": _EXTREME_ATR_HISTORY,
     }
 
-    tier1 = await chain.evaluate(**common, symbol_tier="TIER_1")
-    tier2 = await chain.evaluate(**common, symbol_tier="TIER_2")
+    tier1 = await chain.evaluate(
+        FilterChainParamsSchema.model_validate({**common, "symbol_tier": "TIER_1"})
+    )
+    tier2 = await chain.evaluate(
+        FilterChainParamsSchema.model_validate({**common, "symbol_tier": "TIER_2"})
+    )
 
     assert tier1.is_allowed is True
     assert tier1.volatility_regime == VolatilityRegime.EXTREME
@@ -443,8 +490,16 @@ async def test_chain_extreme_confidence_override_matches_validator(
         "symbol_tier": "TIER_2",
     }
 
-    confident = await chain.evaluate(**common, confidence=Decimal("0.85"))
-    unsure = await chain.evaluate(**common, confidence=Decimal("0.70"))
+    confident = await chain.evaluate(
+        FilterChainParamsSchema.model_validate(
+            {**common, "confidence": Decimal("0.85")}
+        )
+    )
+    unsure = await chain.evaluate(
+        FilterChainParamsSchema.model_validate(
+            {**common, "confidence": Decimal("0.70")}
+        )
+    )
 
     assert confident.is_allowed is True
     assert unsure.is_allowed is False

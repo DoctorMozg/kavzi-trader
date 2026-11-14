@@ -3,10 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, cast
-from uuid import uuid4
 
 from kavzi_trader.brain.agent.router import (
     AgentRouter,
@@ -14,25 +11,27 @@ from kavzi_trader.brain.agent.router import (
     PipelineResult,
 )
 from kavzi_trader.brain.confluence_thresholds import (
-    CONFLUENCE_REJECT_MAX,
     confluence_enter_min_for_regime,
 )
-from kavzi_trader.brain.geometry.schemas import TradeGeometrySchema
-from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
-from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
-from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
-from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.infra.redis_client import RedisStateClient
+from kavzi_trader.orchestrator.loops.cooldown_policy import CooldownPolicy
+from kavzi_trader.orchestrator.loops.decision_message_builder import (
+    DecisionMessageBuilder,
+)
+from kavzi_trader.orchestrator.loops.decision_publisher import DecisionPublisher
 from kavzi_trader.orchestrator.loops.reasoning_config import (
     ReasoningLoopConfigSchema,
 )
 from kavzi_trader.orchestrator.loops.symbol_state import SymbolStateTracker
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
+from kavzi_trader.spine.filters.filter_chain_params_schema import (
+    FilterChainParamsSchema,
+)
 from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
 )
@@ -51,7 +50,6 @@ class ReasoningLoop:
         router: AgentRouter,
         deps_provider: DependenciesProvider,
         redis_client: RedisStateClient,
-        queue_key: str = "kt:decisions:pending",
         interval_s: int = 5,
         ui_recorder: UiEventRecorder | None = None,
         state_manager: StateManager | None = None,
@@ -65,17 +63,25 @@ class ReasoningLoop:
         self._symbols = symbols
         self._router = router
         self._deps_provider = deps_provider
-        self._redis_client = redis_client
-        self._queue_key = queue_key
         self._interval_s = interval_s
         self._ui_recorder = ui_recorder
         self._state_manager = state_manager
-        self._analyst_cooldown_cycles = analyst_cooldown_cycles
         self._filter_chain = filter_chain
-        self._position_management = position_management
-        self._max_rejection_multiplier = max_consecutive_rejection_multiplier
         self._reasoning_config = reasoning_config or ReasoningLoopConfigSchema()
         self._state = SymbolStateTracker()
+        self._cooldowns = CooldownPolicy(
+            self._state,
+            self._reasoning_config,
+            analyst_cooldown_cycles,
+            max_consecutive_rejection_multiplier,
+        )
+        self._publisher = DecisionPublisher(
+            redis_client,
+            DecisionMessageBuilder(
+                position_management,
+                router.record_trader_validation_failure,
+            ),
+        )
         # Tracks the number of consecutive cycles that produced zero
         # INTERESTING scouts. Drives the progressive idle sleep ramp; any
         # INTERESTING cycle resets the counter.
@@ -227,61 +233,14 @@ class ReasoningLoop:
     ) -> set[str]:
         return {p.symbol for p in cached_positions}
 
-    def _is_suspended(self, symbol: str) -> bool:
-        """Check if a symbol is dynamically suspended due to consecutive SKIPs."""
-        skip_interval = self._state.skip_eval_interval(symbol)
-        if skip_interval <= 0:
-            return False
-        skip_count = self._state.consecutive_skips(symbol)
-        if skip_count % skip_interval != 0:
-            self._state.bump_skip(symbol)
-            return True
-        return False
-
-    def _track_skip_suspension(self, symbol: str, verdict: str) -> None:
-        """Update dynamic suspension state based on scout verdict."""
-        if verdict == "SKIP":
-            count = self._state.bump_skip(symbol)
-            if count >= self._reasoning_config.skip_suspension_threshold:
-                # Default fallback of 1 preserves the doubling cadence
-                # on first suspension (1 * 2 = 2 → max(2, 2) = 2).
-                current_interval = self._state.skip_eval_interval(symbol) or 1
-                new_interval = min(
-                    max(current_interval * 2, 2),
-                    self._reasoning_config.max_skip_eval_interval,
-                )
-                self._state.set_skip_eval_interval(symbol, new_interval)
-                logger.info(
-                    "Symbol %s suspended: %d consecutive SKIPs, eval every %d cycles",
-                    symbol,
-                    count,
-                    new_interval,
-                    extra={"symbol": symbol},
-                )
-        else:
-            self._state.clear_skip_suspension(symbol)
-
-    def _tick_cooldowns(self, symbol: str) -> bool:
-        """Decrement direction cooldowns. Return True if ALL directions are blocked."""
-        long_cd = self._state.cooldown(symbol, "LONG")
-        short_cd = self._state.cooldown(symbol, "SHORT")
-
-        if long_cd > 0:
-            self._state.decrement_cooldown(symbol, "LONG")
-        if short_cd > 0:
-            self._state.decrement_cooldown(symbol, "SHORT")
-
-        # Only skip when both directions are on cooldown
-        return long_cd > 0 and short_cd > 0
-
     def _should_skip_symbol(
         self,
         symbol: str,
         cached_positions: list[PositionSchema],
     ) -> bool:
-        if self._tick_cooldowns(symbol):
+        if self._cooldowns.tick(symbol):
             return True
-        if self._is_suspended(symbol):
+        if self._cooldowns.is_suspended(symbol):
             return True
         if not self._deps_provider.indicators_available(symbol):
             return True
@@ -312,19 +271,19 @@ class ReasoningLoop:
                 },
             )
 
-        self._track_skip_suspension(symbol, result.scout.verdict)
+        self._cooldowns.track_skip_suspension(symbol, result.scout.verdict)
 
         if result.analyst is not None:
-            self._apply_analyst_cooldown(
+            self._cooldowns.apply_analyst_cooldown(
                 symbol,
                 result.analyst,
                 self._regime_of(result),
             )
 
-        self._track_geometry_rejects(symbol, result)
+        self._cooldowns.track_geometry_rejects(symbol, result)
 
         if not self._should_enqueue(result):
-            self._track_consecutive_waits(symbol, result)
+            self._cooldowns.track_consecutive_waits(symbol, result)
             return result.scout.verdict == "INTERESTING"
 
         filter_result = await self._run_filter_chain(result, cached_positions)
@@ -339,18 +298,11 @@ class ReasoningLoop:
         size_multiplier = (
             filter_result.size_multiplier if filter_result is not None else Decimal(1)
         )
-        if not await self._enqueue_decision(result, size_multiplier):
+        if not await self._publisher.publish(result, size_multiplier):
             # No trade went out, so the symbol must stay eligible next cycle.
             return True
 
-        # After a successful enqueue, cool down both directions and reset
-        # WAIT/geometry counters.
-        post_trade_cd = self._analyst_cooldown_cycles * 3
-        self._state.set_cooldown(symbol, "LONG", post_trade_cd)
-        self._state.set_cooldown(symbol, "SHORT", post_trade_cd)
-        self._state.clear_waits(symbol, "LONG")
-        self._state.clear_waits(symbol, "SHORT")
-        self._state.clear_geometry_rejects(symbol)
+        self._cooldowns.start_post_trade_cooldown(symbol)
         return True
 
     @staticmethod
@@ -365,155 +317,6 @@ class ReasoningLoop:
         if result.trader_deps is None:
             return VolatilityRegime.NORMAL
         return result.trader_deps.volatility_regime
-
-    def _apply_analyst_cooldown(
-        self,
-        symbol: str,
-        analyst: AnalystDecisionSchema,
-        volatility_regime: VolatilityRegime,
-    ) -> None:
-        """Apply hysteresis-banded cooldown based on Analyst verdict.
-
-        Three bands avoid flip-flopping at the old hard cutoff:
-          * score <= 3 + invalid → escalating multiplier, counts toward
-            the symbol's per-direction consecutive_rejections counter.
-          * borderline (4-5) or LLM rejects high confluence (>=6 + invalid) →
-            light single-cycle cooldown, no counter escalation. The next bar
-            close naturally retriggers the Analyst.
-          * valid setup at/above entry gate → clear lingering rejection counts.
-
-        The "borderline vs valid" boundary is the regime-specific entry
-        gate. NORMAL regimes keep the historical 6-point cutoff; HIGH and
-        EXTREME widen the borderline band so a score of 6 under HIGH is
-        treated as borderline instead of enqueable.
-        """
-        score = analyst.confluence_score
-        setup_valid = analyst.setup_valid
-        direction = analyst.direction
-        cooldown_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
-        regime_gate = confluence_enter_min_for_regime(volatility_regime)
-
-        if not setup_valid and score <= CONFLUENCE_REJECT_MAX:
-            for d in cooldown_dirs:
-                count = self._state.bump_rejection(symbol, d)
-                base_cooldown = self._compute_rejection_cooldown(score)
-                multiplier = min(count, self._max_rejection_multiplier)
-                self._state.set_cooldown(symbol, d, base_cooldown * multiplier)
-                logger.debug(
-                    "Consecutive rejection %d for %s %s: cooldown=%d (base=%d x %d)",
-                    count,
-                    symbol,
-                    d,
-                    base_cooldown * multiplier,
-                    base_cooldown,
-                    multiplier,
-                )
-            return
-
-        if not setup_valid or score < regime_gate:
-            for d in cooldown_dirs:
-                existing = self._state.cooldown(symbol, d)
-                self._state.set_cooldown(
-                    symbol,
-                    d,
-                    max(existing, self._reasoning_config.borderline_cooldown_cycles),
-                )
-            logger.debug(
-                "Borderline analyst %s direction=%s score=%d setup_valid=%s"
-                " regime=%s gate=%d → cooldown=%d (no escalation)",
-                symbol,
-                direction,
-                score,
-                setup_valid,
-                volatility_regime.value,
-                regime_gate,
-                self._reasoning_config.borderline_cooldown_cycles,
-            )
-            return
-
-        if direction == "NEUTRAL":
-            self._state.clear_rejections(symbol, "LONG")
-            self._state.clear_rejections(symbol, "SHORT")
-        else:
-            self._state.clear_rejections(symbol, direction)
-
-    def _compute_rejection_cooldown(self, confluence_score: int) -> int:
-        """Scale rejection cooldown within the aggressive band (score <= 3)."""
-        low_band = self._reasoning_config.cooldown_low_confluence_threshold
-        multiplier = 3 if confluence_score <= low_band else 2
-        cooldown = self._analyst_cooldown_cycles * multiplier
-        logger.debug(
-            "Rejection cooldown: confluence=%d multiplier=%d cooldown=%d cycles",
-            confluence_score,
-            multiplier,
-            cooldown,
-        )
-        return cooldown
-
-    def _track_geometry_rejects(
-        self,
-        symbol: str,
-        result: PipelineResult,
-    ) -> None:
-        """Apply a cooldown when the Trader geometry check fails repeatedly.
-
-        Geometry rejects fire when the LLM picks LONG/SHORT but the computed
-        SL/TP violates the R:R constraint — a consistent pattern in a given
-        regime means the symbol isn't tradeable right now regardless of how
-        many times we ask the LLM. Suppressing calls for a few cycles prevents
-        burning LLM budget on identical unprofitable setups.
-        """
-        if result.trader_stop_reason == "geometry_reject":
-            count = self._state.bump_geometry_reject(symbol)
-            cfg = self._reasoning_config
-            if count >= cfg.geometry_reject_cooldown_threshold:
-                self._state.set_cooldown(
-                    symbol, "LONG", cfg.geometry_reject_cooldown_cycles
-                )
-                self._state.set_cooldown(
-                    symbol, "SHORT", cfg.geometry_reject_cooldown_cycles
-                )
-                self._state.clear_geometry_rejects(symbol)
-                logger.info(
-                    "Geometry reject cooldown for %s: %d consecutive rejects"
-                    " → both directions suppressed for %d cycles",
-                    symbol,
-                    count,
-                    cfg.geometry_reject_cooldown_cycles,
-                    extra={"symbol": symbol},
-                )
-        elif result.trader_stop_reason in {"ok", "dedup_hit"}:
-            self._state.clear_geometry_rejects(symbol)
-
-    def _track_consecutive_waits(
-        self,
-        symbol: str,
-        result: PipelineResult,
-    ) -> None:
-        """Apply escalating cooldown after repeated Trader WAITs."""
-        if result.trader is None or result.trader.action != "WAIT":
-            return
-        direction = (
-            result.analyst.direction if result.analyst is not None else "NEUTRAL"
-        )
-        wait_dirs = ["LONG", "SHORT"] if direction == "NEUTRAL" else [direction]
-        for d in wait_dirs:
-            count = self._state.bump_wait(symbol, d)
-            wait_threshold = self._reasoning_config.wait_cooldown_threshold
-            if count >= wait_threshold:
-                excess = count - wait_threshold + 1
-                cooldown = min(
-                    self._reasoning_config.wait_cooldown_base_cycles * excess,
-                    self._reasoning_config.wait_max_cooldown_cycles,
-                )
-                self._state.set_cooldown(symbol, d, cooldown)
-                logger.info(
-                    "Consecutive WAIT %d for %s %s: cooldown=%d cycles",
-                    count,
-                    symbol,
-                    d,
-                    cooldown,
-                )
 
     def _should_enqueue(self, result: PipelineResult) -> bool:
         if result.scout.verdict != "INTERESTING":
@@ -544,18 +347,21 @@ class ReasoningLoop:
         confluence_score = (
             result.analyst.confluence_score if result.analyst is not None else None
         )
-        return await self._filter_chain.evaluate(
-            symbol=deps.symbol,
-            side=cast("Literal['LONG', 'SHORT']", result.trader.action),
-            candle=deps.recent_candles[-1],
-            indicators=deps.indicators,
-            order_flow=deps.order_flow,
-            positions=cached_positions,
-            atr_history=deps.atr_history,
-            analyst_confluence_score=confluence_score,
-            symbol_tier=deps.symbol_tier,
-            confidence=Decimal(str(result.trader.confidence)),
+        params = FilterChainParamsSchema.model_validate(
+            {
+                "symbol": deps.symbol,
+                "side": result.trader.action,
+                "candle": deps.recent_candles[-1],
+                "indicators": deps.indicators,
+                "order_flow": deps.order_flow,
+                "positions": cached_positions,
+                "atr_history": deps.atr_history,
+                "analyst_confluence_score": confluence_score,
+                "symbol_tier": deps.symbol_tier,
+                "confidence": Decimal(str(result.trader.confidence)),
+            },
         )
+        return await self._filter_chain.evaluate(params)
 
     async def _report_filter_rejection(
         self,
@@ -578,63 +384,6 @@ class ReasoningLoop:
                 [r.name for r in filter_result.results if not r.is_allowed],
             )
 
-    async def _enqueue_decision(
-        self,
-        result: PipelineResult,
-        size_multiplier: Decimal = Decimal(1),
-    ) -> bool:
-        """Push the decision to the execution queue; True only if it was queued."""
-        if result.trader is None or result.trader_deps is None:
-            return False
-        now_ms = int(datetime.now(UTC).timestamp() * 1000)
-        decision = self._build_decision_message(
-            result.trader,
-            result.trader_deps,
-            now_ms,
-            geometry=result.geometry,
-            size_multiplier=size_multiplier,
-        )
-        symbol = result.trader_deps.symbol
-        if decision is None:
-            logger.warning(
-                "Skipping enqueue for %s: decision message could not be"
-                " built from Trader output (see prior error log)",
-                symbol,
-                extra={"symbol": symbol},
-            )
-            return False
-        try:
-            await self._redis_client.client.lpush(
-                self._queue_key,
-                decision.model_dump_json(),
-            )
-        except Exception:
-            logger.exception(
-                "Failed to enqueue decision for %s",
-                symbol,
-                extra={
-                    "loop": "reasoning",
-                    "symbol": symbol,
-                    "decision_id": decision.decision_id,
-                    "action": decision.action,
-                    "queue_key": self._queue_key,
-                },
-            )
-            return False
-        logger.info(
-            "Enqueuing decision for %s: action=%s confidence=%.2f decision_id=%s",
-            symbol,
-            decision.action,
-            decision.raw_confidence,
-            decision.decision_id,
-            extra={
-                "symbol": symbol,
-                "decision_id": decision.decision_id,
-                "action": decision.action,
-            },
-        )
-        return True
-
     async def _report_decisions(
         self,
         symbol: str,
@@ -649,69 +398,4 @@ class ReasoningLoop:
             result.analyst,
             result.trader,
             pipeline_ms,
-        )
-
-    def _build_decision_message(
-        self,
-        trader: TradeDecisionSchema,
-        deps: TradingDependenciesSchema,
-        snapshot_at_ms: int,
-        geometry: TradeGeometrySchema | None = None,
-        size_multiplier: Decimal = Decimal(1),
-    ) -> DecisionMessageSchema | None:
-        # Reject geometry-less actionable decisions at the Brain→Spine
-        # boundary. The router computes geometry for every LONG/SHORT it
-        # emits, so a missing geometry here means a pipeline defect — fail
-        # loud and increment the Trader circuit-breaker counter rather than
-        # fabricate prices.
-        action = trader.action
-        if action in {"LONG", "SHORT"} and geometry is None:
-            logger.error(
-                "Trader %s decision for %s arrived without computed"
-                " geometry; refusing to enqueue",
-                action,
-                deps.symbol,
-                extra={"symbol": deps.symbol, "action": action},
-            )
-            self._router.record_trader_validation_failure(deps.symbol)
-            return None
-
-        # Only LONG/SHORT/CLOSE should reach this method — WAIT is filtered
-        # by _should_enqueue upstream. A narrow cast satisfies mypy without
-        # an unreachable defensive raise.
-        typed_action = cast("Literal['LONG', 'SHORT', 'CLOSE']", action)
-
-        # For CLOSE decisions no geometry exists; the execution layer only
-        # needs a price reference, so fall back to current price.
-        if geometry is not None:
-            entry_price = geometry.entry
-            stop_loss = geometry.stop_loss
-            take_profit = geometry.take_profit
-        else:
-            entry_price = deps.current_price
-            stop_loss = entry_price
-            take_profit = entry_price
-        atr = deps.indicators.atr_14 or Decimal(0)
-
-        return DecisionMessageSchema(
-            decision_id=str(uuid4()),
-            symbol=deps.symbol,
-            action=typed_action,
-            entry_tactic=trader.entry_tactic or "IMMEDIATE",
-            entry_price=entry_price,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
-            quantity=None,
-            reasoning=trader.reasoning,
-            raw_confidence=trader.confidence,
-            calibrated_confidence=trader.confidence,
-            volatility_regime=deps.volatility_regime,
-            position_management=self._position_management,
-            created_at_ms=snapshot_at_ms,
-            expires_at_ms=snapshot_at_ms + 300_000,
-            current_atr=atr,
-            atr_history=deps.atr_history,
-            leverage=deps.leverage,
-            symbol_tier=deps.symbol_tier,
-            size_multiplier=size_multiplier,
         )

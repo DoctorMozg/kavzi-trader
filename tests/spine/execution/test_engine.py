@@ -579,7 +579,7 @@ async def test_place_protective_subset_places_only_sl() -> None:
         event_store=None,
     )
 
-    await engine._place_protective_subset(
+    await engine.protective_orders.place(
         _sample_position(),
         place_stop_loss=True,
         place_take_profit=False,
@@ -612,7 +612,7 @@ async def test_place_protective_subset_propagates_errors_without_emergency_close
     )
 
     with pytest.raises(RuntimeError, match="rate limited"):
-        await engine._place_protective_subset(
+        await engine.protective_orders.place(
             _sample_position(),
             place_stop_loss=True,
             place_take_profit=False,
@@ -780,7 +780,7 @@ async def test_engine_validates_with_symbol_specific_leverage(
 
     await engine.execute(decision_message)
 
-    assert risk_validator.validate_trade.call_args.kwargs["leverage"] == 7
+    assert risk_validator.validate_trade.call_args.args[0].leverage == 7
 
 
 @pytest.mark.asyncio

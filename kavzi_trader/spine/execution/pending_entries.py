@@ -1,6 +1,6 @@
 import logging
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.order_enums import OrderStatus
 from kavzi_trader.domain.order_response import OrderResponseSchema
@@ -16,7 +16,7 @@ class PendingEntryManager:
 
     def __init__(
         self,
-        exchange: BinanceClient,
+        exchange: ExchangeClient,
         state_manager: StateManager,
         fill_handler: FillHandler,
         expiry_ms: int,

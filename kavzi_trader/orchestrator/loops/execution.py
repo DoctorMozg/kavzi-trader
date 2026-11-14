@@ -10,6 +10,7 @@ from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.execution_result import ExecutionResultSchema
 from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.infra.redis_client import RedisStateClient
+from kavzi_trader.orchestrator.loops.decision_queue import DECISION_QUEUE_KEY
 from kavzi_trader.orchestrator.loops.position_close_reporter import (
     PositionCloseReporter,
 )
@@ -37,13 +38,11 @@ class ExecutionLoop:
         redis_client: RedisStateClient,
         engine: ExecutionEngine,
         state_manager: StateManager,
-        queue_key: str = "kt:decisions:pending",
         ui_recorder: UiEventRecorder | None = None,
     ) -> None:
         self._redis_client = redis_client
         self._engine = engine
         self._state_manager = state_manager
-        self._queue_key = queue_key
         self._ui_recorder = ui_recorder
         self._close_reporter = PositionCloseReporter(ui_recorder, "execution")
         self._last_pending_sweep_ms = 0
@@ -52,7 +51,7 @@ class ExecutionLoop:
     async def run(self) -> None:
         logger.info(
             "ExecutionLoop started, listening on queue %s",
-            self._queue_key,
+            DECISION_QUEUE_KEY,
         )
         await self._recover_in_flight()
         while True:
@@ -61,7 +60,7 @@ class ExecutionLoop:
                 # Reliable queue: the payload stays in the processing list until
                 # it is executed, so a failure never loses the decision.
                 raw = await self._redis_client.client.blmove(
-                    self._queue_key,
+                    DECISION_QUEUE_KEY,
                     _PROCESSING_KEY,
                     1,
                     "RIGHT",
@@ -76,7 +75,7 @@ class ExecutionLoop:
                     "ExecutionLoop encountered an error, continuing",
                     extra={
                         "loop": "execution",
-                        "queue_key": self._queue_key,
+                        "queue_key": DECISION_QUEUE_KEY,
                     },
                 )
                 await asyncio.sleep(0.1)
@@ -85,7 +84,7 @@ class ExecutionLoop:
         """Requeue payloads left in the processing list by a crashed run."""
         client = self._redis_client.client
         recovered = 0
-        while await client.lmove(_PROCESSING_KEY, self._queue_key, "LEFT", "RIGHT"):
+        while await client.lmove(_PROCESSING_KEY, DECISION_QUEUE_KEY, "LEFT", "RIGHT"):
             recovered += 1
         if recovered:
             logger.warning(
@@ -100,8 +99,8 @@ class ExecutionLoop:
         except Exception:
             logger.exception(
                 "Failed to parse decision payload from queue %s",
-                self._queue_key,
-                extra={"loop": "execution", "queue_key": self._queue_key},
+                DECISION_QUEUE_KEY,
+                extra={"loop": "execution", "queue_key": DECISION_QUEUE_KEY},
             )
             await self._dead_letter(raw)
             return
@@ -128,7 +127,7 @@ class ExecutionLoop:
             # Push back before removing so a crash in between duplicates
             # rather than loses the decision.
             client = self._redis_client.client
-            await client.rpush(self._queue_key, raw)
+            await client.rpush(DECISION_QUEUE_KEY, raw)
             await client.lrem(_PROCESSING_KEY, 1, raw)
             return
         self._attempts.pop(decision.decision_id, None)

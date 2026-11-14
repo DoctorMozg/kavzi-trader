@@ -2,7 +2,7 @@ import logging
 from datetime import timedelta
 from decimal import Decimal
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.commons.time_utility import milliseconds_to_datetime
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
@@ -23,7 +23,7 @@ class LiveOrderFlowFetcher:
 
     def __init__(
         self,
-        exchange: BinanceClient,
+        exchange: ExchangeClient,
         cache: MarketDataCache,
         calculator: OrderFlowCalculator,
         symbols: list[str],

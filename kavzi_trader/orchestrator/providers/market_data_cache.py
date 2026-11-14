@@ -3,7 +3,7 @@ import collections
 import logging
 from decimal import Decimal
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
@@ -68,7 +68,7 @@ class MarketDataCache:
 
     async def initialize(
         self,
-        exchange: BinanceClient,
+        exchange: ExchangeClient,
         interval: str,
     ) -> None:
         """Load historical candles via REST and compute initial indicators."""

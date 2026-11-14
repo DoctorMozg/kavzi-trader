@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal, TypedDict, cast
+from typing import Literal, TypedDict
 
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
@@ -17,7 +17,13 @@ from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.external.schemas import SentimentSummarySchema
 from kavzi_trader.indicators.htf import HtfTrendSchema, compute_htf_trend
 from kavzi_trader.orchestrator.futures_config import FuturesConfigSchema
+from kavzi_trader.orchestrator.providers.analysis_context_schema import (
+    AnalysisContextSchema,
+)
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
+from kavzi_trader.orchestrator.providers.symbol_cycle_snapshot_schema import (
+    SymbolCycleSnapshotSchema,
+)
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
@@ -61,7 +67,9 @@ class LiveDependenciesProvider:
         self._futures_config = futures_config or FuturesConfigSchema.model_validate({})
         self._external_cache = external_cache
         self._tier_registry = tier_registry
-        self._cycle_cache: dict[str, Any] = {}
+        self._cycle_cache: dict[str, SymbolCycleSnapshotSchema] = {}
+        self._cycle_account_state: AccountStateSchema | None = None
+        self._cycle_positions: list[PositionSchema] | None = None
 
     def _get_leverage(self, symbol: str) -> int:
         configured = self._futures_config.symbol_leverage.get(
@@ -84,6 +92,15 @@ class LiveDependenciesProvider:
 
     def clear_cycle_cache(self) -> None:
         self._cycle_cache.clear()
+        self._cycle_account_state = None
+        self._cycle_positions = None
+
+    def _snapshot(self, symbol: str) -> SymbolCycleSnapshotSchema:
+        snapshot = self._cycle_cache.get(symbol)
+        if snapshot is None:
+            snapshot = SymbolCycleSnapshotSchema()
+            self._cycle_cache[symbol] = snapshot
+        return snapshot
 
     def _recent_candles(
         self,
@@ -125,15 +142,14 @@ class LiveDependenciesProvider:
         return dual
 
     def _get_regime(self, symbol: str) -> VolatilityRegime:
-        key = f"regime:{symbol}"
-        if key in self._cycle_cache:
-            cached: VolatilityRegime = self._cycle_cache[key]
-            return cached
+        snapshot = self._snapshot(symbol)
+        if snapshot.regime is not None:
+            return snapshot.regime
         indicators = self._cache.get_indicators(symbol)
         atr_history = self._cache.get_atr_history(symbol)
         current_atr = (indicators.atr_14 if indicators else None) or Decimal(0)
         result = self._volatility.detect_regime(current_atr, atr_history)
-        self._cycle_cache[key] = result.regime
+        snapshot.regime = result.regime
         return result.regime
 
     def indicators_available(self, symbol: str) -> bool:
@@ -162,15 +178,7 @@ class LiveDependenciesProvider:
             atr_pct_history=self._cache.get_atr_pct_history(symbol),
         )
 
-    def _resolve_analysis_context(
-        self,
-        symbol: str,
-    ) -> tuple[
-        TechnicalIndicatorsSchema,
-        list[CandlestickSchema],
-        OrderFlowSchema | None,
-        DualConfluenceSchema,
-    ]:
+    def _resolve_analysis_context(self, symbol: str) -> AnalysisContextSchema:
         indicators = self._cache.get_indicators(symbol)
         if indicators is None:
             msg = f"Indicators not yet available for {symbol}"
@@ -183,19 +191,21 @@ class LiveDependenciesProvider:
 
         order_flow = self._cache.get_order_flow(symbol)
 
-        cache_key = f"confluence:{symbol}"
-        if cache_key in self._cycle_cache:
-            confluence: DualConfluenceSchema = self._cycle_cache[cache_key]
-        else:
-            confluence = self._evaluate_dual_confluence(
+        snapshot = self._snapshot(symbol)
+        if snapshot.confluence is None:
+            snapshot.confluence = self._evaluate_dual_confluence(
                 symbol,
                 candles[-1],
                 indicators,
                 order_flow,
             )
-            self._cycle_cache[cache_key] = confluence
 
-        return indicators, candles, order_flow, confluence
+        return AnalysisContextSchema(
+            indicators=indicators,
+            candles=candles,
+            order_flow=order_flow,
+            confluence=snapshot.confluence,
+        )
 
     def _get_htf_trend(
         self,
@@ -203,13 +213,10 @@ class LiveDependenciesProvider:
         candles: list[CandlestickSchema],
     ) -> HtfTrendSchema:
         """1h trend aggregated from the cached 15m window, cached per cycle."""
-        cache_key = f"htf:{symbol}"
-        cached = self._cycle_cache.get(cache_key)
-        if cached is not None:
-            return cast("HtfTrendSchema", cached)
-        trend = compute_htf_trend(candles)
-        self._cycle_cache[cache_key] = trend
-        return trend
+        snapshot = self._snapshot(symbol)
+        if snapshot.htf_trend is None:
+            snapshot.htf_trend = compute_htf_trend(candles)
+        return snapshot.htf_trend
 
     def _get_sentiment(self) -> SentimentSummarySchema | None:
         if self._external_cache is None:
@@ -229,9 +236,8 @@ class LiveDependenciesProvider:
         return summary
 
     async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema:
-        indicators, candles, order_flow, confluence = self._resolve_analysis_context(
-            symbol
-        )
+        context = self._resolve_analysis_context(symbol)
+        candles = context.candles
         tier_fields = self._get_tier_fields(symbol)
         return AnalystDependenciesSchema.model_validate(
             {
@@ -239,9 +245,9 @@ class LiveDependenciesProvider:
                 "current_price": self._cache.get_current_price(symbol),
                 "timeframe": self._timeframe,
                 "recent_candles": candles[-ANALYSIS_CANDLES_COUNT:],
-                "indicators": indicators,
-                "order_flow": order_flow,
-                "algorithm_confluence": confluence,
+                "indicators": context.indicators,
+                "order_flow": context.order_flow,
+                "algorithm_confluence": context.confluence,
                 "volatility_regime": self._get_regime(symbol),
                 "htf_trend": self._get_htf_trend(symbol, candles),
                 "leverage": self._get_leverage(symbol),
@@ -251,9 +257,8 @@ class LiveDependenciesProvider:
         )
 
     async def get_trader(self, symbol: str) -> TradingDependenciesSchema:
-        indicators, candles, order_flow, confluence = self._resolve_analysis_context(
-            symbol
-        )
+        context = self._resolve_analysis_context(symbol)
+        candles = context.candles
         account_state = await self._get_cached_account_state()
         open_positions = await self._get_cached_positions()
 
@@ -264,9 +269,9 @@ class LiveDependenciesProvider:
                 "current_price": self._cache.get_current_price(symbol),
                 "timeframe": self._timeframe,
                 "recent_candles": candles[-ANALYSIS_CANDLES_COUNT:],
-                "indicators": indicators,
-                "order_flow": order_flow,
-                "algorithm_confluence": confluence,
+                "indicators": context.indicators,
+                "order_flow": context.order_flow,
+                "algorithm_confluence": context.confluence,
                 "volatility_regime": self._get_regime(symbol),
                 "htf_trend": self._get_htf_trend(symbol, candles),
                 "account_state": account_state,
@@ -279,22 +284,15 @@ class LiveDependenciesProvider:
         )
 
     async def _get_cached_account_state(self) -> AccountStateSchema:
-        key = "account_state"
-        if key in self._cycle_cache:
-            cached: AccountStateSchema = self._cycle_cache[key]
-            return cached
-        state = await self._state_manager.get_account_state()
-        if state is None:
-            msg = "Account state not available"
-            raise RuntimeError(msg)
-        self._cycle_cache[key] = state
-        return state
+        if self._cycle_account_state is None:
+            state = await self._state_manager.get_account_state()
+            if state is None:
+                msg = "Account state not available"
+                raise RuntimeError(msg)
+            self._cycle_account_state = state
+        return self._cycle_account_state
 
     async def _get_cached_positions(self) -> list[PositionSchema]:
-        key = "open_positions"
-        if key in self._cycle_cache:
-            cached: list[PositionSchema] = self._cycle_cache[key]
-            return cached
-        positions = await self._state_manager.get_all_positions()
-        self._cycle_cache[key] = positions
-        return positions
+        if self._cycle_positions is None:
+            self._cycle_positions = await self._state_manager.get_all_positions()
+        return self._cycle_positions

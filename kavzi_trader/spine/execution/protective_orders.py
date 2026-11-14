@@ -1,8 +1,8 @@
 import logging
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.domain.order_enums import OrderSide, OrderType
+from kavzi_trader.domain.order_enums import OrderType
 from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.spine.execution.emergency_closer import EmergencyCloser
@@ -18,7 +18,7 @@ class ProtectiveOrderPlacer:
 
     def __init__(
         self,
-        exchange: BinanceClient,
+        exchange: ExchangeClient,
         state_manager: StateManager,
         linked_orders: LinkedOrderService,
         emergency_closer: EmergencyCloser,
@@ -31,7 +31,7 @@ class ProtectiveOrderPlacer:
         self._events = events
 
     async def place_stop_loss(self, position: PositionSchema) -> None:
-        stop_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        stop_side = position.exit_side
         stop_response = await self._exchange.create_order(
             symbol=position.symbol,
             side=stop_side,
@@ -49,7 +49,7 @@ class ProtectiveOrderPlacer:
         )
 
     async def place_take_profit(self, position: PositionSchema) -> None:
-        take_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        take_side = position.exit_side
         take_response = await self._exchange.create_order(
             symbol=position.symbol,
             side=take_side,
@@ -66,7 +66,7 @@ class ProtectiveOrderPlacer:
             extra={"symbol": position.symbol},
         )
 
-    async def place_subset(
+    async def place(
         self,
         position: PositionSchema,
         *,
@@ -91,7 +91,7 @@ class ProtectiveOrderPlacer:
 
         Initial-fill semantics: SL failure escalates to emergency-close because
         the position has no live protection yet. Reconciler-driven retries MUST
-        use `place_subset` instead — that path keeps the live leg and
+        use `place` instead — that path keeps the live leg and
         classifies failures as unrecoverable rather than auto-closing.
         """
         try:

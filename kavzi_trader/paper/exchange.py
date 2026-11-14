@@ -25,6 +25,7 @@ from kavzi_trader.api.common.exceptions import (
 )
 from kavzi_trader.api.common.models import TickerSchema
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.order_enums import (
     OrderSide,
     OrderStatus,
@@ -64,12 +65,11 @@ class _PaperPositionTrackerSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-class PaperExchangeClient(BinanceClient):
-    """Binance client that simulates USDT-M futures order execution.
+class PaperExchangeClient:
+    """ExchangeClient that simulates USDT-M futures order execution.
 
-    Inherits all read-only market data methods from BinanceClient (get_ticker,
-    get_klines, get_orderbook, etc.) which hit real Binance public endpoints.
-    Order and account methods are overridden to simulate fills locally.
+    Market data methods delegate to a keyless BinanceClient hitting real Binance
+    public endpoints. Order and account methods simulate fills locally.
 
     Tracks positions with margin-based accounting. Both LONG and SHORT
     positions are supported. Opening deducts initial margin from balance;
@@ -81,7 +81,7 @@ class PaperExchangeClient(BinanceClient):
         initial_balance_usdt: Decimal = Decimal(10000),
         commission_rate: Decimal = Decimal("0.001"),
     ) -> None:
-        super().__init__(api_key="", api_secret="")
+        self._market_data = BinanceClient(api_key="", api_secret="")
         self._balance_usdt = initial_balance_usdt
         self._locked_usdt = Decimal(0)
         self._commission_rate = commission_rate
@@ -116,9 +116,59 @@ class PaperExchangeClient(BinanceClient):
 
     async def get_ticker(self, symbol: str) -> TickerSchema:
         """Get ticker and cache the price for unrealized PnL computation."""
-        ticker = await super().get_ticker(symbol)
+        ticker = await self._market_data.get_ticker(symbol)
         self._last_prices[symbol] = ticker.last_price
         return ticker
+
+    async def get_klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: int | datetime | None = None,
+        end_time: int | datetime | None = None,
+        limit: int = 500,
+    ) -> list[CandlestickSchema]:
+        return await self._market_data.get_klines(
+            symbol, interval, start_time, end_time, limit
+        )
+
+    async def get_funding_rate(
+        self,
+        symbol: str,
+        limit: int = 100,
+        start_time: int | datetime | None = None,
+        end_time: int | datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._market_data.get_funding_rate(
+            symbol, limit, start_time, end_time
+        )
+
+    async def get_open_interest_history(
+        self,
+        symbol: str,
+        period: str = "5m",
+        limit: int = 30,
+        start_time: int | datetime | None = None,
+        end_time: int | datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._market_data.get_open_interest_history(
+            symbol, period, limit, start_time, end_time
+        )
+
+    async def get_long_short_ratio(
+        self,
+        symbol: str,
+        period: str = "5m",
+        limit: int = 30,
+        start_time: int | datetime | None = None,
+        end_time: int | datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._market_data.get_long_short_ratio(
+            symbol, period, limit, start_time, end_time
+        )
+
+    async def close(self) -> None:
+        await self._market_data.close()
 
     async def _sync_balance_to_store(self) -> None:
         if self._account_store is None:

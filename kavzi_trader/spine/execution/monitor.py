@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import sys
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
+from kavzi_trader.commons.retry import RetryPolicySchema, retry_async
 from kavzi_trader.domain.order_enums import OrderStatus
 from kavzi_trader.domain.order_response import OrderResponseSchema
 
@@ -16,11 +18,22 @@ _TERMINAL_STATUSES = frozenset(
     },
 )
 
+_POLL_INTERVAL_S = 1
+
+# Errors back off 2s, 4s, ... capped at 30s. Attempts are unbounded because
+# wait_for() in wait_for_completion enforces the overall timeout.
+_POLL_RETRY_POLICY = RetryPolicySchema(
+    attempts=sys.maxsize,
+    backoff_base_s=2,
+    retry_on=(Exception,),
+    max_delay_s=30,
+)
+
 
 class OrderMonitor:
     """Polls exchange order status until completion or timeout."""
 
-    def __init__(self, exchange: BinanceClient, timeout_s: int) -> None:
+    def __init__(self, exchange: ExchangeClient, timeout_s: int) -> None:
         self._exchange = exchange
         self._timeout_s = timeout_s
 
@@ -63,30 +76,12 @@ class OrderMonitor:
         return result
 
     async def _poll_status(self, symbol: str, order_id: int) -> OrderResponseSchema:
-        # Exponential backoff with a 30s cap. `failure_count` grows only on
-        # poll exceptions (e.g., rate limits) and resets after any successful
-        # call, so healthy polls stay at the 1s floor.
-        failure_count = 0
         while True:
-            try:
-                order = await self._exchange.get_order(
-                    symbol=symbol,
-                    order_id=order_id,
-                )
-                if order.status in _TERMINAL_STATUSES:
-                    return order
-                failure_count = 0
-            except Exception:
-                logger.exception(
-                    "Failed to poll order %s for %s, retrying",
-                    order_id,
-                    symbol,
-                    extra={
-                        "symbol": symbol,
-                        "order_id": order_id,
-                        "failure_count": failure_count,
-                    },
-                )
-                failure_count += 1
-            delay_s = min(30, 2**failure_count)
-            await asyncio.sleep(delay_s)
+            order = await retry_async(
+                lambda: self._exchange.get_order(symbol=symbol, order_id=order_id),
+                _POLL_RETRY_POLICY,
+                name=f"Polling order {order_id} for {symbol}",
+            )
+            if order.status in _TERMINAL_STATUSES:
+                return order
+            await asyncio.sleep(_POLL_INTERVAL_S)

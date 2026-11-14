@@ -1,15 +1,13 @@
 import logging
 from decimal import Decimal
-from typing import Literal
 
-from kavzi_trader.domain.candlestick import CandlestickSchema
-from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
-from kavzi_trader.domain.state_schemas import PositionSchema
-from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.filters.correlation import CorrelationFilter
 from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
+from kavzi_trader.spine.filters.filter_chain_params_schema import (
+    FilterChainParamsSchema,
+)
 from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
 )
@@ -53,17 +51,18 @@ class PreTradeFilterChain:
 
     async def evaluate(  # noqa: PLR0911, PLR0912
         self,
-        symbol: str,
-        side: Literal["LONG", "SHORT"],
-        candle: CandlestickSchema,
-        indicators: TechnicalIndicatorsSchema,
-        order_flow: OrderFlowSchema | None,
-        positions: list[PositionSchema],
-        atr_history: list[Decimal],
-        analyst_confluence_score: int | None = None,
-        symbol_tier: str = "TIER_2",
-        confidence: Decimal | None = None,
+        params: FilterChainParamsSchema,
     ) -> FilterChainResultSchema:
+        symbol = params.symbol
+        side = params.side
+        candle = params.candle
+        indicators = params.indicators
+        order_flow = params.order_flow
+        positions = params.positions
+        atr_history = params.atr_history
+        analyst_confluence_score = params.analyst_confluence_score
+        symbol_tier = params.symbol_tier
+        confidence = params.confidence
         results: list[FilterResultSchema] = []
         size_multiplier = Decimal("1.0")
         logger.info(

@@ -1,8 +1,8 @@
 import logging
 from decimal import Decimal
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.exceptions import ExchangeError
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.domain.order_enums import OrderStatus, OrderType
 from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
 from kavzi_trader.spine.position.exchange_close_schema import ExchangeCloseSchema
@@ -22,7 +22,7 @@ _POSITION_GONE_REASON = "exchange_position_closed"
 class ExchangeFillDetector:
     """Finds positions the exchange closed through their SL/TP orders."""
 
-    def __init__(self, exchange: BinanceClient, state_manager: StateManager) -> None:
+    def __init__(self, exchange: ExchangeClient, state_manager: StateManager) -> None:
         self._exchange = exchange
         self._state = state_manager
 

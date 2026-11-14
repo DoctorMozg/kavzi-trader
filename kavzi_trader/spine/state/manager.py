@@ -1,7 +1,7 @@
 import logging
 from decimal import Decimal
 
-from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
@@ -27,7 +27,7 @@ class StateManager:
     def __init__(
         self,
         redis_config: RedisConfigSchema,
-        exchange_client: BinanceClient,
+        exchange_client: ExchangeClient,
     ) -> None:
         self._exchange = exchange_client
         self._redis_client = RedisStateClient(redis_config)

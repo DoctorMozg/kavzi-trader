@@ -48,6 +48,10 @@ class PositionSchema(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    @property
+    def exit_side(self) -> OrderSide:
+        return OrderSide.SELL if self.side == "LONG" else OrderSide.BUY
+
 
 class OpenOrderSchema(BaseModel):
     order_id: str

@@ -159,7 +159,7 @@ def test_build_decision_message_valid_long_returns_schema() -> None:
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._build_decision_message(
+    message = loop._publisher.builder.build(
         trader, deps, snapshot_at_ms=1_000, geometry=_LONG_GEOMETRY
     )
 
@@ -183,7 +183,7 @@ def test_build_decision_message_rejects_long_without_geometry() -> None:
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._build_decision_message(
+    message = loop._publisher.builder.build(
         _long_decision(), deps, snapshot_at_ms=1_000, geometry=None
     )
 
@@ -196,7 +196,7 @@ def test_build_decision_message_rejects_short_without_geometry() -> None:
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._build_decision_message(
+    message = loop._publisher.builder.build(
         _short_decision(), deps, snapshot_at_ms=1_000, geometry=None
     )
 
@@ -221,7 +221,7 @@ def test_build_decision_message_close_allows_missing_geometry() -> None:
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._build_decision_message(
+    message = loop._publisher.builder.build(
         trader, deps, snapshot_at_ms=1_000, geometry=None
     )
 

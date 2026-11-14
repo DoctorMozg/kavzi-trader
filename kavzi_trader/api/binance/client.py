@@ -66,3 +66,7 @@ class BinanceClient(MarketDataApi, TradesApi, AccountApi, OrdersApi, FuturesData
         )
 
         logger.info("Initialized Binance client, timeout_s=%s", timeout_s)
+
+    async def close(self) -> None:
+        """Close the underlying HTTP session."""
+        await self.client.close_connection()

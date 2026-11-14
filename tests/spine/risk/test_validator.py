@@ -14,6 +14,9 @@ from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
+from kavzi_trader.spine.risk.trade_validation_params_schema import (
+    TradeValidationParamsSchema,
+)
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 
 _EXTREME_ATR_HISTORY = [
@@ -75,14 +78,18 @@ class TestDynamicRiskValidator:
         atr_history = [Decimal(100)] * 10
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=atr_history,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": atr_history,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is True
@@ -95,14 +102,18 @@ class TestDynamicRiskValidator:
         mock_state_manager.get_current_drawdown = AsyncMock(return_value=Decimal("4.0"))
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -114,14 +125,18 @@ class TestDynamicRiskValidator:
         mock_state_manager.get_current_drawdown = AsyncMock(return_value=Decimal("6.0"))
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -135,14 +150,18 @@ class TestDynamicRiskValidator:
         )
 
         result = await validator.validate_trade(
-            symbol="SOLUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "SOLUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -156,14 +175,18 @@ class TestDynamicRiskValidator:
         ]
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(120),
-            atr_history=atr_history,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(120),
+                    "atr_history": atr_history,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -177,14 +200,18 @@ class TestDynamicRiskValidator:
         ]
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(92),
-            atr_history=atr_history,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(92),
+                    "atr_history": atr_history,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -195,14 +222,18 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49990),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49990),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -213,14 +244,18 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49500),
-            take_profit=Decimal(52000),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49500),
+                    "take_profit": Decimal(52000),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -234,14 +269,18 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
-            symbol="LTCUSDT",
-            side="LONG",
-            entry_price=Decimal("54.14"),
-            stop_loss=Decimal("54.11"),
-            take_profit=Decimal("54.72"),
-            current_atr=Decimal("0.06"),
-            atr_history=[Decimal("0.06")] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "LTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal("54.14"),
+                    "stop_loss": Decimal("54.11"),
+                    "take_profit": Decimal("54.72"),
+                    "current_atr": Decimal("0.06"),
+                    "atr_history": [Decimal("0.06")] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -257,14 +296,18 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is True
@@ -274,14 +317,18 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50050),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50050),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -292,14 +339,18 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(50100),
-            take_profit=Decimal(51000),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(50100),
+                    "take_profit": Decimal(51000),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -310,14 +361,18 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="SHORT",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(49000),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "SHORT",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(49000),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -331,14 +386,18 @@ class TestDynamicRiskValidator:
         ]
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(105),
-            atr_history=atr_history,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(105),
+                    "atr_history": atr_history,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.volatility_regime == VolatilityRegime.HIGH
@@ -358,14 +417,18 @@ class TestDynamicRiskValidator:
         )
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is True
@@ -393,14 +456,18 @@ class TestDynamicRiskValidator:
         )
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -435,15 +502,19 @@ class TestDynamicRiskValidator:
         )
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
-            leverage=5,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                    "leverage": 5,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is True
@@ -458,26 +529,34 @@ class TestDynamicRiskValidator:
         )
 
         result_lev1 = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
-            leverage=1,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                    "leverage": 1,
+                }
+            ),
+            mock_state_manager,
         )
         result_lev3 = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
-            leverage=3,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                    "leverage": 3,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result_lev1.is_valid is True
@@ -492,15 +571,19 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
-            leverage=5,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                    "leverage": 5,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -519,15 +602,19 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator(liquidation_calculator=calc)
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
-            leverage=5,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                    "leverage": 5,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -552,15 +639,19 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator(liquidation_calculator=calc)
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(45000),
-            take_profit=Decimal(60000),
-            current_atr=Decimal(2000),
-            atr_history=[Decimal(2000)] * 10,
-            state_manager=mock_state_manager,
-            leverage=10,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(45000),
+                    "take_profit": Decimal(60000),
+                    "current_atr": Decimal(2000),
+                    "atr_history": [Decimal(2000)] * 10,
+                    "leverage": 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -577,14 +668,18 @@ class TestDynamicRiskValidator:
         )
 
         result = await validator.validate_trade(
-            symbol="ETHUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "ETHUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -605,15 +700,19 @@ class TestDynamicRiskValidator:
         ]
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(120),
-            atr_history=atr_history,
-            state_manager=mock_state_manager,
-            confidence=Decimal("0.95"),
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(120),
+                    "atr_history": atr_history,
+                    "confidence": Decimal("0.95"),
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -637,15 +736,19 @@ class TestDynamicRiskValidator:
         ]
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(120),
-            atr_history=atr_history,
-            state_manager=mock_state_manager,
-            confidence=Decimal("0.85"),
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(120),
+                    "atr_history": atr_history,
+                    "confidence": Decimal("0.85"),
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.volatility_regime == VolatilityRegime.EXTREME
@@ -668,15 +771,19 @@ class TestDynamicRiskValidator:
         ]
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(120),
-            atr_history=atr_history,
-            state_manager=mock_state_manager,
-            confidence=Decimal("0.70"),
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(120),
+                    "atr_history": atr_history,
+                    "confidence": Decimal("0.70"),
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -701,14 +808,18 @@ class TestDynamicRiskValidator:
         mock_state_manager.get_all_positions = AsyncMock(return_value=[])
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert not any("portfolio risk" in r.lower() for r in result.rejection_reasons)
@@ -724,15 +835,19 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator(config=config)
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(120),
-            atr_history=_EXTREME_ATR_HISTORY,
-            state_manager=mock_state_manager,
-            symbol_tier="TIER_1",
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(120),
+                    "atr_history": _EXTREME_ATR_HISTORY,
+                    "symbol_tier": "TIER_1",
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is True
@@ -751,16 +866,20 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator(config=config)
 
         result = await validator.validate_trade(
-            symbol="SOLUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(120),
-            atr_history=_EXTREME_ATR_HISTORY,
-            state_manager=mock_state_manager,
-            confidence=Decimal("0.85"),
-            symbol_tier="TIER_2",
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "SOLUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(120),
+                    "atr_history": _EXTREME_ATR_HISTORY,
+                    "confidence": Decimal("0.85"),
+                    "symbol_tier": "TIER_2",
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is True
@@ -773,14 +892,18 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(50100),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(0),
-            atr_history=[Decimal(5)] * 10,
-            state_manager=mock_state_manager,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(50100),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(0),
+                    "atr_history": [Decimal(5)] * 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is False
@@ -797,15 +920,19 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator(config=config)
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 9 + [Decimal(101)],
-            state_manager=mock_state_manager,
-            size_multiplier=Decimal("0.5"),
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 9 + [Decimal(101)],
+                    "size_multiplier": Decimal("0.5"),
+                }
+            ),
+            mock_state_manager,
         )
 
         # risk 10 / stop 100 = 0.1 BTC, halved by the filters
@@ -820,15 +947,19 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator(config=config)
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(50000),
-            stop_loss=Decimal(49900),
-            take_profit=Decimal(50200),
-            current_atr=Decimal(100),
-            atr_history=[Decimal(100)] * 9 + [Decimal(101)],
-            state_manager=mock_state_manager,
-            size_multiplier=Decimal("0.001"),
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 9 + [Decimal(101)],
+                    "size_multiplier": Decimal("0.001"),
+                }
+            ),
+            mock_state_manager,
         )
 
         # 0.1 BTC x 0.001 = 0.0001 BTC = $5 < $10 floor
@@ -847,15 +978,19 @@ class TestLiquidationUsesPositionNotional:
         validator = DynamicRiskValidator(liquidation_calculator=calc)
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(90000),
-            stop_loss=Decimal(84000),
-            take_profit=Decimal(102000),
-            current_atr=Decimal(3000),
-            atr_history=[Decimal(3000)] * 10,
-            state_manager=mock_state_manager,
-            leverage=10,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(90000),
+                    "stop_loss": Decimal(84000),
+                    "take_profit": Decimal(102000),
+                    "current_atr": Decimal(3000),
+                    "atr_history": [Decimal(3000)] * 10,
+                    "leverage": 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is True
@@ -873,15 +1008,19 @@ class TestLiquidationUsesPositionNotional:
         )
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(90000),
-            stop_loss=Decimal(84000),
-            take_profit=Decimal(102000),
-            current_atr=Decimal(3000),
-            atr_history=[Decimal(3000)] * 10,
-            state_manager=mock_state_manager,
-            leverage=10,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(90000),
+                    "stop_loss": Decimal(84000),
+                    "take_profit": Decimal(102000),
+                    "current_atr": Decimal(3000),
+                    "atr_history": [Decimal(3000)] * 10,
+                    "leverage": 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.rejection_reasons == []
@@ -916,15 +1055,19 @@ class TestLiquidationUsesPositionNotional:
         )
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side=side,
-            entry_price=Decimal(90000),
-            stop_loss=stop_loss,
-            take_profit=take_profit,
-            current_atr=atr,
-            atr_history=[atr] * 10,
-            state_manager=mock_state_manager,
-            leverage=10,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": side,
+                    "entry_price": Decimal(90000),
+                    "stop_loss": stop_loss,
+                    "take_profit": take_profit,
+                    "current_atr": atr,
+                    "atr_history": [atr] * 10,
+                    "leverage": 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         assert result.is_valid is is_valid, result.rejection_reasons
@@ -941,15 +1084,19 @@ class TestLiquidationUsesPositionNotional:
         )
 
         result = await validator.validate_trade(
-            symbol="BTCUSDT",
-            side="LONG",
-            entry_price=Decimal(90000),
-            stop_loss=Decimal(81000),
-            take_profit=Decimal(91000),
-            current_atr=Decimal(4500),
-            atr_history=[Decimal(4500)] * 10,
-            state_manager=mock_state_manager,
-            leverage=10,
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(90000),
+                    "stop_loss": Decimal(81000),
+                    "take_profit": Decimal(91000),
+                    "current_atr": Decimal(4500),
+                    "atr_history": [Decimal(4500)] * 10,
+                    "leverage": 10,
+                }
+            ),
+            mock_state_manager,
         )
 
         reasons = [r.lower() for r in result.rejection_reasons]
@@ -972,14 +1119,18 @@ class TestLiquidationUsesPositionNotional:
             "take_profit": Decimal(102000),
             "current_atr": Decimal(3000),
             "atr_history": [Decimal(3000)] * 10,
-            "state_manager": mock_state_manager,
             "leverage": 10,
         }
 
-        full = await validator.validate_trade(**trade)
+        full = await validator.validate_trade(
+            TradeValidationParamsSchema.model_validate(trade),
+            mock_state_manager,
+        )
         reduced = await validator.validate_trade(
-            **trade,
-            size_multiplier=Decimal("0.5"),
+            TradeValidationParamsSchema.model_validate(
+                {**trade, "size_multiplier": Decimal("0.5")}
+            ),
+            mock_state_manager,
         )
 
         notional = calc.estimate_liquidation_price.await_args.kwargs["notional"]

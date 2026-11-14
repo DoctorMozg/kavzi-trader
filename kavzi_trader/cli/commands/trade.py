@@ -4,81 +4,14 @@ Trading commands for the KavziTrader CLI.
 
 import asyncio
 import logging
-from decimal import Decimal
 
 import click
-import httpx2
-from openai import AsyncOpenAI
-from pydantic_ai.settings import ModelSettings
 
-from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.binance.constants import KLINE_INTERVALS
-from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
-from kavzi_trader.brain.agent.analyst import AnalystAgent
-from kavzi_trader.brain.agent.factory import AgentFactory
-from kavzi_trader.brain.agent.router import AgentRouter
-from kavzi_trader.brain.agent.trader import TraderAgent
-from kavzi_trader.brain.context.builder import ContextBuilder
-from kavzi_trader.brain.geometry.calculator import TradeGeometryCalculator
-from kavzi_trader.brain.prompts.loader import PromptLoader
-from kavzi_trader.config import CONFIG_DIR, AppConfig
-from kavzi_trader.domain.state_schemas import PositionSchema
+from kavzi_trader.cli.composition import OrchestratorComposer, build_state_manager
+from kavzi_trader.config import AppConfig
 from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.external.cache import ExternalDataCache
-from kavzi_trader.external.config import SynthesizerConfigSchema
-from kavzi_trader.external.loop import ExternalSentimentLoop
-from kavzi_trader.external.sources import build_enabled_sources
-from kavzi_trader.external.synthesizer import SentimentSynthesizer
-from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
 from kavzi_trader.infra.redis_client import RedisStateClient
-from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
-from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
-from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
-from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
-from kavzi_trader.orchestrator.loops.ui_snapshot import UiSnapshotLoop
-from kavzi_trader.orchestrator.orchestrator import TradingOrchestrator
-from kavzi_trader.orchestrator.providers.live_atr_provider import LiveAtrProvider
-from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
-    LiveDependenciesProvider,
-)
-from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
-    LiveOrderFlowFetcher,
-)
-from kavzi_trader.orchestrator.providers.live_price_provider import LivePriceProvider
-from kavzi_trader.orchestrator.providers.live_stream_manager import LiveStreamManager
-from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
-from kavzi_trader.order_flow.calculator import OrderFlowCalculator
-from kavzi_trader.paper.exchange import PaperExchangeClient
-from kavzi_trader.spine.execution.engine import ExecutionEngine
-from kavzi_trader.spine.execution.monitor import OrderMonitor
-from kavzi_trader.spine.execution.staleness import StalenessChecker
-from kavzi_trader.spine.execution.translator import DecisionTranslator
-from kavzi_trader.spine.filters.chain import PreTradeFilterChain
-from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
-from kavzi_trader.spine.filters.correlation import CorrelationFilter
-from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
-from kavzi_trader.spine.filters.funding import FundingRateFilter
-from kavzi_trader.spine.filters.liquidity import LiquidityFilter
-from kavzi_trader.spine.filters.movement import MinimumMovementFilter
-from kavzi_trader.spine.filters.scout import ScoutFilter
-from kavzi_trader.spine.filters.spike_cooldown import SpikeCooldownFilter
-from kavzi_trader.spine.position.action_executor import PositionActionExecutor
-from kavzi_trader.spine.position.exchange_fill_detector import ExchangeFillDetector
-from kavzi_trader.spine.position.manager import PositionManager
-from kavzi_trader.spine.position.partial_exit import PartialExitChecker
-from kavzi_trader.spine.position.stall_exit import StallExitChecker
-from kavzi_trader.spine.position.time_exit import TimeExitChecker
-from kavzi_trader.spine.risk.exposure import ExposureLimiter
-from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
-from kavzi_trader.spine.risk.regime_policy import RegimePolicy
-from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
-from kavzi_trader.spine.risk.validator import DynamicRiskValidator
-from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
-from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.ui.recorder import UiEventRecorder
-from kavzi_trader.ui.redis_publisher import RedisUiPublisher
 
 logger = logging.getLogger(__name__)
 
@@ -88,412 +21,13 @@ def trade() -> None:
     """Trading commands."""
 
 
-def _build_state_manager(
-    app_config: AppConfig,
-    exchange_client: BinanceClient | None = None,
-) -> StateManager:
-    client = exchange_client or _build_exchange(app_config)
-    return StateManager(
-        redis_config=app_config.redis,
-        exchange_client=client,
-    )
-
-
-def _load_tier_registry() -> SymbolTierRegistry:
-    return SymbolTierRegistry.from_yaml(CONFIG_DIR / "tiers.yaml")
-
-
-def _build_exchange(app_config: AppConfig) -> BinanceClient:
-    return BinanceClient(
-        api_key=app_config.api.binance.api_key.get_secret_value(),
-        api_secret=app_config.api.binance.api_secret.get_secret_value(),
-    )
-
-
-def _synth_model_settings(config: SynthesizerConfigSchema) -> ModelSettings:
-    settings = ModelSettings(temperature=config.temperature)
-    if config.seed is not None:
-        settings["seed"] = config.seed
-    return settings
-
-
 async def _start_orchestrator(
     app_config: AppConfig,
     paper: bool = False,
     paper_balance: float | None = None,
 ) -> None:
-    is_paper = paper
-    if is_paper:
-        logger.info(
-            "Starting orchestrator in PAPER mode for symbols=%s interval=%s",
-            app_config.trading.symbols,
-            app_config.trading.interval,
-        )
-        app_config.validate_for_paper_trading()
-    else:
-        logger.info(
-            "Starting orchestrator for symbols=%s interval=%s",
-            app_config.trading.symbols,
-            app_config.trading.interval,
-        )
-        app_config.validate_for_trading()
-    # --- Symbol tier registry ---
-    tier_registry = _load_tier_registry()
-
-    # --- Exchange client ---
-    exchange: BinanceClient
-    if is_paper:
-        balance = (
-            Decimal(str(paper_balance))
-            if paper_balance is not None
-            else app_config.paper.initial_balance_usdt
-        )
-        exchange = PaperExchangeClient(
-            initial_balance_usdt=balance,
-            commission_rate=app_config.paper.commission_rate,
-        )
-        logger.info("Paper exchange created: balance=%s USDT", balance)
-    else:
-        exchange = _build_exchange(app_config)
-
-    # --- Futures initialization ---
-    logger.info("Initialising futures leverage and margin type")
-    for symbol in app_config.trading.symbols:
-        leverage = app_config.futures.symbol_leverage.get(
-            symbol,
-            app_config.futures.default_leverage,
-        )
-        await exchange.futures_change_leverage(symbol, leverage)
-        await exchange.futures_change_margin_type(
-            symbol,
-            app_config.futures.margin_type,
-        )
-    logger.info(
-        "Futures initialised: default_leverage=%sx margin_type=%s",
-        app_config.futures.default_leverage,
-        app_config.futures.margin_type,
-    )
-
-    logger.info("Building state manager and exchange client")
-    state_manager = _build_state_manager(app_config, exchange)
-
-    logger.info("Connecting to Redis")
-    redis_client = RedisStateClient(app_config.redis)
-    await redis_client.connect()
-
-    # --- Reset paper state and seed fresh balance ---
-    if is_paper and isinstance(exchange, PaperExchangeClient):
-        await state_manager.connect()
-        await state_manager.reset_for_paper(balance)
-        exchange.set_account_store(state_manager.account)
-        logger.info("Paper state reset in Redis: %s USDT", balance)
-
-    event_store = RedisEventStore(redis_client, app_config.events)
-
-    # --- Market data cache (REST backfill) ---
-    logger.info(
-        "Initialising market data cache for %d symbols (REST backfill)",
-        len(app_config.trading.symbols),
-    )
-    cache = MarketDataCache(
-        symbols=app_config.trading.symbols,
-        indicator_calculator=TechnicalIndicatorCalculator(),
-        max_candles=app_config.trading.history_candles,
-    )
-    await cache.initialize(exchange, app_config.trading.interval)
-    logger.info("Market data cache initialised")
-
-    # --- Real providers ---
-    logger.info("Creating WebSocket client and stream manager")
-    ws_client = BinanceWebsocketClient(
-        api_key=(
-            None if is_paper else app_config.api.binance.api_key.get_secret_value()
-        ),
-        api_secret=(
-            None if is_paper else app_config.api.binance.api_secret.get_secret_value()
-        ),
-    )
-    stream_manager = LiveStreamManager(
-        ws_client=ws_client,
-        cache=cache,
-        symbols=app_config.trading.symbols,
-        interval=app_config.trading.interval,
-    )
-    ws_client.set_on_error(stream_manager.handle_ws_error)
-    order_flow_fetcher = LiveOrderFlowFetcher(
-        exchange=exchange,
-        cache=cache,
-        calculator=OrderFlowCalculator(
-            interval_minutes=KLINE_INTERVALS[app_config.trading.interval] // 60,
-        ),
-        symbols=app_config.trading.symbols,
-    )
-    # --- Brain prompt loader (needed by synthesizer and agents) ---
-    prompt_loader = PromptLoader()
-
-    # --- External data sources ---
-    external_cache: ExternalDataCache | None = None
-    external_sentiment_loop: ExternalSentimentLoop | None = None
-    if app_config.external_sources.enabled:
-        external_cache = ExternalDataCache()
-        ext_sources = build_enabled_sources(app_config.external_sources)
-        synth_config = app_config.external_sources.synthesizer
-        synthesizer = None
-        if (
-            synth_config.enabled
-            and app_config.brain.openrouter_api_key.get_secret_value()
-        ):
-            from pydantic_ai import Agent
-            from pydantic_ai.models.openai import OpenAIChatModel
-            from pydantic_ai.providers.openai import OpenAIProvider
-
-            from kavzi_trader.external.synthesizer import _SynthesizerOutputSchema
-
-            synth_provider = OpenAIProvider(
-                openai_client=AsyncOpenAI(
-                    base_url=app_config.brain.openrouter_base_url,
-                    api_key=app_config.brain.openrouter_api_key.get_secret_value(),
-                    timeout=httpx2.Timeout(30.0, connect=10.0),
-                    default_headers={
-                        "HTTP-Referer": "https://github.com/kavzitrader",
-                        "X-Title": "KavziTrader-Synthesizer",
-                    },
-                ),
-            )
-            synth_model = OpenAIChatModel(
-                synth_config.model_id,
-                provider=synth_provider,
-            )
-            synth_system_prompt = prompt_loader.render_system_prompt("synthesizer")
-            synth_settings = _synth_model_settings(synth_config)
-            synth_agent: Agent[None, _SynthesizerOutputSchema] = Agent(
-                synth_model,
-                output_type=_SynthesizerOutputSchema,
-                instructions=synth_system_prompt,
-                retries=synth_config.retries,
-                model_settings=synth_settings,
-            )
-            synthesizer = SentimentSynthesizer(synth_agent, prompt_loader)
-            logger.info(
-                "Sentiment Synthesizer created with model %s",
-                synth_config.model_id,
-            )
-        if ext_sources:
-            external_sentiment_loop = ExternalSentimentLoop(
-                sources=ext_sources,
-                synthesizer=synthesizer,
-                cache=external_cache,
-                interval_s=app_config.external_sources.run_interval_s,
-                circuit_breaker_config=app_config.external_sources.circuit_breaker,
-            )
-            logger.info(
-                "External sources enabled: %s",
-                [s.name for s in ext_sources],
-            )
-
-    regime_policy = RegimePolicy(
-        app_config.risk,
-        app_config.scout.extreme_allowed_patterns,
-    )
-    volatility_detector = VolatilityRegimeDetector(app_config.risk, regime_policy)
-
-    deps_provider = LiveDependenciesProvider(
-        cache=cache,
-        confluence_calculator=ConfluenceCalculator(),
-        volatility_detector=volatility_detector,
-        state_manager=state_manager,
-        timeframe=app_config.trading.interval,
-        futures_config=app_config.futures,
-        external_cache=external_cache,
-        tier_registry=tier_registry,
-    )
-    atr_provider = LiveAtrProvider(cache)
-    price_provider = LivePriceProvider(cache)
-
-    # --- Brain agents ---
-    logger.info(
-        "Creating brain agents (Analyst/Trader) via OpenRouter; Scout is algorithmic",
-    )
-    context_builder = ContextBuilder()
-    factory = AgentFactory(
-        app_config.brain,
-        prompt_loader,
-        risk_config=app_config.risk,
-        tier_registry=tier_registry,
-    )
-    scout = ScoutFilter(app_config.scout, regime_policy)
-    analyst = AnalystAgent(
-        factory.create_analyst_agent(),
-        prompt_loader,
-        context_builder,
-    )
-    trader = TraderAgent(
-        factory.create_trader_agent(),
-        prompt_loader,
-        context_builder,
-    )
-
-    # FGI gate must be created before the router so it can serve as the
-    # confluence override provider during elevated-fear conditions.
-    fgi_gate: FearGreedGateFilter | None = None
-    if external_cache is not None:
-        fgi_gate = FearGreedGateFilter(external_cache, app_config.filters)
-
-    router = AgentRouter(
-        scout,
-        analyst,
-        trader,
-        geometry_calculator=TradeGeometryCalculator(app_config.risk),
-        confluence_override=fgi_gate,
-        analyst_concurrency_limit=app_config.brain.analyst_concurrency_limit,
-    )
-    logger.info("Brain agents created")
-
-    position_manager = PositionManager(
-        partial_exit=PartialExitChecker(),
-        time_exit=TimeExitChecker(),
-        stall_exit=StallExitChecker(),
-        liquidation_emergency_percent=app_config.futures.liquidation_emergency_percent,
-    )
-
-    # --- Dashboard events ---
-    ui_recorder: UiEventRecorder | None = None
-    if app_config.ui.enabled:
-        await state_manager.connect()
-        account = await state_manager.get_account_state()
-        initial_balance = (
-            account.total_balance_usdt if account is not None else Decimal(1000)
-        )
-        ui_recorder = UiEventRecorder(
-            RedisUiPublisher(redis_client.client, app_config.ui),
-            initial_balance_usdt=initial_balance,
-            is_paper=is_paper,
-        )
-        logger.info(
-            "Publishing dashboard events, initial_balance=%s USDT",
-            initial_balance,
-        )
-
-    # --- Execution engine ---
-    logger.info("Creating execution engine")
-    liquidation_calculator = LiquidationCalculator(exchange)
-    engine = ExecutionEngine(
-        exchange=exchange,
-        state_manager=state_manager,
-        risk_validator=DynamicRiskValidator(
-            app_config.risk,
-            tier_registry,
-            liquidation_calculator,
-        ),
-        staleness_checker=StalenessChecker(app_config.execution),
-        translator=DecisionTranslator(),
-        monitor=OrderMonitor(exchange, app_config.execution.timeout_s),
-        event_store=event_store,
-        leverage=app_config.futures.default_leverage,
-        symbol_leverage=app_config.futures.symbol_leverage,
-        close_recorder=ui_recorder,
-        volatility_detector=volatility_detector,
-        liquidation_calculator=liquidation_calculator,
-        pullback_entry_expiry_ms=app_config.execution.pullback_entry_expiry_ms,
-    )
-
-    # Wire reconciler -> engine for self-healing missing SL/TP (H10). The
-    # reconciler drives this through the subset helper, which only places the
-    # specified legs and surfaces failures to the reconciler instead of
-    # auto-closing the position.
-    class _ReconcilerPlacer:
-        async def place(
-            self,
-            position: PositionSchema,
-            *,
-            place_stop_loss: bool,
-            place_take_profit: bool,
-        ) -> None:
-            await engine._place_protective_subset(  # noqa: SLF001
-                position,
-                place_stop_loss=place_stop_loss,
-                place_take_profit=place_take_profit,
-            )
-
-    state_manager.set_protective_order_placer(_ReconcilerPlacer())
-
-    # --- Pre-trade filter chain ---
-    filter_chain = PreTradeFilterChain(
-        volatility_detector=volatility_detector,
-        funding_filter=FundingRateFilter(app_config.filters, tier_registry),
-        movement_filter=MinimumMovementFilter(app_config.filters),
-        exposure_limiter=ExposureLimiter(app_config.risk),
-        liquidity_filter=LiquidityFilter(app_config.filters),
-        correlation_filter=CorrelationFilter(app_config.filters),
-        confluence_calculator=ConfluenceCalculator(),
-        fear_greed_gate=fgi_gate,
-        spike_cooldown_filter=SpikeCooldownFilter(app_config.filters),
-        config=app_config.filters,
-    )
-
-    # --- Orchestrator ---
-    logger.info("Assembling orchestrator with all loops")
-    orchestrator = TradingOrchestrator(
-        config=app_config.orchestrator,
-        state_manager=state_manager,
-        ingest_loop=DataIngestLoop(stream_manager),
-        order_flow_loop=OrderFlowLoop(
-            order_flow_fetcher,
-            interval_s=app_config.orchestrator.order_flow_fetch_interval_s,
-        ),
-        reasoning_loop=ReasoningLoop(
-            symbols=app_config.trading.symbols,
-            router=router,
-            deps_provider=deps_provider,
-            redis_client=redis_client,
-            interval_s=app_config.orchestrator.reasoning_interval_s,
-            ui_recorder=ui_recorder,
-            state_manager=state_manager,
-            filter_chain=filter_chain,
-            position_management=app_config.position_management,
-        ),
-        execution_loop=ExecutionLoop(
-            redis_client=redis_client,
-            engine=engine,
-            state_manager=state_manager,
-            ui_recorder=ui_recorder,
-        ),
-        position_loop=PositionManagementLoop(
-            manager=position_manager,
-            state_manager=state_manager,
-            atr_provider=atr_provider,
-            price_provider=price_provider,
-            action_executor=PositionActionExecutor(
-                exchange=exchange,
-                state_manager=state_manager,
-            ),
-            fill_detector=ExchangeFillDetector(
-                exchange=exchange,
-                state_manager=state_manager,
-            ),
-            interval_s=app_config.orchestrator.position_check_interval_s,
-            ui_recorder=ui_recorder,
-            cycle_timeout_s=app_config.orchestrator.position_cycle_timeout_s,
-        ),
-        ui_snapshot_loop=(
-            UiSnapshotLoop(
-                recorder=ui_recorder,
-                state_manager=state_manager,
-                market_data=cache,
-                symbols=app_config.trading.symbols,
-                config=app_config.ui,
-            )
-            if ui_recorder is not None
-            else None
-        ),
-        is_paper=is_paper,
-        external_sentiment_loop=external_sentiment_loop,
-        shutdown_hooks={
-            "websocket": ws_client.stop,
-            "exchange": exchange.client.close_connection,
-            "redis": redis_client.close,
-        },
-    )
+    composer = OrchestratorComposer(app_config, paper, paper_balance)
+    orchestrator = await composer.compose()
     await orchestrator.start()
 
 
@@ -547,31 +81,36 @@ def start(
     )
 
 
-@trade.command()
-@click.pass_context
-def status(ctx: click.Context) -> None:
-    """Show current trading system status."""
-    app_config = ctx.obj["app_config"]
-    state_manager = _build_state_manager(app_config)
-    asyncio.run(state_manager.connect())
-    positions = asyncio.run(state_manager.get_all_positions())
-    orders = asyncio.run(state_manager.get_open_orders())
+async def _show_status(app_config: AppConfig) -> None:
+    state_manager = build_state_manager(app_config)
+    await state_manager.connect()
+    try:
+        positions = await state_manager.get_all_positions()
+        orders = await state_manager.get_open_orders()
+    finally:
+        await state_manager.close()
     click.echo(f"Positions: {len(positions)}")
     click.echo(f"Open orders: {len(orders)}")
 
 
 @trade.command()
 @click.pass_context
-def positions(ctx: click.Context) -> None:
-    """List open positions."""
-    app_config = ctx.obj["app_config"]
-    state_manager = _build_state_manager(app_config)
-    asyncio.run(state_manager.connect())
-    positions_list = asyncio.run(state_manager.get_all_positions())
-    if not positions_list:
+def status(ctx: click.Context) -> None:
+    """Show current trading system status."""
+    asyncio.run(_show_status(ctx.obj["app_config"]))
+
+
+async def _list_positions(app_config: AppConfig) -> None:
+    state_manager = build_state_manager(app_config)
+    await state_manager.connect()
+    try:
+        positions = await state_manager.get_all_positions()
+    finally:
+        await state_manager.close()
+    if not positions:
         click.echo("No open positions")
         return
-    for position in positions_list:
+    for position in positions:
         click.echo(
             f"{position.symbol} {position.side} qty={position.quantity} "
             f"entry={position.entry_price} sl={position.stop_loss} "
@@ -581,17 +120,31 @@ def positions(ctx: click.Context) -> None:
 
 @trade.command()
 @click.pass_context
-def history(ctx: click.Context) -> None:
-    """Show recent execution history from event store."""
-    app_config = ctx.obj["app_config"]
+def positions(ctx: click.Context) -> None:
+    """List open positions."""
+    asyncio.run(_list_positions(ctx.obj["app_config"]))
+
+
+async def _show_history(app_config: AppConfig) -> None:
     redis_client = RedisStateClient(app_config.redis)
-    asyncio.run(redis_client.connect())
-    store = RedisEventStore(redis_client, app_config.events)
-    events = asyncio.run(
-        store.read(app_config.events.streams[AggregateType.POSITIONS], count=10)
-    )
+    await redis_client.connect()
+    try:
+        store = RedisEventStore(redis_client, app_config.events)
+        events = await store.read(
+            app_config.events.streams[AggregateType.POSITIONS],
+            count=10,
+        )
+    finally:
+        await redis_client.close()
     if not events:
         click.echo("No recent events")
         return
     for event in events:
         click.echo(f"{event.timestamp.isoformat()} {event.event_type}")
+
+
+@trade.command()
+@click.pass_context
+def history(ctx: click.Context) -> None:
+    """Show recent execution history from event store."""
+    asyncio.run(_show_history(ctx.obj["app_config"]))

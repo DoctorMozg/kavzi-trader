@@ -12,8 +12,8 @@ from kavzi_trader.external.schemas import (
 )
 from kavzi_trader.external.synthesizer import (
     SentimentSynthesizer,
+    SynthesizerOutputSchema,
     _format_snapshot_for_prompt,
-    _SynthesizerOutputSchema,
 )
 
 
@@ -72,7 +72,7 @@ async def test_synthesize_empty_snapshot_returns_neutral() -> None:
 
 @pytest.mark.asyncio
 async def test_synthesize_calls_agent() -> None:
-    llm_output = _SynthesizerOutputSchema(
+    llm_output = SynthesizerOutputSchema(
         summary="Options volatility elevated. Fear & Greed at extreme fear.",
         sentiment_bias="BEARISH",
         confidence_adjustment=-0.05,

@@ -320,3 +320,19 @@ def test_get_sentiment_no_warn_at_exact_threshold(
         provider._get_sentiment()
 
     assert not any("Sentiment stale" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_clear_cycle_cache_recomputes_confluence_and_account_state() -> None:
+    provider = _make_provider()
+
+    await provider.get_trader("BTCUSDT")
+    await provider.get_trader("BTCUSDT")
+    provider._state_manager.get_account_state.assert_awaited_once()
+    provider._confluence.evaluate_both.assert_called_once()
+
+    provider.clear_cycle_cache()
+    await provider.get_trader("BTCUSDT")
+
+    assert provider._state_manager.get_account_state.await_count == 2
+    assert provider._confluence.evaluate_both.call_count == 2

@@ -27,8 +27,12 @@ from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
 from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
 from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.external.config import SynthesizerConfigSchema
+from kavzi_trader.external.synthesizer import SynthesizerOutputSchema
 
 logger = logging.getLogger(__name__)
+
+_SYNTHESIZER_TIMEOUT_S = 30.0
 
 
 class TierConfigSource(Protocol):
@@ -142,6 +146,26 @@ class AgentFactory:
             instructions=system_prompt,
             model_settings=self._trader_settings,
             retries=self._config.trader.retries,
+        )
+
+    def create_synthesizer_agent(
+        self,
+        config: SynthesizerConfigSchema,
+    ) -> Agent[None, SynthesizerOutputSchema]:
+        model = OpenAIChatModel(config.model_id, provider=self._provider)
+        settings = ModelSettings(
+            temperature=config.temperature,
+            timeout=_SYNTHESIZER_TIMEOUT_S,
+        )
+        if config.seed is not None:
+            settings["seed"] = config.seed
+        logger.info("Creating synthesizer agent with model %s", config.model_id)
+        return Agent(
+            model,
+            output_type=SynthesizerOutputSchema,
+            instructions=self._prompt_loader.render_system_prompt("synthesizer"),
+            model_settings=settings,
+            retries=config.retries,
         )
 
     @staticmethod
