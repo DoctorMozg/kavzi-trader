@@ -1,9 +1,11 @@
+from pydantic import SecretStr
+
 from kavzi_trader.brain.config import AgentModelConfigSchema, BrainConfigSchema
 
 
 def test_brain_config_defaults() -> None:
     config = BrainConfigSchema()
-    assert config.openrouter_api_key == ""
+    assert config.openrouter_api_key.get_secret_value() == ""
     assert config.openrouter_base_url == "https://openrouter.ai/api/v1"
     assert config.analyst.model_id == "openai/gpt-5"
     assert config.trader.model_id == "anthropic/claude-opus-4.6"
@@ -11,7 +13,7 @@ def test_brain_config_defaults() -> None:
 
 def test_brain_config_custom_models() -> None:
     config = BrainConfigSchema(
-        openrouter_api_key="test-key",
+        openrouter_api_key=SecretStr("test-key"),
         analyst=AgentModelConfigSchema(model_id="google/gemini-pro-1.5"),
         trader=AgentModelConfigSchema(
             model_id="anthropic/claude-3-opus",
@@ -19,7 +21,7 @@ def test_brain_config_custom_models() -> None:
             temperature=0.5,
         ),
     )
-    assert config.openrouter_api_key == "test-key"
+    assert config.openrouter_api_key.get_secret_value() == "test-key"
     assert config.analyst.model_id == "google/gemini-pro-1.5"
     assert config.trader.retries == 3
     assert config.trader.temperature == 0.5
@@ -34,7 +36,7 @@ def test_agent_model_config_defaults() -> None:
 def test_brain_config_frozen() -> None:
     config = BrainConfigSchema()
     try:
-        config.openrouter_api_key = "new-key"  # type: ignore[misc]
+        config.openrouter_api_key = SecretStr("new-key")  # type: ignore[misc]
     except Exception:
         pass
     else:

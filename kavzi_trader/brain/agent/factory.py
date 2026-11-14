@@ -8,8 +8,14 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
 from kavzi_trader.brain.config import AgentModelConfigSchema, BrainConfigSchema
-from kavzi_trader.brain.confluence_thresholds import CONFLUENCE_ENTER_MIN
-from kavzi_trader.brain.context.context_dicts import SystemPromptContextDict
+from kavzi_trader.brain.confluence_thresholds import (
+    COUNTER_TREND_GATE_BUMP,
+    all_regime_gates,
+)
+from kavzi_trader.brain.context.context_dicts import (
+    RegimeGateDict,
+    SystemPromptContextDict,
+)
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
@@ -17,6 +23,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
+from kavzi_trader.commons.trading_constants import MAX_TP_ATR
 from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.symbol_tier import SymbolTier
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
@@ -40,7 +47,13 @@ class AgentFactory:
             min_rr_ratio=str(risk_config.min_rr_ratio),
             drawdown_pause_percent=str(risk_config.drawdown_pause_percent),
             drawdown_close_all_percent=str(risk_config.drawdown_close_all_percent),
-            confluence_enter_min=CONFLUENCE_ENTER_MIN,
+            regime_gates=[
+                RegimeGateDict(regime=regime.value, gate=gate)
+                for regime, gate in all_regime_gates().items()
+            ],
+            counter_trend_gate_bump=COUNTER_TREND_GATE_BUMP,
+            max_tp_atr=str(MAX_TP_ATR),
+            max_stop_atr=str(MAX_TP_ATR / risk_config.min_rr_ratio),
             volatility_low_threshold=str(risk_config.volatility_low_threshold),
             volatility_high_threshold=str(risk_config.volatility_high_threshold),
             volatility_extreme_threshold=str(risk_config.volatility_extreme_threshold),
@@ -70,7 +83,7 @@ class AgentFactory:
         self._provider = OpenAIProvider(
             openai_client=AsyncOpenAI(
                 base_url=config.openrouter_base_url,
-                api_key=config.openrouter_api_key,
+                api_key=config.openrouter_api_key.get_secret_value(),
                 timeout=httpx2.Timeout(timeout_s, connect=10.0),
                 default_headers={
                     "HTTP-Referer": "https://github.com/kavzitrader",

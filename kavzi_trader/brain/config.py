@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 class AgentModelConfigSchema(BaseModel):
@@ -21,7 +21,7 @@ class AgentModelConfigSchema(BaseModel):
 class BrainConfigSchema(BaseModel):
     """Configuration for the Brain (LLM) layer via OpenRouter."""
 
-    openrouter_api_key: Annotated[str, Field(default="")]
+    openrouter_api_key: Annotated[SecretStr, Field(default=SecretStr(""))]
     openrouter_base_url: Annotated[
         str,
         Field(default="https://openrouter.ai/api/v1"),

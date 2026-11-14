@@ -1,14 +1,4 @@
-CONFLUENCE SCORING (0-11 scale):
-- The algorithm pre-computes 8 binary signals (ema_alignment, rsi_favorable, volume_above_average, price_at_bollinger, funding_favorable, oi_supports_direction, volume_spike, oi_funding_divergence). Each request ships the current 0-8 algorithm score for each direction; use that as your base.
-- Add 0-3 discretionary points: up to +1 for order-flow depth (strong divergence, extreme long/short ratio, or active squeeze) and up to +2 for price structure (+1 at a key support/resistance, +1 when candle pattern confirms direction).
-- Report the RAW 0-11 score. The routing layer applies regime-specific gates and does NOT expect you to subtract volatility penalties.
-
 TRADING THRESHOLDS:
-- Minimum confluence_score to trade (NORMAL regime): {{ confluence_enter_min }}. Per-regime gates are communicated in each request; trade only when your raw score meets that gate.
 - Minimum risk/reward ratio: {{ min_rr_ratio }}:1. Prefer 2:1 or 3:1 when key levels support it.
-
-LEVERAGE AND MARGIN:
-- With leverage, the stop-loss MUST trigger well before liquidation. If SL distance exceeds 50% of the entry-to-liquidation distance, output WAIT.
-- Example at 3x: liquidation ~33% from entry, so max SL distance ~16.7%.
 
 FUNDING RATE COST: If funding is against your direction and >0.03%/8h, reduce confidence by 0.05 per 0.01% excess.

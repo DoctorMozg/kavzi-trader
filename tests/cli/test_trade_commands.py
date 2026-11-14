@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 import click
 import pytest
 from click.testing import CliRunner
+from pydantic import SecretStr
 
 from kavzi_trader.cli.commands import trade as trade_module
 from kavzi_trader.cli.commands.trade import trade
@@ -55,14 +56,14 @@ async def test_start_orchestrator_uses_configured_runtime_values(
                 update={
                     "binance": app_config.api.binance.model_copy(
                         update={
-                            "api_key": "test-key",
-                            "api_secret": "test-secret",
+                            "api_key": SecretStr("test-key"),
+                            "api_secret": SecretStr("test-secret"),
                         },
                     ),
                 },
             ),
             "brain": app_config.brain.model_copy(
-                update={"openrouter_api_key": "test-openrouter-key"},
+                update={"openrouter_api_key": SecretStr("test-openrouter-key")},
             ),
             "trading": app_config.trading.model_copy(
                 update={"interval": "1m", "history_candles": 321},

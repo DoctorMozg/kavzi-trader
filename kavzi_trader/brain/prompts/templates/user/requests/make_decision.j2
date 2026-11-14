@@ -1,6 +1,6 @@
 Make a final trade decision for {{ timeframe }} {{ symbol }} at price {{ current_price }}.
 Tier: {{ symbol_tier | default("TIER_2") }} | Min confidence for LONG/SHORT: {{ tier_min_confidence | default("0.70") }}
-Volatility regime: {{ volatility_regime }}
+Volatility regime: {{ volatility_regime }} | Analyst confluence gate for this regime: {{ confluence_enter_min }}
 
 {% include "user/context/analyst_result.j2" %}
 

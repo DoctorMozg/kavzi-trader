@@ -25,7 +25,7 @@ def model_status(ctx: click.Context) -> None:
     app_config: AppConfig = ctx.obj["app_config"]
     brain = app_config.brain
 
-    if not brain.openrouter_api_key:
+    if not brain.openrouter_api_key.get_secret_value():
         click.echo("OpenRouter: NOT CONFIGURED (set KT_OPENROUTER_API_KEY)")
         return
 
@@ -37,7 +37,7 @@ def model_status(ctx: click.Context) -> None:
     async def _check() -> bool:
         client = AsyncOpenAI(
             base_url=brain.openrouter_base_url,
-            api_key=brain.openrouter_api_key,
+            api_key=brain.openrouter_api_key.get_secret_value(),
         )
         try:
             await client.models.list()

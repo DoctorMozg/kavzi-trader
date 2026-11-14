@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from pydantic import SecretStr
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 
@@ -31,7 +32,7 @@ def _make_tier_registry() -> SymbolTierRegistry:
 
 def _make_factory() -> AgentFactory:
     config = BrainConfigSchema(
-        openrouter_api_key="test-key",
+        openrouter_api_key=SecretStr("test-key"),
         analyst=AgentModelConfigSchema(model_id="test/analyst"),
         trader=AgentModelConfigSchema(model_id="test/trader", retries=2),
     )

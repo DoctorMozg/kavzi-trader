@@ -31,6 +31,15 @@ _REGIME_ENTER_MIN: dict[VolatilityRegime, int] = {
 }
 
 
+# Extra raw points a setup needs when it fights the 1h trend.
+COUNTER_TREND_GATE_BUMP = 1
+
+
+def all_regime_gates() -> dict[VolatilityRegime, int]:
+    """Return every regime's entry gate, for rendering into prompts."""
+    return dict(_REGIME_ENTER_MIN)
+
+
 def confluence_enter_min_for_regime(regime: VolatilityRegime) -> int:
     """Return the minimum raw confluence score required to escalate to Trader."""
     return _REGIME_ENTER_MIN[regime]

@@ -85,6 +85,7 @@ class AnalystContextDict(MarketContextDict):
     # this per-request field overrides it with the gate for the current
     # volatility regime (NORMAL=6, HIGH=7, EXTREME=8, LOW=7).
     confluence_enter_min: int
+    counter_trend_gate_bump: int
     sentiment_summary: str | None
     sentiment_bias: str | None
     sentiment_confidence_adjustment: str | None
@@ -107,10 +108,18 @@ class TraderContextDict(MarketContextDict):
     scout_pattern: str | None
     symbol_tier: str
     tier_min_confidence: str
+    confluence_enter_min: int
     sentiment_summary: str | None
     sentiment_bias: str | None
     sentiment_confidence_adjustment: str | None
     atr_fallback_targets: list[ATRFallbackTargetDict]
+
+
+class RegimeGateDict(TypedDict):
+    """One regime's raw-confluence entry gate, as rendered in prompts."""
+
+    regime: str
+    gate: int
 
 
 class SystemPromptContextDict(TypedDict):
@@ -119,7 +128,10 @@ class SystemPromptContextDict(TypedDict):
     min_rr_ratio: str
     drawdown_pause_percent: str
     drawdown_close_all_percent: str
-    confluence_enter_min: int
+    regime_gates: list[RegimeGateDict]
+    counter_trend_gate_bump: int
+    max_tp_atr: str
+    max_stop_atr: str
     volatility_low_threshold: str
     volatility_high_threshold: str
     volatility_extreme_threshold: str

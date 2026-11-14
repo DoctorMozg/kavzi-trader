@@ -10,6 +10,7 @@ from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
 from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_ENTER_MIN,
+    COUNTER_TREND_GATE_BUMP,
     confluence_enter_min_for_regime,
 )
 from kavzi_trader.brain.schemas.analyst import (
@@ -327,9 +328,9 @@ class AnalystPipeline:
             and decision.direction in {"LONG", "SHORT"}
             and htf_trend.direction != decision.direction
         ):
-            confluence_gate += 1
+            confluence_gate += COUNTER_TREND_GATE_BUMP
             logger.info(
-                "HTF counter-trend gate for %s: analyst=%s vs 1h=%s — gate +1=%d",
+                "HTF counter-trend gate for %s: analyst=%s vs 1h=%s — gate bumped=%d",
                 symbol,
                 decision.direction,
                 htf_trend.direction,

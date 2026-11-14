@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from kavzi_trader.brain.config import BrainConfigSchema
 from kavzi_trader.events.config import EventStoreConfigSchema
@@ -22,12 +22,14 @@ from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.state.config import RedisConfigSchema
 from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
+CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+
 
 class BinanceApiConfigSchema(BaseModel):
     """Configuration for Binance API."""
 
-    api_key: Annotated[str, Field(default="")]
-    api_secret: Annotated[str, Field(default="")]
+    api_key: Annotated[SecretStr, Field(default=SecretStr(""))]
+    api_secret: Annotated[SecretStr, Field(default=SecretStr(""))]
     use_proxy: Annotated[bool, Field(default=False)]
 
     model_config = ConfigDict(frozen=True)
@@ -62,7 +64,8 @@ class TradingConfigSchema(BaseModel):
 
     symbols: Annotated[list[str], Field(default_factory=list)]
     interval: Annotated[str, Field(default="1m")]
-    history_candles: Annotated[int, Field(default=1000, ge=1)]
+    # Binance futures klines endpoint caps one request at 1500 rows.
+    history_candles: Annotated[int, Field(default=1000, ge=1, le=1500)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -160,15 +163,15 @@ class AppConfig(BaseModel):
     def validate_for_trading(self) -> None:
         """Raise if config is insufficient for live trading."""
         errors: list[str] = []
-        if not self.api.binance.api_key:
+        if not self.api.binance.api_key.get_secret_value():
             errors.append(
                 "KT_BINANCE_API_KEY (or api.binance.api_key) is required",
             )
-        if not self.api.binance.api_secret:
+        if not self.api.binance.api_secret.get_secret_value():
             errors.append(
                 "KT_BINANCE_API_SECRET (or api.binance.api_secret) is required",
             )
-        if not self.brain.openrouter_api_key:
+        if not self.brain.openrouter_api_key.get_secret_value():
             errors.append(
                 "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key) is required",
             )
@@ -184,7 +187,7 @@ class AppConfig(BaseModel):
     def validate_for_paper_trading(self) -> None:
         """Raise if config is insufficient for paper trading."""
         errors: list[str] = []
-        if not self.brain.openrouter_api_key:
+        if not self.brain.openrouter_api_key.get_secret_value():
             errors.append(
                 "KT_OPENROUTER_API_KEY (or brain.openrouter_api_key) is required",
             )
@@ -205,8 +208,7 @@ class AppConfig(BaseModel):
 
     @classmethod
     def from_env(cls) -> AppConfig:
-        config_path = Path(__file__).resolve().parents[2] / "config" / "config.yaml"
-        return cls.from_file(config_path)
+        return cls.from_file(CONFIG_DIR / "config.yaml")
 
     @classmethod
     def _apply_env_overrides(cls, data: dict[str, object]) -> None:

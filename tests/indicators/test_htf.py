@@ -45,15 +45,24 @@ def test_partial_final_hour_is_kept() -> None:
 
 
 def test_insufficient_history_is_neutral() -> None:
-    # Fewer than 50 1h bars (40 candles = 10 hours) → NEUTRAL, no guess.
+    # Fewer than 100 1h bars (40 candles = 10 hours) → NEUTRAL, no guess.
     trend = compute_htf_trend(_series([Decimal(100)] * 40))
     assert trend.direction == "NEUTRAL"
     assert trend.bars_1h == 10
 
 
-def test_rising_series_is_long() -> None:
-    # 240 candles = 60 1h bars, monotonically rising → EMA20 > EMA50, RSI > 50.
+def test_ema50_without_warmup_is_neutral() -> None:
+    # 240 candles = 60 1h bars: EMA50 is SMA-seeded, so it needs another ~50
+    # bars of warm-up before it is trustworthy, even on a clean trend.
     closes = [Decimal(100) + Decimal(i) for i in range(240)]
+    trend = compute_htf_trend(_series(closes))
+    assert trend.direction == "NEUTRAL"
+    assert trend.bars_1h == 60
+
+
+def test_rising_series_is_long() -> None:
+    # 400 candles = 100 1h bars (50 seed + 50 warm-up), monotonically rising.
+    closes = [Decimal(100) + Decimal(i) for i in range(400)]
     trend = compute_htf_trend(_series(closes))
     assert trend.direction == "LONG"
     assert trend.ema_20 is not None
@@ -62,7 +71,7 @@ def test_rising_series_is_long() -> None:
 
 
 def test_falling_series_is_short() -> None:
-    closes = [Decimal(1000) - Decimal(i) for i in range(240)]
+    closes = [Decimal(1000) - Decimal(i) for i in range(400)]
     trend = compute_htf_trend(_series(closes))
     assert trend.direction == "SHORT"
     assert trend.ema_20 is not None
@@ -72,6 +81,6 @@ def test_falling_series_is_short() -> None:
 
 def test_flat_series_is_neutral() -> None:
     # Enough history but no directional stack → NEUTRAL.
-    trend = compute_htf_trend(_series([Decimal(100)] * 240))
+    trend = compute_htf_trend(_series([Decimal(100)] * 400))
     assert trend.direction == "NEUTRAL"
-    assert trend.bars_1h == 60
+    assert trend.bars_1h == 100

@@ -1,0 +1,11 @@
+CONFLUENCE SCORING (0-11 scale):
+- The algorithm pre-computes 8 binary signals (ema_alignment, rsi_favorable, volume_above_average, price_at_bollinger, funding_favorable, oi_supports_direction, volume_spike, oi_funding_divergence). Each request ships the current 0-8 algorithm score for each direction; use that as your base.
+- Add 0-3 discretionary points: up to +1 for order-flow depth (strong divergence, extreme long/short ratio, or active squeeze) and up to +2 for price structure (+1 at a key support/resistance, +1 when candle pattern confirms direction).
+- Report the RAW 0-11 score. The routing layer applies regime-specific gates and does NOT expect you to subtract volatility penalties.
+
+REGIME GATES (raw score the routing layer requires before escalating to the Trader):
+{%- for gate in regime_gates %}
+- {{ gate.regime }}: {{ gate.gate }}
+{%- endfor %}
+- A setup that fights the 1h trend needs {{ counter_trend_gate_bump }} more point(s) than the gate for its regime.
+- Each request states the gate that applies to it; mark setup_valid=true only when your raw score meets it.

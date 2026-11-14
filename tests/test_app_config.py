@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from kavzi_trader.config import AppConfig, TradingConfigSchema
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
 
@@ -22,3 +25,13 @@ def test_app_config_from_env_timing_defaults() -> None:
     assert config.trading.interval == "15m"
     assert config.trading.history_candles == 1000
     assert config.orchestrator.reasoning_interval_s == 120
+
+
+def test_history_candles_is_capped_by_binance_kline_limit() -> None:
+    with pytest.raises(ValidationError):
+        TradingConfigSchema(history_candles=1501)
+
+
+def test_default_history_covers_htf_ema_warmup() -> None:
+    # 1h EMA50 needs 100 hourly bars = 400 15m candles.
+    assert AppConfig.from_env().trading.history_candles >= 400

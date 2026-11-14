@@ -14,9 +14,10 @@ from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.indicators.momentum import calculate_rsi
 from kavzi_trader.indicators.trend import calculate_ema
 
-# 1h candles needed before the EMA50 stack is trustworthy. Below this the
-# trend is reported NEUTRAL rather than guessed from a short stack.
-_MIN_BARS_1H = 50
+# EMA50 is SMA-seeded, so it needs 50 bars to seed plus 50 to warm up. Below
+# this the trend is reported NEUTRAL rather than guessed from a short stack.
+# That is 400 15m candles; history_candles must stay above it.
+_MIN_BARS_1H = 100
 
 # RSI midline separating bullish (>50) from bearish (<50) momentum.
 _RSI_MIDLINE = Decimal(50)

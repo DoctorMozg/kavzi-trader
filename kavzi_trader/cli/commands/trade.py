@@ -5,7 +5,6 @@ Trading commands for the KavziTrader CLI.
 import asyncio
 import logging
 from decimal import Decimal
-from pathlib import Path
 
 import click
 import httpx2
@@ -22,7 +21,7 @@ from kavzi_trader.brain.agent.trader import TraderAgent
 from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.brain.schemas.dependencies import rebuild_deferred_models
-from kavzi_trader.config import AppConfig
+from kavzi_trader.config import CONFIG_DIR, AppConfig
 from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.external.cache import ExternalDataCache
@@ -100,10 +99,14 @@ def _build_state_manager(
     )
 
 
+def _load_tier_registry() -> SymbolTierRegistry:
+    return SymbolTierRegistry.from_yaml(CONFIG_DIR / "tiers.yaml")
+
+
 def _build_exchange(app_config: AppConfig) -> BinanceClient:
     return BinanceClient(
-        api_key=app_config.api.binance.api_key,
-        api_secret=app_config.api.binance.api_secret,
+        api_key=app_config.api.binance.api_key.get_secret_value(),
+        api_secret=app_config.api.binance.api_secret.get_secret_value(),
     )
 
 
@@ -137,7 +140,7 @@ async def _start_orchestrator(
     rebuild_deferred_models()
 
     # --- Symbol tier registry ---
-    tier_registry = SymbolTierRegistry.from_yaml(Path("config/tiers.yaml"))
+    tier_registry = _load_tier_registry()
 
     # --- Exchange client ---
     exchange: BinanceClient
@@ -205,8 +208,12 @@ async def _start_orchestrator(
     # --- Real providers ---
     logger.info("Creating WebSocket client and stream manager")
     ws_client = BinanceWebsocketClient(
-        api_key=app_config.api.binance.api_key if not is_paper else None,
-        api_secret=app_config.api.binance.api_secret if not is_paper else None,
+        api_key=(
+            None if is_paper else app_config.api.binance.api_key.get_secret_value()
+        ),
+        api_secret=(
+            None if is_paper else app_config.api.binance.api_secret.get_secret_value()
+        ),
     )
     stream_manager = LiveStreamManager(
         ws_client=ws_client,
@@ -234,7 +241,10 @@ async def _start_orchestrator(
         ext_sources = build_enabled_sources(app_config.external_sources)
         synth_config = app_config.external_sources.synthesizer
         synthesizer = None
-        if synth_config.enabled and app_config.brain.openrouter_api_key:
+        if (
+            synth_config.enabled
+            and app_config.brain.openrouter_api_key.get_secret_value()
+        ):
             from pydantic_ai import Agent
             from pydantic_ai.models.openai import OpenAIChatModel
             from pydantic_ai.providers.openai import OpenAIProvider
@@ -244,7 +254,7 @@ async def _start_orchestrator(
             synth_provider = OpenAIProvider(
                 openai_client=AsyncOpenAI(
                     base_url=app_config.brain.openrouter_base_url,
-                    api_key=app_config.brain.openrouter_api_key,
+                    api_key=app_config.brain.openrouter_api_key.get_secret_value(),
                     timeout=httpx2.Timeout(30.0, connect=10.0),
                     default_headers={
                         "HTTP-Referer": "https://github.com/kavzitrader",

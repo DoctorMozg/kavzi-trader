@@ -1,4 +1,7 @@
-from kavzi_trader.brain.context.context_dicts import SystemPromptContextDict
+from kavzi_trader.brain.context.context_dicts import (
+    RegimeGateDict,
+    SystemPromptContextDict,
+)
 from kavzi_trader.brain.prompts.loader import PromptLoader
 
 
@@ -8,7 +11,13 @@ def _make_system_prompt_context() -> SystemPromptContextDict:
         min_rr_ratio="2.0",
         drawdown_pause_percent="3.0",
         drawdown_close_all_percent="5.0",
-        confluence_enter_min=6,
+        regime_gates=[
+            RegimeGateDict(regime="NORMAL", gate=6),
+            RegimeGateDict(regime="HIGH", gate=7),
+        ],
+        counter_trend_gate_bump=1,
+        max_tp_atr="3.0",
+        max_stop_atr="1.5",
         volatility_low_threshold="-1.5",
         volatility_high_threshold="1.0",
         volatility_extreme_threshold="2.0",

@@ -5,7 +5,6 @@ This module provides functions to set up logging across the application.
 """
 
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -72,19 +71,5 @@ def setup_logging(
 
     load_dotenv()
     logger.debug("Environment variables loaded from .env file")
-
-    excluded_vars = {
-        "BINANCE_API_KEY",
-        "BINANCE_API_SECRET",
-        "SECRET_KEY",
-    }
-    env_vars = {
-        k: "***" if k in excluded_vars else v
-        for k, v in os.environ.items()
-        if k.startswith(("BINANCE_", "APP_", "LOG_", "DB_"))
-    }
-
-    if env_vars:
-        logger.debug("Relevant environment variables: %s", env_vars)
 
     return logger

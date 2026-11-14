@@ -5,6 +5,7 @@ from typing import cast
 from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.brain.confluence_thresholds import (
+    COUNTER_TREND_GATE_BUMP,
     confluence_enter_min_for_regime,
 )
 from kavzi_trader.brain.context.context_dicts import (
@@ -124,6 +125,7 @@ class ContextBuilder(BaseModel):
             confluence_enter_min=confluence_enter_min_for_regime(
                 deps.volatility_regime,
             ),
+            counter_trend_gate_bump=COUNTER_TREND_GATE_BUMP,
             sentiment_summary=sentiment.summary if sentiment else None,
             sentiment_bias=(sentiment.sentiment_bias if sentiment else None),
             sentiment_confidence_adjustment=(
@@ -250,6 +252,9 @@ class ContextBuilder(BaseModel):
             scout_pattern=scout_pattern,
             symbol_tier=deps.symbol_tier,
             tier_min_confidence=str(deps.tier_min_confidence),
+            confluence_enter_min=confluence_enter_min_for_regime(
+                deps.volatility_regime,
+            ),
             sentiment_summary=sentiment.summary if sentiment else None,
             sentiment_bias=(sentiment.sentiment_bias if sentiment else None),
             sentiment_confidence_adjustment=(
