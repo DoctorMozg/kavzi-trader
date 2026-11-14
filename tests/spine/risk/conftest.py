@@ -71,6 +71,7 @@ def bracketed_liquidation_calculator() -> LiquidationCalculator:
                         "notionalFloor": 0,
                         "notionalCap": 50000,
                         "maintMarginRatio": 0.004,
+                        "cum": 0.0,
                     },
                     {
                         "bracket": 2,
@@ -78,6 +79,7 @@ def bracketed_liquidation_calculator() -> LiquidationCalculator:
                         "notionalFloor": 50000,
                         "notionalCap": 250000,
                         "maintMarginRatio": 0.05,
+                        "cum": 2300.0,
                     },
                 ],
             },

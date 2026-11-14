@@ -81,7 +81,7 @@ class PositionStore:
         # pipeline defaults to transaction=True, issuing MULTI/EXEC so the
         # server applies both commands atomically — no half-written state
         # if the connection drops mid-save.
-        def _build(pipe: redis.asyncio.client.Pipeline) -> None:  # type: ignore[type-arg]
+        def _build(pipe: redis.asyncio.client.Pipeline) -> None:
             pipe.hset(key, mapping={"data": payload})
             pipe.sadd(POSITION_INDEX_KEY, position_id)
 
@@ -94,7 +94,7 @@ class PositionStore:
         # Why: hash delete and index removal must land together to avoid
         # dangling index entries or orphaned hashes across a dropped
         # connection. MULTI/EXEC via redis-py's transactional pipeline.
-        def _build(pipe: redis.asyncio.client.Pipeline) -> None:  # type: ignore[type-arg]
+        def _build(pipe: redis.asyncio.client.Pipeline) -> None:
             pipe.delete(key)
             pipe.srem(POSITION_INDEX_KEY, position_id)
 

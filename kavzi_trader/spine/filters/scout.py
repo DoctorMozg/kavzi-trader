@@ -351,8 +351,8 @@ class ScoutFilter:
             support_parts.append(f"EMA {alignment}")
         if has_rsi_support:
             support_parts.append(f"RSI={rsi}")
-        if has_bb_support:
-            support_parts.append(f"%B={bb.percent_b}")  # type: ignore[union-attr]
+        if bb is not None and has_bb_support:
+            support_parts.append(f"%B={bb.percent_b}")
         return _ScoutCriterionResultSchema(
             verdict="INTERESTING",
             reason=(

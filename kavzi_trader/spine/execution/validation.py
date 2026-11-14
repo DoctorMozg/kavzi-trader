@@ -1,6 +1,8 @@
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 
 class ValidationOutcomeSchema(BaseModel):
@@ -9,13 +11,12 @@ class ValidationOutcomeSchema(BaseModel):
     Validators fan out from `ExecutionEngine.execute()` and each returns one of
     these. A failing outcome short-circuits the pipeline and populates the
     rejection `ExecutionResultSchema`; a passing outcome may still carry
-    `extra` context forward (e.g. the stricter volatility regime chosen by the
-    drift check).
+    the stricter volatility regime chosen by the drift check.
     """
 
     passed: Annotated[bool, Field(...)]
     reason: Annotated[str | None, Field(default=None)]
-    extra: Annotated[dict[str, Any] | None, Field(default=None)]
+    effective_regime: Annotated[VolatilityRegime | None, Field(default=None)]
 
     model_config = ConfigDict(frozen=True)
 

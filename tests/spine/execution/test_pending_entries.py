@@ -15,7 +15,7 @@ from kavzi_trader.domain.order_response import OrderResponseSchema
 from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.execution.engine import ExecutionEngine
-from kavzi_trader.spine.state.schemas import PendingEntrySchema
+from kavzi_trader.spine.state.pending_entry_schema import PendingEntrySchema
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 

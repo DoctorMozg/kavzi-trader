@@ -12,11 +12,11 @@ from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.infra.redis_config import RedisConfigSchema
 from kavzi_trader.spine.state.account_store import AccountStore
 from kavzi_trader.spine.state.order_store import OrderStore
+from kavzi_trader.spine.state.pending_entry_schema import PendingEntrySchema
 from kavzi_trader.spine.state.pending_entry_store import PendingEntryStore
 from kavzi_trader.spine.state.position_store import PositionStore
 from kavzi_trader.spine.state.reconciliation import ProtectiveOrderPlacer
-from kavzi_trader.spine.state.schemas import (
-    PendingEntrySchema,
+from kavzi_trader.spine.state.reconciliation_result_schema import (
     ReconciliationResultSchema,
 )
 

@@ -1,6 +1,6 @@
 import logging
 from decimal import Decimal
-from typing import Any, cast
+from typing import cast
 
 from binance.exceptions import BinanceAPIException
 
@@ -9,6 +9,11 @@ from kavzi_trader.api.binance.client_base import (
     handle_api_errors,
 )
 from kavzi_trader.api.binance.constants import ERROR_CODE_MARGIN_TYPE_ALREADY_SET
+from kavzi_trader.api.binance.schemas.data_dicts import (
+    FuturesOrderDict,
+    LeverageChangeDict,
+    MarginTypeChangeDict,
+)
 from kavzi_trader.commons.time_utility import (
     MILLISECONDS_IN_SECOND,
     utc_now,
@@ -103,7 +108,7 @@ class OrdersApi(BinanceClientBase):
             params["reduceOnly"] = "true"
 
         response = cast(
-            "dict[str, Any]",
+            "FuturesOrderDict",
             await self.client.futures_create_order(**params),
         )
 
@@ -130,7 +135,7 @@ class OrdersApi(BinanceClientBase):
         if order_id is None and client_order_id is None:
             raise ValueError("Either order_id or client_order_id must be provided")
 
-        params: dict[str, Any] = {"symbol": symbol}
+        params: dict[str, str | int] = {"symbol": symbol}
 
         if order_id is not None:
             params["orderId"] = order_id
@@ -139,7 +144,7 @@ class OrdersApi(BinanceClientBase):
             params["origClientOrderId"] = client_order_id
 
         response = cast(
-            "dict[str, Any]",
+            "FuturesOrderDict",
             await self.client.futures_get_order(**params),
         )
 
@@ -175,7 +180,7 @@ class OrdersApi(BinanceClientBase):
             params["origClientOrderId"] = client_order_id
 
         response = cast(
-            "dict[str, Any]",
+            "FuturesOrderDict",
             await self.client.futures_cancel_order(**params),
         )
 
@@ -203,7 +208,7 @@ class OrdersApi(BinanceClientBase):
 
         return [self._parse_order_response(order) for order in response]
 
-    def _parse_order_response(self, response: dict[str, Any]) -> OrderResponseSchema:
+    def _parse_order_response(self, response: FuturesOrderDict) -> OrderResponseSchema:
         """
         Parse an order response from Binance API and convert it to our schema.
 
@@ -293,7 +298,7 @@ class OrdersApi(BinanceClientBase):
         self,
         symbol: str,
         leverage: int,
-    ) -> dict[str, Any]:
+    ) -> LeverageChangeDict:
         """
         Change leverage for a futures symbol.
 
@@ -305,7 +310,7 @@ class OrdersApi(BinanceClientBase):
             Response with leverage and maxNotionalValue
         """
         return cast(
-            "dict[str, Any]",
+            "LeverageChangeDict",
             await self.client.futures_change_leverage(
                 symbol=symbol,
                 leverage=leverage,
@@ -316,7 +321,7 @@ class OrdersApi(BinanceClientBase):
         self,
         symbol: str,
         margin_type: str,
-    ) -> dict[str, Any] | None:
+    ) -> MarginTypeChangeDict | None:
         """
         Change margin type for a futures symbol.
 
@@ -331,7 +336,7 @@ class OrdersApi(BinanceClientBase):
         """
         try:
             return cast(
-                "dict[str, Any]",
+                "MarginTypeChangeDict",
                 await self.client.futures_change_margin_type(
                     symbol=symbol,
                     marginType=margin_type,

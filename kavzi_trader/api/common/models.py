@@ -6,7 +6,6 @@ This module defines common data models for representing API responses.
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -27,7 +26,7 @@ class SymbolInfoSchema(BaseModel):
     max_qty: Decimal
     step_size: Decimal
     min_notional: Decimal
-    filters: list[dict[str, Any]] | None = None
+    filters: list[dict[str, str | int]] | None = None
 
     model_config = ConfigDict(frozen=True)
 

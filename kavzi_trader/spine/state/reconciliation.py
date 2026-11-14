@@ -10,7 +10,9 @@ from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
 from kavzi_trader.spine.state.account_store import AccountStore
 from kavzi_trader.spine.state.order_store import OrderStore
 from kavzi_trader.spine.state.position_store import PositionStore
-from kavzi_trader.spine.state.schemas import ReconciliationResultSchema
+from kavzi_trader.spine.state.reconciliation_result_schema import (
+    ReconciliationResultSchema,
+)
 
 logger = logging.getLogger(__name__)
 

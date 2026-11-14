@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 _SOCKET_TIMEOUT_MARGIN_S = 8.0
 
 
-def _redis_client(app_config: AppConfig, socket_timeout_s: float) -> Redis:  # type: ignore[type-arg]
+def _redis_client(app_config: AppConfig, socket_timeout_s: float) -> Redis:
     return Redis(
         host=app_config.redis.host,
         port=app_config.redis.port,

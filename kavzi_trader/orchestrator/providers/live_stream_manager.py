@@ -73,11 +73,11 @@ class LiveStreamManager:
     async def _on_kline(self, data: KlineData) -> None:
         try:
             k = data["k"]
-            symbol: str = k["s"]  # type: ignore[assignment]
-            is_closed: bool = k["x"]  # type: ignore[assignment]
+            symbol: str = k["s"]
+            is_closed: bool = k["x"]
 
-            open_time_ms: int = k["t"]  # type: ignore[assignment]
-            close_time_ms: int = k["T"]  # type: ignore[assignment]
+            open_time_ms: int = k["t"]
+            close_time_ms: int = k["T"]
 
             candle = CandlestickSchema.model_validate(
                 {
@@ -95,7 +95,7 @@ class LiveStreamManager:
                     "close_price": Decimal(str(k["c"])),
                     "volume": Decimal(str(k["v"])),
                     "quote_volume": Decimal(str(k["q"])),
-                    "trades_count": int(k["n"]),  # type: ignore[arg-type]
+                    "trades_count": int(k["n"]),
                     "taker_buy_base_volume": Decimal(str(k["V"])),
                     "taker_buy_quote_volume": Decimal(str(k["Q"])),
                     "interval": str(k["i"]),

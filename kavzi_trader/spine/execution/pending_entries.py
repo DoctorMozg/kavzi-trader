@@ -6,7 +6,7 @@ from kavzi_trader.domain.order_enums import OrderStatus
 from kavzi_trader.domain.order_response import OrderResponseSchema
 from kavzi_trader.spine.execution.fill_handler import FillHandler
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import PendingEntrySchema
+from kavzi_trader.spine.state.pending_entry_schema import PendingEntrySchema
 
 logger = logging.getLogger(__name__)
 

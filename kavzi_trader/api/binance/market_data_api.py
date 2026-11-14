@@ -8,6 +8,7 @@ from kavzi_trader.api.binance.client_base import (
     handle_api_errors,
 )
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
+from kavzi_trader.api.binance.schemas.data_dicts import AvgPriceDict
 from kavzi_trader.api.common.exceptions import ExchangeError
 from kavzi_trader.api.common.models import (
     OrderBookEntrySchema,
@@ -44,6 +45,7 @@ class MarketDataApi(BinanceClientBase):
         return cast("dict[str, int]", await self.client.get_server_time())
 
     @handle_api_errors
+    # Any: raw exchange info payload; callers read only the keys they need.
     async def get_exchange_info(self) -> dict[str, Any]:
         """
         Get exchange information including rate limits, symbol information.
@@ -260,7 +262,7 @@ class MarketDataApi(BinanceClientBase):
         ]
 
     @handle_api_errors
-    async def get_avg_price(self, symbol: str) -> dict[str, Any]:
+    async def get_avg_price(self, symbol: str) -> AvgPriceDict:
         """
         Get current average price for a symbol.
 
@@ -270,4 +272,4 @@ class MarketDataApi(BinanceClientBase):
         Returns:
             Average price information
         """
-        return cast("dict[str, Any]", await self.client.get_avg_price(symbol=symbol))
+        return cast("AvgPriceDict", await self.client.get_avg_price(symbol=symbol))

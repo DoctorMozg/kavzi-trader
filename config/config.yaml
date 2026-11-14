@@ -207,6 +207,10 @@ risk:
   # (TIER_1 80%, TIER_2 50%) so total exposure stays within max_margin_ratio.
   max_positions: 2
 
+  # Upper bound on margin used / equity. New trades whose margin would push
+  # the account past it are rejected. 0.5 is the code default.
+  max_margin_ratio: 0.5
+
   # Raised from 1.5 to 2.0. On a micro account, commissions consume a
   # larger share of profit — need larger winners to stay net positive.
   min_rr_ratio: 2.0

@@ -2,8 +2,6 @@ import logging
 from decimal import Decimal
 from typing import cast
 
-from pydantic import BaseModel, ConfigDict
-
 from kavzi_trader.brain.confluence_thresholds import (
     COUNTER_TREND_GATE_BUMP,
     confluence_enter_min_for_regime,
@@ -34,12 +32,10 @@ logger = logging.getLogger(__name__)
 MIN_CANDLES_EXPECTED = 5
 
 
-class ContextBuilder(BaseModel):
+class ContextBuilder:
     """
     Builds prompt context payloads from dependency schemas.
     """
-
-    model_config = ConfigDict(frozen=True)
 
     def _warn_if_broken_data(
         self,

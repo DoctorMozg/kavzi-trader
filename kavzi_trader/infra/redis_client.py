@@ -29,7 +29,7 @@ _RETRYABLE = (RedisConnectionError, RedisTimeoutError, ConnectionResetError, OSE
 class RedisStateClient:
     def __init__(self, config: RedisConfigSchema) -> None:
         self._config = config
-        self._client: Redis | None = None  # type: ignore[type-arg]
+        self._client: Redis | None = None
         self._retry_attempts = config.retry_attempts
         self._retry_backoff_s = config.retry_backoff_s
 
@@ -59,7 +59,7 @@ class RedisStateClient:
             logger.info("Disconnected from Redis")
 
     @property
-    def client(self) -> Redis:  # type: ignore[type-arg]
+    def client(self) -> Redis:
         if self._client is None:
             raise RuntimeError("Redis client not connected. Call connect() first.")
         return self._client
@@ -169,13 +169,13 @@ class RedisStateClient:
         result = await self._retry(self.client.scard, key)
         return cast("int", result)
 
-    def pipeline(self) -> redis.asyncio.client.Pipeline:  # type: ignore[type-arg]
+    def pipeline(self) -> redis.asyncio.client.Pipeline:
         """Return a pipeline bound to the current connection."""
         return self.client.pipeline()
 
     async def execute_pipeline(
         self,
-        builder: Callable[[redis.asyncio.client.Pipeline], None],  # type: ignore[type-arg]
+        builder: Callable[[redis.asyncio.client.Pipeline], None],
     ) -> list[Any]:
         """Stage ops via ``builder`` and execute through the retry wrapper.
 

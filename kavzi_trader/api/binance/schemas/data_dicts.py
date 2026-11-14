@@ -1,4 +1,26 @@
-from typing import Any, NotRequired, TypedDict
+from typing import NotRequired, TypedDict
+
+
+class KlineBodyData(TypedDict):
+    """Inner `k` object of a kline stream message."""
+
+    t: int  # Kline start time
+    T: int  # Kline close time
+    s: str  # Symbol
+    i: str  # Interval
+    f: int  # First trade ID
+    L: int  # Last trade ID
+    o: str  # Open price
+    c: str  # Close price
+    h: str  # High price
+    l: str  # Low price # noqa: E741
+    v: str  # Base asset volume
+    n: int  # Number of trades
+    x: bool  # Is this kline closed
+    q: str  # Quote asset volume
+    V: str  # Taker buy base asset volume
+    Q: str  # Taker buy quote asset volume
+    B: str  # Ignore
 
 
 class KlineData(TypedDict):
@@ -7,7 +29,7 @@ class KlineData(TypedDict):
     e: str  # Event type
     E: int  # Event time
     s: str  # Symbol
-    k: dict[str, Any]  # Kline data
+    k: KlineBodyData  # Kline data
 
 
 class TradeData(TypedDict):
@@ -67,12 +89,42 @@ class MarkPriceData(TypedDict):
     T: int  # Next funding time (ms)
 
 
+class DepthData(TypedDict):
+    """Type definition for Futures partial book depth stream data."""
+
+    e: str  # Event type: "depthUpdate"
+    E: int  # Event time (ms)
+    T: int  # Transaction time (ms)
+    s: str  # Symbol
+    U: int  # First update ID
+    u: int  # Final update ID
+    pu: int  # Final update ID of the previous stream message
+    b: list[list[str]]  # Bids as [price, quantity]
+    a: list[list[str]]  # Asks as [price, quantity]
+
+
+class ForceOrderBodyData(TypedDict):
+    """Inner `o` object of a forceOrder stream message."""
+
+    s: str  # Symbol
+    S: str  # Side
+    o: str  # Order type
+    f: str  # Time in force
+    q: str  # Original quantity
+    p: str  # Price
+    ap: str  # Average price
+    X: str  # Order status
+    l: str  # Last filled quantity # noqa: E741
+    z: str  # Filled accumulated quantity
+    T: int  # Trade time
+
+
 class ForceOrderData(TypedDict):
     """Type definition for Futures liquidation order stream data."""
 
     e: str  # Event type: "forceOrder"
     E: int  # Event time (ms)
-    o: dict[str, Any]  # Order data containing: s, S, o, f, q, p, ap, X, l, z, T
+    o: ForceOrderBodyData  # Order data
 
 
 # ------------------------------------------------------------------
@@ -151,6 +203,7 @@ class LeverageBracketEntryDict(TypedDict):
     notionalCap: int
     notionalFloor: int
     maintMarginRatio: float
+    cum: float
 
 
 class LeverageBracketDict(TypedDict):
@@ -158,3 +211,88 @@ class LeverageBracketDict(TypedDict):
 
     symbol: str
     brackets: list[LeverageBracketEntryDict]
+
+
+class FundingRateDict(TypedDict):
+    """Single entry from GET /fapi/v1/fundingRate."""
+
+    symbol: str
+    fundingRate: str
+    fundingTime: int
+    markPrice: NotRequired[str]
+
+
+class OpenInterestHistDict(TypedDict):
+    """Single entry from GET /futures/data/openInterestHist."""
+
+    symbol: str
+    sumOpenInterest: str
+    sumOpenInterestValue: str
+    timestamp: int
+
+
+class LongShortRatioDict(TypedDict):
+    """Single entry from GET /futures/data/globalLongShortAccountRatio."""
+
+    symbol: str
+    longShortRatio: str
+    longAccount: str
+    shortAccount: str
+    timestamp: int
+
+
+class OpenInterestDict(TypedDict):
+    """Response from GET /fapi/v1/openInterest."""
+
+    symbol: str
+    openInterest: str
+    time: int
+
+
+class AvgPriceDict(TypedDict):
+    """Response from GET /api/v3/avgPrice."""
+
+    mins: int
+    price: str
+    closeTime: int
+
+
+class OrderFillDict(TypedDict):
+    """Single fill inside an order response."""
+
+    price: str
+    qty: str
+    commission: str
+    commissionAsset: str
+    tradeId: NotRequired[int]
+
+
+class FuturesOrderDict(TypedDict, total=False):
+    """Order payload from the futures order endpoints.
+
+    Binance omits many fields depending on order type and endpoint, so
+    everything but the identifiers is optional.
+    """
+
+    symbol: str
+    orderId: int
+    clientOrderId: str
+    transactTime: int
+    price: str
+    origQty: str
+    executedQty: str
+    status: str
+    timeInForce: str
+    type: str
+    side: str
+    fills: list[OrderFillDict]
+    stopPrice: str
+    avgPrice: str
+    icebergQty: str
+    time: int
+    updateTime: int
+    isWorking: bool
+    origQuoteOrderQty: str
+    reduceOnly: bool
+    positionSide: str
+    closePosition: bool

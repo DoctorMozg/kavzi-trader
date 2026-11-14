@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from decimal import Decimal
-from typing import Literal, cast
+from typing import Literal
 
 from kavzi_trader.api.binance.schemas.data_dicts import (
     LeverageBracketDict,
@@ -13,18 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 class LiquidationCalculator:
-    """Estimates Binance USD-M futures liquidation prices using tier MMR.
+    """Estimates Binance USD-M one-way isolated liquidation prices.
 
-    Wraps `/fapi/v1/leverageBracket` to look up the maintenance margin ratio
-    (MMR) for the notional tier covering the position, then applies the
-    isolated-margin approximation documented by Binance:
+    Uses the official formula with the per-bracket maintenance amount (cum):
     https://www.binance.com/en/support/faq/how-to-calculate-liquidation-price-of-usd%E2%93%A2-m-futures-contracts-b3c689c1f50a44cabb3a84e663b81d93
 
-    - LONG:  liq = entry * (1 - 1/leverage + MMR)
-    - SHORT: liq = entry * (1 + 1/leverage - MMR)
+        liq = (WB + cum - side * qty * entry) / (qty * (MMR - side))
 
-    Bracket data is cached per-symbol; the first lookup hits the network and
-    subsequent calls are served locally.
+    side is +1 for LONG, -1 for SHORT. For an isolated position WB is the
+    initial margin (notional / leverage); fees are ignored. Brackets come
+    from `/fapi/v1/leverageBracket` and are cached per symbol.
     """
 
     def __init__(self, exchange: ExchangeClient) -> None:
@@ -60,28 +58,25 @@ class LiquidationCalculator:
         if brackets is None:
             return None
 
-        mmr = self._select_mmr(brackets, notional)
-        if mmr is None:
-            logger.warning(
-                "No bracket matched notional=%s for %s; cannot estimate liq",
-                notional,
-                symbol,
-            )
-            return None
+        bracket = self._select_bracket(brackets, notional)
+        mmr = Decimal(str(bracket["maintMarginRatio"]))
+        cum = Decimal(str(bracket["cum"]))
 
-        inv_leverage = Decimal(1) / Decimal(leverage)
-        if side == "LONG":
-            liq_price = entry_price * (Decimal(1) - inv_leverage + mmr)
-        else:
-            liq_price = entry_price * (Decimal(1) + inv_leverage - mmr)
+        side_sign = Decimal(1) if side == "LONG" else Decimal(-1)
+        quantity = notional / entry_price
+        wallet_balance = notional / Decimal(leverage)
+        liq_price = (wallet_balance + cum - side_sign * quantity * entry_price) / (
+            quantity * (mmr - side_sign)
+        )
 
         logger.debug(
-            "Liquidation estimate %s side=%s entry=%s leverage=%s MMR=%s liq=%s",
+            "Liquidation estimate %s side=%s entry=%s leverage=%s MMR=%s cum=%s liq=%s",
             symbol,
             side,
             entry_price,
             leverage,
             mmr,
+            cum,
             liq_price,
         )
         return liq_price
@@ -121,24 +116,23 @@ class LiquidationCalculator:
 
     def _extract_brackets(
         self,
-        raw: list[dict[str, object]] | list[LeverageBracketDict],
+        raw: list[LeverageBracketDict],
         symbol: str,
     ) -> list[LeverageBracketEntryDict] | None:
         if not raw:
             logger.warning("Empty leverage bracket response for %s", symbol)
             return None
-        entry = cast("LeverageBracketDict", raw[0])
-        brackets = entry.get("brackets")
+        brackets = raw[0].get("brackets")
         if not brackets:
             logger.warning("No brackets in leverage response for %s", symbol)
             return None
         return list(brackets)
 
-    def _select_mmr(
+    def _select_bracket(
         self,
         brackets: list[LeverageBracketEntryDict],
         notional: Decimal,
-    ) -> Decimal | None:
+    ) -> LeverageBracketEntryDict:
         # Brackets are ordered ascending by notional; pick the first whose
         # cap covers the position. Fall back to the highest bracket if the
         # notional exceeds every cap (should be very rare).
@@ -146,11 +140,11 @@ class LiquidationCalculator:
             notional_floor = Decimal(str(bracket["notionalFloor"]))
             notional_cap = Decimal(str(bracket["notionalCap"]))
             if notional_floor <= notional <= notional_cap:
-                return Decimal(str(bracket["maintMarginRatio"]))
+                return bracket
         last = brackets[-1]
         logger.warning(
             "Notional %s above all bracket caps; using highest tier MMR %s",
             notional,
             last["maintMarginRatio"],
         )
-        return Decimal(str(last["maintMarginRatio"]))
+        return last

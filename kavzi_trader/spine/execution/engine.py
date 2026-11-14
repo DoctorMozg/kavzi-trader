@@ -118,11 +118,7 @@ class ExecutionEngine:
         )
 
         regime_outcome = self._validator.validate_regime_drift(decision)
-        effective_regime = (
-            regime_outcome.extra["effective_regime"]
-            if regime_outcome.extra is not None
-            else decision.volatility_regime
-        )
+        effective_regime = regime_outcome.effective_regime or decision.volatility_regime
 
         staleness_outcome = self._validator.validate_staleness(
             decision, effective_regime

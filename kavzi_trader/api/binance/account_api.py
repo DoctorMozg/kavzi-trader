@@ -1,8 +1,13 @@
-from typing import Any, cast
+from typing import cast
 
 from kavzi_trader.api.binance.client_base import (
     BinanceClientBase,
     handle_api_errors,
+)
+from kavzi_trader.api.binance.schemas.data_dicts import (
+    AccountInfoDict,
+    AssetBalanceDict,
+    PositionInfoDict,
 )
 from kavzi_trader.api.common.exceptions import ExchangeError
 
@@ -11,7 +16,7 @@ class AccountApi(BinanceClientBase):
     """Futures account, balance and position endpoints (need an API key)."""
 
     @handle_api_errors
-    async def get_account_info(self) -> dict[str, Any]:
+    async def get_account_info(self) -> AccountInfoDict:
         """
         Get futures account information (requires API key).
 
@@ -19,10 +24,10 @@ class AccountApi(BinanceClientBase):
             Futures account information with totalWalletBalance,
             availableBalance, totalUnrealizedProfit, positions, etc.
         """
-        return cast("dict[str, Any]", await self.client.futures_account())
+        return cast("AccountInfoDict", await self.client.futures_account())
 
     @handle_api_errors
-    async def get_asset_balance(self, asset: str) -> dict[str, Any]:
+    async def get_asset_balance(self, asset: str) -> AssetBalanceDict:
         """
         Get futures account balance for a specific asset (requires API key).
 
@@ -35,14 +40,14 @@ class AccountApi(BinanceClientBase):
         balances = await self.client.futures_account_balance()
         for balance in balances:
             if balance["asset"] == asset:
-                return cast("dict[str, Any]", balance)
+                return cast("AssetBalanceDict", balance)
         raise ExchangeError(f"Asset not found: {asset}")
 
     @handle_api_errors
     async def futures_get_position_info(
         self,
         symbol: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[PositionInfoDict]:
         """
         Get futures position information.
 
@@ -57,6 +62,6 @@ class AccountApi(BinanceClientBase):
             params["symbol"] = symbol
 
         return cast(
-            "list[dict[str, Any]]",
+            "list[PositionInfoDict]",
             await self.client.futures_position_information(**params),
         )

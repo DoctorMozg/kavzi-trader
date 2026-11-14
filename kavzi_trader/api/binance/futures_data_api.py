@@ -1,9 +1,16 @@
 from datetime import datetime
-from typing import Any, cast
+from typing import cast
 
 from kavzi_trader.api.binance.client_base import (
     BinanceClientBase,
     handle_api_errors,
+)
+from kavzi_trader.api.binance.schemas.data_dicts import (
+    FundingRateDict,
+    LeverageBracketDict,
+    LongShortRatioDict,
+    OpenInterestDict,
+    OpenInterestHistDict,
 )
 
 
@@ -14,7 +21,7 @@ class FuturesDataApi(BinanceClientBase):
     async def futures_get_leverage_brackets(
         self,
         symbol: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[LeverageBracketDict]:
         """
         Get leverage bracket information for maintenance margin rates.
 
@@ -29,7 +36,7 @@ class FuturesDataApi(BinanceClientBase):
             params["symbol"] = symbol
 
         return cast(
-            "list[dict[str, Any]]",
+            "list[LeverageBracketDict]",
             await self.client.futures_leverage_bracket(**params),
         )
 
@@ -40,7 +47,7 @@ class FuturesDataApi(BinanceClientBase):
         limit: int = 100,
         start_time: int | datetime | None = None,
         end_time: int | datetime | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[FundingRateDict]:
         """
         Get funding rate history for a Futures symbol.
 
@@ -53,17 +60,17 @@ class FuturesDataApi(BinanceClientBase):
         Returns:
             List of funding rate records
         """
-        params: dict[str, Any] = {"symbol": symbol, "limit": limit}
+        params: dict[str, str | int] = {"symbol": symbol, "limit": limit}
 
         params |= self._time_params(start_time, end_time)
 
         return cast(
-            "list[dict[str, Any]]",
+            "list[FundingRateDict]",
             await self.client.futures_funding_rate(**params),
         )
 
     @handle_api_errors
-    async def get_open_interest(self, symbol: str) -> dict[str, Any]:
+    async def get_open_interest(self, symbol: str) -> OpenInterestDict:
         """
         Get current open interest for a Futures symbol.
 
@@ -74,7 +81,7 @@ class FuturesDataApi(BinanceClientBase):
             Open interest data with symbol, openInterest, and time
         """
         return cast(
-            "dict[str, Any]",
+            "OpenInterestDict",
             await self.client.futures_open_interest(symbol=symbol),
         )
 
@@ -86,7 +93,7 @@ class FuturesDataApi(BinanceClientBase):
         limit: int = 30,
         start_time: int | datetime | None = None,
         end_time: int | datetime | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[OpenInterestHistDict]:
         """
         Get historical open interest for a Futures symbol.
 
@@ -100,12 +107,16 @@ class FuturesDataApi(BinanceClientBase):
         Returns:
             List of historical open interest records
         """
-        params: dict[str, Any] = {"symbol": symbol, "period": period, "limit": limit}
+        params: dict[str, str | int] = {
+            "symbol": symbol,
+            "period": period,
+            "limit": limit,
+        }
 
         params |= self._time_params(start_time, end_time)
 
         return cast(
-            "list[dict[str, Any]]",
+            "list[OpenInterestHistDict]",
             await self.client.futures_open_interest_hist(**params),
         )
 
@@ -117,7 +128,7 @@ class FuturesDataApi(BinanceClientBase):
         limit: int = 30,
         start_time: int | datetime | None = None,
         end_time: int | datetime | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[LongShortRatioDict]:
         """
         Get global long/short account ratio for a Futures symbol.
 
@@ -131,11 +142,15 @@ class FuturesDataApi(BinanceClientBase):
         Returns:
             List of long/short ratio records
         """
-        params: dict[str, Any] = {"symbol": symbol, "period": period, "limit": limit}
+        params: dict[str, str | int] = {
+            "symbol": symbol,
+            "period": period,
+            "limit": limit,
+        }
 
         params |= self._time_params(start_time, end_time)
 
         return cast(
-            "list[dict[str, Any]]",
+            "list[LongShortRatioDict]",
             await self.client.futures_global_longshort_ratio(**params),
         )

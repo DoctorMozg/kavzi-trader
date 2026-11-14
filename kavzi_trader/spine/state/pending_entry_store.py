@@ -3,7 +3,7 @@ import logging
 from pydantic import ValidationError
 
 from kavzi_trader.infra.redis_client import RedisStateClient
-from kavzi_trader.spine.state.schemas import PendingEntrySchema
+from kavzi_trader.spine.state.pending_entry_schema import PendingEntrySchema
 
 logger = logging.getLogger(__name__)
 

@@ -345,26 +345,6 @@ async def test_get_account_info(paper_client: PaperExchangeClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_asset_balance_usdt(
-    paper_client: PaperExchangeClient,
-) -> None:
-    balance = await paper_client.get_asset_balance("USDT")
-    assert balance["asset"] == "USDT"
-    assert balance["balance"] == "10000"
-    assert balance["availableBalance"] == "10000"
-
-
-@pytest.mark.asyncio
-async def test_get_asset_balance_other(
-    paper_client: PaperExchangeClient,
-) -> None:
-    balance = await paper_client.get_asset_balance("BTC")
-    assert balance["asset"] == "BTC"
-    assert balance["balance"] == "0"
-    assert balance["availableBalance"] == "0"
-
-
-@pytest.mark.asyncio
 async def test_take_profit_order_stored_as_new(
     paper_client: PaperExchangeClient,
 ) -> None:

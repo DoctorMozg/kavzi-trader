@@ -94,12 +94,12 @@ class BaseStreamHandler[T](ABC):
         await self.stream_manager.start()
 
         # Store the callback
-        self.stream_manager.add_stream_callback(stream_name, callback)  # type: ignore
+        self.stream_manager.add_stream_callback(stream_name, callback)
 
         try:
             # Prepare arguments for the socket function
             # (library methods accept symbol/interval/depth, NOT callback)
-            socket_args: dict[str, Any] = {}
+            socket_args: dict[str, str | int] = {}
             if symbol:
                 socket_args["symbol"] = symbol
             if interval:
@@ -114,7 +114,7 @@ class BaseStreamHandler[T](ABC):
             self.stream_manager.register_stream(
                 stream_name=stream_name,
                 socket=socket,
-                callback=callback,  # type: ignore
+                callback=callback,
             )
 
             logger.info("Subscribed to stream: %s", stream_name)

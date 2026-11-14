@@ -9,17 +9,18 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from kavzi_trader.api.binance.websocket.handlers.base import BaseStreamHandler
+from kavzi_trader.api.binance.websocket.stream_manager import RawMessage
 
 logger = logging.getLogger(__name__)
 
 
-class UserDataStreamHandler(BaseStreamHandler[dict[str, Any]]):
+class UserDataStreamHandler(BaseStreamHandler[RawMessage]):
     """Handler for user data WebSocket streams."""
 
     async def subscribe(
         self,
         symbol: str = "",  # Not used for user data streams # noqa: ARG002
-        callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        callback: Callable[[RawMessage], Awaitable[None]] | None = None,
         **kwargs: Any,  # noqa: ARG002,ANN401
     ) -> str:
         """

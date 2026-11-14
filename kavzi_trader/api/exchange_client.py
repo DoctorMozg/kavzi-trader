@@ -1,8 +1,18 @@
 from collections.abc import Awaitable
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Protocol
 
+from kavzi_trader.api.binance.schemas.data_dicts import (
+    AccountInfoDict,
+    FundingRateDict,
+    LeverageBracketDict,
+    LeverageChangeDict,
+    LongShortRatioDict,
+    MarginTypeChangeDict,
+    OpenInterestHistDict,
+    PositionInfoDict,
+)
 from kavzi_trader.api.common.models import TickerSchema
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.order_enums import OrderSide, OrderType, TimeInForce
@@ -10,8 +20,6 @@ from kavzi_trader.domain.order_response import OrderResponseSchema
 
 # Methods return Awaitable rather than being declared async because
 # BinanceClient wraps its coroutines in an error-mapping decorator.
-# dict[str, Any] is the raw payload shape BinanceClient returns; callers parse
-# the fields they need.
 
 
 class ExchangeClient(Protocol):
@@ -37,7 +45,7 @@ class ExchangeClient(Protocol):
         limit: int = 100,
         start_time: int | datetime | None = None,
         end_time: int | datetime | None = None,
-    ) -> Awaitable[list[dict[str, Any]]]: ...
+    ) -> Awaitable[list[FundingRateDict]]: ...
 
     def get_open_interest_history(
         self,
@@ -46,7 +54,7 @@ class ExchangeClient(Protocol):
         limit: int = 30,
         start_time: int | datetime | None = None,
         end_time: int | datetime | None = None,
-    ) -> Awaitable[list[dict[str, Any]]]: ...
+    ) -> Awaitable[list[OpenInterestHistDict]]: ...
 
     def get_long_short_ratio(
         self,
@@ -55,7 +63,7 @@ class ExchangeClient(Protocol):
         limit: int = 30,
         start_time: int | datetime | None = None,
         end_time: int | datetime | None = None,
-    ) -> Awaitable[list[dict[str, Any]]]: ...
+    ) -> Awaitable[list[LongShortRatioDict]]: ...
 
     def create_order(
         self,
@@ -89,28 +97,28 @@ class ExchangeClient(Protocol):
         symbol: str | None = None,
     ) -> Awaitable[list[OrderResponseSchema]]: ...
 
-    def get_account_info(self) -> Awaitable[dict[str, Any]]: ...
+    def get_account_info(self) -> Awaitable[AccountInfoDict]: ...
 
     def futures_change_leverage(
         self,
         symbol: str,
         leverage: int,
-    ) -> Awaitable[dict[str, Any]]: ...
+    ) -> Awaitable[LeverageChangeDict]: ...
 
     def futures_change_margin_type(
         self,
         symbol: str,
         margin_type: str,
-    ) -> Awaitable[dict[str, Any] | None]: ...
+    ) -> Awaitable[MarginTypeChangeDict | None]: ...
 
     def futures_get_position_info(
         self,
         symbol: str | None = None,
-    ) -> Awaitable[list[dict[str, Any]]]: ...
+    ) -> Awaitable[list[PositionInfoDict]]: ...
 
     def futures_get_leverage_brackets(
         self,
         symbol: str | None = None,
-    ) -> Awaitable[list[dict[str, Any]]]: ...
+    ) -> Awaitable[list[LeverageBracketDict]]: ...
 
     def close(self) -> Awaitable[None]: ...

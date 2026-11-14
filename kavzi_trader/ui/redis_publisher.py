@@ -14,7 +14,7 @@ EVENT_FIELD = "event"
 class RedisUiPublisher:
     """Appends dashboard events to bounded Redis streams."""
 
-    def __init__(self, redis: Redis, config: UiConfigSchema) -> None:  # type: ignore[type-arg]
+    def __init__(self, redis: Redis, config: UiConfigSchema) -> None:
         self._redis = redis
         self._config = config
 

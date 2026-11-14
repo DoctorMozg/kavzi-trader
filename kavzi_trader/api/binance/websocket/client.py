@@ -6,9 +6,9 @@ This module provides a WebSocket client for real-time data from Binance.
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from kavzi_trader.api.binance.schemas.data_dicts import (
+    DepthData,
     ForceOrderData,
     KlineData,
     MarkPriceData,
@@ -26,7 +26,10 @@ from kavzi_trader.api.binance.websocket.handlers.mark_price import (
 from kavzi_trader.api.binance.websocket.handlers.ticker import TickerStreamHandler
 from kavzi_trader.api.binance.websocket.handlers.trades import TradeStreamHandler
 from kavzi_trader.api.binance.websocket.handlers.user_data import UserDataStreamHandler
-from kavzi_trader.api.binance.websocket.stream_manager import StreamManager
+from kavzi_trader.api.binance.websocket.stream_manager import (
+    RawMessage,
+    StreamManager,
+)
 from kavzi_trader.api.common.exceptions import APIError
 
 logger = logging.getLogger(__name__)
@@ -45,7 +48,7 @@ class BinanceWebsocketClient:
         self,
         api_key: str | None = None,
         api_secret: str | None = None,
-        on_message: Callable[[dict[str, Any]], None] | None = None,
+        on_message: Callable[[RawMessage], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
         on_close: Callable[[], None] | None = None,
     ) -> None:
@@ -155,7 +158,7 @@ class BinanceWebsocketClient:
     async def subscribe_depth_stream(
         self,
         symbol: str,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
+        callback: Callable[[DepthData], Awaitable[None]],
         depth: int = 20,
     ) -> str:
         """
@@ -178,7 +181,7 @@ class BinanceWebsocketClient:
     async def subscribe_multiplex_streams(
         self,
         streams: list[str],
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
+        callback: Callable[[RawMessage], Awaitable[None]],
     ) -> str:
         """
         Subscribe to multiple streams at once.
@@ -232,7 +235,7 @@ class BinanceWebsocketClient:
 
     async def subscribe_user_data_stream(
         self,
-        callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        callback: Callable[[RawMessage], Awaitable[None]] | None = None,
     ) -> str:
         """
         Subscribe to user data stream for account and order updates.

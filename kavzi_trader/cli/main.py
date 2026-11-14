@@ -24,8 +24,6 @@ def cli(
 ) -> None:
     """
     KavziTrader - LLM-Based Crypto Futures Trading Platform.
-
-    You can pass hydra configuration overrides as key=value pairs after the command.
     """
     # Stdout carries structured logs; suppress pydantic-ai's first-run banner.
     pydantic_ai.BANNER_ENABLED = False

@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, TypedDict
+from typing import Literal
 
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
@@ -12,6 +12,7 @@ from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
 from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
 from kavzi_trader.domain.state_schemas import AccountStateSchema, PositionSchema
+from kavzi_trader.domain.symbol_tier import SymbolTier
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.external.schemas import SentimentSummarySchema
@@ -33,10 +34,9 @@ from kavzi_trader.spine.state.manager import StateManager
 logger = logging.getLogger(__name__)
 
 
-class _TierFieldsDict(TypedDict, total=False):
-    symbol_tier: str
-    tier_min_confidence: Decimal
-
+# Used when no tier registry is wired in; mirrors the dependency schema defaults.
+DEFAULT_SYMBOL_TIER = SymbolTier.TIER_2.value
+DEFAULT_TIER_MIN_CONFIDENCE = Decimal("0.70")
 
 SCOUT_CANDLES_COUNT = 50
 ANALYSIS_CANDLES_COUNT = 12
@@ -79,16 +79,6 @@ class LiveDependenciesProvider:
             tier_config = self._tier_registry.get_config(symbol)
             return min(configured, tier_config.max_leverage)
         return configured
-
-    def _get_tier_fields(self, symbol: str) -> _TierFieldsDict:
-        if self._tier_registry is None:
-            return {}
-        tier = self._tier_registry.get_tier(symbol)
-        tier_config = self._tier_registry.get_config(symbol)
-        return {
-            "symbol_tier": tier.value,
-            "tier_min_confidence": tier_config.min_confidence,
-        }
 
     def clear_cycle_cache(self) -> None:
         self._cycle_cache.clear()
@@ -158,8 +148,13 @@ class LiveDependenciesProvider:
 
     def _get_symbol_tier(self, symbol: str) -> str:
         if self._tier_registry is None:
-            return "TIER_2"
+            return DEFAULT_SYMBOL_TIER
         return self._tier_registry.get_tier(symbol).value
+
+    def _get_tier_min_confidence(self, symbol: str) -> Decimal:
+        if self._tier_registry is None:
+            return DEFAULT_TIER_MIN_CONFIDENCE
+        return self._tier_registry.get_config(symbol).min_confidence
 
     async def get_scout(self, symbol: str) -> ScoutDependenciesSchema:
         indicators = self._cache.get_indicators(symbol)
@@ -238,7 +233,6 @@ class LiveDependenciesProvider:
     async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema:
         context = self._resolve_analysis_context(symbol)
         candles = context.candles
-        tier_fields = self._get_tier_fields(symbol)
         return AnalystDependenciesSchema.model_validate(
             {
                 "symbol": symbol,
@@ -252,7 +246,8 @@ class LiveDependenciesProvider:
                 "htf_trend": self._get_htf_trend(symbol, candles),
                 "leverage": self._get_leverage(symbol),
                 "sentiment_summary": self._get_sentiment(),
-                **tier_fields,
+                "symbol_tier": self._get_symbol_tier(symbol),
+                "tier_min_confidence": self._get_tier_min_confidence(symbol),
             }
         )
 
@@ -262,7 +257,6 @@ class LiveDependenciesProvider:
         account_state = await self._get_cached_account_state()
         open_positions = await self._get_cached_positions()
 
-        tier_fields = self._get_tier_fields(symbol)
         return TradingDependenciesSchema.model_validate(
             {
                 "symbol": symbol,
@@ -279,7 +273,8 @@ class LiveDependenciesProvider:
                 "leverage": self._get_leverage(symbol),
                 "atr_history": self._cache.get_atr_history(symbol),
                 "sentiment_summary": self._get_sentiment(),
-                **tier_fields,
+                "symbol_tier": self._get_symbol_tier(symbol),
+                "tier_min_confidence": self._get_tier_min_confidence(symbol),
             }
         )
 

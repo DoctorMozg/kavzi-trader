@@ -17,6 +17,7 @@ def _bracket_payload() -> list[dict[str, object]]:
                     "notionalFloor": 0,
                     "notionalCap": 50000,
                     "maintMarginRatio": 0.004,
+                    "cum": 0.0,
                 },
                 {
                     "bracket": 2,
@@ -24,6 +25,7 @@ def _bracket_payload() -> list[dict[str, object]]:
                     "notionalFloor": 50000,
                     "notionalCap": 250000,
                     "maintMarginRatio": 0.005,
+                    "cum": 50.0,
                 },
                 {
                     "bracket": 3,
@@ -31,6 +33,7 @@ def _bracket_payload() -> list[dict[str, object]]:
                     "notionalFloor": 250000,
                     "notionalCap": 1000000,
                     "maintMarginRatio": 0.01,
+                    "cum": 1300.0,
                 },
             ],
         },
@@ -61,10 +64,8 @@ class TestLiquidationCalculator:
             notional=Decimal(10000),
         )
 
-        # LONG: liq = 50000 * (1 - 0.1 + 0.004) = 45200
-        assert liq == Decimal(50000) * (
-            Decimal(1) - Decimal(1) / Decimal(10) + Decimal("0.004")
-        )
+        # WB=1000, q=0.2, cum=0: (1000 - 10000) / (0.2 * (0.004 - 1))
+        assert liq == pytest.approx(Decimal("45180.7228915663"), abs=Decimal("1e-6"))
 
     @pytest.mark.asyncio
     async def test_selects_middle_bracket_for_mid_notional(self, mock_exchange) -> None:
@@ -78,10 +79,8 @@ class TestLiquidationCalculator:
             notional=Decimal(100000),
         )
 
-        # LONG: liq = 50000 * (1 - 0.1 + 0.005) = 45250
-        assert liq == Decimal(50000) * (
-            Decimal(1) - Decimal(1) / Decimal(10) + Decimal("0.005")
-        )
+        # WB=10000, q=2, cum=50: (10000 + 50 - 100000) / (2 * (0.005 - 1))
+        assert liq == pytest.approx(Decimal("45201.0050251256"), abs=Decimal("1e-6"))
 
     @pytest.mark.asyncio
     async def test_computes_short_liquidation_correctly(self, mock_exchange) -> None:
@@ -95,10 +94,25 @@ class TestLiquidationCalculator:
             notional=Decimal(10000),
         )
 
-        # SHORT: liq = 50000 * (1 + 0.1 - 0.004) = 54800
-        assert liq == Decimal(50000) * (
-            Decimal(1) + Decimal(1) / Decimal(10) - Decimal("0.004")
+        # WB=1000, q=0.2, cum=0: (1000 + 10000) / (0.2 * (0.004 + 1))
+        assert liq == pytest.approx(Decimal("54780.8764940239"), abs=Decimal("1e-6"))
+
+    @pytest.mark.asyncio
+    async def test_short_in_second_bracket_uses_maintenance_amount(
+        self, mock_exchange
+    ) -> None:
+        calc = LiquidationCalculator(mock_exchange)
+
+        liq = await calc.estimate_liquidation_price(
+            symbol="BTCUSDT",
+            side="SHORT",
+            entry_price=Decimal(50000),
+            leverage=10,
+            notional=Decimal(100000),
         )
+
+        # WB=10000, q=2, cum=50: (10000 + 50 + 100000) / (2 * (0.005 + 1))
+        assert liq == pytest.approx(Decimal("54751.2437810945"), abs=Decimal("1e-6"))
 
     @pytest.mark.asyncio
     async def test_returns_none_on_api_failure(self, mock_exchange) -> None:
@@ -166,6 +180,7 @@ class TestLiquidationCalculator:
                             "notionalFloor": 0,
                             "notionalCap": 1000000,
                             "maintMarginRatio": 0.01,
+                            "cum": 0.0,
                         },
                     ],
                 },
@@ -236,7 +251,6 @@ class TestLiquidationCalculator:
             notional=Decimal(10_000_000),
         )
 
-        # Falls back to highest MMR (0.01)
-        assert liq == Decimal(50000) * (
-            Decimal(1) - Decimal(1) / Decimal(10) + Decimal("0.01")
-        )
+        # Falls back to the highest bracket: mmr 0.01, cum 1300
+        # WB=1_000_000, q=200, cum=1300: (1_000_000 + 1300 - 10_000_000) / (200 * -0.99)
+        assert liq == pytest.approx(Decimal("45447.9797979798"), abs=Decimal("1e-6"))

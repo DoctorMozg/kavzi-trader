@@ -10,7 +10,9 @@ from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
-from kavzi_trader.spine.state.schemas import ReconciliationResultSchema
+from kavzi_trader.spine.state.reconciliation_result_schema import (
+    ReconciliationResultSchema,
+)
 
 
 class TestPositionManagementConfigSchema:

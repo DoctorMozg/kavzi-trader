@@ -75,17 +75,17 @@ class OrderFlowSchema(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic documented mypy gap
     @property
     def is_crowded_long(self) -> bool:
         return self.funding_zscore > CROWDED_LONG_THRESHOLD
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic documented mypy gap
     @property
     def is_crowded_short(self) -> bool:
         return self.funding_zscore < CROWDED_SHORT_THRESHOLD
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic documented mypy gap
     @property
     def squeeze_alert(self) -> bool:
         if self.price_change_1h_percent is None:
@@ -95,7 +95,7 @@ class OrderFlowSchema(BaseModel):
             and abs(self.price_change_1h_percent) < SQUEEZE_PRICE_THRESHOLD
         )
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic documented mypy gap
     @property
     def oi_funding_divergence(self) -> bool:
         """Rising OI + negative funding OR falling OI + positive funding."""
@@ -105,7 +105,7 @@ class OrderFlowSchema(BaseModel):
         positive_funding = self.funding_zscore > DIVERGENCE_FUNDING_ZSCORE
         return (rising_oi and negative_funding) or (falling_oi and positive_funding)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic documented mypy gap
     @property
     def oi_funding_divergence_direction(self) -> str | None:
         """Contrarian direction implied by the divergence.

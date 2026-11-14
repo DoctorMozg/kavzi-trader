@@ -30,7 +30,7 @@ class UiStreamService:
 
     def __init__(
         self,
-        redis: Redis,  # type: ignore[type-arg]
+        redis: Redis,
         config: UiConfigSchema,
         projection: UiStateProjection,
         broadcaster: UiBroadcaster,

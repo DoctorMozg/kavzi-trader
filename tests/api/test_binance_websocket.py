@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kavzi_trader.api.binance.schemas.data_dicts import KlineData, TickerData, TradeData
+from kavzi_trader.api.binance.schemas.data_dicts import (
+    DepthData,
+    KlineData,
+    TickerData,
+    TradeData,
+)
 from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
 from kavzi_trader.api.binance.websocket.handlers.depth import DepthStreamHandler
 from kavzi_trader.api.binance.websocket.handlers.klines import KlineStreamHandler
@@ -148,7 +153,7 @@ async def test_depth_stream(websocket_client: BinanceWebsocketClient) -> None:
     websocket_client.depth_handler.subscribe = AsyncMock(return_value="bnbusdt@depth10")  # type: ignore
 
     # Mock callback function
-    async def callback_async(data: dict[str, Any]) -> None:
+    async def callback_async(data: DepthData) -> None:
         pass
 
     # Subscribe to depth stream
@@ -530,7 +535,7 @@ async def test_depth_handler_subscribe() -> None:
     handler = DepthStreamHandler(mock_manager)
 
     # Mock callback function
-    async def callback_async(data: dict[str, Any]) -> None:
+    async def callback_async(data: DepthData) -> None:
         pass
 
     # Test subscribe

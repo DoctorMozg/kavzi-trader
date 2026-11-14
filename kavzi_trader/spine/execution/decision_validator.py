@@ -50,7 +50,7 @@ class DecisionValidator:
 
         Always passes. When a detector is wired and disagrees with the
         decision's regime, the stricter of the two is surfaced via
-        ``extra["effective_regime"]``; otherwise the decision's own regime is
+        ``effective_regime``; otherwise the decision's own regime is
         returned verbatim.
         """
         effective_regime = decision.volatility_regime
@@ -74,7 +74,7 @@ class DecisionValidator:
         return ValidationOutcomeSchema(
             passed=True,
             reason=None,
-            extra={"effective_regime": effective_regime},
+            effective_regime=effective_regime,
         )
 
     def validate_staleness(
@@ -95,9 +95,9 @@ class DecisionValidator:
             return ValidationOutcomeSchema(
                 passed=False,
                 reason="Decision expired",
-                extra={"regime": regime.value},
+                effective_regime=None,
             )
-        return ValidationOutcomeSchema(passed=True, reason=None, extra=None)
+        return ValidationOutcomeSchema(passed=True, reason=None, effective_regime=None)
 
     async def validate_risk(
         self,
@@ -108,7 +108,10 @@ class DecisionValidator:
         Returns both the outcome (for the pipeline) and the raw validation
         result (so ``execute()`` can read ``recommended_size`` on success).
         """
-        side: Literal["LONG", "SHORT"] = decision.action  # type: ignore[assignment]
+        if decision.action == "CLOSE":
+            msg = f"CLOSE decision {decision.decision_id} cannot be risk-validated"
+            raise ValueError(msg)
+        side: Literal["LONG", "SHORT"] = decision.action
         params = TradeValidationParamsSchema.model_validate(
             {
                 "symbol": decision.symbol,
@@ -133,8 +136,13 @@ class DecisionValidator:
                 ValidationOutcomeSchema(
                     passed=False,
                     reason="; ".join(result.rejection_reasons),
-                    extra={"rejection_reasons": list(result.rejection_reasons)},
+                    effective_regime=None,
                 ),
                 result,
             )
-        return ValidationOutcomeSchema(passed=True, reason=None, extra=None), result
+        passed = ValidationOutcomeSchema(
+            passed=True,
+            reason=None,
+            effective_regime=None,
+        )
+        return passed, result

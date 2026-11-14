@@ -148,3 +148,39 @@ def test_user_prompts_carry_the_regime_gate_from_code(
 
     assert f"Confluence gate for this regime: {gate} " in analyst_prompt
     assert f"Analyst confluence gate for this regime: {gate}\n" in trader_prompt
+
+
+def test_user_prompts_render_key_sections_through_real_builder(
+    prompt_loader: PromptLoader,
+    make_deps: Callable[
+        [VolatilityRegime],
+        tuple[AnalystDependenciesSchema, TradingDependenciesSchema],
+    ],
+) -> None:
+    analyst_deps, trader_deps = make_deps(VolatilityRegime.NORMAL)
+    builder = ContextBuilder()
+
+    analyst_prompt = prompt_loader.render_user_prompt(
+        "analyze_setup",
+        builder.build_analyst_context(analyst_deps),
+    )
+    trader_prompt = prompt_loader.render_user_prompt(
+        "make_decision",
+        builder.build_trader_context(trader_deps),
+    )
+
+    for section in ("STEP 1", "STEP 2", "STEP 3", "STEP 4"):
+        assert section in analyst_prompt
+    assert "15m BTCUSDT" in analyst_prompt
+    assert "Leverage: 5x" in analyst_prompt
+    for section in (
+        "MARKET DATA:",
+        "ORDER FLOW:",
+        "ALGORITHM CONFLUENCE:",
+        "ACCOUNT STATE:",
+        "OPEN POSITIONS:",
+        "EXTERNAL SENTIMENT:",
+    ):
+        assert section in trader_prompt
+    assert "15m BTCUSDT at price 105" in trader_prompt
+    assert "Approximate liquidation distance: 20.0% from entry" in trader_prompt

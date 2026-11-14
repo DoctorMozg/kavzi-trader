@@ -19,9 +19,6 @@ wheels/
 /results/*
 /reports/*
 
-# Hydra config
-!hydra_config/data
-
 # Tests
 test_output/
 .mz/

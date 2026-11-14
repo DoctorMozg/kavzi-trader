@@ -4,7 +4,7 @@ Batch processing utilities for historical data downloads.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -12,6 +12,13 @@ from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.commons.time_utility import MILLISECONDS_IN_SECOND
 
 logger = logging.getLogger(__name__)
+
+
+class KlineBatchDict(TypedDict):
+    """Start/end of one kline batch in epoch milliseconds."""
+
+    start_time: int
+    end_time: int
 
 
 class DownloadBatchConfigSchema(BaseModel):
@@ -39,7 +46,7 @@ class BatchProcessor:
         end_time: datetime,
         interval: str,
         batch_size: int,
-    ) -> list[dict[str, Any]]:
+    ) -> list[KlineBatchDict]:
         """
         Split a time range into batches for efficient kline downloading.
 
@@ -63,16 +70,13 @@ class BatchProcessor:
         end_ms = int(end_time.timestamp() * MILLISECONDS_IN_SECOND)
 
         # Create batch intervals
-        batches = []
+        batches: list[KlineBatchDict] = []
         batch_start = start_ms
 
         while batch_start < end_ms:
             batch_end = min(batch_start + batch_duration_ms, end_ms)
             batches.append(
-                {
-                    "start_time": batch_start,
-                    "end_time": batch_end,
-                },
+                KlineBatchDict(start_time=batch_start, end_time=batch_end),
             )
             batch_start = batch_end + 1  # Avoid overlap
 

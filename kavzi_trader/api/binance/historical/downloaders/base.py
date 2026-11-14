@@ -4,7 +4,7 @@ Base downloader for historical data.
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, NamedTuple
 
 from pydantic import BaseModel
@@ -35,7 +35,7 @@ class BaseDownloader[T: BaseModel]:
 
     async def execute_parallel_downloads(
         self,
-        batches: list[dict[str, Any]],
+        batches: Sequence[Mapping[str, object]],
         download_func: Callable[..., Awaitable[list[T]]],
         max_workers: int,
         symbol: str,
@@ -63,11 +63,11 @@ class BaseDownloader[T: BaseModel]:
 
         class _DownloadBatchResult(NamedTuple):
             data: list[Any]
-            config: dict[str, Any]
+            config: Mapping[str, object]
             batch_index: int
 
         async def download_with_semaphore(
-            batch_config: dict[str, Any],
+            batch_config: Mapping[str, object],
             batch_index: int,
         ) -> _DownloadBatchResult:
             """Download a batch with semaphore control."""

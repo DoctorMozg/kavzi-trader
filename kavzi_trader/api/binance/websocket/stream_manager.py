@@ -16,6 +16,11 @@ from kavzi_trader.api.common.exceptions import APIError
 
 logger = logging.getLogger(__name__)
 
+# Any: raw envelopes differ per event type and are only narrowed by typed handlers.
+type RawMessage = dict[str, Any]
+# Any: the payload type depends on the stream the callback is registered for.
+type StreamCallback = Callable[[Any], Awaitable[None]]
+
 # Errors python-binance recovers from itself by reconnecting the socket.
 _TRANSIENT_ERROR_TYPES = frozenset(
     {
@@ -45,7 +50,7 @@ class StreamManager:
         self,
         api_key: str | None = None,
         api_secret: str | None = None,
-        on_message: Callable[[dict[str, Any]], None] | None = None,
+        on_message: Callable[[RawMessage], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
         on_close: Callable[[], None] | None = None,
     ) -> None:
@@ -67,7 +72,7 @@ class StreamManager:
         # Stream-specific callbacks
         self.stream_callbacks: dict[
             str,
-            Callable[[dict[str, Any]], Awaitable[None]],
+            StreamCallback,
         ] = {}
 
         self._is_running: bool = False
@@ -132,7 +137,7 @@ class StreamManager:
     def add_stream_callback(
         self,
         stream_name: str,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
+        callback: StreamCallback,
     ) -> None:
         self.stream_callbacks[stream_name] = callback
 
@@ -140,7 +145,7 @@ class StreamManager:
         self,
         stream_name: str,
         socket: ReconnectingWebsocket,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
+        callback: StreamCallback,
     ) -> None:
         """Connect the socket, start a recv loop, and track both."""
         self.stream_callbacks[stream_name] = callback
@@ -204,7 +209,7 @@ class StreamManager:
 
     async def _process_message(
         self,
-        msg: dict[str, Any],
+        msg: RawMessage,
         source_stream: str | None = None,
     ) -> None:
         if msg.get("e") == "error":
@@ -233,7 +238,7 @@ class StreamManager:
 
     def _handle_error_message(
         self,
-        msg: dict[str, Any],
+        msg: RawMessage,
         source_stream: str | None,
     ) -> None:
         error_type = str(msg.get("type"))
@@ -249,7 +254,7 @@ class StreamManager:
 
     def _get_stream_name_from_message(  # noqa: PLR0911
         self,
-        msg: dict[str, Any],
+        msg: RawMessage,
     ) -> str | None:
         if "stream" in msg:
             return cast("str", msg["stream"])

@@ -8,18 +8,19 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from kavzi_trader.api.binance.schemas.data_dicts import DepthData
 from kavzi_trader.api.binance.websocket.handlers.base import BaseStreamHandler
 
 logger = logging.getLogger(__name__)
 
 
-class DepthStreamHandler(BaseStreamHandler[dict[str, Any]]):
+class DepthStreamHandler(BaseStreamHandler[DepthData]):
     """Handler for order book depth WebSocket streams."""
 
     async def subscribe(
         self,
         symbol: str,
-        callback: Callable[[dict[str, Any]], Awaitable[None]],
+        callback: Callable[[DepthData], Awaitable[None]],
         **kwargs: Any,  # noqa: ANN401
     ) -> str:
         """

@@ -6,7 +6,6 @@ data) over a single python-binance async client.
 """
 
 import logging
-from typing import Any
 
 from binance.async_client import AsyncClient as BinanceAPIClient
 
@@ -53,7 +52,7 @@ class BinanceClient(MarketDataApi, TradesApi, AccountApi, OrdersApi, FuturesData
 
         # Initialize the python-binance client
         # Note: python-binance Client doesn't accept 'timeout' directly
-        requests_params: dict[str, Any] = {}
+        requests_params: dict[str, object] = {}
         if proxies:
             requests_params["proxies"] = proxies
         if timeout_s:
