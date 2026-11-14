@@ -382,7 +382,7 @@ async def test_stream_manager_process_message() -> None:
     on_message_mock.assert_called_once_with(test_msg)
 
     # Test processing an error message
-    error_msg = {"error": "test_error"}
+    error_msg = {"e": "error", "type": "BinanceWebsocketUnableToConnect", "m": "x"}
     await manager._process_message(error_msg)
 
     # Verify the error callback was called

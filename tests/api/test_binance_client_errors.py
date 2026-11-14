@@ -10,6 +10,7 @@ from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.exceptions import (
     AuthenticationError,
     ExchangeError,
+    RateLimitError,
     RequestError,
 )
 
@@ -50,6 +51,15 @@ class TestHandleApiErrors:
         client.client.ping.side_effect = _api_exception(-2015)
 
         with pytest.raises(AuthenticationError):
+            await client.ping()
+
+    async def test_too_many_requests_maps_to_rate_limit_error(
+        self,
+        client: BinanceClient,
+    ) -> None:
+        client.client.ping.side_effect = _api_exception(-1003, "Too many requests")
+
+        with pytest.raises(RateLimitError):
             await client.ping()
 
     async def test_request_exception_maps_to_request_error(

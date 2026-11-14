@@ -24,7 +24,7 @@ KLINE_INTERVALS: dict[str, int] = {
 }
 
 # Error codes
-ERROR_CODE_INVALID_API_KEY = -2015  # API-key format invalid
-ERROR_CODE_UNAUTHORIZED = -2014  # API-key has no permission for the request
-ERROR_CODE_RATE_LIMIT_EXCEEDED = -1429  # Rate limit exceeded
+ERROR_CODE_INVALID_API_KEY = -2015  # Invalid API-key, IP, or permissions
+ERROR_CODE_UNAUTHORIZED = -2014  # API-key format invalid
+ERROR_CODE_RATE_LIMIT_EXCEEDED = -1003  # TOO_MANY_REQUESTS
 ERROR_CODE_MARGIN_TYPE_ALREADY_SET = -4046  # No need to change margin type

@@ -17,6 +17,17 @@ from kavzi_trader.api.common.exceptions import APIError
 
 logger = logging.getLogger(__name__)
 
+# Errors python-binance recovers from itself by reconnecting the socket.
+_TRANSIENT_ERROR_TYPES = frozenset(
+    {
+        "IncompleteReadError",
+        "gaierror",
+        "ConnectionClosedError",
+        "ConnectionClosedOK",
+        "BinanceWebsocketClosed",
+    },
+)
+
 
 class _StreamEntry(NamedTuple):
     socket: ReconnectingWebsocket
@@ -61,6 +72,8 @@ class StreamManager:
         ] = {}
 
         self._is_running: bool = False
+        # Streams whose feed is dead and will not recover without a restart
+        self._dead_streams: set[str] = set()
 
     # ------------------------------------------------------------------
     # Public helpers kept for backward compat with handler / client code
@@ -102,6 +115,7 @@ class StreamManager:
                     await self.unregister_stream(stream_name)
 
                 self._streams.clear()
+                self._dead_streams.clear()
                 self.stream_callbacks.clear()
                 if self._async_client is not None:
                     await self._async_client.close_connection()
@@ -172,7 +186,7 @@ class StreamManager:
                     msg = await socket.recv()
                     if msg is None:
                         continue
-                    await self._process_message(msg)
+                    await self._process_message(msg, stream_name)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -181,6 +195,7 @@ class StreamManager:
                 stream_name,
                 extra={"stream_name": stream_name},
             )
+            self._dead_streams.add(stream_name)
             if self.on_error_callback:
                 self.on_error_callback(
                     APIError(f"Recv loop error for {stream_name}"),
@@ -190,19 +205,22 @@ class StreamManager:
     # Message routing
     # ------------------------------------------------------------------
 
-    async def _process_message(self, msg: dict[str, Any]) -> None:
-        if "error" in msg:
-            error_msg = f"WebSocket error: {msg['error']!s}"
-            logger.error(error_msg)
-            if self.on_error_callback:
-                self.on_error_callback(APIError(error_msg))
+    async def _process_message(
+        self,
+        msg: dict[str, Any],
+        source_stream: str | None = None,
+    ) -> None:
+        if msg.get("e") == "error":
+            self._handle_error_message(msg, source_stream)
             return
 
         stream_name = self._get_stream_name_from_message(msg)
+        # Combined-stream sockets wrap the event as {"stream": ..., "data": {...}}
+        payload = msg["data"] if "stream" in msg and "data" in msg else msg
 
         if stream_name and stream_name in self.stream_callbacks:
             try:
-                await self.stream_callbacks[stream_name](msg)
+                await self.stream_callbacks[stream_name](payload)
             except Exception:
                 logger.exception(
                     "Error in stream callback",
@@ -215,6 +233,22 @@ class StreamManager:
 
         if self.on_message_callback:
             self.on_message_callback(msg)
+
+    def _handle_error_message(
+        self,
+        msg: dict[str, Any],
+        source_stream: str | None,
+    ) -> None:
+        error_type = str(msg.get("type"))
+        error_msg = f"WebSocket error: {error_type}: {msg.get('m')}"
+        if error_type in _TRANSIENT_ERROR_TYPES:
+            logger.warning(error_msg, extra={"stream_name": source_stream})
+            return
+
+        logger.error(error_msg, extra={"stream_name": source_stream})
+        self._dead_streams.add(source_stream or "<unknown>")
+        if self.on_error_callback:
+            self.on_error_callback(APIError(error_msg))
 
     def _get_stream_name_from_message(  # noqa: PLR0911
         self,
@@ -265,4 +299,4 @@ class StreamManager:
         return list(self._streams.keys())
 
     def is_connected(self) -> bool:
-        return self._is_running
+        return self._is_running and not self._dead_streams

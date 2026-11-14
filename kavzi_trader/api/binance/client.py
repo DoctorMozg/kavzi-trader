@@ -489,7 +489,7 @@ class BinanceClient:
             params["endTime"] = end_time_ms
 
         # Execute request
-        klines = await self.client.get_klines(
+        klines = await self.client.futures_klines(
             symbol=symbol,
             interval=interval,
             limit=limit,
@@ -527,7 +527,8 @@ class BinanceClient:
         Returns:
             Ticker statistics
         """
-        ticker = await self.client.get_ticker(symbol=symbol)
+        # Futures 24h ticker has no prevClosePrice or bid/ask fields
+        ticker = await self.client.futures_ticker(symbol=symbol)
 
         # Convert the response to our schema
         return TickerSchema(
@@ -536,12 +537,7 @@ class BinanceClient:
             price_change=Decimal(ticker["priceChange"]),
             price_change_percent=Decimal(ticker["priceChangePercent"]),
             weighted_avg_price=Decimal(ticker["weightedAvgPrice"]),
-            prev_close_price=Decimal(ticker["prevClosePrice"]),
             last_qty=Decimal(ticker["lastQty"]),
-            bid_price=Decimal(ticker["bidPrice"]),
-            bid_qty=Decimal(ticker["bidQty"]),
-            ask_price=Decimal(ticker["askPrice"]),
-            ask_qty=Decimal(ticker["askQty"]),
             open_price=Decimal(ticker["openPrice"]),
             high_price=Decimal(ticker["highPrice"]),
             low_price=Decimal(ticker["lowPrice"]),

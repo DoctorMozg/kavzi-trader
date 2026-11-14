@@ -8,6 +8,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
+from binance import ReconnectingWebsocket
+
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.binance.schemas.data_dicts import KlineData
 from kavzi_trader.api.binance.websocket.handlers.base import BaseStreamHandler
@@ -50,9 +52,19 @@ class KlineStreamHandler(BaseStreamHandler[KlineData]):
         stream_name = f"{symbol}@kline_{interval}"
 
         return await self._start_socket(
-            socket_func=self.stream_manager.bsm.kline_socket,
+            socket_func=self._futures_kline_socket,
             stream_name=stream_name,
             callback=callback,
             symbol=symbol.upper(),
             interval=interval,
         )
+
+    def _futures_kline_socket(
+        self,
+        symbol: str,
+        interval: str,
+    ) -> ReconnectingWebsocket:
+        # kline_futures_socket is a continuous-contract stream whose payload has no
+        # symbol field, so subscribe to the plain USD-M kline stream instead.
+        stream = f"{symbol.lower()}@kline_{interval}"
+        return self.stream_manager.bsm.futures_multiplex_socket(streams=[stream])

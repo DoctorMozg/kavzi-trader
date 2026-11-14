@@ -38,7 +38,7 @@ class TickerStreamHandler(BaseStreamHandler[TickerData]):
         stream_name = f"{symbol}@ticker"
 
         return await self._start_socket(
-            socket_func=self.stream_manager.bsm.symbol_ticker_socket,
+            socket_func=self.stream_manager.bsm.individual_symbol_ticker_futures_socket,
             stream_name=stream_name,
             callback=callback,
             symbol=symbol.upper(),
