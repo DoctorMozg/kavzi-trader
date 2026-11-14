@@ -1,0 +1,686 @@
+{
+  "$defs": {
+    "UiAccountEventSchema": {
+      "description": "Periodic full account state; session fields repeat so trimming is safe.",
+      "properties": {
+        "balance_usdt": {
+          "title": "Balance Usdt",
+          "type": "string"
+        },
+        "initial_balance_usdt": {
+          "title": "Initial Balance Usdt",
+          "type": "string"
+        },
+        "is_paper": {
+          "title": "Is Paper",
+          "type": "boolean"
+        },
+        "positions": {
+          "items": {
+            "$ref": "#/$defs/UiOpenPositionSchema"
+          },
+          "title": "Positions",
+          "type": "array"
+        },
+        "prices": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Prices",
+          "type": "object"
+        },
+        "running_loops": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Running Loops",
+          "type": "array"
+        },
+        "session_started_at_ms": {
+          "minimum": 0,
+          "title": "Session Started At Ms",
+          "type": "integer"
+        },
+        "ts_ms": {
+          "minimum": 0,
+          "title": "Ts Ms",
+          "type": "integer"
+        },
+        "type": {
+          "const": "account",
+          "default": "account",
+          "title": "Type",
+          "type": "string"
+        },
+        "unrealized_pnl_usdt": {
+          "title": "Unrealized Pnl Usdt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "ts_ms",
+        "session_started_at_ms",
+        "is_paper",
+        "initial_balance_usdt",
+        "balance_usdt",
+        "unrealized_pnl_usdt",
+        "positions",
+        "prices",
+        "running_loops"
+      ],
+      "title": "UiAccountEventSchema",
+      "type": "object"
+    },
+    "UiCandleSchema": {
+      "properties": {
+        "close": {
+          "title": "Close",
+          "type": "string"
+        },
+        "high": {
+          "title": "High",
+          "type": "string"
+        },
+        "low": {
+          "title": "Low",
+          "type": "string"
+        },
+        "open": {
+          "title": "Open",
+          "type": "string"
+        },
+        "open_time_ms": {
+          "minimum": 0,
+          "title": "Open Time Ms",
+          "type": "integer"
+        },
+        "volume": {
+          "title": "Volume",
+          "type": "string"
+        }
+      },
+      "required": [
+        "open_time_ms",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume"
+      ],
+      "title": "UiCandleSchema",
+      "type": "object"
+    },
+    "UiCandlesEventSchema": {
+      "description": "Closed candles for one symbol: a startup backfill batch or a single close.",
+      "properties": {
+        "candles": {
+          "items": {
+            "$ref": "#/$defs/UiCandleSchema"
+          },
+          "minItems": 1,
+          "title": "Candles",
+          "type": "array"
+        },
+        "interval": {
+          "minLength": 1,
+          "title": "Interval",
+          "type": "string"
+        },
+        "symbol": {
+          "title": "Symbol",
+          "type": "string"
+        },
+        "ts_ms": {
+          "minimum": 0,
+          "title": "Ts Ms",
+          "type": "integer"
+        },
+        "type": {
+          "const": "candles",
+          "default": "candles",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "ts_ms",
+        "symbol",
+        "interval",
+        "candles"
+      ],
+      "title": "UiCandlesEventSchema",
+      "type": "object"
+    },
+    "UiDecisionEventSchema": {
+      "description": "One step of the Scout -> Analyst -> Trader pipeline or a position action.",
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "latency_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latency Ms"
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning"
+        },
+        "stage": {
+          "enum": [
+            "scout",
+            "analyst",
+            "trader",
+            "filter",
+            "position"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "symbol": {
+          "title": "Symbol",
+          "type": "string"
+        },
+        "ts_ms": {
+          "minimum": 0,
+          "title": "Ts Ms",
+          "type": "integer"
+        },
+        "type": {
+          "const": "decision",
+          "default": "decision",
+          "title": "Type",
+          "type": "string"
+        },
+        "verdict": {
+          "minLength": 1,
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "event_id",
+        "ts_ms",
+        "symbol",
+        "stage",
+        "verdict",
+        "summary",
+        "reasoning",
+        "confidence",
+        "latency_ms"
+      ],
+      "title": "UiDecisionEventSchema",
+      "type": "object"
+    },
+    "UiEvent": {
+      "discriminator": {
+        "mapping": {
+          "account": "#/$defs/UiAccountEventSchema",
+          "candles": "#/$defs/UiCandlesEventSchema",
+          "decision": "#/$defs/UiDecisionEventSchema",
+          "position_closed": "#/$defs/UiPositionClosedEventSchema",
+          "trade": "#/$defs/UiTradeEventSchema"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/UiAccountEventSchema"
+        },
+        {
+          "$ref": "#/$defs/UiDecisionEventSchema"
+        },
+        {
+          "$ref": "#/$defs/UiTradeEventSchema"
+        },
+        {
+          "$ref": "#/$defs/UiPositionClosedEventSchema"
+        },
+        {
+          "$ref": "#/$defs/UiCandlesEventSchema"
+        }
+      ]
+    },
+    "UiEventMessageSchema": {
+      "description": "A delta; seq is consecutive after the snapshot's seq for one connection.",
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/UiEvent"
+        },
+        "seq": {
+          "minimum": 1,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "const": "event",
+          "default": "event",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "seq",
+        "event"
+      ],
+      "title": "UiEventMessageSchema",
+      "type": "object"
+    },
+    "UiOpenPositionSchema": {
+      "properties": {
+        "entry_price": {
+          "title": "Entry Price",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "leverage": {
+          "minimum": 1,
+          "title": "Leverage",
+          "type": "integer"
+        },
+        "mark_price": {
+          "title": "Mark Price",
+          "type": "string"
+        },
+        "opened_at_ms": {
+          "minimum": 0,
+          "title": "Opened At Ms",
+          "type": "integer"
+        },
+        "quantity": {
+          "title": "Quantity",
+          "type": "string"
+        },
+        "side": {
+          "enum": [
+            "LONG",
+            "SHORT"
+          ],
+          "title": "Side",
+          "type": "string"
+        },
+        "stop_loss": {
+          "title": "Stop Loss",
+          "type": "string"
+        },
+        "symbol": {
+          "title": "Symbol",
+          "type": "string"
+        },
+        "take_profit": {
+          "title": "Take Profit",
+          "type": "string"
+        },
+        "unrealized_pnl_usdt": {
+          "title": "Unrealized Pnl Usdt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "symbol",
+        "side",
+        "quantity",
+        "entry_price",
+        "mark_price",
+        "stop_loss",
+        "take_profit",
+        "unrealized_pnl_usdt",
+        "leverage",
+        "opened_at_ms"
+      ],
+      "title": "UiOpenPositionSchema",
+      "type": "object"
+    },
+    "UiPositionClosedEventSchema": {
+      "properties": {
+        "close_reason": {
+          "title": "Close Reason",
+          "type": "string"
+        },
+        "entry_price": {
+          "title": "Entry Price",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "exit_price": {
+          "title": "Exit Price",
+          "type": "string"
+        },
+        "leverage": {
+          "minimum": 1,
+          "title": "Leverage",
+          "type": "integer"
+        },
+        "opened_at_ms": {
+          "minimum": 0,
+          "title": "Opened At Ms",
+          "type": "integer"
+        },
+        "pnl_usdt": {
+          "title": "Pnl Usdt",
+          "type": "string"
+        },
+        "quantity": {
+          "title": "Quantity",
+          "type": "string"
+        },
+        "side": {
+          "enum": [
+            "LONG",
+            "SHORT"
+          ],
+          "title": "Side",
+          "type": "string"
+        },
+        "stop_loss": {
+          "title": "Stop Loss",
+          "type": "string"
+        },
+        "symbol": {
+          "title": "Symbol",
+          "type": "string"
+        },
+        "take_profit": {
+          "title": "Take Profit",
+          "type": "string"
+        },
+        "ts_ms": {
+          "minimum": 0,
+          "title": "Ts Ms",
+          "type": "integer"
+        },
+        "type": {
+          "const": "position_closed",
+          "default": "position_closed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "event_id",
+        "ts_ms",
+        "symbol",
+        "side",
+        "quantity",
+        "entry_price",
+        "exit_price",
+        "stop_loss",
+        "take_profit",
+        "pnl_usdt",
+        "close_reason",
+        "leverage",
+        "opened_at_ms"
+      ],
+      "title": "UiPositionClosedEventSchema",
+      "type": "object"
+    },
+    "UiSnapshotMessageSchema": {
+      "properties": {
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/UiSnapshotSchema"
+        },
+        "type": {
+          "const": "snapshot",
+          "default": "snapshot",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "seq",
+        "snapshot"
+      ],
+      "title": "UiSnapshotMessageSchema",
+      "type": "object"
+    },
+    "UiSnapshotSchema": {
+      "description": "Full dashboard state; lists are oldest-first and bounded by UiConfigSchema.",
+      "properties": {
+        "account": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UiAccountEventSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "candle_interval": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candle Interval"
+        },
+        "candles": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/UiCandleSchema"
+            },
+            "type": "array"
+          },
+          "title": "Candles",
+          "type": "object"
+        },
+        "closed_positions": {
+          "items": {
+            "$ref": "#/$defs/UiPositionClosedEventSchema"
+          },
+          "title": "Closed Positions",
+          "type": "array"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/$defs/UiDecisionEventSchema"
+          },
+          "title": "Decisions",
+          "type": "array"
+        },
+        "trades": {
+          "items": {
+            "$ref": "#/$defs/UiTradeEventSchema"
+          },
+          "title": "Trades",
+          "type": "array"
+        }
+      },
+      "required": [
+        "account",
+        "decisions",
+        "trades",
+        "closed_positions",
+        "candles",
+        "candle_interval"
+      ],
+      "title": "UiSnapshotSchema",
+      "type": "object"
+    },
+    "UiTradeEventSchema": {
+      "properties": {
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "entry_price": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entry Price"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "quantity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quantity"
+        },
+        "reasoning": {
+          "default": "",
+          "title": "Reasoning",
+          "type": "string"
+        },
+        "side": {
+          "enum": [
+            "LONG",
+            "SHORT",
+            "CLOSE"
+          ],
+          "title": "Side",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "stop_loss": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Loss"
+        },
+        "symbol": {
+          "title": "Symbol",
+          "type": "string"
+        },
+        "take_profit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Take Profit"
+        },
+        "ts_ms": {
+          "minimum": 0,
+          "title": "Ts Ms",
+          "type": "integer"
+        },
+        "type": {
+          "const": "trade",
+          "default": "trade",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "event_id",
+        "ts_ms",
+        "symbol",
+        "side",
+        "status",
+        "confidence",
+        "entry_price",
+        "quantity",
+        "stop_loss",
+        "take_profit",
+        "reasoning"
+      ],
+      "title": "UiTradeEventSchema",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "event": "#/$defs/UiEventMessageSchema",
+      "snapshot": "#/$defs/UiSnapshotMessageSchema"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/UiSnapshotMessageSchema"
+    },
+    {
+      "$ref": "#/$defs/UiEventMessageSchema"
+    }
+  ],
+  "title": "UiServerMessage"
+}

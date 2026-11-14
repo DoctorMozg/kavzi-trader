@@ -25,3 +25,7 @@ wheels/
 # Tests
 test_output/
 .mz/
+
+# Dashboard frontend
+ui/web/node_modules/
+ui/web/dist/

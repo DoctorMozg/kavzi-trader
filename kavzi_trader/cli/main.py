@@ -10,6 +10,7 @@ import pydantic_ai
 from kavzi_trader.cli.commands.config import config_command
 from kavzi_trader.cli.commands.model import model
 from kavzi_trader.cli.commands.trade import trade
+from kavzi_trader.cli.commands.ui import ui
 from kavzi_trader.cli.core import setup_cli_environment
 
 
@@ -35,6 +36,7 @@ def cli(
 cli.add_command(model)
 cli.add_command(trade)
 cli.add_command(config_command)
+cli.add_command(ui)
 
 
 if __name__ == "__main__":
