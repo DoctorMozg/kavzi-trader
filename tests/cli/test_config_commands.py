@@ -10,6 +10,7 @@ from kavzi_trader.config import AppConfig
 _BINANCE_KEY = "binance-key-VALUE-1"
 _BINANCE_SECRET = "binance-secret-VALUE-2"  # noqa: S105 - fake test value
 _OPENROUTER_KEY = "openrouter-key-VALUE-3"
+_ANTHROPIC_KEY = "anthropic-key-VALUE-4"
 
 
 @pytest.fixture
@@ -32,7 +33,10 @@ def make_config() -> Callable[..., AppConfig]:
                     },
                 ),
                 "brain": base.brain.model_copy(
-                    update={"openrouter_api_key": SecretStr(openrouter_key)},
+                    update={
+                        "openrouter_api_key": SecretStr(openrouter_key),
+                        "anthropic_api_key": SecretStr(_ANTHROPIC_KEY),
+                    },
                 ),
             },
         )
@@ -57,7 +61,7 @@ def test_validate_output_contains_no_secret_values(
     result = _run(make_config())
 
     assert result.exit_code == 0
-    for secret in (_BINANCE_KEY, _BINANCE_SECRET, _OPENROUTER_KEY):
+    for secret in (_BINANCE_KEY, _BINANCE_SECRET, _OPENROUTER_KEY, _ANTHROPIC_KEY):
         assert secret not in result.output
     assert "valid" in result.output.lower()
 

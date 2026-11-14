@@ -56,28 +56,23 @@ brain:
   # Anthropic agents ignore temperature/seed (Claude 5.5 rejects sampling
   # params), always use adaptive thinking, and are steered by `effort`
   # (low | medium | high | xhigh | max; default medium analyst/trader, low
-  # synthesizer). Thinking cannot be disabled, so budget latency with timeout_s:
-  # the 12s Analyst timeout below is tight for Sonnet 5.5, raise it when switching.
+  # synthesizer). Thinking cannot be disabled, so budget latency with timeout_s.
   analyst:
-    provider: "openrouter"
     # Tier 2 — Structured confluence scoring against a fixed rubric.
-    # Haiku 4.5 targets ~1.5s p50 latency vs ~6.3s on gpt-5.4-mini with
-    # comparable rubric-following quality for well-templated prompts.
-    # Alternatives: openai/gpt-5.4-mini (higher latency), anthropic/claude-sonnet-4.5 (slower but stronger reasoning).
-    model_id: "anthropic/claude-haiku-4.5"
+    # OpenRouter alternative: provider "openrouter", model_id
+    # "anthropic/claude-haiku-4.5" (~1.5s p50), temperature 0.0, seed 42, timeout_s 12.
+    provider: "anthropic"
+    model_id: "claude-sonnet-5-5"
     retries: 1
-    temperature: 0.0
-    seed: 42
-    timeout_s: 12
+    # Placeholder until the eval dry run measures real Sonnet 5.5 latency.
+    timeout_s: 30
 
   trader:
-    provider: "openrouter"
-    # Tier 3 — Final decision: 87.82% accuracy, most token-efficient ($5.00/$25.00 per M tokens)
-    # Alternatives: openai/gpt-5 (88.23%), openai/gpt-4.1 (best tool-calling value)
-    # or "anthropic/claude-opus-4.6"
-    model_id: "openai/gpt-5.4"
+    # Tier 3 — Final decision. OpenRouter alternative: provider "openrouter",
+    # model_id "openai/gpt-5.4", temperature 0.0.
+    provider: "anthropic"
+    model_id: "claude-opus-5-5"
     retries: 3
-    temperature: 0.0
 
 # -----------------------------------------------------------------------------
 # Scout — deterministic pattern filter (replaces former LLM Scout tier)

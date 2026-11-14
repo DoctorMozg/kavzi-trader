@@ -126,7 +126,10 @@ async def test_start_orchestrator_uses_configured_runtime_values(
                 },
             ),
             "brain": app_config.brain.model_copy(
-                update={"openrouter_api_key": SecretStr("test-openrouter-key")},
+                update={
+                    "openrouter_api_key": SecretStr("test-openrouter-key"),
+                    "anthropic_api_key": SecretStr("test-anthropic-key"),
+                },
             ),
             "trading": app_config.trading.model_copy(
                 update={"interval": "1m", "history_candles": 321},

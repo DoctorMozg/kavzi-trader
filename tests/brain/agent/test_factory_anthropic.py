@@ -292,8 +292,20 @@ class TestApiKeyValidation:
     @pytest.fixture
     def app_config(self) -> AppConfig:
         base = AppConfig.from_env()
+        openrouter_only = {
+            "analyst": AgentModelConfigSchema.model_validate(
+                {"provider": "openrouter", "model_id": "anthropic/claude-haiku-4.5"}
+            ),
+            "trader": AgentModelConfigSchema.model_validate(
+                {"provider": "openrouter", "model_id": "openai/gpt-5.4"}
+            ),
+        }
         brain = base.brain.model_copy(
-            update={"openrouter_api_key": SecretStr("or-key")}
+            update={
+                "openrouter_api_key": SecretStr("or-key"),
+                "anthropic_api_key": SecretStr(""),
+                **openrouter_only,
+            }
         )
         return base.model_copy(update={"brain": brain})
 
