@@ -3,16 +3,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from decimal import Decimal
-from typing import Literal, cast
+from typing import cast
 
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.execution.execution_result_schema import ExecutionResultSchema
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import PositionSchema
+from kavzi_trader.ui.recorder import UiEventRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +35,13 @@ class ExecutionLoop:
         engine: ExecutionEngine,
         state_manager: StateManager,
         queue_key: str = "kt:decisions:pending",
-        report_populator: TradeReportPopulator | None = None,
+        ui_recorder: UiEventRecorder | None = None,
     ) -> None:
         self._redis_client = redis_client
         self._engine = engine
         self._state_manager = state_manager
         self._queue_key = queue_key
-        self._report_populator = report_populator
+        self._ui_recorder = ui_recorder
         self._last_pending_sweep_ms = 0
         self._attempts: dict[str, int] = {}
 
@@ -208,21 +208,9 @@ class ExecutionLoop:
         decision: DecisionMessageSchema,
         result: ExecutionResultSchema,
     ) -> None:
-        if self._report_populator is None:
+        if self._ui_recorder is None:
             return
-        await self._report_populator.record_trade(
-            symbol=decision.symbol,
-            side=decision.action,
-            status=result.status,
-            confidence=decision.calibrated_confidence,
-            entry_price=decision.entry_price,
-            quantity=Decimal(str(result.executed_qty))
-            if result.executed_qty
-            else decision.quantity,
-            stop_loss=decision.stop_loss,
-            take_profit=decision.take_profit,
-            reasoning=result.error_message or decision.reasoning,
-        )
+        await self._ui_recorder.record_trade(decision, result)
 
     async def _safe_report_position_close(
         self,
@@ -230,21 +218,13 @@ class ExecutionLoop:
         close_reason: str,
         exit_price: Decimal,
     ) -> None:
-        if self._report_populator is None:
+        if self._ui_recorder is None:
             return
         try:
-            side: Literal["LONG", "SHORT"] = position.side  # type: ignore[assignment]
-            await self._report_populator.record_position_close(
-                symbol=position.symbol,
-                side=side,
-                quantity=position.quantity,
-                entry_price=position.entry_price,
-                exit_price=exit_price,
-                stop_loss=position.stop_loss,
-                take_profit=position.take_profit,
-                close_reason=close_reason,
-                leverage=position.leverage,
-                opened_at=position.opened_at,
+            await self._ui_recorder.record_position_close(
+                position,
+                close_reason,
+                exit_price,
             )
         except Exception:
             logger.exception(

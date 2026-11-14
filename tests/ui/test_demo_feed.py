@@ -1,20 +1,12 @@
 import pytest
 
 from kavzi_trader.ui.demo_feed import UiDemoFeed
-from kavzi_trader.ui.event_schemas import UiEvent
-
-
-class _CollectingPublisher:
-    def __init__(self) -> None:
-        self.events: list[UiEvent] = []
-
-    async def publish(self, event: UiEvent) -> None:
-        self.events.append(event)
+from tests.ui.factories import CollectingUiPublisher
 
 
 class TestUiDemoFeed:
     async def test_backfill_then_account_ticks(self) -> None:
-        publisher = _CollectingPublisher()
+        publisher = CollectingUiPublisher()
         feed = UiDemoFeed(publisher, ["BTCUSDT", "ETHUSDT"], seed=7)
 
         await feed._backfill()
@@ -25,4 +17,4 @@ class TestUiDemoFeed:
 
     def test_rejects_empty_symbols(self) -> None:
         with pytest.raises(ValueError, match="at least one symbol"):
-            UiDemoFeed(_CollectingPublisher(), [])
+            UiDemoFeed(CollectingUiPublisher(), [])

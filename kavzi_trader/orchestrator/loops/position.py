@@ -4,10 +4,9 @@ import asyncio
 import logging
 import time
 from decimal import Decimal
-from typing import Literal, Protocol
+from typing import Protocol
 
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.exchange_fill_detector import ExchangeFillDetector
 from kavzi_trader.spine.position.manager import PositionManager
@@ -15,6 +14,7 @@ from kavzi_trader.spine.position.position_action_schema import PositionActionSch
 from kavzi_trader.spine.position.position_action_type import PositionActionType
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.schemas import PositionSchema
+from kavzi_trader.ui.recorder import UiEventRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class PositionManagementLoop:
         action_executor: PositionActionExecutor,
         fill_detector: ExchangeFillDetector,
         interval_s: int,
-        report_populator: TradeReportPopulator | None = None,
+        ui_recorder: UiEventRecorder | None = None,
         cycle_timeout_s: int = 30,
         fill_check_interval_s: int = 15,
         tp_retry_max_attempts: int = 3,
@@ -51,7 +51,7 @@ class PositionManagementLoop:
         self._action_executor = action_executor
         self._fill_detector = fill_detector
         self._interval_s = interval_s
-        self._report_populator = report_populator
+        self._ui_recorder = ui_recorder
         self._cycle_timeout_s = cycle_timeout_s
         self._fill_check_interval_s = fill_check_interval_s
         self._last_fill_check_s: float | None = None
@@ -312,14 +312,10 @@ class PositionManagementLoop:
         position: PositionSchema,
         action: PositionActionSchema,
     ) -> None:
-        if self._report_populator is None:
+        if self._ui_recorder is None:
             return
         try:
-            await self._report_populator.record_action(
-                action_type=action.action.value.lower(),
-                symbol=position.symbol,
-                summary=action.reason,
-            )
+            await self._ui_recorder.record_position_action(position, action)
         except Exception:
             logger.exception(
                 "Failed to report action %s for %s",
@@ -339,21 +335,13 @@ class PositionManagementLoop:
         close_reason: str,
         exit_price: Decimal,
     ) -> None:
-        if self._report_populator is None:
+        if self._ui_recorder is None:
             return
         try:
-            side: Literal["LONG", "SHORT"] = position.side  # type: ignore[assignment]
-            await self._report_populator.record_position_close(
-                symbol=position.symbol,
-                side=side,
-                quantity=position.quantity,
-                entry_price=position.entry_price,
-                exit_price=exit_price,
-                stop_loss=position.stop_loss,
-                take_profit=position.take_profit,
-                close_reason=close_reason,
-                leverage=position.leverage,
-                opened_at=position.opened_at,
+            await self._ui_recorder.record_position_close(
+                position,
+                close_reason,
+                exit_price,
             )
         except Exception:
             logger.exception(

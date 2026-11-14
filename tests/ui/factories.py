@@ -5,6 +5,7 @@ from kavzi_trader.ui.event_schemas import (
     UiCandleSchema,
     UiCandlesEventSchema,
     UiDecisionEventSchema,
+    UiEvent,
     UiOpenPositionSchema,
     UiPositionClosedEventSchema,
     UiTradeEventSchema,
@@ -98,3 +99,14 @@ def make_candles(
             for t in open_times_ms
         ],
     )
+
+
+class CollectingUiPublisher:
+    def __init__(self) -> None:
+        self.events: list[UiEvent] = []
+
+    async def publish(self, event: UiEvent) -> None:
+        self.events.append(event)
+
+    def decisions(self) -> list[UiDecisionEventSchema]:
+        return [e for e in self.events if isinstance(e, UiDecisionEventSchema)]

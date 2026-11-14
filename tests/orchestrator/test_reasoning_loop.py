@@ -41,6 +41,13 @@ from kavzi_trader.spine.state.schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.ui.recorder import UiEventRecorder
+from tests.ui.factories import CollectingUiPublisher
+
+
+def _recorder(publisher: CollectingUiPublisher) -> UiEventRecorder:
+    return UiEventRecorder(publisher, initial_balance_usdt=Decimal(1000), is_paper=True)
+
 
 _ANALYST_REASONING = (
     "EMA alignment is bullish with EMA20 above EMA50 above EMA200. RSI at 55 supports"
@@ -576,8 +583,7 @@ async def test_volatility_gate_reports_as_scout_scan() -> None:
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
 
-    mock_populator = AsyncMock()
-    mock_populator.record_action = AsyncMock()
+    ui_publisher = CollectingUiPublisher()
 
     loop = ReasoningLoop(
         position_management=PositionManagementConfigSchema(),
@@ -586,7 +592,7 @@ async def test_volatility_gate_reports_as_scout_scan() -> None:
         deps_provider=provider,
         redis_client=redis_client,
         interval_s=1,
-        report_populator=mock_populator,
+        ui_recorder=_recorder(ui_publisher),
     )
 
     sleep_durations: list[float] = []
@@ -607,14 +613,11 @@ async def test_volatility_gate_reports_as_scout_scan() -> None:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    scout_calls = [
-        c
-        for c in mock_populator.record_action.call_args_list
-        if c.kwargs.get("action_type") == "scout_scan"
-    ]
-    assert len(scout_calls) >= 1
-    summary = scout_calls[0].kwargs.get("summary", "")
-    assert "Volatility regime LOW" in summary
+    scout_events = [d for d in ui_publisher.decisions() if d.stage == "scout"]
+    assert len(scout_events) >= 1
+    assert scout_events[0].verdict == "SKIP"
+    assert scout_events[0].latency_ms is not None
+    assert "Volatility regime LOW" in scout_events[0].summary
 
 
 def _make_analyst_result_with_confluence(confluence_score: int) -> PipelineResult:
@@ -928,8 +931,7 @@ async def test_filter_chain_blocks_trade() -> None:
     router.run = AsyncMock(return_value=_make_trade_result())
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
-    mock_populator = AsyncMock()
-    mock_populator.record_action = AsyncMock()
+    ui_publisher = CollectingUiPublisher()
 
     mock_filter_chain = AsyncMock()
     mock_filter_chain.evaluate = AsyncMock(
@@ -951,7 +953,7 @@ async def test_filter_chain_blocks_trade() -> None:
         deps_provider=provider,
         redis_client=redis_client,
         interval_s=1,
-        report_populator=mock_populator,
+        ui_recorder=_recorder(ui_publisher),
         filter_chain=mock_filter_chain,
     )
 
@@ -974,13 +976,10 @@ async def test_filter_chain_blocks_trade() -> None:
         await asyncio.gather(task, return_exceptions=True)
 
     redis_client.client.lpush.assert_not_called()
-    rejection_calls = [
-        c
-        for c in mock_populator.record_action.call_args_list
-        if c.kwargs.get("action_type") == "filter_rejection"
-    ]
-    assert len(rejection_calls) >= 1
-    assert "crowded_long" in rejection_calls[0].kwargs.get("summary", "")
+    rejections = [d for d in ui_publisher.decisions() if d.stage == "filter"]
+    assert len(rejections) >= 1
+    assert rejections[0].verdict == "BLOCKED"
+    assert "crowded_long" in rejections[0].summary
 
 
 @pytest.mark.asyncio
@@ -1299,8 +1298,7 @@ async def test_pipeline_complete_event_recorded() -> None:
     router.run = AsyncMock(return_value=_make_wait_result("LONG"))
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
-    mock_populator = AsyncMock()
-    mock_populator.record_action = AsyncMock()
+    ui_publisher = CollectingUiPublisher()
 
     loop = ReasoningLoop(
         position_management=PositionManagementConfigSchema(),
@@ -1309,7 +1307,7 @@ async def test_pipeline_complete_event_recorded() -> None:
         deps_provider=provider,
         redis_client=redis_client,
         interval_s=1,
-        report_populator=mock_populator,
+        ui_recorder=_recorder(ui_publisher),
     )
 
     sleep_durations: list[float] = []
@@ -1330,15 +1328,12 @@ async def test_pipeline_complete_event_recorded() -> None:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    complete_calls = [
-        c
-        for c in mock_populator.record_action.call_args_list
-        if c.kwargs.get("action_type") == "pipeline_complete"
+    first_run = ui_publisher.decisions()[:3]
+    assert [(d.stage, d.verdict) for d in first_run] == [
+        ("scout", "INTERESTING"),
+        ("analyst", "LONG"),
+        ("trader", "WAIT"),
     ]
-    assert len(complete_calls) >= 1
-    summary = complete_calls[0].kwargs.get("summary", "")
-    assert "Scout=INTERESTING" in summary
-    assert "Trader=WAIT" in summary
 
 
 # ===========================================================================

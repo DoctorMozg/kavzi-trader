@@ -20,12 +20,10 @@ from kavzi_trader.brain.confluence_thresholds import (
 from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.orchestrator.loops.reasoning_config import (
     ReasoningLoopConfigSchema,
 )
 from kavzi_trader.orchestrator.loops.symbol_state import SymbolStateTracker
-from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
@@ -39,6 +37,7 @@ from kavzi_trader.spine.state.schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.ui.recorder import UiEventRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +53,7 @@ class ReasoningLoop:
         redis_client: RedisStateClient,
         queue_key: str = "kt:decisions:pending",
         interval_s: int = 5,
-        report_populator: TradeReportPopulator | None = None,
+        ui_recorder: UiEventRecorder | None = None,
         state_manager: StateManager | None = None,
         analyst_cooldown_cycles: int = 3,
         filter_chain: PreTradeFilterChain | None = None,
@@ -69,7 +68,7 @@ class ReasoningLoop:
         self._redis_client = redis_client
         self._queue_key = queue_key
         self._interval_s = interval_s
-        self._report_populator = report_populator
+        self._ui_recorder = ui_recorder
         self._state_manager = state_manager
         self._analyst_cooldown_cycles = analyst_cooldown_cycles
         self._filter_chain = filter_chain
@@ -297,14 +296,11 @@ class ReasoningLoop:
         if self._should_skip_symbol(symbol, cached_positions):
             return False
 
+        pipeline_start_s = time.monotonic()
         result = await self._router.run(symbol, self._deps_provider)
+        pipeline_ms = round((time.monotonic() - pipeline_start_s) * 1000)
         try:
-            await self._report_decisions(
-                symbol,
-                result.scout,
-                result.analyst,
-                result.trader,
-            )
+            await self._report_decisions(symbol, result, pipeline_ms)
         except Exception:
             logger.exception(
                 "Failed to report decisions for %s",
@@ -574,13 +570,12 @@ class ReasoningLoop:
             filter_result.rejection_reason,
             extra={"symbol": symbol, "action": action},
         )
-        if self._report_populator is not None:
-            failed = [r.name for r in filter_result.results if not r.is_allowed]
-            await self._report_populator.record_action(
-                action_type="filter_rejection",
-                symbol=symbol,
-                summary=f"Blocked {action}: {filter_result.rejection_reason}",
-                details=f"Failed filters: {', '.join(failed)}",
+        if self._ui_recorder is not None:
+            await self._ui_recorder.record_filter_rejection(
+                symbol,
+                action,
+                filter_result.rejection_reason or "unknown",
+                [r.name for r in filter_result.results if not r.is_allowed],
             )
 
     async def _enqueue_decision(
@@ -643,51 +638,18 @@ class ReasoningLoop:
     async def _report_decisions(
         self,
         symbol: str,
-        scout: ScoutDecisionSchema,
-        analyst: AnalystDecisionSchema | None,
-        trader: TradeDecisionSchema | None,
+        result: PipelineResult,
+        pipeline_ms: int,
     ) -> None:
-        if self._report_populator is None:
+        if self._ui_recorder is None:
             return
-        await self._report_populator.record_action(
-            action_type="scout_scan",
-            symbol=symbol,
-            summary=f"Verdict: {scout.verdict} — {scout.reason}",
-            details=scout.pattern_detected,
+        await self._ui_recorder.record_pipeline(
+            symbol,
+            result.scout,
+            result.analyst,
+            result.trader,
+            pipeline_ms,
         )
-        if analyst is not None:
-            await self._report_populator.record_action(
-                action_type="analyst_review",
-                symbol=symbol,
-                summary=(
-                    f"Valid: {analyst.setup_valid}, Direction: {analyst.direction}, "
-                    f"Confluence: {analyst.confluence_score}/11"
-                ),
-                details=analyst.reasoning,
-            )
-        if trader is not None:
-            await self._report_populator.record_action(
-                action_type="trader_decision",
-                symbol=symbol,
-                summary=(
-                    f"Action: {trader.action}, "
-                    f"Confidence: {trader.confidence * 100:.0f}%"
-                ),
-                details=trader.reasoning,
-            )
-        if analyst is not None and trader is not None:
-            await self._report_populator.record_action(
-                action_type="pipeline_complete",
-                symbol=symbol,
-                summary=(
-                    f"Scout={scout.verdict} "
-                    f"Analyst={analyst.direction}"
-                    f"(conf={analyst.confluence_score}) "
-                    f"Trader={trader.action}"
-                    f"(conf={trader.confidence * 100:.0f}%)"
-                ),
-                details=None,
-            )
 
     def _build_decision_message(
         self,

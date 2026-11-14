@@ -15,7 +15,7 @@ from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
+from kavzi_trader.spine.execution.close_recorder import PositionCloseRecorder
 from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
 from kavzi_trader.spine.execution.execution_result_schema import ExecutionResultSchema
 from kavzi_trader.spine.execution.monitor import OrderMonitor
@@ -59,7 +59,7 @@ class ExecutionEngine:
         monitor: OrderMonitor,
         event_store: RedisEventStore | None = None,
         leverage: int = 3,
-        report_populator: TradeReportPopulator | None = None,
+        close_recorder: PositionCloseRecorder | None = None,
         volatility_detector: VolatilityRegimeDetector | None = None,
         liquidation_calculator: LiquidationCalculator | None = None,
         pullback_entry_expiry_ms: int = 1_800_000,
@@ -74,7 +74,7 @@ class ExecutionEngine:
         self._event_store = event_store
         self._leverage = leverage
         self._symbol_leverage = symbol_leverage or {}
-        self._report_populator = report_populator
+        self._close_recorder = close_recorder
         self._volatility_detector = volatility_detector
         self._liquidation_calculator = liquidation_calculator
         self._pullback_entry_expiry_ms = pullback_entry_expiry_ms
@@ -1056,20 +1056,12 @@ class ExecutionEngine:
                 "Failed to record emergency_close event for %s",
                 position.id,
             )
-        if exit_price is not None and self._report_populator is not None:
+        if exit_price is not None and self._close_recorder is not None:
             try:
-                side: Literal["LONG", "SHORT"] = position.side  # type: ignore[assignment]
-                await self._report_populator.record_position_close(
-                    symbol=position.symbol,
-                    side=side,
-                    quantity=position.quantity,
-                    entry_price=position.entry_price,
-                    exit_price=exit_price,
-                    stop_loss=position.stop_loss,
-                    take_profit=position.take_profit,
-                    close_reason="Emergency close",
-                    leverage=position.leverage,
-                    opened_at=position.opened_at,
+                await self._close_recorder.record_position_close(
+                    position,
+                    "Emergency close",
+                    exit_price,
                 )
             except Exception:
                 logger.exception(

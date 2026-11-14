@@ -35,6 +35,7 @@ from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.orchestrator.loops.ui_snapshot import UiSnapshotLoop
 from kavzi_trader.orchestrator.orchestrator import TradingOrchestrator
 from kavzi_trader.orchestrator.providers.live_atr_provider import LiveAtrProvider
 from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
@@ -48,7 +49,6 @@ from kavzi_trader.orchestrator.providers.live_stream_manager import LiveStreamMa
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.paper.exchange import PaperExchangeClient
-from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.execution.geometry import TradeGeometryCalculator
 from kavzi_trader.spine.execution.monitor import OrderMonitor
@@ -78,6 +78,8 @@ from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import PositionSchema
+from kavzi_trader.ui.recorder import UiEventRecorder
+from kavzi_trader.ui.redis_publisher import RedisUiPublisher
 
 logger = logging.getLogger(__name__)
 
@@ -359,32 +361,23 @@ async def _start_orchestrator(
         liquidation_emergency_percent=app_config.futures.liquidation_emergency_percent,
     )
 
-    # --- Reporting ---
-    report_populator: TradeReportPopulator | None = None
-    if app_config.reporting.enabled:
-        logger.info("Initialising trade report populator")
-        try:
-            await state_manager.connect()
-            account = await state_manager.get_account_state()
-            initial_balance = (
-                account.total_balance_usdt if account is not None else Decimal(1000)
-            )
-            report_populator = TradeReportPopulator(
-                report_dir=app_config.reporting.report_dir,
-                initial_balance_usdt=initial_balance,
-                max_action_entries=app_config.reporting.max_action_entries,
-                max_trade_entries=app_config.reporting.max_trade_entries,
-                max_closed_position_entries=app_config.reporting.max_closed_position_entries,
-                refresh_interval_s=app_config.reporting.refresh_interval_s,
-            )
-            logger.info(
-                "Report populator ready, initial_balance=%s USDT",
-                initial_balance,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to initialize report populator, continuing without reporting",
-            )
+    # --- Dashboard events ---
+    ui_recorder: UiEventRecorder | None = None
+    if app_config.ui.enabled:
+        await state_manager.connect()
+        account = await state_manager.get_account_state()
+        initial_balance = (
+            account.total_balance_usdt if account is not None else Decimal(1000)
+        )
+        ui_recorder = UiEventRecorder(
+            RedisUiPublisher(redis_client.client, app_config.ui),
+            initial_balance_usdt=initial_balance,
+            is_paper=is_paper,
+        )
+        logger.info(
+            "Publishing dashboard events, initial_balance=%s USDT",
+            initial_balance,
+        )
 
     # --- Execution engine ---
     logger.info("Creating execution engine")
@@ -403,7 +396,7 @@ async def _start_orchestrator(
         event_store=event_store,
         leverage=app_config.futures.default_leverage,
         symbol_leverage=app_config.futures.symbol_leverage,
-        report_populator=report_populator,
+        close_recorder=ui_recorder,
         volatility_detector=volatility_detector,
         liquidation_calculator=liquidation_calculator,
         pullback_entry_expiry_ms=app_config.execution.pullback_entry_expiry_ms,
@@ -448,8 +441,6 @@ async def _start_orchestrator(
     orchestrator = TradingOrchestrator(
         config=app_config.orchestrator,
         state_manager=state_manager,
-        price_provider=cache,
-        trading_symbols=app_config.trading.symbols,
         ingest_loop=DataIngestLoop(stream_manager),
         order_flow_loop=OrderFlowLoop(
             order_flow_fetcher,
@@ -461,7 +452,7 @@ async def _start_orchestrator(
             deps_provider=deps_provider,
             redis_client=redis_client,
             interval_s=app_config.orchestrator.reasoning_interval_s,
-            report_populator=report_populator,
+            ui_recorder=ui_recorder,
             state_manager=state_manager,
             filter_chain=filter_chain,
             position_management=app_config.position_management,
@@ -470,7 +461,7 @@ async def _start_orchestrator(
             redis_client=redis_client,
             engine=engine,
             state_manager=state_manager,
-            report_populator=report_populator,
+            ui_recorder=ui_recorder,
         ),
         position_loop=PositionManagementLoop(
             manager=position_manager,
@@ -486,10 +477,20 @@ async def _start_orchestrator(
                 state_manager=state_manager,
             ),
             interval_s=app_config.orchestrator.position_check_interval_s,
-            report_populator=report_populator,
+            ui_recorder=ui_recorder,
             cycle_timeout_s=app_config.orchestrator.position_cycle_timeout_s,
         ),
-        report_populator=report_populator,
+        ui_snapshot_loop=(
+            UiSnapshotLoop(
+                recorder=ui_recorder,
+                state_manager=state_manager,
+                market_data=cache,
+                symbols=app_config.trading.symbols,
+                config=app_config.ui,
+            )
+            if ui_recorder is not None
+            else None
+        ),
         is_paper=is_paper,
         external_sentiment_loop=external_sentiment_loop,
         shutdown_hooks={

@@ -10,7 +10,6 @@ import uvicorn
 from redis.asyncio import Redis
 
 from kavzi_trader.config import AppConfig
-from kavzi_trader.ui.config import UiConfigSchema
 from kavzi_trader.ui.demo_feed import UiDemoFeed
 from kavzi_trader.ui.redis_publisher import RedisUiPublisher
 from kavzi_trader.ui.schema_export import UI_SCHEMA_PATH, render_ui_schema
@@ -49,7 +48,7 @@ def ui() -> None:
 def serve(ctx: click.Context, host: str | None, port: int | None) -> None:
     """Serve the dashboard and stream trader events to browsers."""
     app_config: AppConfig = ctx.obj["app_config"]
-    ui_config = UiConfigSchema()
+    ui_config = app_config.ui
     redis = _redis_client(
         app_config,
         socket_timeout_s=ui_config.read_block_ms / 1000 + _SOCKET_TIMEOUT_MARGIN_S,
@@ -79,11 +78,14 @@ def serve(ctx: click.Context, host: str | None, port: int | None) -> None:
 @click.option("--seconds-per-candle", type=float, default=15.0, show_default=True)
 @click.pass_context
 def demo(ctx: click.Context, symbols: str, seconds_per_candle: float) -> None:
-    """Publish synthetic events so the dashboard can be tried without trading."""
+    """Publish synthetic events so the dashboard can be tried without trading.
+
+    They share the trader's streams; delete kt:ui:events and kt:ui:ticks after.
+    """
     app_config: AppConfig = ctx.obj["app_config"]
     redis = _redis_client(app_config, socket_timeout_s=5)
     feed = UiDemoFeed(
-        publisher=RedisUiPublisher(redis, UiConfigSchema()),
+        publisher=RedisUiPublisher(redis, app_config.ui),
         symbols=[s.strip().upper() for s in symbols.split(",") if s.strip()],
         seconds_per_candle=seconds_per_candle,
     )

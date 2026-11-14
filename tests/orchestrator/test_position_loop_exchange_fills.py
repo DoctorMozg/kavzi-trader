@@ -72,7 +72,7 @@ class _Scenario:
     def __init__(self, side: Side) -> None:
         self.side: Side = side
         self.state = _InMemoryState()
-        self.report = AsyncMock()
+        self.ui_recorder = AsyncMock()
         with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
             self.exchange = PaperExchangeClient(
                 initial_balance_usdt=Decimal(10000),
@@ -95,7 +95,7 @@ class _Scenario:
             action_executor=PositionActionExecutor(self.exchange, state),
             fill_detector=ExchangeFillDetector(self.exchange, state),
             interval_s=5,
-            report_populator=self.report,
+            ui_recorder=self.ui_recorder,
             fill_check_interval_s=0,
         )
         self.sl_id = 0
@@ -202,11 +202,13 @@ async def test_exchange_side_fill_closes_local_position(
     assert sc.state.orders.by_id == {}
     assert await sc.exchange.get_open_orders("BTCUSDT") == []
     assert len(sc.exchange._orders) == exchange_orders_before, "no close retries"
-    sc.report.record_position_close.assert_awaited_once()
-    kwargs = sc.report.record_position_close.await_args.kwargs
-    assert kwargs["close_reason"] == reason
-    assert kwargs["exit_price"] == exit_price
-    assert kwargs["side"] == side
+    sc.ui_recorder.record_position_close.assert_awaited_once()
+    position, close_reason, closed_at = (
+        sc.ui_recorder.record_position_close.await_args.args
+    )
+    assert close_reason == reason
+    assert closed_at == exit_price
+    assert position.side == side
 
 
 async def test_position_already_gone_on_exchange_is_cleaned_up() -> None:
@@ -220,9 +222,9 @@ async def test_position_already_gone_on_exchange_is_cleaned_up() -> None:
     assert sc.state.positions == {}
     assert sc.state.orders.by_id == {}
     assert await sc.exchange.get_open_orders("BTCUSDT") == []
-    kwargs = sc.report.record_position_close.await_args.kwargs
-    assert kwargs["close_reason"] == "exchange_position_closed"
-    assert kwargs["exit_price"] == Decimal(101)
+    _, close_reason, closed_at = sc.ui_recorder.record_position_close.await_args.args
+    assert close_reason == "exchange_position_closed"
+    assert closed_at == Decimal(101)
 
 
 async def test_open_position_with_resting_bracket_is_kept() -> None:
@@ -234,7 +236,7 @@ async def test_open_position_with_resting_bracket_is_kept() -> None:
 
     assert set(sc.state.positions) == {"pos-1"}
     assert len(sc.state.orders.by_id) == 2
-    sc.report.record_position_close.assert_not_awaited()
+    sc.ui_recorder.record_position_close.assert_not_awaited()
 
 
 async def test_fill_check_is_rate_limited() -> None:

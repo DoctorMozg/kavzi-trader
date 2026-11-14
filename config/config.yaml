@@ -469,26 +469,28 @@ monitoring:
   log_level: "DEBUG"
 
 # -----------------------------------------------------------------------------
-# Reporting — live HTML session reports
+# UI — real-time WebSocket dashboard
+# The trader publishes events to Redis streams; `kavzitrader ui serve` reads them
+# and pushes them to the browser. Run it in a separate terminal.
 # -----------------------------------------------------------------------------
-reporting:
-  # Whether to generate live HTML reports during trading sessions.
+ui:
+  # Whether the trader publishes dashboard events at all.
   enabled: true
 
-  # Directory where session report HTML files are written.
-  # A new timestamped file is created for each session/run.
-  report_dir: "results/reports"
+  # Dashboard server bind address (`kavzitrader ui serve`).
+  host: "127.0.0.1"
+  port: 8780
 
-  # How often (seconds) the HTML page auto-refreshes in the browser.
-  #   3  = default (responsive during active trading)
-  #   10 = relaxed (lower browser resource usage)
-  refresh_interval_s: 3
+  # How often (seconds) balance, positions and prices are pushed.
+  snapshot_interval_s: 1.0
 
-  # Maximum number of entries to keep in the activity log.
-  max_action_entries: 500
+  # Closed candles per symbol sent once at startup for the price charts.
+  backfill_candles: 300
 
-  # Maximum number of entries to keep in the trade actions table.
-  max_trade_entries: 200
+  # Stream lengths. Ticks are high-rate and only the latest matters; events
+  # hold decisions/trades/closes and should cover a few days of history.
+  events_max_len: 20000
+  ticks_max_len: 600
 
 # -----------------------------------------------------------------------------
 # External Sources — market-wide sentiment and options data

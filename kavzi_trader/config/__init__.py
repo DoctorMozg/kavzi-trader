@@ -21,6 +21,7 @@ from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
 from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.state.config import RedisConfigSchema
 from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
+from kavzi_trader.ui.config import UiConfigSchema
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 
@@ -83,19 +84,6 @@ class MonitoringConfigSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-class ReportingConfigSchema(BaseModel):
-    """HTML report generation configuration."""
-
-    enabled: Annotated[bool, Field(default=True)]
-    report_dir: Annotated[Path, Field(default=Path("results/reports"))]
-    refresh_interval_s: Annotated[int, Field(default=3, ge=1)]
-    max_action_entries: Annotated[int, Field(default=500, ge=10)]
-    max_trade_entries: Annotated[int, Field(default=200, ge=10)]
-    max_closed_position_entries: Annotated[int, Field(default=100, ge=10)]
-
-    model_config = ConfigDict(frozen=True)
-
-
 class FuturesConfigSchema(BaseModel):
     """Configuration for USDT-M perpetual futures trading."""
 
@@ -130,10 +118,7 @@ class AppConfig(BaseModel):
     events: Annotated[EventStoreConfigSchema, Field(...)]
     orchestrator: Annotated[OrchestratorConfigSchema, Field(...)]
     monitoring: Annotated[MonitoringConfigSchema, Field(...)]
-    reporting: Annotated[
-        ReportingConfigSchema,
-        Field(default_factory=ReportingConfigSchema),
-    ]
+    ui: Annotated[UiConfigSchema, Field(default_factory=UiConfigSchema)]
     external_sources: Annotated[
         ExternalSourcesConfigSchema,
         Field(default_factory=ExternalSourcesConfigSchema),

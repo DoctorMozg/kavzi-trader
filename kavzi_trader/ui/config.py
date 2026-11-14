@@ -5,8 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class UiConfigSchema(BaseModel):
-    """Dashboard streams, server binding and in-memory history limits."""
+    """Dashboard publishing, streams, server binding and history limits."""
 
+    enabled: Annotated[bool, Field()] = True
     events_stream: Annotated[str, Field(min_length=1)] = "kt:ui:events"
     # Account ticks arrive at ~1Hz; a separate short stream keeps them from
     # trimming the low-rate decision/trade history out of events_stream.
@@ -22,5 +23,7 @@ class UiConfigSchema(BaseModel):
     max_candles: Annotated[int, Field(ge=10)] = 500
     client_queue_size: Annotated[int, Field(ge=8)] = 256
     read_block_ms: Annotated[int, Field(ge=100)] = 2000
+    snapshot_interval_s: Annotated[float, Field(gt=0)] = 1.0
+    backfill_candles: Annotated[int, Field(ge=1)] = 300
 
     model_config = ConfigDict(frozen=True)

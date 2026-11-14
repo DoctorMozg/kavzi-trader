@@ -75,7 +75,7 @@ async def test_start_orchestrator_uses_configured_runtime_values(
                     "position_check_interval_s": 44,
                 },
             ),
-            "reporting": app_config.reporting.model_copy(update={"enabled": False}),
+            "ui": app_config.ui.model_copy(update={"enabled": False}),
         },
     )
 

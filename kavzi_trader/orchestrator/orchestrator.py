@@ -6,8 +6,7 @@ import signal
 import time
 from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable, Coroutine
-from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any
 
 from kavzi_trader.external.loop import ExternalSentimentLoop
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
@@ -16,13 +15,8 @@ from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
-from kavzi_trader.reporting.report_state_schema import (
-    ReportMarketPriceSchema,
-    ReportPositionEntrySchema,
-)
-from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
+from kavzi_trader.orchestrator.loops.ui_snapshot import UiSnapshotLoop
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +34,6 @@ class LoopRestartLimitError(RuntimeError):
     """A supervised loop kept dying; the orchestrator gave up on it."""
 
 
-class ReportPriceProvider(Protocol):
-    """Provides current prices for report snapshots."""
-
-    def get_current_price(self, symbol: str) -> Decimal: ...
-
-
 class TradingOrchestrator:
     """Runs the data ingest, reasoning, execution, and position loops."""
 
@@ -58,10 +46,8 @@ class TradingOrchestrator:
         reasoning_loop: ReasoningLoop,
         execution_loop: ExecutionLoop,
         position_loop: PositionManagementLoop,
-        report_populator: TradeReportPopulator | None = None,
+        ui_snapshot_loop: UiSnapshotLoop | None = None,
         is_paper: bool = False,
-        price_provider: ReportPriceProvider | None = None,
-        trading_symbols: list[str] | None = None,
         external_sentiment_loop: ExternalSentimentLoop | None = None,
         shutdown_hooks: dict[str, CloseCallback] | None = None,
     ) -> None:
@@ -72,10 +58,8 @@ class TradingOrchestrator:
         self._reasoning_loop = reasoning_loop
         self._execution_loop = execution_loop
         self._position_loop = position_loop
-        self._report_populator = report_populator
+        self._ui_snapshot_loop = ui_snapshot_loop
         self._is_paper = is_paper
-        self._price_provider = price_provider
-        self._trading_symbols = trading_symbols or []
         self._external_sentiment_loop = external_sentiment_loop
         self._tasks: set[asyncio.Task[None]] = set()
         self._loop_factories: dict[str, LoopFactory] = {}
@@ -96,6 +80,9 @@ class TradingOrchestrator:
             await self.shutdown()
         if self._escalation is not None:
             raise self._escalation
+
+    def running_loop_names(self) -> list[str]:
+        return sorted(task.get_name() for task in self._tasks if not task.done())
 
     def request_shutdown(self) -> None:
         """Ask the supervisor to stop; safe to call from a signal handler."""
@@ -126,8 +113,11 @@ class TradingOrchestrator:
             "execution": self._execution_loop.run,
             "position": self._position_loop.run,
         }
-        if self._report_populator is not None:
-            self._loop_factories["report"] = self._report_loop
+        if self._ui_snapshot_loop is not None:
+            ui_loop = self._ui_snapshot_loop
+            self._loop_factories["ui_snapshot"] = lambda: ui_loop.run(
+                self.running_loop_names,
+            )
         if self._external_sentiment_loop is not None:
             self._loop_factories["external_sentiment"] = (
                 self._external_sentiment_loop.run
@@ -271,69 +261,3 @@ class TradingOrchestrator:
                 await close()
         except Exception:
             logger.exception("Failed to close %s during shutdown", name)
-
-    async def _report_loop(self) -> None:
-        """Periodically refreshes balance, positions, and prices in the report."""
-        cycle = 0
-        while True:
-            cycle += 1
-            try:
-                await asyncio.sleep(5)
-                if self._report_populator is None:
-                    continue
-                account = await self._state_manager.get_account_state()
-                positions = await self._state_manager.get_all_positions()
-                if account is not None:
-                    await self._report_populator.update_balance(
-                        current_balance_usdt=account.total_balance_usdt,
-                        unrealized_pnl_usdt=account.unrealized_pnl,
-                        active_positions_count=len(positions),
-                        open_positions=self._build_position_snapshots(positions),
-                        market_prices=self._build_market_prices(),
-                    )
-            except Exception:
-                logger.exception(
-                    "Report loop encountered an error, continuing",
-                    extra={"loop": "report", "cycle": cycle},
-                )
-
-    def _build_position_snapshots(
-        self,
-        positions: list[PositionSchema],
-    ) -> list[ReportPositionEntrySchema]:
-        if not positions or self._price_provider is None:
-            return []
-        result: list[ReportPositionEntrySchema] = []
-        for pos in positions:
-            current_price = self._price_provider.get_current_price(pos.symbol)
-            if pos.side == "LONG":
-                pnl = (current_price - pos.entry_price) * pos.quantity
-            else:
-                pnl = (pos.entry_price - current_price) * pos.quantity
-            result.append(
-                ReportPositionEntrySchema(
-                    symbol=pos.symbol,
-                    side=pos.side,
-                    quantity=pos.quantity,
-                    entry_price=pos.entry_price,
-                    current_price=current_price,
-                    stop_loss=pos.current_stop_loss,
-                    take_profit=pos.take_profit,
-                    unrealized_pnl=pnl,
-                    leverage=pos.leverage,
-                    opened_at=pos.opened_at,
-                ),
-            )
-        return result
-
-    def _build_market_prices(self) -> list[ReportMarketPriceSchema]:
-        if self._price_provider is None:
-            return []
-        result: list[ReportMarketPriceSchema] = []
-        for symbol in self._trading_symbols:
-            price = self._price_provider.get_current_price(symbol)
-            if price > 0:
-                result.append(
-                    ReportMarketPriceSchema(symbol=symbol, price=price),
-                )
-        return result
