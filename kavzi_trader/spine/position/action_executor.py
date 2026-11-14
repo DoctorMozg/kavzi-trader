@@ -2,7 +2,10 @@ import logging
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.exceptions import ExchangeError
+from kavzi_trader.api.common.exceptions import (
+    UNKNOWN_ORDER_ERROR_CODE,
+    ExchangeError,
+)
 from kavzi_trader.api.common.models import (
     OrderResponseSchema,
     OrderSide,
@@ -19,11 +22,9 @@ logger = logging.getLogger(__name__)
 _STOP_ORDER_TYPES = frozenset(
     {OrderType.STOP, OrderType.STOP_MARKET},
 )
-
-# Binance futures error code for "Unknown order sent" — returned when the order
-# is no longer on the exchange (already filled, cancelled, or never existed).
-# Safe to treat as a successful removal from the local side.
-_ERROR_CODE_UNKNOWN_ORDER = -2011
+_TAKE_PROFIT_ORDER_TYPES = frozenset(
+    {OrderType.TAKE_PROFIT, OrderType.TAKE_PROFIT_MARKET},
+)
 
 
 class PositionActionExecutor:
@@ -56,6 +57,54 @@ class PositionActionExecutor:
         """Drop a position the exchange already closed, with its surviving orders."""
         await self._cancel_linked_orders(position)
         await self._state.remove_position(position.id)
+
+    async def sweep_orphaned_orders(self) -> None:
+        """Cancel linked orders whose position is gone, e.g. after a failed cancel."""
+        # Orders are read before positions: a position is always saved before its
+        # protective orders, so any order seen here has an owner in the later read.
+        orders = await self._state.get_open_orders()
+        live_ids = {p.id for p in await self._state.get_all_positions()}
+        for order in orders:
+            owner = order.linked_position_id
+            if owner is not None and owner not in live_ids:
+                logger.warning(
+                    "Cancelling orphaned order %s of closed position %s",
+                    order.order_id,
+                    owner,
+                    extra={"order_id": order.order_id, "position_id": owner},
+                )
+                await self._cancel_order(order)
+
+    async def retry_missing_take_profit(self, position: PositionSchema) -> None:
+        """Place the TP of a half-bracketed position unless one already exists."""
+        linked = await self._state.orders.get_by_position(position.id)
+        if any(o.order_type in _TAKE_PROFIT_ORDER_TYPES for o in linked):
+            return
+        # The earlier attempt may have reached the exchange and only failed to save.
+        exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
+        for resting in await self._exchange.get_open_orders(position.symbol):
+            if (
+                resting.type in _TAKE_PROFIT_ORDER_TYPES
+                and resting.side == exit_side
+                and resting.stop_price == position.take_profit
+            ):
+                logger.warning(
+                    "Adopting take-profit %s already resting for position %s",
+                    resting.order_id,
+                    position.id,
+                )
+                await self._save_linked_order(resting, position.id)
+                return
+        await self._place_take_profit_order(
+            position,
+            position.take_profit,
+            position.quantity,
+        )
+        logger.info(
+            "Take-profit placed on retry for position %s",
+            position.id,
+            extra={"position_id": position.id, "symbol": position.symbol},
+        )
 
     async def _partial_exit(
         self,
@@ -164,13 +213,9 @@ class PositionActionExecutor:
     async def _cancel_linked_orders(self, position: PositionSchema) -> None:
         linked = await self._state.orders.get_by_position(position.id)
         for order in linked:
-            await self._cancel_order(position, order)
+            await self._cancel_order(order)
 
-    async def _cancel_order(
-        self,
-        position: PositionSchema,
-        order: OpenOrderSchema,
-    ) -> None:
+    async def _cancel_order(self, order: OpenOrderSchema) -> None:
         """
         Cancel a single linked order on the exchange and remove it locally.
 
@@ -178,36 +223,37 @@ class PositionActionExecutor:
         a Binance ``-2011`` ("Unknown order sent") response means the order
         is already gone from the exchange (filled or cancelled elsewhere),
         so purging local state is correct. For any other failure we keep
-        the local record so reconciliation can reason about the mismatch.
+        the local record: `sweep_orphaned_orders` retries it once the owning
+        position is gone.
         """
         try:
             await self._exchange.cancel_order(
-                symbol=position.symbol,
+                symbol=order.symbol,
                 order_id=int(order.order_id),
             )
         except ExchangeError as exc:
-            if exc.code == _ERROR_CODE_UNKNOWN_ORDER:
+            if exc.code == UNKNOWN_ORDER_ERROR_CODE:
                 logger.info(
                     "Order %s already absent on exchange for position %s; "
                     "removing from local state",
                     order.order_id,
-                    position.id,
+                    order.linked_position_id,
                 )
                 await self._state.remove_order(order.order_id)
                 return
             logger.exception(
                 "Failed to cancel linked order %s for position %s; "
-                "keeping local record for reconciliation",
+                "keeping local record for retry",
                 order.order_id,
-                position.id,
+                order.linked_position_id,
             )
             return
         except Exception:
             logger.exception(
                 "Failed to cancel linked order %s for position %s; "
-                "keeping local record for reconciliation",
+                "keeping local record for retry",
                 order.order_id,
-                position.id,
+                order.linked_position_id,
             )
             return
         await self._state.remove_order(order.order_id)

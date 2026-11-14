@@ -7,6 +7,9 @@ from kavzi_trader.api.binance.schemas.data_dicts import KlineData, TickerData
 from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
 from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
+from kavzi_trader.orchestrator.providers.stream_disconnected_error import (
+    StreamDisconnectedError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,17 @@ class LiveStreamManager:
         self._cache = cache
         self._symbols = symbols
         self._interval = interval
+        self._last_error: Exception | None = None
+
+    def handle_ws_error(self, error: Exception) -> None:
+        """Record a WebSocket error; a dead stream then ends `start`."""
+        self._last_error = error
+        logger.error(
+            "WebSocket error: %s",
+            error,
+            exc_info=error,
+            extra={"symbols": self._symbols, "interval": self._interval},
+        )
 
     async def start(self) -> None:
         logger.info(
@@ -52,6 +66,9 @@ class LiveStreamManager:
 
         logger.warning("WebSocket disconnected, stopping stream manager")
         await self._ws_client.stop()
+        error, self._last_error = self._last_error, None
+        msg = f"Market data WebSocket disconnected: {error or 'no error reported'}"
+        raise StreamDisconnectedError(msg) from error
 
     async def _on_kline(self, data: KlineData) -> None:
         try:

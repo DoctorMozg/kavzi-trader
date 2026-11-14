@@ -19,7 +19,10 @@ from kavzi_trader.api.binance.schemas.data_dicts import (
     MarginTypeChangeDict,
     PositionInfoDict,
 )
-from kavzi_trader.api.common.exceptions import ExchangeError
+from kavzi_trader.api.common.exceptions import (
+    UNKNOWN_ORDER_ERROR_CODE,
+    ExchangeError,
+)
 from kavzi_trader.api.common.models import (
     OrderFillSchema,
     OrderResponseSchema,
@@ -47,9 +50,6 @@ _PROTECTIVE_ORDER_TYPES = frozenset(
 _TRIGGERED_ORDER_TYPES = frozenset(
     {OrderType.STOP_MARKET, OrderType.TAKE_PROFIT_MARKET},
 )
-
-# Binance "Unknown order sent": what cancelling an already-filled order returns.
-_ERROR_CODE_UNKNOWN_ORDER = -2011
 
 
 class _PaperPositionTracker(BaseModel):
@@ -641,7 +641,7 @@ class PaperExchangeClient(BinanceClient):
         if existing.status == OrderStatus.FILLED:
             raise ExchangeError(
                 f"Unknown order sent: order {existing.order_id} already filled",
-                code=_ERROR_CODE_UNKNOWN_ORDER,
+                code=UNKNOWN_ORDER_ERROR_CODE,
             )
         cancelled = existing.model_copy(
             update={

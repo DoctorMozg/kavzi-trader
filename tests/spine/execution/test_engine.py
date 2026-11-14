@@ -12,6 +12,8 @@ from kavzi_trader.api.common.models import (
     OrderType,
     TimeInForce,
 )
+from kavzi_trader.events.config import EventStoreConfigSchema
+from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
 from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.execution.execution_result_schema import ExecutionResultSchema
@@ -23,6 +25,7 @@ from kavzi_trader.spine.risk.schemas import RiskValidationResultSchema, Volatili
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.state.schemas import (
     AccountStateSchema,
+    OpenOrderSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
@@ -147,6 +150,47 @@ async def test_engine_executes_filled_order(
     state_manager.update_position.assert_called_once()
     stored_position = state_manager.update_position.call_args.args[0]
     assert stored_position.liquidation_price == Decimal("92.5")
+
+
+@pytest.mark.asyncio
+async def test_engine_events_land_in_configured_streams(
+    decision_message,
+    filled_order_response,
+) -> None:
+    exchange = AsyncMock()
+    exchange.create_order = AsyncMock(return_value=filled_order_response)
+    risk_validator = AsyncMock()
+    risk_validator.validate_trade = AsyncMock(
+        return_value=RiskValidationResultSchema(
+            is_valid=True,
+            rejection_reasons=[],
+            volatility_regime=VolatilityRegime.NORMAL,
+            recommended_size=Decimal(1),
+            size_multiplier=Decimal(1),
+            warnings=[],
+            should_close_all=False,
+        ),
+    )
+    staleness_checker = MagicMock()
+    staleness_checker.is_stale.return_value = False
+    redis_client = MagicMock()
+    redis_client.client.xadd = AsyncMock(return_value="1-0")
+    config = EventStoreConfigSchema()
+    engine = ExecutionEngine(
+        exchange=exchange,
+        state_manager=AsyncMock(),
+        risk_validator=risk_validator,
+        staleness_checker=staleness_checker,
+        translator=DecisionTranslator(),
+        monitor=OrderMonitor(exchange=exchange, timeout_s=1),
+        event_store=RedisEventStore(redis_client, config),
+    )
+
+    await engine.execute(decision_message)
+
+    streams = {call.args[0] for call in redis_client.client.xadd.await_args_list}
+    assert streams
+    assert streams <= set(config.streams.values())
 
 
 @pytest.mark.asyncio
@@ -416,6 +460,92 @@ def _sample_position(
         opened_at=now,
         updated_at=now,
     )
+
+
+def _order_response(order_type: OrderType, order_id: int) -> OrderResponseSchema:
+    return OrderResponseSchema(
+        symbol="BTCUSDT",
+        order_id=order_id,
+        client_order_id="c",
+        transact_time=datetime(2026, 1, 1, tzinfo=UTC),
+        price=Decimal(0),
+        orig_qty=Decimal("0.1"),
+        executed_qty=Decimal(0),
+        status=OrderStatus.NEW,
+        time_in_force=TimeInForce.GTC,
+        type=order_type,
+        side=OrderSide.SELL,
+    )
+
+
+@pytest.mark.asyncio
+async def test_failed_take_profit_flags_position_for_retry() -> None:
+    exchange = AsyncMock()
+    exchange.create_order = AsyncMock(
+        side_effect=[
+            _order_response(OrderType.STOP_MARKET, 1),
+            RuntimeError("rate limited"),
+        ],
+    )
+    state_manager = AsyncMock()
+    engine = ExecutionEngine(
+        exchange=exchange,
+        state_manager=state_manager,
+        risk_validator=AsyncMock(),
+        staleness_checker=MagicMock(),
+        translator=DecisionTranslator(),
+        monitor=MagicMock(spec=OrderMonitor),
+        event_store=None,
+    )
+
+    await engine._place_protective_orders(_sample_position())
+
+    # SL stays live: no emergency close, only the two protective attempts.
+    assert exchange.create_order.await_count == 2
+    flagged = state_manager.update_position.await_args.args[0]
+    assert flagged.needs_tp_retry is True
+
+
+@pytest.mark.parametrize(
+    ("code", "record_removed"),
+    [(-2011, True), (-1007, False)],
+)
+@pytest.mark.asyncio
+async def test_cancel_failure_keeps_order_record_unless_already_gone(
+    code: int,
+    record_removed: bool,
+) -> None:
+    exchange = AsyncMock()
+    exchange.cancel_order = AsyncMock(side_effect=ExchangeError("x", code=code))
+    state_manager = AsyncMock()
+    state_manager.orders.get_by_position = AsyncMock(
+        return_value=[
+            OpenOrderSchema(
+                order_id="42",
+                symbol="BTCUSDT",
+                side=OrderSide.SELL,
+                order_type=OrderType.STOP_MARKET,
+                price=Decimal(49000),
+                quantity=Decimal("0.1"),
+                status=OrderStatus.NEW,
+                linked_position_id="pos-1",
+                created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+        ],
+    )
+    engine = ExecutionEngine(
+        exchange=exchange,
+        state_manager=state_manager,
+        risk_validator=AsyncMock(),
+        staleness_checker=MagicMock(),
+        translator=DecisionTranslator(),
+        monitor=MagicMock(spec=OrderMonitor),
+        event_store=None,
+    )
+
+    await engine._cancel_linked_orders(_sample_position())
+
+    assert state_manager.remove_order.await_count == int(record_removed)
 
 
 @pytest.mark.asyncio

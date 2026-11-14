@@ -389,6 +389,20 @@ async def test_stream_manager_process_message() -> None:
     on_error_mock.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_client_set_on_error_receives_fatal_stream_errors() -> None:
+    client = BinanceWebsocketClient()
+    on_error_mock = MagicMock()
+    client.set_on_error(on_error_mock)
+
+    await client.stream_manager._process_message(
+        {"e": "error", "type": "BinanceWebsocketUnableToConnect", "m": "x"},
+    )
+
+    on_error_mock.assert_called_once()
+    assert client.is_connected() is False
+
+
 # Tests for handlers
 @pytest.mark.asyncio
 async def test_base_handler_unsubscribe() -> None:

@@ -6,6 +6,7 @@ import time
 from decimal import Decimal
 from typing import Literal, Protocol
 
+from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.exchange_fill_detector import ExchangeFillDetector
@@ -41,6 +42,7 @@ class PositionManagementLoop:
         report_populator: TradeReportPopulator | None = None,
         cycle_timeout_s: int = 30,
         fill_check_interval_s: int = 15,
+        tp_retry_max_attempts: int = 3,
     ) -> None:
         self._manager = manager
         self._state_manager = state_manager
@@ -53,6 +55,8 @@ class PositionManagementLoop:
         self._cycle_timeout_s = cycle_timeout_s
         self._fill_check_interval_s = fill_check_interval_s
         self._last_fill_check_s: float | None = None
+        self._tp_retry_max_attempts = tp_retry_max_attempts
+        self._tp_retry_attempts: dict[str, int] = {}
 
     async def run(self) -> None:
         logger.info(
@@ -74,8 +78,14 @@ class PositionManagementLoop:
 
     async def _manage_positions(self) -> None:
         positions = await self._state_manager.get_all_positions()
-        if positions and self._fill_check_due():
-            positions = await self._drop_exchange_closed(positions)
+        open_ids = {p.id for p in positions}
+        self._tp_retry_attempts = {
+            pid: n for pid, n in self._tp_retry_attempts.items() if pid in open_ids
+        }
+        if self._fill_check_due():
+            if positions:
+                positions = await self._drop_exchange_closed(positions)
+            await self._sweep_orphaned_orders()
         if positions:
             logger.debug(
                 "Position management cycle: %d open positions",
@@ -97,6 +107,15 @@ class PositionManagementLoop:
                     "cycle_timeout_s": self._cycle_timeout_s,
                     "position_count": len(positions),
                 },
+            )
+
+    async def _sweep_orphaned_orders(self) -> None:
+        try:
+            await self._action_executor.sweep_orphaned_orders()
+        except Exception:
+            logger.exception(
+                "Orphaned order sweep failed",
+                extra={"loop": "position"},
             )
 
     def _fill_check_due(self) -> bool:
@@ -164,6 +183,8 @@ class PositionManagementLoop:
         position: PositionSchema,
     ) -> None:
         try:
+            if position.needs_tp_retry:
+                position = await self._retry_take_profit(position)
             current_price = await self._price_provider.get_current_price(
                 position.symbol,
             )
@@ -220,6 +241,44 @@ class PositionManagementLoop:
                     "symbol": position.symbol,
                 },
             )
+
+    async def _retry_take_profit(self, position: PositionSchema) -> PositionSchema:
+        """Re-place a missing TP a bounded number of times; return the latest state."""
+        attempts = self._tp_retry_attempts.get(position.id, 0)
+        if attempts >= self._tp_retry_max_attempts:
+            return position
+        try:
+            await self._action_executor.retry_missing_take_profit(position)
+        except Exception:
+            attempts += 1
+            self._tp_retry_attempts[position.id] = attempts
+            extra = {
+                "loop": "position",
+                "position_id": position.id,
+                "symbol": position.symbol,
+            }
+            if attempts >= self._tp_retry_max_attempts:
+                logger.critical(
+                    "Take-profit retries exhausted for %s; position is SL-only",
+                    position.symbol,
+                    extra=extra,
+                    exc_info=True,
+                )
+            else:
+                logger.exception(
+                    "Take-profit retry %d/%d failed for %s",
+                    attempts,
+                    self._tp_retry_max_attempts,
+                    position.symbol,
+                    extra=extra,
+                )
+            return position
+        self._tp_retry_attempts.pop(position.id, None)
+        cleared = position.model_copy(
+            update={"needs_tp_retry": False, "updated_at": utc_now()},
+        )
+        await self._state_manager.update_position(cleared)
+        return cleared
 
     async def _apply_action(
         self,

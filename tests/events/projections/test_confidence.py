@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.projections.confidence import ConfidenceProjection
 
@@ -12,7 +13,7 @@ def test_confidence_projection_updates_snapshot() -> None:
         version=1,
         timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         aggregate_id="decision-1",
-        aggregate_type="decisions",
+        aggregate_type=AggregateType.DECISIONS,
         data={"confidence": 0.7},
         metadata={},
     )

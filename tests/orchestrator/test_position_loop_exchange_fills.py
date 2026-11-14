@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from kavzi_trader.api.common.exceptions import ExchangeError
 from kavzi_trader.api.common.models import (
     OrderSide,
     OrderStatus,
@@ -56,6 +57,9 @@ class _InMemoryState:
 
     async def remove_position(self, position_id: str) -> None:
         self.positions.pop(position_id, None)
+
+    async def get_open_orders(self, symbol: str | None = None) -> list[OpenOrderSchema]:
+        return [o for o in self.orders.by_id.values() if symbol in (None, o.symbol)]
 
     async def save_order(self, order: OpenOrderSchema) -> None:
         self.orders.by_id[order.order_id] = order
@@ -257,3 +261,41 @@ async def test_detector_failure_does_not_block_position_management() -> None:
 
     # The local SL check still ran and closed the position.
     assert sc.state.positions == {}
+
+
+async def test_sibling_order_whose_cancel_failed_is_cleaned_up_next_cycle() -> None:
+    sc = _Scenario("LONG")
+    await sc.open_bracketed_position()
+    sc.set_price(111)
+    await sc.exchange_fills(sc.tp_id)
+    real_cancel = sc.exchange.cancel_order
+
+    async def cancel_unless_sl(symbol: str, order_id: int) -> None:
+        if order_id == sc.sl_id:
+            raise ExchangeError("timeout", code=-1007)
+        await real_cancel(symbol, order_id=order_id)
+
+    sc.exchange.cancel_order = AsyncMock(side_effect=cancel_unless_sl)
+
+    await sc.run_cycle()
+
+    assert sc.state.positions == {}
+    assert [o.order_id for o in sc.state.orders.by_id.values()] == [str(sc.sl_id)]
+
+    sc.exchange.cancel_order = real_cancel
+    await sc.run_cycle()
+
+    assert sc.state.orders.by_id == {}
+    assert await sc.exchange.get_open_orders("BTCUSDT") == []
+
+
+async def test_orders_of_open_positions_survive_the_orphan_sweep() -> None:
+    sc = _Scenario("LONG")
+    await sc.open_bracketed_position()
+    sc.set_price(102)
+
+    await sc.run_cycle()
+    await sc.run_cycle()
+
+    assert len(sc.state.orders.by_id) == 2
+    assert len(await sc.exchange.get_open_orders("BTCUSDT")) == 2

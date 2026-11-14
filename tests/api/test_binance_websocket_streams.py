@@ -11,6 +11,9 @@ from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
 from kavzi_trader.api.binance.websocket.stream_manager import StreamManager
 from kavzi_trader.orchestrator.providers import live_stream_manager
 from kavzi_trader.orchestrator.providers.live_stream_manager import LiveStreamManager
+from kavzi_trader.orchestrator.providers.stream_disconnected_error import (
+    StreamDisconnectedError,
+)
 
 TEST_TIMEOUT_S = 2
 
@@ -139,7 +142,7 @@ class TestDeadFeedDetection:
 
         on_message.assert_not_called()
 
-    async def test_live_stream_manager_returns_when_feed_dies(
+    async def test_live_stream_manager_raises_when_feed_dies(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -162,6 +165,7 @@ class TestDeadFeedDetection:
         )
 
         async with asyncio.timeout(TEST_TIMEOUT_S):
-            await live.start()
+            with pytest.raises(StreamDisconnectedError):
+                await live.start()
 
         manager.stop.assert_awaited_once()

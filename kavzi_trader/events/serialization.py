@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from typing import TypedDict
 
+from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.event_schema import EventSchema
 
 
@@ -42,7 +43,7 @@ def deserialize_event(fields: SerializedEventDict) -> EventSchema:
         version=int(fields["version"]),
         timestamp=datetime.fromisoformat(fields["timestamp"]),
         aggregate_id=fields["aggregate_id"],
-        aggregate_type=fields["aggregate_type"],
+        aggregate_type=AggregateType(fields["aggregate_type"]),
         data=json.loads(fields.get("data", "{}")),
         metadata=json.loads(fields.get("metadata", "{}")),
     )

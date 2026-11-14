@@ -23,6 +23,7 @@ from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.brain.schemas.dependencies import rebuild_deferred_models
 from kavzi_trader.config import AppConfig
+from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.external.config import SynthesizerConfigSchema
@@ -213,6 +214,7 @@ async def _start_orchestrator(
         symbols=app_config.trading.symbols,
         interval=app_config.trading.interval,
     )
+    ws_client.set_on_error(stream_manager.handle_ws_error)
     order_flow_fetcher = LiveOrderFlowFetcher(
         exchange=exchange,
         cache=cache,
@@ -482,6 +484,11 @@ async def _start_orchestrator(
         report_populator=report_populator,
         is_paper=is_paper,
         external_sentiment_loop=external_sentiment_loop,
+        shutdown_hooks={
+            "websocket": ws_client.stop,
+            "exchange": exchange.client.close_connection,
+            "redis": redis_client.close,
+        },
     )
     await orchestrator.start()
 
@@ -582,7 +589,9 @@ def history(ctx: click.Context) -> None:
     redis_client = RedisStateClient(app_config.redis)
     asyncio.run(redis_client.connect())
     store = RedisEventStore(redis_client, app_config.events)
-    events = asyncio.run(store.read("kt:events:positions", count=10))
+    events = asyncio.run(
+        store.read(app_config.events.streams[AggregateType.POSITIONS], count=10)
+    )
     if not events:
         click.echo("No recent events")
         return

@@ -166,3 +166,57 @@ async def test_failed_partial_exit_does_not_reduce_quantity() -> None:
     await loop._manage_single_position(position)
 
     state_manager.update_position.assert_not_called()
+
+
+# ---- Half-bracket TP retry ---------------------------------------------------
+
+
+def _flagged_position() -> PositionSchema:
+    return _make_position().model_copy(update={"needs_tp_retry": True})
+
+
+def _tp_retry_loop(
+    executor: AsyncMock, state_manager: AsyncMock
+) -> PositionManagementLoop:
+    manager = AsyncMock()
+    manager.evaluate_position = AsyncMock(return_value=[])
+    return _make_loop(
+        manager=manager,
+        state_manager=state_manager,
+        price_provider=AsyncMock(
+            get_current_price=AsyncMock(return_value=Decimal(105))
+        ),
+        atr_provider=AsyncMock(get_atr=AsyncMock(return_value=Decimal(5))),
+        action_executor=executor,
+    )
+
+
+@pytest.mark.asyncio
+async def test_successful_tp_retry_clears_the_flag() -> None:
+    executor = AsyncMock()
+    state_manager = AsyncMock()
+    loop = _tp_retry_loop(executor, state_manager)
+
+    await loop._manage_single_position(_flagged_position())
+
+    executor.retry_missing_take_profit.assert_awaited_once()
+    saved = state_manager.update_position.await_args.args[0]
+    assert saved.needs_tp_retry is False
+
+
+@pytest.mark.asyncio
+async def test_tp_retry_is_bounded_and_escalates_to_critical(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    executor = AsyncMock()
+    executor.retry_missing_take_profit.side_effect = RuntimeError("exchange down")
+    state_manager = AsyncMock()
+    loop = _tp_retry_loop(executor, state_manager)
+
+    with caplog.at_level("CRITICAL"):
+        for _ in range(6):
+            await loop._manage_single_position(_flagged_position())
+
+    assert executor.retry_missing_take_profit.await_count == 3
+    state_manager.update_position.assert_not_called()
+    assert len([r for r in caplog.records if r.levelname == "CRITICAL"]) == 1

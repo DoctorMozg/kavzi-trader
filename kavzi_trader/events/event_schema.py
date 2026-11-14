@@ -5,6 +5,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from kavzi_trader.events.aggregate_type import AggregateType
+
 
 class EventSchema(BaseModel):
     """Immutable event payload for audit and replay."""
@@ -14,7 +16,7 @@ class EventSchema(BaseModel):
     version: Annotated[int, Field(default=1, ge=1)]
     timestamp: Annotated[datetime, Field(...)]
     aggregate_id: Annotated[str, Field(...)]
-    aggregate_type: Annotated[str, Field(...)]
+    aggregate_type: Annotated[AggregateType, Field(...)]
     data: Annotated[Mapping[str, object | None], Field(default_factory=dict)]
     metadata: Annotated[Mapping[str, object | None], Field(default_factory=dict)]
 

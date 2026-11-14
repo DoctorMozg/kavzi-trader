@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from redis.typing import EncodableT, FieldT
 
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.events.aggregate_type import UnknownAggregateTypeError
 from kavzi_trader.events.config import EventStoreConfigSchema
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.serialization import (
@@ -36,8 +37,9 @@ class RedisEventStore:
         self._config = config
 
     async def append(self, event: EventSchema) -> str:
+        # Outside the try: a missing stream is a wiring bug, not a Redis hiccup.
+        stream = self._stream_for_event(event)
         try:
-            stream = self._stream_for_event(event)
             fields = serialize_event(event)
             event_id = await self._redis.client.xadd(
                 stream,
@@ -97,7 +99,16 @@ class RedisEventStore:
                 await self._redis.client.xdel(stream, entry.stream_id)
 
     def _stream_for_event(self, event: EventSchema) -> str:
-        return self._config.streams.get(event.aggregate_type, event.aggregate_type)
+        stream = self._config.streams.get(event.aggregate_type)
+        if stream is None:
+            logger.error(
+                "No stream configured for aggregate type %s",
+                event.aggregate_type,
+                extra={"event_id": event.event_id},
+            )
+            msg = f"No stream configured for aggregate type {event.aggregate_type!r}"
+            raise UnknownAggregateTypeError(msg)
+        return stream
 
     async def _read_entries(
         self,

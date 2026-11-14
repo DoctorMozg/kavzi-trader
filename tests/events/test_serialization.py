@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.serialization import deserialize_event, serialize_event
 
@@ -11,7 +12,7 @@ def test_serialization_roundtrip() -> None:
         version=1,
         timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         aggregate_id="order-1",
-        aggregate_type="orders",
+        aggregate_type=AggregateType.ORDERS,
         data={"symbol": "BTCUSDT", "price": 100},
         metadata={"source": "test"},
     )

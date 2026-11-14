@@ -4,6 +4,7 @@ from typing import Literal
 from uuid import uuid4
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.common.exceptions import UNKNOWN_ORDER_ERROR_CODE
 from kavzi_trader.api.common.models import (
     OrderResponseSchema,
     OrderSide,
@@ -11,6 +12,7 @@ from kavzi_trader.api.common.models import (
     OrderType,
 )
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
@@ -254,7 +256,7 @@ class ExecutionEngine:
             try:
                 await self._record_event(
                     aggregate_id=decision.decision_id,
-                    aggregate_type="decision",
+                    aggregate_type=AggregateType.DECISIONS,
                     event_type="order_rejected",
                     data={
                         "symbol": decision.symbol,
@@ -290,7 +292,7 @@ class ExecutionEngine:
         try:
             await self._record_event(
                 aggregate_id=decision.decision_id,
-                aggregate_type="decision",
+                aggregate_type=AggregateType.DECISIONS,
                 event_type="order_created",
                 data={"symbol": decision.symbol, "action": decision.action},
             )
@@ -322,7 +324,7 @@ class ExecutionEngine:
             try:
                 await self._record_event(
                     aggregate_id=decision.decision_id,
-                    aggregate_type="decision",
+                    aggregate_type=AggregateType.DECISIONS,
                     event_type="order_rejected",
                     data={"symbol": decision.symbol, "reason": error_text},
                 )
@@ -664,7 +666,7 @@ class ExecutionEngine:
         try:
             await self._record_event(
                 aggregate_id=position.id,
-                aggregate_type="position",
+                aggregate_type=AggregateType.POSITIONS,
                 event_type="position_closed",
                 data={"symbol": position.symbol, "reason": "close_action"},
             )
@@ -780,7 +782,7 @@ class ExecutionEngine:
         try:
             await self._record_event(
                 aggregate_id=position.id,
-                aggregate_type="position",
+                aggregate_type=AggregateType.POSITIONS,
                 event_type="position_opened",
                 data={
                     "symbol": position.symbol,
@@ -886,16 +888,14 @@ class ExecutionEngine:
         try:
             await self._place_take_profit(position)
         except Exception:
-            # Risk is bounded by the live SL — no emergency close. We surface
-            # the broken-bracket state so the position-management loop (which
-            # treats positions without a linked TP order as needing retry)
-            # can re-place the take-profit on the next tick.
+            # Risk is bounded by the live SL — no emergency close. The flag lets
+            # the position-management loop re-place the take-profit on a later tick.
             logger.exception(
                 "Failed to place take-profit for position %s; stop-loss is active",
                 position.id,
             )
             logger.warning(
-                "Position %s is half-bracketed (SL only); TP retry required",
+                "Position %s is half-bracketed (SL only); TP retry scheduled",
                 position.id,
                 extra={
                     "needs_tp_retry": True,
@@ -903,10 +903,11 @@ class ExecutionEngine:
                     "symbol": position.symbol,
                 },
             )
+            await self._flag_take_profit_retry(position)
             try:
                 await self._record_event(
                     aggregate_id=position.id,
-                    aggregate_type="position",
+                    aggregate_type=AggregateType.POSITIONS,
                     event_type="protective_order_failed",
                     data={
                         "symbol": position.symbol,
@@ -922,7 +923,7 @@ class ExecutionEngine:
             try:
                 await self._record_event(
                     aggregate_id=position.id,
-                    aggregate_type="position",
+                    aggregate_type=AggregateType.POSITIONS,
                     event_type="position_half_bracketed",
                     data={
                         "symbol": position.symbol,
@@ -934,6 +935,22 @@ class ExecutionEngine:
                     "Failed to record position_half_bracketed event for %s",
                     position.id,
                 )
+
+    async def _flag_take_profit_retry(self, position: PositionSchema) -> None:
+        """Persist the half-bracket so the position loop re-places the TP."""
+        flagged = position.model_copy(
+            update={"needs_tp_retry": True, "updated_at": utc_now()},
+        )
+        try:
+            await self._state_manager.update_position(flagged)
+        except Exception:
+            logger.critical(
+                "Failed to flag position %s for take-profit retry; "
+                "it stays half-bracketed until reconciliation",
+                position.id,
+                extra={"position_id": position.id, "symbol": position.symbol},
+                exc_info=True,
+            )
 
     async def _save_linked_order(
         self,
@@ -958,7 +975,7 @@ class ExecutionEngine:
     async def _record_event(
         self,
         aggregate_id: str,
-        aggregate_type: str,
+        aggregate_type: AggregateType,
         event_type: str,
         data: dict[str, str | int | float | None],
     ) -> None:
@@ -984,12 +1001,15 @@ class ExecutionEngine:
                     symbol=position.symbol,
                     order_id=int(order.order_id),
                 )
-            except Exception:
-                logger.exception(
-                    "Failed to cancel linked order %s for position %s",
-                    order.order_id,
-                    position.id,
-                )
+            except Exception as exc:
+                if getattr(exc, "code", None) != UNKNOWN_ORDER_ERROR_CODE:
+                    # Keep the record: the position sweep retries the cancel.
+                    logger.exception(
+                        "Failed to cancel linked order %s for position %s",
+                        order.order_id,
+                        position.id,
+                    )
+                    continue
             try:
                 await self._state_manager.remove_order(order.order_id)
             except Exception:
@@ -1027,7 +1047,7 @@ class ExecutionEngine:
         try:
             await self._record_event(
                 aggregate_id=position.id,
-                aggregate_type="position",
+                aggregate_type=AggregateType.POSITIONS,
                 event_type="emergency_close",
                 data={"symbol": position.symbol, "reason": "protective_order_failure"},
             )

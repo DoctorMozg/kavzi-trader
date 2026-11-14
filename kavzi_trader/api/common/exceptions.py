@@ -4,6 +4,9 @@ Exceptions for API connectors.
 This module defines the exception classes used by the API connectors.
 """
 
+# Binance futures "Unknown order sent": the order is already gone from the exchange.
+UNKNOWN_ORDER_ERROR_CODE = -2011
+
 
 class APIError(Exception):
     """Base class for all API errors."""

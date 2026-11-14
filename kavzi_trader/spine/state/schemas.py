@@ -40,6 +40,8 @@ class PositionSchema(BaseModel):
     accumulated_funding: Decimal = Decimal(0)
     stop_loss_moved_to_breakeven: bool = False
     partial_exit_done: bool = False
+    # Set when the initial TP placement failed; cleared once the TP is live.
+    needs_tp_retry: bool = False
     atr_at_entry: Decimal | None = None
     opened_at: datetime
     updated_at: datetime

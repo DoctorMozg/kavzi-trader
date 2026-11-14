@@ -3,8 +3,13 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 from redis.asyncio import Redis
 
+from kavzi_trader.events.aggregate_type import (
+    AggregateType,
+    UnknownAggregateTypeError,
+)
 from kavzi_trader.events.config import EventStoreConfigSchema
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.store import RedisEventStore
@@ -35,7 +40,7 @@ async def test_store_append_calls_xadd() -> None:
         version=1,
         timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         aggregate_id="order-1",
-        aggregate_type="orders",
+        aggregate_type=AggregateType.ORDERS,
         data={},
         metadata={},
     )
@@ -56,7 +61,7 @@ async def test_store_read_returns_events() -> None:
         version=1,
         timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         aggregate_id="order-1",
-        aggregate_type="orders",
+        aggregate_type=AggregateType.ORDERS,
         data={},
         metadata={},
     )
@@ -80,3 +85,51 @@ async def test_store_read_returns_events() -> None:
 
     assert len(events) == 1
     assert events[0].event_id == event.event_id
+
+
+@pytest.mark.asyncio
+async def test_store_routes_each_aggregate_type_to_its_stream() -> None:
+    config = EventStoreConfigSchema()
+    redis_client = DummyRedisStateClient()
+    store = RedisEventStore(redis_client, config)
+
+    for aggregate_type, stream in config.streams.items():
+        await store.append(
+            EventSchema(
+                event_type="probe",
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+                aggregate_id="a-1",
+                aggregate_type=aggregate_type,
+            ),
+        )
+
+        assert redis_client.client.xadd.await_args.args[0] == stream
+
+
+def test_event_rejects_unknown_aggregate_type() -> None:
+    with pytest.raises(ValidationError, match="aggregate_type"):
+        EventSchema.model_validate(
+            {
+                "event_type": "probe",
+                "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+                "aggregate_id": "a-1",
+                "aggregate_type": "position",
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_store_raises_when_aggregate_type_has_no_stream() -> None:
+    redis_client = DummyRedisStateClient()
+    store = RedisEventStore(redis_client, EventStoreConfigSchema(streams={}))
+    event = EventSchema(
+        event_type="probe",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        aggregate_id="a-1",
+        aggregate_type=AggregateType.POSITIONS,
+    )
+
+    with pytest.raises(UnknownAggregateTypeError, match="positions"):
+        await store.append(event)
+
+    redis_client.client.xadd.assert_not_called()

@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import click
@@ -45,7 +46,7 @@ def test_trade_status_outputs_counts(monkeypatch, capsys) -> None:
 async def test_start_orchestrator_uses_configured_runtime_values(
     monkeypatch,
 ) -> None:
-    captured: dict[str, int | str | None] = {}
+    captured: dict[str, Any] = {}
 
     app_config = AppConfig.from_env()
     app_config = app_config.model_copy(
@@ -119,8 +120,10 @@ async def test_start_orchestrator_uses_configured_runtime_values(
             captured["cache_interval"] = interval
 
     monkeypatch.setattr(trade_module, "MarketDataCache", FakeCache)
-    monkeypatch.setattr(trade_module, "BinanceWebsocketClient", lambda **_: object())
-    monkeypatch.setattr(trade_module, "LiveStreamManager", lambda **_: object())
+    ws_client = Mock()
+    stream_manager = Mock()
+    monkeypatch.setattr(trade_module, "BinanceWebsocketClient", lambda **_: ws_client)
+    monkeypatch.setattr(trade_module, "LiveStreamManager", lambda **_: stream_manager)
 
     monkeypatch.setattr(
         trade_module,
@@ -178,11 +181,11 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         async def start(self) -> None:
             return None
 
-    monkeypatch.setattr(
-        trade_module,
-        "TradingOrchestrator",
-        lambda **_: FakeTradingOrchestrator(),
-    )
+    def build_orchestrator(**kwargs) -> FakeTradingOrchestrator:
+        captured["shutdown_hooks"] = kwargs["shutdown_hooks"]
+        return FakeTradingOrchestrator()
+
+    monkeypatch.setattr(trade_module, "TradingOrchestrator", build_orchestrator)
 
     await trade_module._start_orchestrator(app_config)
 
@@ -191,3 +194,6 @@ async def test_start_orchestrator_uses_configured_runtime_values(
     assert captured["order_flow_interval_s"] == 22
     assert captured["reasoning_interval_s"] == 33
     assert captured["position_interval_s"] == 44
+    ws_client.set_on_error.assert_called_once_with(stream_manager.handle_ws_error)
+    # Close order: feed first, then the exchange session, then Redis.
+    assert list(captured["shutdown_hooks"]) == ["websocket", "exchange", "redis"]

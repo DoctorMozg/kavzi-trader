@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.projections.engine import ProjectionEngine
 
@@ -19,7 +20,7 @@ def test_projection_engine_dispatches() -> None:
             version=1,
             timestamp=datetime(2026, 1, 1, tzinfo=UTC),
             aggregate_id="order-1",
-            aggregate_type="orders",
+            aggregate_type=AggregateType.ORDERS,
             data={},
             metadata={},
         ),

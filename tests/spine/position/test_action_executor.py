@@ -317,3 +317,160 @@ class TestFullExit:
         await executor.execute(sample_position, action)
 
         mock_exchange.create_order.assert_not_called()
+
+
+def _linked(order_type: OrderType, order_id: str = "300") -> OpenOrderSchema:
+    return OpenOrderSchema(
+        order_id=order_id,
+        symbol="BTCUSDT",
+        side=OrderSide.SELL,
+        order_type=order_type,
+        price=Decimal(55000),
+        quantity=Decimal("0.1"),
+        status=OrderStatus.NEW,
+        linked_position_id="pos_001",
+        created_at=utc_now(),
+    )
+
+
+def _exchange_order(
+    order_type: OrderType,
+    stop_price: Decimal,
+    order_id: int = 777,
+) -> OrderResponseSchema:
+    now = utc_now()
+    return OrderResponseSchema(
+        symbol="BTCUSDT",
+        order_id=order_id,
+        client_order_id="x",
+        transact_time=now,
+        price=Decimal(0),
+        orig_qty=Decimal("0.1"),
+        executed_qty=Decimal(0),
+        status=OrderStatus.NEW,
+        time_in_force=TimeInForce.GTC,
+        type=order_type,
+        side=OrderSide.SELL,
+        stop_price=stop_price,
+        time=now,
+    )
+
+
+class TestRetryMissingTakeProfit:
+    async def test_places_take_profit_when_none_exists(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        mock_state_manager: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        mock_exchange.get_open_orders = AsyncMock(return_value=[])
+
+        await executor.retry_missing_take_profit(sample_position)
+
+        kwargs = mock_exchange.create_order.call_args.kwargs
+        assert kwargs["order_type"] == OrderType.TAKE_PROFIT_MARKET
+        assert kwargs["stop_price"] == Decimal(55000)
+        assert kwargs["reduce_only"] is True
+        mock_state_manager.save_order.assert_called_once()
+
+    async def test_does_nothing_when_take_profit_is_already_linked(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        mock_state_manager: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        mock_state_manager.orders.get_by_position.return_value = [
+            _linked(OrderType.TAKE_PROFIT_MARKET),
+        ]
+
+        await executor.retry_missing_take_profit(sample_position)
+
+        mock_exchange.create_order.assert_not_called()
+
+    async def test_adopts_take_profit_already_resting_on_exchange(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        mock_state_manager: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        # The first placement reached the exchange but saving it locally failed.
+        mock_exchange.get_open_orders = AsyncMock(
+            return_value=[
+                _exchange_order(OrderType.TAKE_PROFIT_MARKET, Decimal(55000)),
+            ],
+        )
+
+        await executor.retry_missing_take_profit(sample_position)
+
+        mock_exchange.create_order.assert_not_called()
+        saved = mock_state_manager.save_order.call_args.args[0]
+        assert saved.order_id == "777"
+        assert saved.linked_position_id == "pos_001"
+
+    async def test_placement_failure_propagates(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        mock_exchange.get_open_orders = AsyncMock(return_value=[])
+        mock_exchange.create_order.side_effect = ExchangeError("nope", code=-1021)
+
+        with pytest.raises(ExchangeError):
+            await executor.retry_missing_take_profit(sample_position)
+
+
+class TestSweepOrphanedOrders:
+    async def test_cancels_only_orders_of_vanished_positions(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        mock_state_manager: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        orphan = _linked(OrderType.STOP_MARKET, "301").model_copy(
+            update={"linked_position_id": "gone"},
+        )
+        mock_state_manager.get_open_orders = AsyncMock(
+            return_value=[
+                orphan,
+                _linked(OrderType.STOP_MARKET, "302"),
+                _linked(OrderType.LIMIT, "303").model_copy(
+                    update={"linked_position_id": None},
+                ),
+            ],
+        )
+        mock_state_manager.get_all_positions = AsyncMock(
+            return_value=[sample_position],
+        )
+
+        await executor.sweep_orphaned_orders()
+
+        mock_exchange.cancel_order.assert_awaited_once_with(
+            symbol="BTCUSDT",
+            order_id=301,
+        )
+        mock_state_manager.remove_order.assert_awaited_once_with("301")
+
+    async def test_failed_cancel_keeps_the_record_for_the_next_sweep(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        mock_state_manager: AsyncMock,
+    ):
+        orphan = _linked(OrderType.STOP_MARKET, "301")
+        mock_state_manager.get_open_orders = AsyncMock(return_value=[orphan])
+        mock_state_manager.get_all_positions = AsyncMock(return_value=[])
+        mock_exchange.cancel_order.side_effect = [
+            ExchangeError("timeout", code=-1007),
+            None,
+        ]
+
+        await executor.sweep_orphaned_orders()
+        mock_state_manager.remove_order.assert_not_called()
+        await executor.sweep_orphaned_orders()
+
+        mock_state_manager.remove_order.assert_awaited_once_with("301")

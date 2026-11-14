@@ -77,6 +77,10 @@ class BinanceWebsocketClient:
         self.mark_price_handler = MarkPriceStreamHandler(self.stream_manager)
         self.force_order_handler = ForceOrderStreamHandler(self.stream_manager)
 
+    def set_on_error(self, callback: Callable[[Exception], None]) -> None:
+        """Set the error callback after construction (for consumers built later)."""
+        self.stream_manager.on_error_callback = callback
+
     async def start(self) -> None:
         """Start the WebSocket connection."""
         await self.stream_manager.start()

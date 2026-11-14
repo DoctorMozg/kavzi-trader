@@ -2,15 +2,11 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from kavzi_trader.events.aggregate_type import AggregateType
 
-def _default_streams() -> dict[str, str]:
-    return {
-        "orders": "kt:events:orders",
-        "positions": "kt:events:positions",
-        "decisions": "kt:events:decisions",
-        "system": "kt:events:system",
-        "liquidations": "kt:events:liquidations",
-    }
+
+def _default_streams() -> dict[AggregateType, str]:
+    return {member: f"kt:events:{member.value}" for member in AggregateType}
 
 
 class EventStoreConfigSchema(BaseModel):
@@ -18,7 +14,7 @@ class EventStoreConfigSchema(BaseModel):
 
     stream_max_length: Annotated[int, Field(ge=1)] = 100_000
     retention_days: Annotated[int, Field(ge=1)] = 90
-    streams: Annotated[dict[str, str], Field()] = Field(
+    streams: Annotated[dict[AggregateType, str], Field()] = Field(
         default_factory=_default_streams,
     )
 

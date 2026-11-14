@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Protocol
 
@@ -16,16 +15,6 @@ class DataIngestLoop:
         self._stream_manager = stream_manager
 
     async def run(self) -> None:
+        # Failures propagate on purpose: the orchestrator owns restart and backoff.
         logger.info("DataIngestLoop starting WebSocket stream manager")
-        cycle = 0
-        while True:
-            cycle += 1
-            try:
-                await self._stream_manager.start()
-            except Exception:
-                logger.exception(
-                    "DataIngestLoop encountered an error, restarting",
-                    extra={"loop": "ingest", "cycle": cycle},
-                )
-                await asyncio.sleep(1)
-                logger.info("DataIngestLoop restarting stream manager")
+        await self._stream_manager.start()
