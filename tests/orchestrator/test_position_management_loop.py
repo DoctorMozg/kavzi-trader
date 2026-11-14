@@ -5,6 +5,7 @@ import pytest
 
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
+from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
 from kavzi_trader.spine.position.position_action_type import PositionActionType
 from kavzi_trader.spine.state.schemas import (
@@ -45,7 +46,7 @@ def _make_loop(
     state_manager: AsyncMock | None = None,
     atr_provider: AsyncMock | None = None,
     price_provider: AsyncMock | None = None,
-    action_executor: AsyncMock | None = None,
+    action_executor: PositionActionExecutor | AsyncMock | None = None,
 ) -> PositionManagementLoop:
     return PositionManagementLoop(
         manager=manager or AsyncMock(),
@@ -129,3 +130,38 @@ async def test_position_refreshed_between_actions() -> None:
 
     # After the first (non-FULL_EXIT) action, state must be refreshed
     state_manager.get_position.assert_called_with(position.symbol)
+
+
+# ---- SEX-001: failed partial exit must not change state ----------------------
+
+
+@pytest.mark.asyncio
+async def test_failed_partial_exit_does_not_reduce_quantity() -> None:
+    position = _make_position()
+    partial_exit_action = PositionActionSchema(
+        action=PositionActionType.PARTIAL_EXIT,
+        exit_quantity=Decimal("0.1"),
+        reason="partial_profit",
+    )
+    manager = AsyncMock()
+    manager.evaluate_position = AsyncMock(return_value=[partial_exit_action])
+    state_manager = AsyncMock()
+    state_manager.get_position = AsyncMock(return_value=position)
+    exchange = AsyncMock()
+    exchange.create_order = AsyncMock(side_effect=RuntimeError("exchange down"))
+    price_provider = AsyncMock()
+    price_provider.get_current_price = AsyncMock(return_value=Decimal(105))
+    atr_provider = AsyncMock()
+    atr_provider.get_atr = AsyncMock(return_value=Decimal(5))
+
+    loop = _make_loop(
+        manager=manager,
+        state_manager=state_manager,
+        action_executor=PositionActionExecutor(exchange, state_manager),
+        price_provider=price_provider,
+        atr_provider=atr_provider,
+    )
+
+    await loop._manage_single_position(position)
+
+    state_manager.update_position.assert_not_called()

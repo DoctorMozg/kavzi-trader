@@ -360,7 +360,7 @@ class ExecutionEngine:
                 order_id=str(order_response.order_id),
                 status="FILLED",
                 executed_qty=order_response.executed_qty,
-                executed_price=order_response.price,
+                executed_price=order_response.effective_fill_price,
                 error_message=None,
                 needs_reconciliation=False,
             )
@@ -392,20 +392,100 @@ class ExecutionEngine:
                 order_id=str(monitored.order_id),
                 status="FILLED",
                 executed_qty=monitored.executed_qty,
-                executed_price=monitored.price,
+                executed_price=monitored.effective_fill_price,
                 error_message=None,
                 needs_reconciliation=False,
             )
 
+        return await self._resolve_unfilled_entry(decision, order_response, monitored)
+
+    async def _resolve_unfilled_entry(
+        self,
+        decision: DecisionMessageSchema,
+        order_response: OrderResponseSchema,
+        monitored: OrderResponseSchema | None,
+    ) -> ExecutionResultSchema:
+        """Cancel a timed-out entry and protect whatever filled in the meantime."""
+        final = monitored
+        if final is None:
+            final = await self._cancel_entry(decision.symbol, order_response.order_id)
+
+        if final is None or final.status in {
+            OrderStatus.NEW,
+            OrderStatus.PARTIALLY_FILLED,
+            OrderStatus.PENDING_CANCEL,
+        }:
+            # Order state unknown or still live: track it so a late fill is protected.
+            await self._register_pending_entry(decision, order_response)
+            return ExecutionResultSchema(
+                decision_id=decision.decision_id,
+                order_id=str(order_response.order_id),
+                status="SUBMITTED",
+                executed_qty=order_response.executed_qty,
+                executed_price=order_response.price,
+                error_message=None,
+                needs_reconciliation=True,
+            )
+
+        if final.executed_qty > 0:
+            await self._on_order_filled(decision, final)
+            return ExecutionResultSchema(
+                decision_id=decision.decision_id,
+                order_id=str(final.order_id),
+                status="FILLED",
+                executed_qty=final.executed_qty,
+                executed_price=final.effective_fill_price,
+                error_message=None,
+                needs_reconciliation=False,
+            )
+
+        try:
+            await self._state_manager.remove_order(str(final.order_id))
+        except Exception:
+            logger.exception(
+                "Failed to remove dead entry order %s from state",
+                final.order_id,
+            )
+        logger.info(
+            "Entry order %s for %s ended unfilled: status=%s",
+            final.order_id,
+            decision.symbol,
+            final.status.value,
+            extra={"decision_id": decision.decision_id, "symbol": decision.symbol},
+        )
         return ExecutionResultSchema(
             decision_id=decision.decision_id,
-            order_id=str(order_response.order_id),
-            status="SUBMITTED",
-            executed_qty=order_response.executed_qty,
-            executed_price=order_response.price,
-            error_message=None,
-            needs_reconciliation=True,
+            order_id=str(final.order_id),
+            status="EXPIRED",
+            executed_qty=None,
+            executed_price=None,
+            error_message=f"entry not filled; order {final.status.value}",
+            needs_reconciliation=False,
         )
+
+    async def _cancel_entry(
+        self,
+        symbol: str,
+        order_id: int,
+    ) -> OrderResponseSchema | None:
+        """Cancel the entry; if cancel fails (e.g. filled meanwhile), read its state."""
+        try:
+            return await self._exchange.cancel_order(symbol=symbol, order_id=order_id)
+        except Exception:
+            logger.exception(
+                "Failed to cancel timed-out entry %s for %s; checking order state",
+                order_id,
+                symbol,
+            )
+        try:
+            return await self._exchange.get_order(symbol=symbol, order_id=order_id)
+        except Exception:
+            logger.exception(
+                "Failed to read timed-out entry %s for %s",
+                order_id,
+                symbol,
+            )
+            return None
 
     async def _register_pending_entry(
         self,
@@ -592,7 +672,7 @@ class ExecutionEngine:
             order_id=str(order_response.order_id),
             status="FILLED",
             executed_qty=order_response.executed_qty,
-            executed_price=self._effective_fill_price(order_response),
+            executed_price=order_response.effective_fill_price,
             error_message=None,
             needs_reconciliation=False,
         )
@@ -889,24 +969,6 @@ class ExecutionEngine:
         )
         await self._event_store.append(event)
 
-    def _effective_fill_price(
-        self,
-        order: OrderResponseSchema,
-    ) -> Decimal | None:
-        """Return the weighted-average fill price, or None when unknown.
-
-        Binance futures MARKET orders return `price=0` in the REST response;
-        the real fill price must be reconstructed from the `fills` array.
-        """
-        fills = order.fills
-        if not fills:
-            return order.price if order.price > 0 else None
-        total_qty = sum((f.qty for f in fills), Decimal(0))
-        if total_qty <= 0:
-            return order.price if order.price > 0 else None
-        weighted = sum((f.price * f.qty for f in fills), Decimal(0))
-        return weighted / total_qty
-
     async def _cancel_linked_orders(self, position: PositionSchema) -> None:
         linked = await self._state_manager.orders.get_by_position(position.id)
         for order in linked:
@@ -942,7 +1004,7 @@ class ExecutionEngine:
                 quantity=position.quantity,
                 reduce_only=True,
             )
-            exit_price = self._effective_fill_price(order_response)
+            exit_price = order_response.effective_fill_price
             await self._state_manager.remove_position(position.id)
             logger.warning(
                 "Emergency-closed position %s for %s",

@@ -6,6 +6,15 @@ from kavzi_trader.api.common.models import OrderResponseSchema, OrderStatus
 
 logger = logging.getLogger(__name__)
 
+_TERMINAL_STATUSES = frozenset(
+    {
+        OrderStatus.FILLED,
+        OrderStatus.CANCELED,
+        OrderStatus.EXPIRED,
+        OrderStatus.REJECTED,
+    },
+)
+
 
 class OrderMonitor:
     """Polls exchange order status until completion or timeout."""
@@ -63,7 +72,7 @@ class OrderMonitor:
                     symbol=symbol,
                     order_id=order_id,
                 )
-                if order.status in {OrderStatus.FILLED, OrderStatus.CANCELED}:
+                if order.status in _TERMINAL_STATUSES:
                     return order
                 failure_count = 0
             except Exception:

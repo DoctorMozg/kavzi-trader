@@ -40,7 +40,10 @@ class PositionActionExecutor:
         position: PositionSchema,
         action: PositionActionSchema,
     ) -> Decimal | None:
-        """Execute action and return exit price for FULL_EXIT, None otherwise."""
+        """Execute action; the executor is the sole writer of position state.
+
+        Returns the fill price for FULL_EXIT, None otherwise or when unknown.
+        """
         if action.action == PositionActionType.NO_ACTION:
             return None
         if action.action == PositionActionType.PARTIAL_EXIT:
@@ -77,17 +80,22 @@ class PositionActionExecutor:
             )
             return
 
-        # Persist partial_exit_done=True BEFORE cancelling linked orders and
-        # re-placing stops/TPs. If any of those fail, the flag is already
-        # durable and the next tick will not re-submit a partial exit against
-        # a position that has already been reduced on the exchange.
-        updated_position = position.model_copy(update={"partial_exit_done": True})
+        # Persist quantity and flag together right after the exchange fill, before
+        # touching protective orders, so a later failure cannot re-trigger the exit.
+        remaining = position.quantity - action.exit_quantity
+        updated_position = position.model_copy(
+            update={
+                "quantity": remaining,
+                "partial_exit_done": True,
+                "updated_at": utc_now(),
+            },
+        )
         try:
             await self._state.update_position(updated_position)
         except Exception:
             logger.critical(
                 "Partial exit executed on exchange for %s but failed to persist "
-                "partial_exit_done flag; reconciliation required",
+                "the reduced position; reconciliation required",
                 position.symbol,
                 extra={
                     "position_id": position.id,
@@ -100,18 +108,31 @@ class PositionActionExecutor:
             return
 
         await self._cancel_linked_orders(updated_position)
-        remaining = updated_position.quantity - action.exit_quantity
         if remaining > 0:
-            await self._place_stop_order(
-                updated_position,
-                updated_position.current_stop_loss,
-                remaining,
-            )
-            await self._place_take_profit_order(
-                updated_position,
-                updated_position.take_profit,
-                remaining,
-            )
+            await self._replace_protective_orders(updated_position)
+
+    async def _replace_protective_orders(self, position: PositionSchema) -> None:
+        # Each leg is attempted independently; a missing leg is left for reconciliation.
+        placements = (
+            ("stop-loss", self._place_stop_order, position.current_stop_loss),
+            ("take-profit", self._place_take_profit_order, position.take_profit),
+        )
+        for name, place, price in placements:
+            try:
+                await place(position, price, position.quantity)
+            except Exception:
+                logger.critical(
+                    "Failed to re-place %s after partial exit for %s; "
+                    "position under-protected, reconciliation required",
+                    name,
+                    position.symbol,
+                    extra={
+                        "position_id": position.id,
+                        "symbol": position.symbol,
+                        "needs_reconciliation": True,
+                    },
+                    exc_info=True,
+                )
 
     async def _full_exit(self, position: PositionSchema) -> Decimal | None:
         exit_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
@@ -133,7 +154,7 @@ class PositionActionExecutor:
             return None
         await self._cancel_linked_orders(position)
         await self._state.remove_position(position.id)
-        return order_response.price
+        return order_response.effective_fill_price
 
     async def _cancel_linked_orders(self, position: PositionSchema) -> None:
         linked = await self._state.orders.get_by_position(position.id)

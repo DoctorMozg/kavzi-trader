@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from kavzi_trader.api.common.exceptions import ExchangeError
 from kavzi_trader.api.common.models import (
     OrderResponseSchema,
     OrderSide,
@@ -204,7 +205,7 @@ async def test_engine_flags_reconciliation_on_monitor_timeout(
     decision_message,
     execution_config: ExecutionConfigSchema,
 ) -> None:
-    """Monitor returning None must surface needs_reconciliation on SUBMITTED."""
+    """Timeout with an unreachable cancel/poll must stay flagged for reconciliation."""
     now = datetime(2026, 1, 1, tzinfo=UTC)
     new_order_response = OrderResponseSchema(
         symbol="BTCUSDT",
@@ -222,6 +223,8 @@ async def test_engine_flags_reconciliation_on_monitor_timeout(
     )
     exchange = AsyncMock()
     exchange.create_order = AsyncMock(return_value=new_order_response)
+    exchange.cancel_order = AsyncMock(side_effect=RuntimeError("exchange down"))
+    exchange.get_order = AsyncMock(side_effect=RuntimeError("exchange down"))
     state_manager = AsyncMock()
     risk_validator = AsyncMock()
     risk_validator.validate_trade = AsyncMock(
@@ -255,6 +258,139 @@ async def test_engine_flags_reconciliation_on_monitor_timeout(
 
     assert result.status == "SUBMITTED"
     assert result.needs_reconciliation is True
+    # The resting order must still be tracked so a late fill gets protected.
+    state_manager.save_pending_entry.assert_called_once()
+
+
+def _limit_order(
+    *,
+    status: OrderStatus,
+    executed_qty: Decimal = Decimal(0),
+) -> OrderResponseSchema:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    return OrderResponseSchema(
+        symbol="BTCUSDT",
+        order_id=456,
+        client_order_id="decision-1",
+        transact_time=now,
+        price=Decimal(100),
+        orig_qty=Decimal(1),
+        executed_qty=executed_qty,
+        status=status,
+        time_in_force=TimeInForce.GTC,
+        type=OrderType.LIMIT,
+        side=OrderSide.BUY,
+        time=now,
+    )
+
+
+def _timeout_engine(
+    exchange: AsyncMock,
+    state_manager: AsyncMock,
+) -> ExecutionEngine:
+    risk_validator = AsyncMock()
+    risk_validator.validate_trade = AsyncMock(
+        return_value=RiskValidationResultSchema(
+            is_valid=True,
+            rejection_reasons=[],
+            volatility_regime=VolatilityRegime.NORMAL,
+            recommended_size=Decimal(1),
+            size_multiplier=Decimal(1),
+            warnings=[],
+            should_close_all=False,
+        ),
+    )
+    staleness_checker = MagicMock()
+    staleness_checker.is_stale.return_value = False
+    monitor = MagicMock(spec=OrderMonitor)
+    monitor.wait_for_completion = AsyncMock(return_value=None)
+    return ExecutionEngine(
+        exchange=exchange,
+        state_manager=state_manager,
+        risk_validator=risk_validator,
+        staleness_checker=staleness_checker,
+        translator=DecisionTranslator(),
+        monitor=monitor,
+        event_store=None,
+    )
+
+
+class TestEntryTimeout:
+    @pytest.mark.asyncio
+    async def test_unfilled_entry_is_cancelled_on_timeout(
+        self,
+        decision_message,
+    ) -> None:
+        exchange = AsyncMock()
+        exchange.create_order = AsyncMock(
+            return_value=_limit_order(status=OrderStatus.NEW),
+        )
+        exchange.cancel_order = AsyncMock(
+            return_value=_limit_order(status=OrderStatus.CANCELED),
+        )
+        state_manager = AsyncMock()
+        engine = _timeout_engine(exchange, state_manager)
+
+        result = await engine.execute(decision_message)
+
+        exchange.cancel_order.assert_called_once_with(
+            symbol="BTCUSDT",
+            order_id=456,
+        )
+        assert result.status == "EXPIRED"
+        assert result.needs_reconciliation is False
+        state_manager.update_position.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fill_racing_the_cancel_is_protected(
+        self,
+        decision_message,
+    ) -> None:
+        exchange = AsyncMock()
+        exchange.create_order = AsyncMock(
+            return_value=_limit_order(status=OrderStatus.NEW),
+        )
+        exchange.cancel_order = AsyncMock(side_effect=ExchangeError("gone", code=-2011))
+        exchange.get_order = AsyncMock(
+            return_value=_limit_order(
+                status=OrderStatus.FILLED,
+                executed_qty=Decimal(1),
+            ),
+        )
+        state_manager = AsyncMock()
+        engine = _timeout_engine(exchange, state_manager)
+
+        result = await engine.execute(decision_message)
+
+        assert result.status == "FILLED"
+        state_manager.update_position.assert_called_once()
+        sides = [c.kwargs["order_type"] for c in exchange.create_order.call_args_list]
+        assert OrderType.STOP_MARKET in sides
+        assert OrderType.TAKE_PROFIT_MARKET in sides
+
+    @pytest.mark.asyncio
+    async def test_partial_fill_is_protected_after_cancel(
+        self,
+        decision_message,
+    ) -> None:
+        exchange = AsyncMock()
+        exchange.create_order = AsyncMock(
+            return_value=_limit_order(status=OrderStatus.NEW),
+        )
+        exchange.cancel_order = AsyncMock(
+            return_value=_limit_order(
+                status=OrderStatus.CANCELED,
+                executed_qty=Decimal("0.4"),
+            ),
+        )
+        state_manager = AsyncMock()
+        engine = _timeout_engine(exchange, state_manager)
+
+        result = await engine.execute(decision_message)
+
+        assert result.status == "FILLED"
+        stored = state_manager.update_position.call_args.args[0]
+        assert stored.quantity == Decimal("0.4")
 
 
 def _sample_position(

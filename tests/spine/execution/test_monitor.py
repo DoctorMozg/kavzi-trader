@@ -20,6 +20,27 @@ async def test_monitor_returns_filled_order(filled_order_response) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status",
+    [OrderStatus.CANCELED, OrderStatus.EXPIRED, OrderStatus.REJECTED],
+)
+async def test_monitor_treats_dead_order_statuses_as_terminal(
+    filled_order_response,
+    status: OrderStatus,
+) -> None:
+    dead_order = filled_order_response.model_copy(update={"status": status})
+    exchange = AsyncMock()
+    exchange.get_order = AsyncMock(return_value=dead_order)
+    monitor = OrderMonitor(exchange=exchange, timeout_s=1)
+
+    result = await monitor.wait_for_completion("BTCUSDT", 123)
+
+    assert result is not None
+    assert result.status == status
+    exchange.get_order.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_monitor_backoff_grows_exponentially_and_caps(
     filled_order_response,
     monkeypatch: pytest.MonkeyPatch,

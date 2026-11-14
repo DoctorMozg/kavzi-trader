@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from kavzi_trader.api.common.exceptions import ExchangeError
 from kavzi_trader.api.common.models import (
     OrderResponseSchema,
     OrderSide,
@@ -134,6 +135,101 @@ class TestPartialExit:
         assert mock_exchange.cancel_order.call_count == 2
         assert mock_exchange.create_order.call_count == 3
 
+    async def test_success_persists_reduced_quantity_and_flag_once(
+        self,
+        executor: PositionActionExecutor,
+        mock_state_manager: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        action = PositionActionSchema(
+            action=PositionActionType.PARTIAL_EXIT,
+            exit_quantity=Decimal("0.03"),
+            reason="partial take profit",
+        )
+
+        await executor.execute(sample_position, action)
+
+        mock_state_manager.update_position.assert_called_once()
+        saved = mock_state_manager.update_position.call_args.args[0]
+        assert saved.quantity == Decimal("0.07")
+        assert saved.partial_exit_done is True
+
+    async def test_failed_exit_order_leaves_state_untouched(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        mock_state_manager: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        mock_exchange.create_order.side_effect = RuntimeError("exchange down")
+        action = PositionActionSchema(
+            action=PositionActionType.PARTIAL_EXIT,
+            exit_quantity=Decimal("0.03"),
+            reason="partial take profit",
+        )
+
+        await executor.execute(sample_position, action)
+
+        mock_state_manager.update_position.assert_not_called()
+        mock_exchange.cancel_order.assert_not_called()
+
+    async def test_protective_replacement_failure_keeps_reduced_quantity(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        mock_state_manager: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        mock_exchange.create_order.side_effect = [
+            mock_exchange.create_order.return_value,
+            RuntimeError("stop rejected"),
+            mock_exchange.create_order.return_value,
+        ]
+        action = PositionActionSchema(
+            action=PositionActionType.PARTIAL_EXIT,
+            exit_quantity=Decimal("0.03"),
+            reason="partial take profit",
+        )
+
+        await executor.execute(sample_position, action)
+
+        saved = mock_state_manager.update_position.call_args.args[0]
+        assert saved.quantity == Decimal("0.07")
+        assert saved.partial_exit_done is True
+        # TP is still attempted after the stop failed
+        assert mock_exchange.create_order.call_count == 3
+
+
+class TestCancelLinkedOrders:
+    async def test_unknown_order_error_removes_local_order(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        mock_state_manager: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        mock_state_manager.orders.get_by_position.return_value = [
+            OpenOrderSchema(
+                order_id="200",
+                symbol="BTCUSDT",
+                side=OrderSide.SELL,
+                order_type=OrderType.STOP_MARKET,
+                price=Decimal(48000),
+                quantity=Decimal("0.1"),
+                status=OrderStatus.NEW,
+                linked_position_id="pos_001",
+                created_at=utc_now(),
+            ),
+        ]
+        mock_exchange.cancel_order.side_effect = ExchangeError(
+            "Unknown order sent.",
+            code=-2011,
+        )
+
+        await executor._cancel_linked_orders(sample_position)
+
+        mock_state_manager.remove_order.assert_called_once_with("200")
+
 
 class TestFullExit:
     async def test_places_market_exit_and_removes_position(
@@ -156,6 +252,56 @@ class TestFullExit:
         assert call_kwargs["side"] == OrderSide.SELL
         assert call_kwargs["quantity"] == Decimal("0.1")
         mock_state_manager.remove_position.assert_called_once_with("pos_001")
+
+    async def test_returns_avg_fill_price_when_order_price_is_zero(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        now = utc_now()
+        mock_exchange.create_order.return_value = OrderResponseSchema(
+            symbol="BTCUSDT",
+            order_id=1002,
+            client_order_id="exit",
+            transact_time=now,
+            price=Decimal(0),
+            avg_price=Decimal("51234.5"),
+            orig_qty=Decimal("0.1"),
+            executed_qty=Decimal("0.1"),
+            status=OrderStatus.FILLED,
+            time_in_force=TimeInForce.GTC,
+            type=OrderType.MARKET,
+            side=OrderSide.SELL,
+        )
+        action = PositionActionSchema(
+            action=PositionActionType.FULL_EXIT,
+            reason="time exit",
+        )
+
+        exit_price = await executor.execute(sample_position, action)
+
+        assert exit_price == Decimal("51234.5")
+
+    async def test_unknown_fill_price_is_not_reported_as_zero(
+        self,
+        executor: PositionActionExecutor,
+        mock_exchange: AsyncMock,
+        sample_position: PositionSchema,
+    ):
+        mock_exchange.create_order.return_value = (
+            mock_exchange.create_order.return_value.model_copy(
+                update={"price": Decimal(0)},
+            )
+        )
+        action = PositionActionSchema(
+            action=PositionActionType.FULL_EXIT,
+            reason="time exit",
+        )
+
+        exit_price = await executor.execute(sample_position, action)
+
+        assert exit_price is None
 
     async def test_no_action_skipped(
         self,

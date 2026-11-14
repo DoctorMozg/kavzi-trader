@@ -7,7 +7,7 @@ python-binance library to fit our project's interfaces and data models.
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from decimal import Decimal
 from functools import wraps
@@ -53,27 +53,21 @@ from kavzi_trader.commons.time_utility import (
 logger = logging.getLogger(__name__)
 
 
-def handle_api_errors[T](func: Callable[..., T]) -> Callable[..., T]:
-    """
-    Decorator to handle API errors from Binance.
-
-    This decorator wraps a method and catches any exceptions,
-    passing them to the _handle_error method before re-raising.
-
-    Args:
-        func: The function to wrap
-
-    Returns:
-        The wrapped function
-    """
+def handle_api_errors[T](
+    func: Callable[..., Awaitable[T]],
+) -> Callable[..., Awaitable[T]]:
+    """Map Binance library exceptions raised by an async method to our own."""
 
     @wraps(func)
-    def wrapper(self, *args: Any, **kwargs: Any) -> T:  # type: ignore  # noqa: ANN001, ANN401
+    async def wrapper(self: BinanceClient, *args: Any, **kwargs: Any) -> T:  # noqa: ANN401
         try:
-            return func(self, *args, **kwargs)
-        except Exception as e:
-            self._handle_error(e)
-            raise  # This will never be reached due to _handle_error always raising
+            return await func(self, *args, **kwargs)
+        except (BinanceAPIException, BinanceRequestException) as error:
+            try:
+                self._handle_error(error)
+            except APIError as mapped:
+                raise mapped from error
+            raise
 
     return wrapper
 
@@ -860,6 +854,7 @@ class BinanceClient:
             stop_price=Decimal(response.get("stopPrice", "0"))
             if "stopPrice" in response
             else None,
+            avg_price=Decimal(response["avgPrice"]) if "avgPrice" in response else None,
             iceberg_qty=Decimal(response.get("icebergQty", "0"))
             if "icebergQty" in response
             else None,

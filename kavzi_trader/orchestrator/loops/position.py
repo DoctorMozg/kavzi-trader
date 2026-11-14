@@ -5,7 +5,6 @@ import logging
 from decimal import Decimal
 from typing import Literal, Protocol
 
-from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.manager import PositionManager
@@ -172,9 +171,6 @@ class PositionManagementLoop:
             },
         )
         exit_price = await self._action_executor.execute(position, action)
-        updated = self._build_updated_position(position, action)
-        if updated is not None:
-            await self._state_manager.update_position(updated)
         await self._safe_report_action(position, action)
         if action.action == PositionActionType.FULL_EXIT and exit_price is not None:
             await self._safe_report_position_close(
@@ -182,23 +178,6 @@ class PositionManagementLoop:
                 action.reason,
                 exit_price,
             )
-
-    def _build_updated_position(
-        self,
-        position: PositionSchema,
-        action: PositionActionSchema,
-    ) -> PositionSchema | None:
-        if action.action == PositionActionType.FULL_EXIT:
-            return None
-        if action.action == PositionActionType.PARTIAL_EXIT and action.exit_quantity:
-            return position.model_copy(
-                update={
-                    "quantity": position.quantity - action.exit_quantity,
-                    "partial_exit_done": True,
-                    "updated_at": utc_now(),
-                },
-            )
-        return None
 
     async def _safe_report_action(
         self,

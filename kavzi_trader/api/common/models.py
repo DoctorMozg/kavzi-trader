@@ -202,6 +202,8 @@ class OrderResponseSchema(BaseModel):
     fills: list[OrderFillSchema] = Field(default_factory=list)
     # Optional fields
     stop_price: Decimal | None = None
+    # Futures REST reports the real fill price here; `price` is 0 for MARKET.
+    avg_price: Decimal | None = None
     iceberg_qty: Decimal | None = None
     time: datetime | None = None
     update_time: datetime | None = None
@@ -213,3 +215,14 @@ class OrderResponseSchema(BaseModel):
     close_position: bool = False
 
     model_config = ConfigDict(frozen=True)
+
+    @property
+    def effective_fill_price(self) -> Decimal | None:
+        """Weighted-average fill price, or None when the exchange gave none."""
+        if self.avg_price is not None and self.avg_price > 0:
+            return self.avg_price
+        total_qty = sum((f.qty for f in self.fills), Decimal(0))
+        if total_qty > 0:
+            weighted = sum((f.price * f.qty for f in self.fills), Decimal(0))
+            return weighted / total_qty
+        return self.price if self.price > 0 else None
