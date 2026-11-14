@@ -17,6 +17,7 @@ from kavzi_trader.domain.algorithm_confluence import (
 from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
 from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.indicators.htf import HtfTrendSchema
 
 _ANALYST_PIPELINE_LOGGER = "kavzi_trader.brain.agent.analyst_pipeline"
 
@@ -34,7 +35,11 @@ class _StubDepsFetcher:
         return self._deps
 
 
-def _make_dual_confluence(long_score: int, short_score: int) -> DualConfluenceSchema:
+def _make_dual_confluence(
+    long_score: int,
+    short_score: int,
+    available_signals: int = 8,
+) -> DualConfluenceSchema:
     def _conf(
         score: int, ema: bool = False, funding: bool = False
     ) -> AlgorithmConfluenceSchema:
@@ -48,6 +53,7 @@ def _make_dual_confluence(long_score: int, short_score: int) -> DualConfluenceSc
             oi_funding_divergence=False,
             volume_spike=False,
             score=score,
+            available_signals=available_signals,
         )
 
     return DualConfluenceSchema(
@@ -61,6 +67,7 @@ def _make_analyst_deps(
     candle,
     confluence: DualConfluenceSchema,
     regime: VolatilityRegime = VolatilityRegime.NORMAL,
+    htf_trend: HtfTrendSchema | None = None,
 ) -> AnalystDependenciesSchema:
     indicators = TechnicalIndicatorsSchema(
         ema_20=Decimal(100),
@@ -82,12 +89,16 @@ def _make_analyst_deps(
         indicators=indicators,
         algorithm_confluence=confluence,
         volatility_regime=regime,
+        htf_trend=htf_trend,
     )
 
 
-def _make_pipeline(min_algo_confluence: int = 5) -> AnalystPipeline:
+def _make_pipeline(
+    min_algo_confluence: int = 5,
+    analyst=None,
+) -> AnalystPipeline:
     return AnalystPipeline(
-        analyst=_NeverCalledAnalyst(),
+        analyst=analyst or _NeverCalledAnalyst(),
         dedup=DecisionDeduplicator(),
         min_algo_confluence=min_algo_confluence,
         concurrency_limit=1,
@@ -305,3 +316,123 @@ async def test_analyst_circuit_resets_on_success_after_skip(candle) -> None:
     assert r3.reason == "circuit_open"
     # After skip expires, LLM succeeds → result is not circuit_open
     assert r4.reason != "circuit_open"
+
+
+# ===========================================================================
+# Gates scale with the signals that are actually available
+# ===========================================================================
+
+
+class _FixedScoreAnalyst:
+    """Returns a valid LONG verdict with a preset raw confluence score."""
+
+    def __init__(self, score: int) -> None:
+        self._score = score
+        self.call_count = 0
+
+    async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema:
+        self.call_count += 1
+        return AnalystDecisionSchema(
+            setup_valid=True,
+            direction="LONG",
+            confluence_score=self._score,
+            key_levels=KeyLevelsSchema(levels=[]),
+            reasoning=(
+                "Fixed verdict used by the gate scaling tests: EMA stack"
+                " aligned, volume steady."
+            ),
+        )
+
+
+@pytest.fixture
+def run_pipeline(candle):
+    async def _run(
+        *,
+        algo_score: int,
+        available_signals: int,
+        analyst_score: int = 0,
+        htf_trend: HtfTrendSchema | None = None,
+    ):
+        confluence = _make_dual_confluence(algo_score, 0, available_signals)
+        deps = _make_analyst_deps(candle, confluence, htf_trend=htf_trend)
+        analyst = _FixedScoreAnalyst(analyst_score)
+        pipeline = _make_pipeline(min_algo_confluence=3, analyst=analyst)
+        result = await pipeline.run("ADAUSDT", _StubDepsFetcher(deps))
+        return result, analyst
+
+    return _run
+
+
+@pytest.mark.asyncio
+async def test_algo_2_reaches_analyst_without_order_flow(run_pipeline) -> None:
+    result, analyst = await run_pipeline(
+        algo_score=2, available_signals=5, analyst_score=5
+    )
+
+    assert analyst.call_count == 1
+    assert result.reason == "ok"
+
+
+@pytest.mark.asyncio
+async def test_algo_2_still_skipped_with_order_flow(run_pipeline) -> None:
+    result, analyst = await run_pipeline(algo_score=2, available_signals=8)
+
+    assert analyst.call_count == 0
+    assert result.reason == "below_min_algo_confluence"
+
+
+@pytest.mark.asyncio
+async def test_raw_5_passes_normal_gate_without_order_flow(run_pipeline) -> None:
+    result, _ = await run_pipeline(algo_score=3, available_signals=5, analyst_score=5)
+
+    assert not result.stop
+    assert result.regime_gate == 5
+
+
+@pytest.mark.asyncio
+async def test_raw_5_fails_normal_gate_with_order_flow(run_pipeline) -> None:
+    result, _ = await run_pipeline(algo_score=3, available_signals=8, analyst_score=5)
+
+    assert result.stop
+    assert result.reason == "invalid_or_below_gate"
+    assert result.regime_gate == 6
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("analyst_score", "expect_stop"), [(5, True), (6, False)])
+async def test_counter_trend_bump_applies_after_scaling(
+    run_pipeline,
+    analyst_score: int,
+    expect_stop: bool,
+) -> None:
+    htf = HtfTrendSchema(direction="SHORT", bars_1h=10)
+
+    result, _ = await run_pipeline(
+        algo_score=3,
+        available_signals=5,
+        analyst_score=analyst_score,
+        htf_trend=htf,
+    )
+
+    assert result.stop is expect_stop
+    assert result.regime_gate == 5
+
+
+@pytest.mark.asyncio
+async def test_scaled_gates_are_logged_at_info(caplog, run_pipeline) -> None:
+    with caplog.at_level(logging.INFO, logger=_ANALYST_PIPELINE_LOGGER):
+        await run_pipeline(algo_score=3, available_signals=5, analyst_score=5)
+
+    records = [r for r in caplog.records if "gates scaled" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelno == logging.INFO
+    assert (records[0].available_signals, records[0].base_gate) == (5, 6)
+    assert records[0].effective_gate == 5
+
+
+@pytest.mark.asyncio
+async def test_no_scaling_log_with_all_signals(caplog, run_pipeline) -> None:
+    with caplog.at_level(logging.INFO, logger=_ANALYST_PIPELINE_LOGGER):
+        await run_pipeline(algo_score=3, available_signals=8, analyst_score=6)
+
+    assert not [r for r in caplog.records if "gates scaled" in r.getMessage()]

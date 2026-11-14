@@ -34,6 +34,7 @@ class PipelineResult:
     __slots__ = (
         "analyst",
         "geometry",
+        "regime_gate",
         "scout",
         "trader",
         "trader_deps",
@@ -48,6 +49,7 @@ class PipelineResult:
         trader_deps: TradingDependenciesSchema | None = None,
         geometry: TradeGeometrySchema | None = None,
         trader_stop_reason: str | None = None,
+        regime_gate: int | None = None,
     ) -> None:
         self.scout = scout
         self.analyst = analyst
@@ -55,12 +57,19 @@ class PipelineResult:
         self.trader_deps = trader_deps
         self.geometry = geometry
         self.trader_stop_reason = trader_stop_reason
+        # Signal-scaled regime gate from the Analyst stage; set whenever an
+        # Analyst decision is, so downstream gates never recompute it.
+        if analyst is not None and regime_gate is None:
+            msg = "regime_gate is required when an Analyst decision is present"
+            raise ValueError(msg)
+        self.regime_gate = regime_gate
 
 
 # Minimum algorithm confluence to escalate to the Analyst LLM. The Analyst
 # can add at most +3 points to the final confluence_score, so threshold is
-# (CONFLUENCE_ENTER_MIN - 3) = 3 — below this, even a perfect LLM bonus
-# cannot reach the entry gate.
+# (CONFLUENCE_ENTER_MIN - 3) = 3 with all 8 signals — below this, even a
+# perfect LLM bonus cannot reach the entry gate. Lowered when fewer signals
+# are available (see effective_min_algo_confluence).
 _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 3
 
 # Number of consecutive Trader validation failures (UnexpectedModelBehavior
@@ -195,6 +204,7 @@ class AgentRouter:
             return PipelineResult(
                 scout=scout_result,
                 analyst=analyst_decision,
+                regime_gate=analyst_result.regime_gate,
             )
         # ``stop=False`` guarantees the Analyst pipeline produced a
         # gate-passing decision; the explicit None check keeps the type
@@ -209,7 +219,11 @@ class AgentRouter:
             deps_provider,
         )
         if trader_run.decision is None:
-            return PipelineResult(scout=scout_result, analyst=analyst_decision)
+            return PipelineResult(
+                scout=scout_result,
+                analyst=analyst_decision,
+                regime_gate=analyst_result.regime_gate,
+            )
 
         total_ms = (time.monotonic() - total_start) * 1000
         logger.info(
@@ -224,6 +238,7 @@ class AgentRouter:
             trader_deps=trader_run.deps,
             geometry=trader_run.geometry,
             trader_stop_reason=trader_run.reason,
+            regime_gate=analyst_result.regime_gate,
         )
 
     @staticmethod

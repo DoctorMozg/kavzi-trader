@@ -8,4 +8,5 @@ REGIME GATES (raw score the routing layer requires before escalating to the Trad
 - {{ gate.regime }}: {{ gate.gate }}
 {%- endfor %}
 - A setup that fights the 1h trend needs {{ counter_trend_gate_bump }} more point(s) than the gate for its regime.
+- Gates scale down proportionally when some algorithm signals are unavailable (e.g. no order flow); the request shows the effective gate.
 - Each request states the gate that applies to it; mark setup_valid=true only when your raw score meets it.

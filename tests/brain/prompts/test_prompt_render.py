@@ -184,3 +184,42 @@ def test_user_prompts_render_key_sections_through_real_builder(
         assert section in trader_prompt
     assert "15m BTCUSDT at price 105" in trader_prompt
     assert "Approximate liquidation distance: 20.0% from entry" in trader_prompt
+
+
+def test_analyst_prompt_scales_to_available_signals(
+    prompt_loader: PromptLoader,
+    make_deps: Callable[
+        [VolatilityRegime],
+        tuple[AnalystDependenciesSchema, TradingDependenciesSchema],
+    ],
+) -> None:
+    analyst_deps, _ = make_deps(VolatilityRegime.NORMAL)
+    dual = analyst_deps.algorithm_confluence
+    no_flow = dual.model_copy(
+        update={
+            "long": dual.long.model_copy(update={"available_signals": 5}),
+            "short": dual.short.model_copy(update={"available_signals": 5}),
+        }
+    )
+    deps = analyst_deps.model_copy(
+        update={"algorithm_confluence": no_flow, "order_flow": None}
+    )
+
+    prompt = prompt_loader.render_user_prompt(
+        "analyze_setup",
+        ContextBuilder().build_analyst_context(deps),
+    )
+
+    assert "Confluence gate for this regime: 5 " in prompt
+    assert f"LONG base score: {dual.long.score}/5." in prompt
+    assert "order-flow signals" in prompt
+    assert "Max achievable is 5 (algo base) + 3 (discretionary) = 8" in prompt
+
+
+def test_analyst_system_prompt_mentions_gate_scaling(
+    prompt_loader: PromptLoader,
+    system_context: SystemPromptContextDict,
+) -> None:
+    rendered = prompt_loader.render_system_prompt("analyst", system_context)
+
+    assert "scale down proportionally" in rendered

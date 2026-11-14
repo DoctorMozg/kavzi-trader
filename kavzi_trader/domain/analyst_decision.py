@@ -34,9 +34,8 @@ class AnalystDecisionSchema(BaseModel):
     signals to decide if the setup is worth a final trading decision.
 
     ``setup_valid`` is the LLM's own boolean judgment. ``confluence_score``
-    is a parallel integer signal (0-11). The router applies a hysteresis
-    gate on confluence to avoid flipping on near-threshold sampling noise;
-    see ``AgentRouter._ANALYST_CONFLUENCE_ENTER``.
+    is a parallel integer signal (0-11). The Analyst pipeline gates it with a
+    signal-scaled regime threshold; see ``effective_regime_gate``.
     """
 
     setup_valid: Annotated[bool, Field(...)]

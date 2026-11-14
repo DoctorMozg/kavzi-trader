@@ -83,9 +83,12 @@ class AnalystContextDict(MarketContextDict):
     # Regime-specific minimum raw confluence score required to escalate
     # to the Trader tier. The system prompt publishes the NORMAL baseline;
     # this per-request field overrides it with the gate for the current
-    # volatility regime (NORMAL=6, HIGH=7, EXTREME=8, LOW=7).
+    # volatility regime (NORMAL=6, HIGH=7, EXTREME=8, LOW=7), scaled down
+    # when some algorithm signals have no input.
     confluence_enter_min: int
     counter_trend_gate_bump: int
+    available_signals: int
+    max_confluence_score: int
     sentiment_summary: str | None
     sentiment_bias: str | None
     sentiment_confidence_adjustment: str | None

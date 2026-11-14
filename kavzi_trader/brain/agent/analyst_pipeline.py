@@ -15,9 +15,10 @@ from kavzi_trader.brain.agent.protocols import (
     LLMExceptionLogger,
 )
 from kavzi_trader.brain.confluence_thresholds import (
-    CONFLUENCE_ENTER_MIN,
     COUNTER_TREND_GATE_BUMP,
     confluence_enter_min_for_regime,
+    effective_min_algo_confluence,
+    effective_regime_gate,
 )
 from kavzi_trader.brain.schemas.dependencies import AnalystDependenciesSchema
 from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
@@ -25,12 +26,6 @@ from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.indicators.htf import HtfTrendSchema
 
 logger = logging.getLogger(__name__)
-
-# Minimum Analyst confluence_score required to escalate to the Trader tier.
-# Sourced from the shared confluence_thresholds module so reasoning loop,
-# router, and prompt templates all use the same value.
-_ANALYST_CONFLUENCE_ENTER = CONFLUENCE_ENTER_MIN
-
 
 _AnalystStopReason = Literal[
     "no_candles",
@@ -65,6 +60,9 @@ class AnalystPipelineResultSchema(BaseModel):
     stop: Annotated[bool, Field(...)]
     cached: Annotated[bool, Field(default=False)]
     reason: Annotated[_AnalystStopReason, Field(...)]
+    # Regime entry gate scaled to the signals available for this evaluation.
+    # Downstream cooldown/enqueue checks read it instead of recomputing.
+    regime_gate: Annotated[int | None, Field(default=None)]
 
     model_config = ConfigDict(frozen=True)
 
@@ -141,25 +139,32 @@ class AnalystPipeline:
                 stop=True,
                 cached=False,
                 reason="circuit_open",
+                regime_gate=None,
             )
 
         deps = await deps_provider.get_analyst(symbol)
         self._log_analyst_inputs(deps)
         regime = deps.volatility_regime
+        available = deps.algorithm_confluence.dominant.available_signals
+        regime_gate = effective_regime_gate(regime, available)
+        min_algo = effective_min_algo_confluence(self._min_algo_confluence, available)
+        self._log_scaled_gates(
+            symbol, regime, available, regime_gate, min_algo=min_algo
+        )
 
         # Gate: skip the LLM call when algorithm confluence is too low.
         # The Analyst can add at most +3 points; if max algo < threshold,
         # even the maximum boost cannot reach the confluence entry gate.
         conf = deps.algorithm_confluence
         max_algo = max(conf.long.score, conf.short.score)
-        if max_algo < self._min_algo_confluence:
+        if max_algo < min_algo:
             dominant_side = "LONG" if conf.long.score >= conf.short.score else "SHORT"
             logger.info(
                 "Analyst skipped for %s: max algorithm confluence %d < %d"
                 " — insufficient for valid setup even with LLM bonus",
                 symbol,
                 max_algo,
-                self._min_algo_confluence,
+                min_algo,
                 extra={
                     "symbol": symbol,
                     "agent": "analyst",
@@ -175,12 +180,12 @@ class AnalystPipeline:
                 key_levels=KeyLevelsSchema(levels=[]),
                 reasoning=(
                     f"Analyst LLM call skipped: maximum algorithm"
-                    f" confluence score {max_algo}/8 is below the"
+                    f" confluence score {max_algo}/{available} is below the"
                     f" minimum threshold"
-                    f" {self._min_algo_confluence}. Even with"
+                    f" {min_algo}. Even with"
                     f" the maximum analyst bonus of +3, the total cannot"
                     f" reach the confluence entry gate"
-                    f" ({_ANALYST_CONFLUENCE_ENTER}) required to run"
+                    f" ({regime_gate}) required to run"
                     f" the Trader tier."
                 ),
             )
@@ -190,6 +195,7 @@ class AnalystPipeline:
                 stop=True,
                 cached=False,
                 reason="below_min_algo_confluence",
+                regime_gate=regime_gate,
             )
 
         if not deps.recent_candles:
@@ -202,6 +208,7 @@ class AnalystPipeline:
                 stop=True,
                 cached=False,
                 reason="no_candles",
+                regime_gate=regime_gate,
             )
 
         # Bar-close dedup: if the latest closed candle hasn't changed since
@@ -224,6 +231,7 @@ class AnalystPipeline:
                 decision=cached,
                 regime=regime,
                 htf_trend=deps.htf_trend,
+                regime_gate=regime_gate,
                 cached=True,
             )
 
@@ -251,6 +259,7 @@ class AnalystPipeline:
                 stop=True,
                 cached=False,
                 reason="agent_error",
+                regime_gate=regime_gate,
             )
 
         # Record the bar we just analyzed so subsequent cycles within the
@@ -262,6 +271,7 @@ class AnalystPipeline:
             decision=result,
             regime=regime,
             htf_trend=deps.htf_trend,
+            regime_gate=regime_gate,
             cached=False,
         )
 
@@ -272,17 +282,17 @@ class AnalystPipeline:
         decision: AnalystDecisionSchema,
         regime: VolatilityRegime,
         htf_trend: HtfTrendSchema | None,
+        regime_gate: int,
         cached: bool,
     ) -> AnalystPipelineResultSchema:
         """Apply the regime-specific escalation gate + optional override.
 
-        Replaces the prior flat ``CONFLUENCE_ENTER_MIN`` with
-        NORMAL=6, HIGH=7, EXTREME=8, LOW=7 so volatile markets can still
-        trade on genuinely strong setups. The confluence override (e.g.
-        elevated-fear FGI gate) can tighten the gate further but never
-        loosen it.
+        ``regime_gate`` is the regime's gate (NORMAL=6, HIGH=7, EXTREME=8,
+        LOW=7) already scaled to the available signals. The confluence
+        override (e.g. elevated-fear FGI gate) can tighten the gate further
+        but never loosen it.
         """
-        confluence_gate = confluence_enter_min_for_regime(regime)
+        confluence_gate = regime_gate
         if self._confluence_override is not None:
             override = self._confluence_override.get_confluence_override(
                 decision.direction
@@ -333,6 +343,7 @@ class AnalystPipeline:
                 stop=True,
                 cached=cached,
                 reason="invalid_or_below_gate",
+                regime_gate=regime_gate,
             )
         return AnalystPipelineResultSchema(
             decision=decision,
@@ -340,6 +351,37 @@ class AnalystPipeline:
             stop=False,
             cached=cached,
             reason="ok",
+            regime_gate=regime_gate,
+        )
+
+    @staticmethod
+    def _log_scaled_gates(
+        symbol: str,
+        regime: VolatilityRegime,
+        available: int,
+        regime_gate: int,
+        *,
+        min_algo: int,
+    ) -> None:
+        base_gate = confluence_enter_min_for_regime(regime)
+        if regime_gate >= base_gate:
+            return
+        logger.info(
+            "Confluence gates scaled for %s: %d/8 signals available,"
+            " regime gate %d -> %d, min algo %d",
+            symbol,
+            available,
+            base_gate,
+            regime_gate,
+            min_algo,
+            extra={
+                "symbol": symbol,
+                "agent": "analyst",
+                "available_signals": available,
+                "base_gate": base_gate,
+                "effective_gate": regime_gate,
+                "effective_min_algo": min_algo,
+            },
         )
 
     def _get_semaphore(self) -> asyncio.Semaphore:

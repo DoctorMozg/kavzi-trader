@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class ConfluenceBlockDict(TypedDict):
@@ -20,6 +20,7 @@ class ConfluenceBlockDict(TypedDict):
     oi_funding_divergence: bool
     volume_spike: bool
     score: int
+    available_signals: NotRequired[int]
 
 
 def side_trim_confluence(

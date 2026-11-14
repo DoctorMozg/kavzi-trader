@@ -3,10 +3,8 @@ import logging
 from kavzi_trader.brain.agent.router import PipelineResult
 from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_REJECT_MAX,
-    confluence_enter_min_for_regime,
 )
 from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
-from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.orchestrator.loops.reasoning_config import (
     ReasoningLoopConfigSchema,
 )
@@ -91,9 +89,11 @@ class CooldownPolicy:
         self,
         symbol: str,
         analyst: AnalystDecisionSchema,
-        volatility_regime: VolatilityRegime,
+        regime_gate: int,
     ) -> None:
         """Apply a hysteresis-banded cooldown based on the Analyst verdict.
+
+        ``regime_gate`` is the signal-scaled gate from the Analyst stage.
 
         Score <= 3 and invalid escalates per direction; borderline or
         high-confluence-but-invalid gets one light cooldown; a valid setup at
@@ -103,7 +103,6 @@ class CooldownPolicy:
         setup_valid = analyst.setup_valid
         direction = analyst.direction
         cooldown_dirs = list(_DIRECTIONS) if direction == "NEUTRAL" else [direction]
-        regime_gate = confluence_enter_min_for_regime(volatility_regime)
 
         if not setup_valid and score <= CONFLUENCE_REJECT_MAX:
             for d in cooldown_dirs:
@@ -129,12 +128,11 @@ class CooldownPolicy:
                 self._state.set_cooldown(symbol, d, max(existing, borderline_cycles))
             logger.debug(
                 "Borderline analyst %s direction=%s score=%d setup_valid=%s"
-                " regime=%s gate=%d → cooldown=%d (no escalation)",
+                " gate=%d → cooldown=%d (no escalation)",
                 symbol,
                 direction,
                 score,
                 setup_valid,
-                volatility_regime.value,
                 regime_gate,
                 borderline_cycles,
             )

@@ -35,6 +35,38 @@ def test_confluence_score(
     assert result.volume_spike is False, "Volume ratio 1.2 not > 2.5"
 
 
+def test_available_signals_counts_order_flow_only_when_present(
+    sample_candle,
+    sample_indicators,
+    sample_order_flow,
+) -> None:
+    calculator = ConfluenceCalculator()
+
+    with_flow = calculator.evaluate(
+        "LONG", sample_candle, sample_indicators, sample_order_flow
+    )
+    without_flow = calculator.evaluate("LONG", sample_candle, sample_indicators, None)
+
+    assert with_flow.available_signals == 8
+    assert without_flow.available_signals == 5
+
+
+def test_available_signals_drops_when_indicator_inputs_missing(
+    sample_candle,
+    sample_indicators,
+    sample_order_flow,
+) -> None:
+    warming_up = sample_indicators.model_copy(
+        update={"ema_200": None, "bollinger": None},
+    )
+
+    result = ConfluenceCalculator().evaluate(
+        "LONG", sample_candle, warming_up, sample_order_flow
+    )
+
+    assert result.available_signals == 6
+
+
 def test_confluence_short_funding(
     sample_candle,
     sample_indicators,

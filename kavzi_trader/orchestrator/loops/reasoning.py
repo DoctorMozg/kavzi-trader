@@ -10,14 +10,10 @@ from kavzi_trader.brain.agent.router import (
     DependenciesProvider,
     PipelineResult,
 )
-from kavzi_trader.brain.confluence_thresholds import (
-    confluence_enter_min_for_regime,
-)
 from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
-from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.orchestrator.loops.cooldown_policy import CooldownPolicy
 from kavzi_trader.orchestrator.loops.decision_message_builder import (
@@ -273,11 +269,12 @@ class ReasoningLoop:
 
         self._cooldowns.track_skip_suspension(symbol, result.scout.verdict)
 
-        if result.analyst is not None:
+        # PipelineResult guarantees a gate whenever an Analyst decision exists.
+        if result.analyst is not None and result.regime_gate is not None:
             self._cooldowns.apply_analyst_cooldown(
                 symbol,
                 result.analyst,
-                self._regime_of(result),
+                result.regime_gate,
             )
 
         self._cooldowns.track_geometry_rejects(symbol, result)
@@ -305,26 +302,14 @@ class ReasoningLoop:
         self._cooldowns.start_post_trade_cooldown(symbol)
         return True
 
-    @staticmethod
-    def _regime_of(result: PipelineResult) -> VolatilityRegime:
-        """Return the volatility regime associated with a pipeline result.
-
-        Falls back to NORMAL when ``trader_deps`` is absent (e.g. Scout
-        SKIP or Analyst rejection before Trader deps are built) so cooldown
-        logic has a deterministic default rather than silently using the
-        wrong regime's gate.
-        """
-        if result.trader_deps is None:
-            return VolatilityRegime.NORMAL
-        return result.trader_deps.volatility_regime
-
     def _should_enqueue(self, result: PipelineResult) -> bool:
         if result.scout.verdict != "INTERESTING":
             return False
         if result.analyst is None or not result.analyst.setup_valid:
             return False
-        regime_gate = confluence_enter_min_for_regime(self._regime_of(result))
-        if result.analyst.confluence_score < regime_gate:
+        if result.regime_gate is None:
+            return False
+        if result.analyst.confluence_score < result.regime_gate:
             return False
         if result.trader is None:
             return False

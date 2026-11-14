@@ -123,7 +123,27 @@ class ConfluenceCalculator:
             oi_funding_divergence=oi_funding_divergence,
             volume_spike=volume_spike,
             score=int(score),
+            available_signals=self._available_signals(indicators, order_flow),
         )
+
+    @staticmethod
+    def _available_signals(
+        indicators: TechnicalIndicatorsSchema,
+        order_flow: OrderFlowSchema | None,
+    ) -> int:
+        """Count signals whose inputs exist (EMA, RSI, VOL+SPIKE, BB, 3 order-flow)."""
+        available = 0
+        if None not in (indicators.ema_20, indicators.ema_50, indicators.ema_200):
+            available += 1
+        if indicators.rsi_14 is not None:
+            available += 1
+        if indicators.volume is not None:
+            available += 2
+        if indicators.bollinger is not None:
+            available += 1
+        if order_flow is not None:
+            available += 3
+        return available
 
     def _ema_alignment(
         self,

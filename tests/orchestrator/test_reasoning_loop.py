@@ -10,6 +10,8 @@ from kavzi_trader.brain.agent.router import PipelineResult
 from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_ENTER_MIN,
     CONFLUENCE_REJECT_MAX,
+    confluence_enter_min_for_regime,
+    effective_regime_gate,
 )
 from kavzi_trader.brain.geometry.schemas import TradeGeometrySchema
 from kavzi_trader.brain.schemas.dependencies import (
@@ -226,6 +228,7 @@ async def test_reasoning_loop_enqueues_decision() -> None:
     router = AsyncMock()
     router.run = AsyncMock(
         return_value=PipelineResult(
+            regime_gate=6,
             scout=ScoutDecisionSchema(
                 verdict="INTERESTING",
                 reason="ok",
@@ -273,6 +276,7 @@ async def test_decision_message_includes_leverage() -> None:
     router = AsyncMock()
     router.run = AsyncMock(
         return_value=PipelineResult(
+            regime_gate=6,
             scout=ScoutDecisionSchema(
                 verdict="INTERESTING",
                 reason="ok",
@@ -445,6 +449,7 @@ def _make_skip_result() -> PipelineResult:
 
 def _make_analyst_result() -> PipelineResult:
     return PipelineResult(
+        regime_gate=6,
         scout=ScoutDecisionSchema(
             verdict="INTERESTING", reason="volume", pattern_detected=None
         ),
@@ -625,6 +630,7 @@ async def test_volatility_gate_reports_as_scout_scan() -> None:
 
 def _make_analyst_result_with_confluence(confluence_score: int) -> PipelineResult:
     return PipelineResult(
+        regime_gate=6,
         scout=ScoutDecisionSchema(
             verdict="INTERESTING", reason="volume", pattern_detected=None
         ),
@@ -696,11 +702,15 @@ def test_analyst_cooldown_reject_band_escalates() -> None:
         confluence_score=2,
     )
 
-    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
+    loop._cooldowns.apply_analyst_cooldown(
+        "BTCUSDT", analyst, confluence_enter_min_for_regime(VolatilityRegime.NORMAL)
+    )
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 1
     assert loop._state.cooldown("BTCUSDT", "LONG") == 9  # base=9 * mult=1
 
-    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
+    loop._cooldowns.apply_analyst_cooldown(
+        "BTCUSDT", analyst, confluence_enter_min_for_regime(VolatilityRegime.NORMAL)
+    )
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 2
     assert loop._state.cooldown("BTCUSDT", "LONG") == 18  # base=9 * mult=2
 
@@ -724,7 +734,7 @@ def test_analyst_cooldown_borderline_band_no_escalation() -> None:
             confluence_score=score,
         )
         loop._cooldowns.apply_analyst_cooldown(
-            "BTCUSDT", analyst, VolatilityRegime.NORMAL
+            "BTCUSDT", analyst, confluence_enter_min_for_regime(VolatilityRegime.NORMAL)
         )
         assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
         assert (
@@ -747,7 +757,9 @@ def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
         direction="LONG",
         confluence_score=9,
     )
-    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
+    loop._cooldowns.apply_analyst_cooldown(
+        "BTCUSDT", analyst, confluence_enter_min_for_regime(VolatilityRegime.NORMAL)
+    )
 
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
     assert loop._state.cooldown("BTCUSDT", "LONG") == 1
@@ -773,7 +785,9 @@ def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
         direction="LONG",
         confluence_score=7,
     )
-    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, VolatilityRegime.NORMAL)
+    loop._cooldowns.apply_analyst_cooldown(
+        "BTCUSDT", analyst, confluence_enter_min_for_regime(VolatilityRegime.NORMAL)
+    )
 
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
 
@@ -790,6 +804,7 @@ def test_should_enqueue_requires_confluence_entry_gate() -> None:
     deps = _build_deps()
 
     borderline = PipelineResult(
+        regime_gate=6,
         scout=ScoutDecisionSchema(
             verdict="INTERESTING",
             reason="ok",
@@ -807,6 +822,7 @@ def test_should_enqueue_requires_confluence_entry_gate() -> None:
     assert loop._should_enqueue(borderline) is False
 
     at_gate = PipelineResult(
+        regime_gate=6,
         scout=borderline.scout,
         analyst=_make_analyst_decision(
             setup_valid=True,
@@ -852,6 +868,7 @@ def test_should_enqueue_gated_by_regime_specific_min(
     deps = _build_deps().model_copy(update={"volatility_regime": regime})
 
     result = PipelineResult(
+        regime_gate=confluence_enter_min_for_regime(regime),
         scout=ScoutDecisionSchema(
             verdict="INTERESTING",
             reason="ok",
@@ -901,16 +918,85 @@ def test_analyst_cooldown_borderline_uses_regime_gate(
         confluence_score=6,
     )
 
-    loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, regime)
+    loop._cooldowns.apply_analyst_cooldown(
+        "BTCUSDT", analyst, confluence_enter_min_for_regime(regime)
+    )
     assert loop._state.consecutive_rejections("BTCUSDT", "LONG") == 0
     # Every regime funnels an invalid setup at score=6 into the borderline
     # cooldown because the NORMAL branch only fires when setup_valid=True.
     assert loop._state.cooldown("BTCUSDT", "LONG") == 1
 
 
+@pytest.fixture
+def scaled_loop() -> ReasoningLoop:
+    return ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        analyst_cooldown_cycles=3,
+    )
+
+
+def _scaled_gate_result(regime_gate: int) -> PipelineResult:
+    """NORMAL-regime valid LONG at raw score 5; the gate is carried, not derived."""
+    return PipelineResult(
+        scout=ScoutDecisionSchema(
+            verdict="INTERESTING", reason="ok", pattern_detected=None
+        ),
+        analyst=_make_analyst_decision(
+            setup_valid=True, direction="LONG", confluence_score=5
+        ),
+        trader=_long_trader_decision(),
+        geometry=_LONG_GEOMETRY,
+        trader_deps=_build_deps(),
+        regime_gate=regime_gate,
+    )
+
+
+def test_should_enqueue_uses_carried_scaled_gate(scaled_loop: ReasoningLoop) -> None:
+    scaled = effective_regime_gate(VolatilityRegime.NORMAL, 5)
+
+    base = confluence_enter_min_for_regime(VolatilityRegime.NORMAL)
+
+    assert scaled_loop._should_enqueue(_scaled_gate_result(scaled)) is True
+    assert scaled_loop._should_enqueue(_scaled_gate_result(base)) is False
+
+
+def test_pipeline_result_requires_gate_with_analyst_decision() -> None:
+    with pytest.raises(ValueError, match="regime_gate is required"):
+        PipelineResult(
+            scout=ScoutDecisionSchema(
+                verdict="INTERESTING", reason="ok", pattern_detected=None
+            ),
+            analyst=_make_analyst_decision(
+                setup_valid=True, direction="LONG", confluence_score=6
+            ),
+        )
+
+
+def test_cooldown_treats_carried_scaled_gate_as_valid_entry(
+    scaled_loop: ReasoningLoop,
+) -> None:
+    scaled = effective_regime_gate(VolatilityRegime.NORMAL, 5)
+    analyst = _make_analyst_decision(
+        setup_valid=True, direction="LONG", confluence_score=5
+    )
+
+    scaled_loop._cooldowns.apply_analyst_cooldown("BTCUSDT", analyst, scaled)
+    assert scaled_loop._state.cooldown("BTCUSDT", "LONG") == 0
+
+    scaled_loop._cooldowns.apply_analyst_cooldown(
+        "BTCUSDT", analyst, confluence_enter_min_for_regime(VolatilityRegime.NORMAL)
+    )
+    assert scaled_loop._state.cooldown("BTCUSDT", "LONG") == 1
+
+
 def _make_trade_result() -> PipelineResult:
     deps = _build_deps()
     return PipelineResult(
+        regime_gate=6,
         scout=ScoutDecisionSchema(
             verdict="INTERESTING", reason="ok", pattern_detected=None
         ),
@@ -1187,6 +1273,7 @@ def _make_wait_result(
     direction: Literal["LONG", "SHORT", "NEUTRAL"] = "LONG",
 ) -> PipelineResult:
     return PipelineResult(
+        regime_gate=6,
         scout=ScoutDecisionSchema(
             verdict="INTERESTING", reason="volume", pattern_detected=None
         ),
@@ -1349,6 +1436,7 @@ async def test_pipeline_complete_event_recorded() -> None:
 def _make_geometry_reject_result() -> PipelineResult:
     """Pipeline result where the Trader geometry check failed."""
     return PipelineResult(
+        regime_gate=6,
         scout=ScoutDecisionSchema(
             verdict="INTERESTING", reason="vol", pattern_detected=None
         ),
@@ -1444,6 +1532,7 @@ def test_geometry_reject_counter_clears_on_successful_trader() -> None:
     assert loop._state.geometry_rejects("BTCUSDT") == 2
 
     success_result = PipelineResult(
+        regime_gate=6,
         scout=ScoutDecisionSchema(
             verdict="INTERESTING", reason="vol", pattern_detected=None
         ),
@@ -1477,6 +1566,7 @@ def test_should_enqueue_blocks_confluence_score_five_after_wu6() -> None:
     )
     deps = _build_deps()
     result = PipelineResult(
+        regime_gate=6,
         scout=ScoutDecisionSchema(
             verdict="INTERESTING",
             reason="ok",

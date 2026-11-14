@@ -4,7 +4,7 @@ from typing import cast
 
 from kavzi_trader.brain.confluence_thresholds import (
     COUNTER_TREND_GATE_BUMP,
-    confluence_enter_min_for_regime,
+    effective_regime_gate,
 )
 from kavzi_trader.brain.context.confluence_trimmer import side_trim_confluence
 from kavzi_trader.brain.context.context_dicts import (
@@ -24,6 +24,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
+from kavzi_trader.domain.algorithm_confluence import MAX_DISCRETIONARY_POINTS
 from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
 from kavzi_trader.indicators.htf import HtfTrendSchema
 
@@ -97,6 +98,7 @@ class ContextBuilder:
         self._warn_if_broken_data(deps.symbol, deps)
         market = self._build_market_context(deps)
         dual = deps.algorithm_confluence
+        available_signals = dual.dominant.available_signals
         sentiment = deps.sentiment_summary
         long_block, short_block = side_trim_confluence(
             cast("ConfluenceBlockDict", dual.long.model_dump()),
@@ -118,10 +120,13 @@ class ContextBuilder:
             futures_leverage=deps.leverage,
             symbol_tier=deps.symbol_tier,
             tier_min_confidence=str(deps.tier_min_confidence),
-            confluence_enter_min=confluence_enter_min_for_regime(
+            confluence_enter_min=effective_regime_gate(
                 deps.volatility_regime,
+                available_signals,
             ),
             counter_trend_gate_bump=COUNTER_TREND_GATE_BUMP,
+            available_signals=available_signals,
+            max_confluence_score=available_signals + MAX_DISCRETIONARY_POINTS,
             sentiment_summary=sentiment.summary if sentiment else None,
             sentiment_bias=(sentiment.sentiment_bias if sentiment else None),
             sentiment_confidence_adjustment=(
@@ -216,6 +221,7 @@ class ContextBuilder:
             funding_24h = f"{float(rate_24h * 100):+.4f}%"
 
         dual = deps.algorithm_confluence
+        available_signals = dual.dominant.available_signals
         sentiment = deps.sentiment_summary
         atr_fallback = self._compute_atr_fallback_targets(
             analyst_result=analyst_result,
@@ -248,8 +254,9 @@ class ContextBuilder:
             scout_pattern=scout_pattern,
             symbol_tier=deps.symbol_tier,
             tier_min_confidence=str(deps.tier_min_confidence),
-            confluence_enter_min=confluence_enter_min_for_regime(
+            confluence_enter_min=effective_regime_gate(
                 deps.volatility_regime,
+                available_signals,
             ),
             sentiment_summary=sentiment.summary if sentiment else None,
             sentiment_bias=(sentiment.sentiment_bias if sentiment else None),

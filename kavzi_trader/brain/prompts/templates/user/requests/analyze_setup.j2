@@ -6,12 +6,15 @@ Volatility regime: {{ volatility_regime }} | Confluence gate for this regime: {{
 STEP 1 — Review algorithm confluence signals for the detected direction:
 {% include "user/context/algorithm_confluence.j2" %}
 {%- if algorithm_confluence_long %}
-LONG base score: {{ algorithm_confluence_long.score }}/8.
+LONG base score: {{ algorithm_confluence_long.score }}/{{ available_signals }}.
 {%- endif %}
 {%- if algorithm_confluence_short %}
-SHORT base score: {{ algorithm_confluence_short.score }}/8.
+SHORT base score: {{ algorithm_confluence_short.score }}/{{ available_signals }}.
 {%- endif %}
-Add 0-3 discretionary points (order flow + price structure) to produce the final 0-11 confluence_score. Max achievable is 8 (algo base) + 3 (discretionary) = 11, matching the schema cap.
+{%- if available_signals < 8 %}
+Only {{ available_signals }} of 8 algorithm signals have data (order-flow signals FUND/OI/DIV are unavailable when order flow is down); missing signals score N and the gate above is scaled down to match.
+{%- endif %}
+Add 0-3 discretionary points (order flow + price structure) to produce the final 0-11 confluence_score. Max achievable is {{ available_signals }} (algo base) + 3 (discretionary) = {{ max_confluence_score }}{% if max_confluence_score < 11 %}, below the schema cap of 11{% else %}, matching the schema cap{% endif %}.
 
 STEP 2 — Analyze market data:
 {% include "user/context/market_snapshot.j2" %}
