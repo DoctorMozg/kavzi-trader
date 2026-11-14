@@ -49,7 +49,7 @@ class TestBracketPolicy:
             float(geometry.take_profit - geometry.entry)
         )
 
-    def test_high_regime_stop_is_widest_the_calculator_admits(self) -> None:
+    def test_every_regime_uses_widest_stop_the_calculator_admits(self) -> None:
         stops = BracketPolicy(RiskConfigSchema()).nominal_stop_atr()
-        assert stops["NORMAL"] == 1.25
-        assert stops["HIGH"] == stops["EXTREME"] == 1.5
+        assert set(stops.values()) == {1.5}
+        assert set(stops) == {r.value for r in REGIME_ORDER}

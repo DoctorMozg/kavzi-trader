@@ -12,9 +12,6 @@ from kavzi_trader.evals.market_feature_builder import REGIME_ORDER
 
 logger = logging.getLogger(__name__)
 
-# Midpoint of the 1.0-1.5 ATR stop range the Trader prompt gives for NORMAL
-# (volatility_regimes.j2); LOW is told stops "may be tight", so it shares it.
-_CALM_STOP_ATR = Decimal("1.25")
 # The ATR_2X target style, the Trader prompt's default (trader.j2).
 _BASE_TP_ATR = Decimal(2)
 
@@ -33,7 +30,8 @@ class BracketPolicy:
     """The deterministic bracket the evals use, derived from the bot's geometry.
 
     The Trader LLM picks stop and target style itself, so there is no fixed
-    multiple in the code. This policy fixes one per regime and applies the same
+    multiple in the code. This policy uses the widest stop the geometry admits
+    in every regime (the Trader prompt's cap) and applies the same
     floors, R:R extension and rejections as TradeGeometryCalculator (the builder
     cross-checks the sampled cases against that calculator).
     """
@@ -41,13 +39,8 @@ class BracketPolicy:
     def __init__(self, risk_config: RiskConfigSchema) -> None:
         self._risk = risk_config
         # Widest stop whose min-R:R target still fits under MAX_TP_ATR.
-        stressed = MAX_TP_ATR / risk_config.min_rr_ratio
-        self._stop_atr = {
-            VolatilityRegime.LOW: _CALM_STOP_ATR,
-            VolatilityRegime.NORMAL: _CALM_STOP_ATR,
-            VolatilityRegime.HIGH: stressed,
-            VolatilityRegime.EXTREME: stressed,
-        }
+        cap = MAX_TP_ATR / risk_config.min_rr_ratio
+        self._stop_atr = dict.fromkeys(VolatilityRegime, cap)
         for regime, multiple in self._stop_atr.items():
             if not risk_config.min_sl_atr <= multiple <= risk_config.max_sl_atr:
                 msg = f"stop multiple {multiple} for {regime} outside risk bounds"

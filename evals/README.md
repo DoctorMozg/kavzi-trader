@@ -8,4 +8,4 @@ Rebuild the cache and the dataset (public market data, no API keys):
 
 Pass the same `--end-date` as in each record's `generator.data_end_ms` to reproduce a dataset exactly; downloads are resumable and a rerun only fetches missing candles.
 
-Labels: entry is the close of the decision candle. Both a LONG and a SHORT bracket are walked over the next 24h of highs and lows. The stop is 1.25x ATR (LOW/NORMAL) or 1.5x ATR (HIGH/EXTREME) with the target from the bot's ATR_2X geometry (min R:R 2). A bar that touches both SL and TP counts as SL. LONG or SHORT means only that side hit its TP first; if both hit TP, the earlier one wins and a same-bar tie is NO_TRADE; anything else is NO_TRADE.
+Labels: entry is the close of the decision candle. Both a LONG and a SHORT bracket are walked over the next 24h of highs and lows. The stop is 1.5x ATR in every regime (the widest the bot's geometry admits) and the target is 3.0x ATR (ATR_2X style extended to min R:R 2). A bar that touches both SL and TP counts as SL. LONG or SHORT means only that side hit its TP first; if both hit TP, the earlier one wins and a same-bar tie is NO_TRADE; anything else is NO_TRADE.
