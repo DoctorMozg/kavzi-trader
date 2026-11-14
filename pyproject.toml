@@ -32,6 +32,9 @@ dependencies = [
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
     "redis>=8.1.0",
+    "starlette>=1.10.0",
+    "uvicorn>=0.54.0",
+    "websockets>=15",
 ]
 
 [project.scripts]
@@ -51,6 +54,7 @@ module-root = ""
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28",
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.5.0",
