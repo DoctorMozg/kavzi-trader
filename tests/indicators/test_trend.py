@@ -35,6 +35,20 @@ def test_calculate_ema_responds_to_recent_prices() -> None:
     assert rising_ema > flat_ema
 
 
+def test_calculate_ema_with_exactly_period_samples_is_sma() -> None:
+    # SMA-seeded EMA: with `period` samples the seed (their mean) is the EMA.
+    result = calculate_ema(pd.Series([10.0, 20.0, 30.0]), period=3)
+
+    assert result == Decimal("20.0")
+
+
+def test_calculate_ema_seeds_with_sma_then_recurses() -> None:
+    # Hand-computed: seed (10+20+30)/3 = 20, alpha = 0.5 -> 30, then 40.
+    result = calculate_ema(pd.Series([10.0, 20.0, 30.0, 40.0, 50.0]), period=3)
+
+    assert result == Decimal("40.0")
+
+
 def test_calculate_sma_insufficient_data() -> None:
     series = pd.Series([100, 101, 102])
     result = calculate_sma(series, period=20)

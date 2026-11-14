@@ -92,7 +92,6 @@ def test_rsi_wilder_smoothing_matches_manual_calculation() -> None:
       - 19 deltas from 20 prices
       - SMA seed from first 14 gains/losses
       - Wilder smoothing (alpha=1/14) for remaining 5 deltas
-      - Expected RSI ~68.07
     A pandas ewm-based RSI would give a different value, catching regressions.
     """
     prices = [
@@ -121,8 +120,45 @@ def test_rsi_wilder_smoothing_matches_manual_calculation() -> None:
     result = calculate_rsi(series, period=14)
 
     assert result is not None
-    # Wilder smoothing produces 68.07; pandas ewm gives ~66.25
-    assert abs(result - Decimal("68.07")) <= Decimal("0.01")
+    # Plain-python Wilder RSI over these prices gives 68.356; the old 68.07
+    # came from a phantom zero delta in the SMA seed.
+    assert abs(result - Decimal("68.36")) <= Decimal("0.01")
+
+
+def test_calculate_rsi_flat_series_is_neutral() -> None:
+    series = pd.Series([100.0] * 30)
+    result = calculate_rsi(series, period=14)
+
+    assert result == Decimal(50)
+
+
+def _reference_ema(values: list[float], period: int) -> list[float]:
+    """Textbook EMA: SMA seed of the first `period` values, alpha = 2/(n+1)."""
+    alpha = 2 / (period + 1)
+    ema = [sum(values[:period]) / period]
+    for value in values[period:]:
+        ema.append(value * alpha + ema[-1] * (1 - alpha))
+    return ema
+
+
+def test_calculate_macd_matches_sma_seeded_reference() -> None:
+    prices = [10.0, 11.0, 10.5, 12.0, 13.0, 12.5, 14.0, 15.5, 15.0, 16.0, 17.5, 17.0]
+    fast, slow, signal = 3, 5, 3
+    fast_ema = _reference_ema(prices, fast)[slow - fast :]
+    slow_ema = _reference_ema(prices, slow)
+    macd_line = [f - s for f, s in zip(fast_ema, slow_ema, strict=True)]
+    signal_line = _reference_ema(macd_line, signal)
+    expected_macd = macd_line[-1]
+    expected_signal = signal_line[-1]
+
+    result = calculate_macd(pd.Series(prices), fast, slow, signal)
+
+    assert result is not None
+    assert abs(result.macd_line - Decimal(str(expected_macd))) < Decimal("1e-6")
+    assert abs(result.signal_line - Decimal(str(expected_signal))) < Decimal("1e-6")
+    assert abs(result.histogram - Decimal(str(expected_macd - expected_signal))) < (
+        Decimal("1e-6")
+    )
 
 
 def test_momentum_with_trending_candles(

@@ -49,7 +49,7 @@ class FundingAnalysisSchema(BaseModel):
 class OIMomentumSchema(BaseModel):
     open_interest: Decimal
     oi_change_1h_percent: Decimal
-    oi_change_24h_percent: Decimal
+    oi_change_24h_percent: Decimal | None
 
     model_config = ConfigDict(frozen=True)
 
@@ -64,7 +64,7 @@ class OrderFlowSchema(BaseModel):
 
     open_interest: Decimal
     oi_change_1h_percent: Decimal
-    oi_change_24h_percent: Decimal
+    oi_change_24h_percent: Decimal | None
 
     long_short_ratio: Decimal
     long_account_percent: Decimal

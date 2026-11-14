@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from datetime import UTC, datetime
 from typing import Protocol
 
 from pydantic import BaseModel
@@ -18,6 +19,10 @@ from kavzi_trader.external.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Beyond this a failed source is treated as missing instead of served stale, so
+# gates never act on sentiment from hours ago (e.g. FGI during a long outage).
+_MAX_STALE_AGE_S = 6 * 3600
 
 
 class SentimentSynthesizerProtocol(Protocol):
@@ -130,7 +135,10 @@ class ExternalSentimentLoop:
                 self._cache.set_last_successful(source.name, result)
             else:
                 # Fetch failed — try stale fallback
-                stale = self._cache.get_last_successful(source.name, BaseModel)
+                stale = self._fresh_enough(
+                    source.name,
+                    self._cache.get_last_successful(source.name, BaseModel),
+                )
                 if stale is not None:
                     source_data[source.name] = stale
                     sources_degraded.append(source.name)
@@ -195,6 +203,25 @@ class ExternalSentimentLoop:
             else:
                 breaker.record_failure()
         return result
+
+    @staticmethod
+    def _fresh_enough(name: str, stale: BaseModel | None) -> BaseModel | None:
+        if not isinstance(
+            stale,
+            DeribitDvolDataSchema | FearGreedDataSchema | CCDataNewsDataSchema,
+        ):
+            return stale
+        age_s = (datetime.now(UTC) - stale.fetched_at).total_seconds()
+        if age_s > _MAX_STALE_AGE_S:
+            logger.warning(
+                "External source %s stale value is too old (%.0fs > %ds), dropping",
+                name,
+                age_s,
+                _MAX_STALE_AGE_S,
+                extra={"source": name, "age_s": round(age_s)},
+            )
+            return None
+        return stale
 
     @staticmethod
     def _typed_get[T: BaseModel](

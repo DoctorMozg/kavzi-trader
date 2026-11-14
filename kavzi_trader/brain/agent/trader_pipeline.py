@@ -589,7 +589,7 @@ class TraderPipeline:
             )
             return _wait_decision(
                 f"Deterministic pre-Trader reject: BREAKOUT pattern with"
-                f" Bollinger %%B={float(percent_b):.2f} exceeds"
+                f" Bollinger %B={float(percent_b):.2f} exceeds"
                 f" {float(threshold):.2f} overextension"
                 f" threshold. Price is too far {band_desc} for"
                 f" a sustainable breakout entry."

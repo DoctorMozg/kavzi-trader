@@ -3,6 +3,7 @@ from decimal import Decimal
 import pandas as pd
 
 from kavzi_trader.indicators.schemas import MACDResultSchema
+from kavzi_trader.indicators.trend import ema_series
 
 
 def calculate_rsi(series: pd.Series, period: int = 14) -> Decimal | None:
@@ -32,13 +33,12 @@ def calculate_rsi(series: pd.Series, period: int = 14) -> Decimal | None:
     if len(series) < period + 1:
         return None
 
-    delta = series.diff()
+    delta = series.diff().iloc[1:]
     gain = delta.where(delta > 0, 0.0)
     loss = (-delta).where(delta < 0, 0.0)
 
-    # Drop leading NaN from diff()
-    gain_vals = gain.dropna().to_numpy()
-    loss_vals = loss.dropna().to_numpy()
+    gain_vals = gain.to_numpy()
+    loss_vals = loss.to_numpy()
 
     alpha = 1.0 / period
 
@@ -51,7 +51,8 @@ def calculate_rsi(series: pd.Series, period: int = 14) -> Decimal | None:
         avg_loss = avg_loss * (1 - alpha) + float(loss_vals[i]) * alpha
 
     if avg_loss == 0:
-        return Decimal(100) if avg_gain > 0 else Decimal(0)
+        # Flat series has no direction: neutral 50 keeps the >50 / <50 checks quiet.
+        return Decimal(100) if avg_gain > 0 else Decimal(50)
 
     rs = avg_gain / avg_loss
     rsi = 100.0 - (100.0 / (1.0 + rs))
@@ -99,11 +100,12 @@ def calculate_macd(
     if len(series) < slow_period + signal_period:
         return None
 
-    fast_ema = series.ewm(span=fast_period, adjust=False).mean()
-    slow_ema = series.ewm(span=slow_period, adjust=False).mean()
+    fast_ema = ema_series(series, fast_period)
+    slow_ema = ema_series(series, slow_period)
 
-    macd_line = fast_ema - slow_ema
-    signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
+    # Both EMAs are only defined from the slow seed onward; align on the index.
+    macd_line = (fast_ema - slow_ema).dropna()
+    signal_line = ema_series(macd_line, signal_period)
     histogram = macd_line - signal_line
 
     return MACDResultSchema(

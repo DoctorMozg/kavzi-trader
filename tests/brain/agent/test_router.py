@@ -1194,6 +1194,8 @@ async def test_router_rejects_breakout_overextended_b(
     assert result.trader is not None
     assert result.trader.action == "WAIT"
     assert "overextension" in result.trader.reasoning.lower()
+    assert "%%B" not in result.trader.reasoning
+    assert "Bollinger %B=" in result.trader.reasoning
 
 
 @pytest.mark.asyncio

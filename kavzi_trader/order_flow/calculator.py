@@ -4,7 +4,8 @@ from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.order_flow.funding import calculate_funding_zscore
 from kavzi_trader.order_flow.open_interest import (
     calculate_oi_momentum,
-    periods_for_interval,
+    oi_period_minutes,
+    periods_for_oi_period,
 )
 from kavzi_trader.order_flow.schemas import (
     FundingRateSchema,
@@ -16,7 +17,11 @@ from kavzi_trader.order_flow.schemas import (
 
 class OrderFlowCalculator:
     def __init__(self, interval_minutes: int = 15) -> None:
-        self._periods_1h, self._periods_24h = periods_for_interval(interval_minutes)
+        period_minutes = oi_period_minutes(interval_minutes)
+        self._periods_1h, self._periods_24h = periods_for_oi_period(period_minutes)
+        self.oi_period = f"{period_minutes}m"
+        # One extra sample so the 24h-ago point exists next to the current one.
+        self.oi_history_limit = self._periods_24h + 1
 
     def calculate(
         self,

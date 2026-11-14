@@ -15,6 +15,12 @@ def _fmt_decimal(value: Decimal | None, precision: int = 2) -> str:
     return f"{float(value):.{precision}f}"
 
 
+def _fmt_signed_pct(value: Decimal | None) -> str:
+    if value is None:
+        return "N/A"
+    return f"{float(value):+.1f}%"
+
+
 def _price_based_precision(reference_price: Decimal) -> int:
     """Dynamic precision based on asset price magnitude.
 
@@ -75,7 +81,7 @@ def format_order_flow_compact(
         f" zscore={_fmt_decimal(of.funding_zscore, 1)}"
         f" OI={float(of.open_interest):.0f}"
         f" OI_1h={float(of.oi_change_1h_percent):+.1f}%"
-        f" OI_24h={float(of.oi_change_24h_percent):+.1f}%"
+        f" OI_24h={_fmt_signed_pct(of.oi_change_24h_percent)}"
         f" L/S={_fmt_decimal(of.long_short_ratio, 2)}"
         f" L%={_fmt_decimal(of.long_account_percent, 1)}"
         f" S%={_fmt_decimal(of.short_account_percent, 1)}"

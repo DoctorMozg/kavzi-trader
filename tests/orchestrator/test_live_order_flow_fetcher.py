@@ -8,6 +8,7 @@ from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
     LiveOrderFlowFetcher,
 )
+from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 
 
@@ -174,3 +175,38 @@ async def test_fetch_symbol_skips_price_change_when_hour_anchor_is_missing() -> 
     await fetcher._fetch_symbol("BTCUSDT")
 
     assert calculator.calculate.call_args.kwargs["price_change_1h_percent"] is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_symbol_requests_enough_oi_history_for_24h() -> None:
+    timestamp_ms = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.get_funding_rate = AsyncMock(return_value=[])
+    exchange.get_open_interest_history = AsyncMock(return_value=[])
+    exchange.get_long_short_ratio = AsyncMock(
+        return_value=[
+            {
+                "longShortRatio": "1.1",
+                "longAccount": "0.55",
+                "shortAccount": "0.45",
+                "timestamp": timestamp_ms,
+            },
+        ],
+    )
+    cache = Mock()
+    cache.get_candles.return_value = []
+    cache.update_order_flow = AsyncMock()
+
+    fetcher = LiveOrderFlowFetcher(
+        exchange=exchange,
+        cache=cache,
+        calculator=OrderFlowCalculator(interval_minutes=15),
+        symbols=["BTCUSDT"],
+    )
+
+    await fetcher._fetch_symbol("BTCUSDT")
+
+    kwargs = exchange.get_open_interest_history.call_args.kwargs
+    assert kwargs["period"] == "15m"
+    # 24h at 15m is 96 periods back, so 97 samples including the current one.
+    assert kwargs["limit"] == 97

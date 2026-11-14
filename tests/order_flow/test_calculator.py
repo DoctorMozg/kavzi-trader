@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 
 
@@ -93,3 +95,28 @@ def test_calculator_with_price_change(sample_funding_rates, sample_oi_history):
 
     assert result is not None
     assert result.price_change_1h_percent == Decimal("0.2")
+
+
+@pytest.mark.parametrize(
+    ("interval_minutes", "period", "limit"),
+    [(15, "15m", 97), (1, "5m", 289), (60, "30m", 49)],
+)
+def test_calculator_oi_request_covers_24h(interval_minutes, period, limit):
+    calculator = OrderFlowCalculator(interval_minutes=interval_minutes)
+
+    assert calculator.oi_period == period
+    assert calculator.oi_history_limit == limit
+
+
+def test_calculator_24h_change_is_none_without_24h_history(
+    sample_funding_rates,
+    sample_oi_history,
+):
+    result = OrderFlowCalculator().calculate(
+        symbol="BTCUSDT",
+        funding_rates=sample_funding_rates,
+        oi_history=sample_oi_history,
+    )
+
+    assert result is not None
+    assert result.oi_change_24h_percent is None

@@ -228,3 +228,22 @@ class TestFormatOrderFlowCompact:
         assert "squeeze=False" in result
         assert "crowded_l=False" in result
         assert "crowded_s=False" in result
+
+    def test_format_order_flow_marks_missing_24h_change(self) -> None:
+        of = OrderFlowSchema(
+            symbol="BTCUSDT",
+            timestamp=_NOW,
+            funding_rate=Decimal("0.0001"),
+            funding_zscore=Decimal("0.5"),
+            next_funding_time=_NOW,
+            open_interest=Decimal(100000),
+            oi_change_1h_percent=Decimal("1.0"),
+            oi_change_24h_percent=None,
+            long_short_ratio=Decimal("1.0"),
+            long_account_percent=Decimal(50),
+            short_account_percent=Decimal(50),
+        )
+        result = format_order_flow_compact(of)
+
+        assert result is not None
+        assert "OI_24h=N/A" in result

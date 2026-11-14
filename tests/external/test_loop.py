@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -123,6 +123,61 @@ async def test_source_failure_does_not_block_others() -> None:
     snapshot = cache.get_snapshot()
     assert snapshot.deribit_dvol is None
     assert snapshot.fear_greed is not None
+
+
+def _make_failing_fgi_source() -> Mock:
+    source = Mock()
+    source.name = "fear_greed"
+    source.fetch = AsyncMock(return_value=None)
+    return source
+
+
+def _fgi_fetched(age: timedelta) -> FearGreedDataSchema:
+    return FearGreedDataSchema(
+        value=12,
+        classification="Extreme Fear",
+        fetched_at=datetime.now(UTC) - age,
+    )
+
+
+@pytest.mark.asyncio
+async def test_recent_stale_value_is_used_as_fallback() -> None:
+    cache = ExternalDataCache()
+    cache.set_last_successful("fear_greed", _fgi_fetched(timedelta(hours=1)))
+    loop = _make_loop(
+        sources=[_make_failing_fgi_source()],
+        synthesizer=None,
+        cache=cache,
+        interval_s=60,
+    )
+
+    await loop._cycle()
+
+    snapshot = cache.get_snapshot()
+    assert snapshot.fear_greed is not None
+    assert snapshot.fear_greed.value == 12
+    assert cache.get_sources_degraded() == ["fear_greed"]
+
+
+@pytest.mark.asyncio
+async def test_too_old_stale_value_is_treated_as_missing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cache = ExternalDataCache()
+    cache.set_last_successful("fear_greed", _fgi_fetched(timedelta(days=3)))
+    loop = _make_loop(
+        sources=[_make_failing_fgi_source()],
+        synthesizer=None,
+        cache=cache,
+        interval_s=60,
+    )
+
+    with caplog.at_level("WARNING"):
+        await loop._cycle()
+
+    assert cache.get_snapshot().fear_greed is None
+    assert cache.get_sources_degraded() == []
+    assert "too old" in caplog.text
 
 
 @pytest.mark.asyncio

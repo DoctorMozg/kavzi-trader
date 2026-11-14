@@ -61,8 +61,8 @@ class LiveOrderFlowFetcher:
 
         raw_oi = await self._exchange.get_open_interest_history(
             symbol,
-            period="15m",
-            limit=30,
+            period=self._calculator.oi_period,
+            limit=self._calculator.oi_history_limit,
         )
         oi_history = [
             OpenInterestSchema(

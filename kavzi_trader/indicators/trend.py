@@ -3,6 +3,17 @@ from decimal import Decimal
 import pandas as pd
 
 
+def ema_series(series: pd.Series, period: int) -> pd.Series:
+    """EMA seeded with the SMA of the first `period` values (TradingView style).
+
+    The result starts at index `period - 1`; earlier positions are dropped so the
+    first price never leaks into the seed.
+    """
+    seeded = series.iloc[period - 1 :].astype(float)
+    seeded.iloc[0] = series.iloc[:period].mean()
+    return seeded.ewm(span=period, adjust=False).mean()
+
+
 def calculate_ema(series: pd.Series, period: int) -> Decimal | None:
     """
     Calculate Exponential Moving Average (EMA) for the given period.
@@ -32,8 +43,7 @@ def calculate_ema(series: pd.Series, period: int) -> Decimal | None:
     if len(series) < period:
         return None
 
-    ema = series.ewm(span=period, adjust=False).mean()
-    return Decimal(str(round(ema.iloc[-1], 8)))
+    return Decimal(str(round(ema_series(series, period).iloc[-1], 8)))
 
 
 def calculate_sma(series: pd.Series, period: int) -> Decimal | None:
