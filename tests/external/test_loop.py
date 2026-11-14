@@ -156,7 +156,8 @@ async def test_recent_stale_value_is_used_as_fallback() -> None:
     snapshot = cache.get_snapshot()
     assert snapshot.fear_greed is not None
     assert snapshot.fear_greed.value == 12
-    assert cache._sources_degraded == ["fear_greed"]
+    _, degraded = await loop._fetch_all()
+    assert degraded == ["fear_greed"]
 
 
 @pytest.mark.asyncio
@@ -176,7 +177,8 @@ async def test_too_old_stale_value_is_treated_as_missing(
         await loop._cycle()
 
     assert cache.get_snapshot().fear_greed is None
-    assert cache._sources_degraded == []
+    _, degraded = await loop._fetch_all()
+    assert degraded == []
     assert "too old" in caplog.text
 
 

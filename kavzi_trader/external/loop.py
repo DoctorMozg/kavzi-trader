@@ -87,7 +87,6 @@ class ExternalSentimentLoop:
         # 1. Fetch all sources in parallel (with stale fallback)
         snapshot, sources_degraded = await self._fetch_all()
         self._cache.set_snapshot(snapshot)
-        self._cache.set_sources_degraded(sources_degraded)
 
         # 2. Synthesize if enabled
         if self._synthesizer is not None and not snapshot.is_empty():

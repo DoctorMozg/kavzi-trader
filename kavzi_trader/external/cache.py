@@ -24,7 +24,6 @@ class ExternalDataCache:
         self._sentiment_summary: SentimentSummarySchema | None = None
         self._sentiment_updated_at: datetime | None = None
         self._last_successful: dict[str, BaseModel] = {}
-        self._sources_degraded: list[str] = []
 
     def set_snapshot(self, snapshot: ExternalDataSnapshotSchema) -> None:
         self._snapshot = snapshot
@@ -62,6 +61,3 @@ class ExternalDataCache:
         if value is not None and isinstance(value, expected_type):
             return value
         return None
-
-    def set_sources_degraded(self, names: list[str]) -> None:
-        self._sources_degraded = names
