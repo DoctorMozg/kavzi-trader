@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, Protocol
 
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
@@ -29,9 +29,16 @@ from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
-from kavzi_trader.spine.state.manager import StateManager
 
 logger = logging.getLogger(__name__)
+
+
+class AccountStateSource(Protocol):
+    """Account and position reads the provider needs; StateManager satisfies it."""
+
+    async def get_account_state(self) -> AccountStateSchema | None: ...
+
+    async def get_all_positions(self) -> list[PositionSchema]: ...
 
 
 # Used when no tier registry is wired in; mirrors the dependency schema defaults.
@@ -53,7 +60,7 @@ class LiveDependenciesProvider:
         cache: MarketDataCache,
         confluence_calculator: ConfluenceCalculator,
         volatility_detector: VolatilityRegimeDetector,
-        state_manager: StateManager,
+        state_manager: AccountStateSource,
         timeframe: str,
         futures_config: FuturesConfigSchema | None = None,
         external_cache: ExternalDataCache | None = None,

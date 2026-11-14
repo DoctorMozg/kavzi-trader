@@ -1,9 +1,11 @@
 import asyncio
 import collections
 import logging
+from collections.abc import Awaitable
+from datetime import datetime
 from decimal import Decimal
+from typing import Protocol
 
-from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
@@ -13,6 +15,19 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_CANDLES = 500
 ATR_HISTORY_LENGTH = 30
+
+
+class KlineSource(Protocol):
+    """The one exchange call the REST backfill needs; eval replay implements it."""
+
+    def get_klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: int | datetime | None = None,
+        end_time: int | datetime | None = None,
+        limit: int = 500,
+    ) -> Awaitable[list[CandlestickSchema]]: ...
 
 
 class _SymbolCache:
@@ -68,7 +83,7 @@ class MarketDataCache:
 
     async def initialize(
         self,
-        exchange: ExchangeClient,
+        exchange: KlineSource,
         interval: str,
     ) -> None:
         """Load historical candles via REST and compute initial indicators."""

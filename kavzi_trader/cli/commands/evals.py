@@ -2,18 +2,39 @@
 
 import asyncio
 import logging
+import subprocess
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
 import click
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.brain.agent.factory import AgentFactory
+from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
+from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.cli.composition import load_tier_registry
 from kavzi_trader.config import AppConfig
+from kavzi_trader.evals.agent_source import AgentSource
+from kavzi_trader.evals.candle_cache import CandleCache
+from kavzi_trader.evals.case_anonymizer import CaseAnonymizer
+from kavzi_trader.evals.case_context_builder import CaseContextBuilder
 from kavzi_trader.evals.case_dataset_file import CaseDatasetFile
+from kavzi_trader.evals.case_result_schema import CaseResultSchema
+from kavzi_trader.evals.case_selector import CaseSelector
+from kavzi_trader.evals.cost_calculator import CostCalculator
 from kavzi_trader.evals.dataset_build_params_schema import DatasetBuildParamsSchema
 from kavzi_trader.evals.dataset_builder import DatasetBuilder
 from kavzi_trader.evals.distribution_report_schema import DistributionReportSchema
+from kavzi_trader.evals.eval_case_schema import EvalCaseSchema
+from kavzi_trader.evals.eval_pipeline_runner import EvalPipelineRunner
+from kavzi_trader.evals.eval_run_orchestrator import EvalRunOrchestrator
+from kavzi_trader.evals.result_store import ResultStore
+from kavzi_trader.evals.run_header_schema import RunHeaderSchema
+from kavzi_trader.evals.run_projection_schema import RunProjectionSchema
+from kavzi_trader.spine.filters.scout import ScoutFilter
+from kavzi_trader.spine.risk.regime_policy import RegimePolicy
+from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 
 logger = logging.getLogger(__name__)
 
@@ -105,3 +126,201 @@ def build_dataset(
             )
 
     asyncio.run(_run())
+
+
+def _git_hash() -> str | None:
+    try:
+        done = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except OSError, subprocess.CalledProcessError:
+        logger.warning("Could not read the git hash for the run header")
+        return None
+    return done.stdout.strip()
+
+
+def _run_header(
+    app_config: AppConfig, run_id: str, dataset: Path, *, bypass: bool, workers: int
+) -> RunHeaderSchema:
+    brain = app_config.brain
+    analyst_defaults = ANTHROPIC_AGENT_DEFAULTS["analyst"]
+    trader_defaults = ANTHROPIC_AGENT_DEFAULTS["trader"]
+    return RunHeaderSchema(
+        run_id=run_id,
+        dataset=str(dataset),
+        provider=brain.analyst.provider.value,
+        analyst_model=brain.analyst.model_id or analyst_defaults.model_id,
+        analyst_effort=brain.analyst.effort or analyst_defaults.effort,
+        trader_model=brain.trader.model_id or trader_defaults.model_id,
+        trader_effort=brain.trader.effort or trader_defaults.effort,
+        bypass_scout=bypass,
+        concurrency=workers,
+        git_hash=_git_hash(),
+    )
+
+
+def _check_resume(stored: RunHeaderSchema, current: RunHeaderSchema) -> None:
+    fields = ("analyst_model", "trader_model", "bypass_scout", "dataset")
+    diffs = [
+        f"{f}: run has {getattr(stored, f)!r}, now {getattr(current, f)!r}"
+        for f in fields
+        if getattr(stored, f) != getattr(current, f)
+    ]
+    if diffs:
+        raise click.UsageError(
+            "Cannot resume with a different setup: " + "; ".join(diffs)
+        )
+
+
+def _select_cases(
+    cases: list[EvalCaseSchema], ids: str | None, limit: int | None
+) -> list[EvalCaseSchema]:
+    if ids:
+        wanted = [i.strip() for i in ids.split(",") if i.strip()]
+        known = {c.case_id for c in cases}
+        unknown = [i for i in wanted if i not in known]
+        if unknown:
+            raise click.UsageError(f"Unknown case ids: {', '.join(unknown)}")
+        cases = [c for c in cases if c.case_id in set(wanted)]
+    if limit is not None:
+        cases = CaseSelector.balanced_head(cases, limit)
+    return cases
+
+
+def _build_agent_source(app_config: AppConfig) -> AgentFactory:
+    missing = [
+        provider.value
+        for provider in app_config.llm_providers_in_use()
+        if not app_config.brain.api_key_for(provider).get_secret_value()
+    ]
+    if missing:
+        raise click.UsageError(
+            f"No API key for provider(s) {', '.join(missing)}; "
+            "set KT_ANTHROPIC_API_KEY (or KT_OPENROUTER_API_KEY)"
+        )
+    registry = load_tier_registry()
+    return AgentFactory(
+        app_config.brain,
+        PromptLoader(),
+        risk_config=app_config.risk,
+        tier_registry=registry,
+    )
+
+
+def _build_runner(
+    app_config: AppConfig, agents: AgentSource, cache_dir: Path, *, bypass: bool
+) -> EvalPipelineRunner:
+    policy = RegimePolicy(app_config.risk, app_config.scout.extreme_allowed_patterns)
+    detector = VolatilityRegimeDetector(app_config.risk, policy)
+    history = app_config.trading.history_candles
+    return EvalPipelineRunner(
+        app_config,
+        agents,
+        ScoutFilter(app_config.scout, policy),
+        CaseAnonymizer(CandleCache(cache_dir, app_config.trading.interval), history),
+        CaseContextBuilder(app_config, load_tier_registry(), detector),
+        CostCalculator(),
+        bypass_scout=bypass,
+    )
+
+
+def _echo_projection(projection: RunProjectionSchema) -> None:
+    p = projection
+    click.echo(f"Dry run: {p.measured_cases} cases measured")
+    click.echo(
+        f"  cost/case:    mean ${p.mean_cost_usd:.4f}  max ${p.max_cost_usd:.4f}"
+    )
+    click.echo(
+        f"  latency/case: mean {p.mean_latency_s:.1f}s  max {p.max_latency_s:.1f}s"
+    )
+    click.echo(
+        f"Remaining {p.remaining_cases} cases: ~${p.projected_cost_usd:.2f}, "
+        f"~{p.projected_time_s / 60:.1f} min"
+    )
+
+
+def _echo_summary(results: list[CaseResultSchema], path: Path) -> None:
+    stops = Counter(r.stopped_at or r.status for r in results)
+    cost = sum(
+        s.metrics.cost_usd or 0.0 for r in results for s in (r.analyst, r.trader) if s
+    )
+    click.echo(f"Finished {len(results)} cases, cost ${cost:.2f}")
+    click.echo("Stopped at: " + ", ".join(f"{k}={v}" for k, v in sorted(stops.items())))
+    click.echo(f"Results: {path}")
+
+
+@eval_group.command("run")
+@click.option(
+    "--dataset",
+    type=click.Path(path_type=Path, dir_okay=False, exists=True),
+    default=Path("evals/cases_v1.jsonl"),
+    show_default=True,
+)
+@click.option("--limit", type=click.IntRange(min=1), default=None)
+@click.option("--cases", "case_ids", default=None, help="Comma-separated case ids.")
+@click.option(
+    "--bypass-scout",
+    is_flag=True,
+    help="Record the Scout verdict but continue to the Analyst on SKIP.",
+)
+@click.option("--concurrency", type=click.IntRange(min=1), default=4, show_default=True)
+@click.option("--resume", "resume_id", default=None, help="Run id to continue.")
+@click.option("--yes", is_flag=True, help="Skip the confirmation after the dry run.")
+@click.option(
+    "--cache-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("data/eval_cache"),
+    show_default=True,
+)
+@click.pass_context
+def run_eval(
+    ctx: click.Context,
+    dataset: Path,
+    limit: int | None,
+    case_ids: str | None,
+    bypass_scout: bool,
+    concurrency: int,
+    resume_id: str | None,
+    yes: bool,
+    cache_dir: Path,
+) -> None:
+    """Run eval cases through Scout, Analyst and Trader; paid LLM calls."""
+    app_config: AppConfig = ctx.obj["app_config"]
+    agents: AgentSource = ctx.obj.get("agent_source") or _build_agent_source(app_config)
+    cases = _select_cases(CaseDatasetFile(dataset).read(), case_ids, limit)
+    run_id = resume_id or datetime.now(UTC).strftime("run_%Y%m%dT%H%M%SZ")
+    store = ResultStore(app_config.system.results_dir / "evals", run_id)
+    header = _run_header(
+        app_config, run_id, dataset, bypass=bypass_scout, workers=concurrency
+    )
+    if resume_id:
+        _check_resume(store.read_header(), header)
+    else:
+        store.write_header(header)
+    done = store.completed_ids()
+    pending = [c for c in cases if c.case_id not in done]
+    click.echo(f"Run {run_id}: {len(pending)} cases to run, {len(done)} already done")
+
+    runner = _build_runner(app_config, agents, cache_dir, bypass=bypass_scout)
+    orchestrator = EvalRunOrchestrator(runner, store, concurrency)
+
+    async def _drive() -> list[CaseResultSchema]:
+        dry_cases = CaseSelector.dry_run(pending, app_config.scout.blocked_regimes)
+        results = await orchestrator.run_batch(dry_cases)
+        rest = [c for c in pending if c not in dry_cases]
+        _echo_projection(
+            RunProjectionSchema.from_results(results, len(rest), concurrency)
+        )
+        if not rest:
+            return results
+        if not yes and not click.confirm("Continue with the remaining cases?"):
+            raise click.ClickException(
+                f"Stopped after the dry run. Resume with: --resume {run_id}"
+            )
+        return results + await orchestrator.run_batch(rest)
+
+    results = asyncio.run(_drive())
+    _echo_summary(results, store.results_path)
