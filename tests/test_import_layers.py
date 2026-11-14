@@ -12,6 +12,8 @@ FORBIDDEN_EDGES = [
     ("brain", "spine"),
     ("spine", "ui"),
     ("events", "spine"),
+    ("evals", "ui"),
+    ("evals", "cli"),
 ]
 DOMAIN_ALLOWED = {"domain", "commons"}
 
