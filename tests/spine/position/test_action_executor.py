@@ -226,7 +226,7 @@ class TestCancelLinkedOrders:
             code=-2011,
         )
 
-        await executor._cancel_linked_orders(sample_position)
+        await executor._linked_orders.cancel_for_position(sample_position)
 
         mock_state_manager.remove_order.assert_called_once_with("200")
 

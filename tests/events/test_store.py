@@ -133,3 +133,19 @@ async def test_store_raises_when_aggregate_type_has_no_stream() -> None:
         await store.append(event)
 
     redis_client.client.xadd.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_store_append_raises_on_redis_error() -> None:
+    redis_client = DummyRedisStateClient()
+    redis_client.client.xadd.side_effect = ConnectionError("redis down")
+    store = RedisEventStore(redis_client, EventStoreConfigSchema())
+    event = EventSchema(
+        event_type="probe",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        aggregate_id="a-1",
+        aggregate_type=AggregateType.POSITIONS,
+    )
+
+    with pytest.raises(ConnectionError, match="redis down"):
+        await store.append(event)

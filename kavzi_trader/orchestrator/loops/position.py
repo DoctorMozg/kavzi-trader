@@ -10,6 +10,9 @@ from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.domain.state_schemas import PositionSchema
+from kavzi_trader.orchestrator.loops.position_close_reporter import (
+    PositionCloseReporter,
+)
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.exchange_fill_detector import ExchangeFillDetector
 from kavzi_trader.spine.position.manager import PositionManager
@@ -52,6 +55,7 @@ class PositionManagementLoop:
         self._fill_detector = fill_detector
         self._interval_s = interval_s
         self._ui_recorder = ui_recorder
+        self._close_reporter = PositionCloseReporter(ui_recorder, "position")
         self._cycle_timeout_s = cycle_timeout_s
         self._fill_check_interval_s = fill_check_interval_s
         self._last_fill_check_s: float | None = None
@@ -171,7 +175,7 @@ class PositionManagementLoop:
             },
         )
         await self._action_executor.close_after_exchange_fill(position)
-        await self._safe_report_position_close(
+        await self._close_reporter.report(
             position,
             close.close_reason,
             exit_price,
@@ -301,7 +305,7 @@ class PositionManagementLoop:
         exit_price = await self._action_executor.execute(position, action)
         await self._safe_report_action(position, action)
         if action.action == PositionActionType.FULL_EXIT and exit_price is not None:
-            await self._safe_report_position_close(
+            await self._close_reporter.report(
                 position,
                 action.reason,
                 exit_price,
@@ -326,31 +330,5 @@ class PositionManagementLoop:
                     "position_id": position.id,
                     "symbol": position.symbol,
                     "action": action.action.value,
-                },
-            )
-
-    async def _safe_report_position_close(
-        self,
-        position: PositionSchema,
-        close_reason: str,
-        exit_price: Decimal,
-    ) -> None:
-        if self._ui_recorder is None:
-            return
-        try:
-            await self._ui_recorder.record_position_close(
-                position,
-                close_reason,
-                exit_price,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to report position close for %s",
-                position.symbol,
-                extra={
-                    "loop": "position",
-                    "position_id": position.id,
-                    "symbol": position.symbol,
-                    "close_reason": close_reason,
                 },
             )

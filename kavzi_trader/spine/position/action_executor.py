@@ -2,16 +2,12 @@ import logging
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.exceptions import (
-    UNKNOWN_ORDER_ERROR_CODE,
-    ExchangeError,
-)
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.domain.order_enums import OrderSide, OrderType
-from kavzi_trader.domain.order_response import OrderResponseSchema
 from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.position_action_type import PositionActionType
-from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
+from kavzi_trader.domain.state_schemas import PositionSchema
+from kavzi_trader.spine.execution.linked_orders import LinkedOrderService
 from kavzi_trader.spine.state.manager import StateManager
 
 logger = logging.getLogger(__name__)
@@ -29,6 +25,7 @@ class PositionActionExecutor:
     ) -> None:
         self._exchange = exchange
         self._state = state_manager
+        self._linked_orders = LinkedOrderService(exchange, state_manager)
 
     async def execute(
         self,
@@ -49,7 +46,7 @@ class PositionActionExecutor:
 
     async def close_after_exchange_fill(self, position: PositionSchema) -> None:
         """Drop a position the exchange already closed, with its surviving orders."""
-        await self._cancel_linked_orders(position)
+        await self._linked_orders.cancel_for_position(position)
         await self._state.remove_position(position.id)
 
     async def sweep_orphaned_orders(self) -> None:
@@ -67,7 +64,7 @@ class PositionActionExecutor:
                     owner,
                     extra={"order_id": order.order_id, "position_id": owner},
                 )
-                await self._cancel_order(order)
+                await self._linked_orders.cancel(order)
 
     async def retry_missing_take_profit(self, position: PositionSchema) -> None:
         """Place the TP of a half-bracketed position unless one already exists."""
@@ -87,7 +84,7 @@ class PositionActionExecutor:
                     resting.order_id,
                     position.id,
                 )
-                await self._save_linked_order(resting, position.id)
+                await self._linked_orders.save(resting, position.id)
                 return
         await self._place_take_profit_order(
             position,
@@ -155,7 +152,7 @@ class PositionActionExecutor:
             )
             return
 
-        await self._cancel_linked_orders(updated_position)
+        await self._linked_orders.cancel_for_position(updated_position)
         if remaining > 0:
             await self._replace_protective_orders(updated_position)
 
@@ -200,57 +197,9 @@ class PositionActionExecutor:
                 extra={"position_id": position.id},
             )
             return None
-        await self._cancel_linked_orders(position)
+        await self._linked_orders.cancel_for_position(position)
         await self._state.remove_position(position.id)
         return order_response.effective_fill_price
-
-    async def _cancel_linked_orders(self, position: PositionSchema) -> None:
-        linked = await self._state.orders.get_by_position(position.id)
-        for order in linked:
-            await self._cancel_order(order)
-
-    async def _cancel_order(self, order: OpenOrderSchema) -> None:
-        """
-        Cancel a single linked order on the exchange and remove it locally.
-
-        Local removal only runs on the success path, with one exception:
-        a Binance ``-2011`` ("Unknown order sent") response means the order
-        is already gone from the exchange (filled or cancelled elsewhere),
-        so purging local state is correct. For any other failure we keep
-        the local record: `sweep_orphaned_orders` retries it once the owning
-        position is gone.
-        """
-        try:
-            await self._exchange.cancel_order(
-                symbol=order.symbol,
-                order_id=int(order.order_id),
-            )
-        except ExchangeError as exc:
-            if exc.code == UNKNOWN_ORDER_ERROR_CODE:
-                logger.info(
-                    "Order %s already absent on exchange for position %s; "
-                    "removing from local state",
-                    order.order_id,
-                    order.linked_position_id,
-                )
-                await self._state.remove_order(order.order_id)
-                return
-            logger.exception(
-                "Failed to cancel linked order %s for position %s; "
-                "keeping local record for retry",
-                order.order_id,
-                order.linked_position_id,
-            )
-            return
-        except Exception:
-            logger.exception(
-                "Failed to cancel linked order %s for position %s; "
-                "keeping local record for retry",
-                order.order_id,
-                order.linked_position_id,
-            )
-            return
-        await self._state.remove_order(order.order_id)
 
     async def _place_stop_order(
         self,
@@ -267,7 +216,7 @@ class PositionActionExecutor:
             stop_price=stop_loss,
             reduce_only=True,
         )
-        await self._save_linked_order(response, position.id)
+        await self._linked_orders.save(response, position.id)
 
     async def _place_take_profit_order(
         self,
@@ -284,24 +233,4 @@ class PositionActionExecutor:
             stop_price=take_profit,
             reduce_only=True,
         )
-        await self._save_linked_order(response, position.id)
-
-    async def _save_linked_order(
-        self,
-        order: OrderResponseSchema,
-        position_id: str,
-    ) -> None:
-        created_at = order.time or utc_now()
-        open_order = OpenOrderSchema(
-            order_id=str(order.order_id),
-            symbol=order.symbol,
-            side=order.side,
-            order_type=order.type,
-            price=order.price,
-            quantity=order.orig_qty,
-            executed_qty=order.executed_qty,
-            status=order.status,
-            linked_position_id=position_id,
-            created_at=created_at,
-        )
-        await self._state.save_order(open_order)
+        await self._linked_orders.save(response, position.id)

@@ -499,7 +499,7 @@ async def test_failed_take_profit_flags_position_for_retry() -> None:
         event_store=None,
     )
 
-    await engine._place_protective_orders(_sample_position())
+    await engine._placer.place_initial(_sample_position())
 
     # SL stays live: no emergency close, only the two protective attempts.
     assert exchange.create_order.await_count == 2
@@ -544,7 +544,7 @@ async def test_cancel_failure_keeps_order_record_unless_already_gone(
         event_store=None,
     )
 
-    await engine._cancel_linked_orders(_sample_position())
+    await engine._linked_orders.cancel_for_position(_sample_position())
 
     assert state_manager.remove_order.await_count == int(record_removed)
 
@@ -781,3 +781,44 @@ async def test_engine_validates_with_symbol_specific_leverage(
     await engine.execute(decision_message)
 
     assert risk_validator.validate_trade.call_args.kwargs["leverage"] == 7
+
+
+@pytest.mark.asyncio
+async def test_engine_continues_and_logs_when_event_store_fails(
+    decision_message,
+    filled_order_response,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    exchange = AsyncMock()
+    exchange.create_order = AsyncMock(return_value=filled_order_response)
+    risk_validator = AsyncMock()
+    risk_validator.validate_trade = AsyncMock(
+        return_value=RiskValidationResultSchema(
+            is_valid=True,
+            rejection_reasons=[],
+            volatility_regime=VolatilityRegime.NORMAL,
+            recommended_size=Decimal(1),
+            size_multiplier=Decimal(1),
+            warnings=[],
+            should_close_all=False,
+        ),
+    )
+    staleness_checker = MagicMock()
+    staleness_checker.is_stale.return_value = False
+    event_store = MagicMock()
+    event_store.append = AsyncMock(side_effect=ConnectionError("redis down"))
+    engine = ExecutionEngine(
+        exchange=exchange,
+        state_manager=AsyncMock(),
+        risk_validator=risk_validator,
+        staleness_checker=staleness_checker,
+        translator=DecisionTranslator(),
+        monitor=OrderMonitor(exchange=exchange, timeout_s=1),
+        event_store=event_store,
+    )
+
+    result = await engine.execute(decision_message)
+
+    assert result.status == "FILLED"
+    assert event_store.append.await_count >= 2
+    assert "was NOT recorded" in caplog.text

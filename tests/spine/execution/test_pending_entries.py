@@ -86,12 +86,14 @@ async def test_sweep_protects_position_on_fill() -> None:
     state_manager = AsyncMock()
     state_manager.list_pending_entries = AsyncMock(return_value=[_pending_entry()])
     engine = _engine(exchange, state_manager)
-    engine._on_order_filled = AsyncMock()  # isolate sweep from open/protect internals
+    engine._fill_handler.on_order_filled = (
+        AsyncMock()
+    )  # isolate sweep from open/protect internals
 
     await engine.process_pending_entries(now_ms=5_000)
 
-    engine._on_order_filled.assert_awaited_once()
-    await_args = engine._on_order_filled.await_args
+    engine._fill_handler.on_order_filled.assert_awaited_once()
+    await_args = engine._fill_handler.on_order_filled.await_args
     assert await_args is not None
     called_decision = await_args.args[0]
     assert called_decision.symbol == "BTCUSDT"
@@ -109,13 +111,13 @@ async def test_sweep_cancels_expired_unfilled_entry() -> None:
         return_value=[_pending_entry(expires_at_ms=10_000)]
     )
     engine = _engine(exchange, state_manager)
-    engine._on_order_filled = AsyncMock()
+    engine._fill_handler.on_order_filled = AsyncMock()
 
     await engine.process_pending_entries(now_ms=10_000)  # at deadline
 
     exchange.cancel_order.assert_awaited_once_with(symbol="BTCUSDT", order_id=555)
     state_manager.remove_pending_entry.assert_awaited_once_with("555")
-    engine._on_order_filled.assert_not_called()
+    engine._fill_handler.on_order_filled.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -143,7 +145,7 @@ async def test_sweep_leaves_partial_fill_untouched() -> None:
         return_value=[_pending_entry(expires_at_ms=1)]
     )
     engine = _engine(exchange, state_manager)
-    engine._on_order_filled = AsyncMock()
+    engine._fill_handler.on_order_filled = AsyncMock()
 
     # Past the deadline, but a partial fill must not be cancelled (would
     # orphan the filled portion unprotected).
@@ -151,7 +153,7 @@ async def test_sweep_leaves_partial_fill_untouched() -> None:
 
     exchange.cancel_order.assert_not_called()
     state_manager.remove_pending_entry.assert_not_called()
-    engine._on_order_filled.assert_not_called()
+    engine._fill_handler.on_order_filled.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -161,13 +163,13 @@ async def test_sweep_drops_externally_cancelled_entry() -> None:
     state_manager = AsyncMock()
     state_manager.list_pending_entries = AsyncMock(return_value=[_pending_entry()])
     engine = _engine(exchange, state_manager)
-    engine._on_order_filled = AsyncMock()
+    engine._fill_handler.on_order_filled = AsyncMock()
 
     await engine.process_pending_entries(now_ms=5_000)
 
     state_manager.remove_pending_entry.assert_awaited_once_with("555")
     exchange.cancel_order.assert_not_called()
-    engine._on_order_filled.assert_not_called()
+    engine._fill_handler.on_order_filled.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -191,9 +193,9 @@ async def test_sweep_isolates_failures_across_entries() -> None:
     state_manager = AsyncMock()
     state_manager.list_pending_entries = AsyncMock(return_value=[bad, good])
     engine = _engine(exchange, state_manager)
-    engine._on_order_filled = AsyncMock()
+    engine._fill_handler.on_order_filled = AsyncMock()
 
     await engine.process_pending_entries(now_ms=5_000)
 
-    engine._on_order_filled.assert_awaited_once()
+    engine._fill_handler.on_order_filled.assert_awaited_once()
     state_manager.remove_pending_entry.assert_awaited_once_with("555")

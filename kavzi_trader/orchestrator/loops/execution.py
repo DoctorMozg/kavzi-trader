@@ -10,6 +10,9 @@ from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.execution_result import ExecutionResultSchema
 from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.infra.redis_client import RedisStateClient
+from kavzi_trader.orchestrator.loops.position_close_reporter import (
+    PositionCloseReporter,
+)
 from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.ui.recorder import UiEventRecorder
@@ -42,6 +45,7 @@ class ExecutionLoop:
         self._state_manager = state_manager
         self._queue_key = queue_key
         self._ui_recorder = ui_recorder
+        self._close_reporter = PositionCloseReporter(ui_recorder, "execution")
         self._last_pending_sweep_ms = 0
         self._attempts: dict[str, int] = {}
 
@@ -186,7 +190,7 @@ class ExecutionLoop:
             and result.status == "FILLED"
             and result.executed_price is not None
         ):
-            await self._safe_report_position_close(
+            await self._close_reporter.report(
                 position_snapshot,
                 "Brain decision",
                 Decimal(str(result.executed_price)),
@@ -211,29 +215,3 @@ class ExecutionLoop:
         if self._ui_recorder is None:
             return
         await self._ui_recorder.record_trade(decision, result)
-
-    async def _safe_report_position_close(
-        self,
-        position: PositionSchema,
-        close_reason: str,
-        exit_price: Decimal,
-    ) -> None:
-        if self._ui_recorder is None:
-            return
-        try:
-            await self._ui_recorder.record_position_close(
-                position,
-                close_reason,
-                exit_price,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to report position close for %s",
-                position.symbol,
-                extra={
-                    "loop": "execution",
-                    "position_id": position.id,
-                    "symbol": position.symbol,
-                    "close_reason": close_reason,
-                },
-            )

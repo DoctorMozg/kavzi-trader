@@ -28,28 +28,20 @@ class RedisEventStore:
         self._config = config
 
     async def append(self, event: EventSchema) -> str:
-        # Outside the try: a missing stream is a wiring bug, not a Redis hiccup.
         stream = self._stream_for_event(event)
-        try:
-            fields = serialize_event(event)
-            event_id = await self._redis.client.xadd(
-                stream,
-                cast("dict[FieldT, EncodableT]", fields),
-                maxlen=self._config.stream_max_length,
-                approximate=True,
-            )
-            logger.info(
-                "Event stored",
-                extra={"event": event.model_dump(mode="json")},
-            )
-            logger.debug("Appended event %s to %s", event_id, stream)
-            return str(event_id)
-        except Exception:
-            logger.exception(
-                "Failed to append event %s to store",
-                event.event_id,
-            )
-            return ""
+        fields = serialize_event(event)
+        event_id = await self._redis.client.xadd(
+            stream,
+            cast("dict[FieldT, EncodableT]", fields),
+            maxlen=self._config.stream_max_length,
+            approximate=True,
+        )
+        logger.info(
+            "Event stored",
+            extra={"event": event.model_dump(mode="json")},
+        )
+        logger.debug("Appended event %s to %s", event_id, stream)
+        return str(event_id)
 
     async def read(
         self,

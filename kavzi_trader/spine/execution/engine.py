@@ -1,38 +1,29 @@
 import logging
 from decimal import Decimal
-from typing import Literal
-from uuid import uuid4
 
 from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.exceptions import UNKNOWN_ORDER_ERROR_CODE
-from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.execution_result import ExecutionResultSchema
 from kavzi_trader.domain.order_enums import OrderSide, OrderStatus, OrderType
-from kavzi_trader.domain.order_response import OrderResponseSchema
-from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
-from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.events.aggregate_type import AggregateType
-from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.spine.execution.close_recorder import PositionCloseRecorder
+from kavzi_trader.spine.execution.decision_validator import DecisionValidator
+from kavzi_trader.spine.execution.emergency_closer import EmergencyCloser
+from kavzi_trader.spine.execution.event_recorder import ExecutionEventRecorder
+from kavzi_trader.spine.execution.fill_handler import FillHandler
+from kavzi_trader.spine.execution.linked_orders import LinkedOrderService
 from kavzi_trader.spine.execution.monitor import OrderMonitor
+from kavzi_trader.spine.execution.pending_entries import PendingEntryManager
+from kavzi_trader.spine.execution.protective_orders import ProtectiveOrderPlacer
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
-from kavzi_trader.spine.execution.validation import ValidationOutcomeSchema
+from kavzi_trader.spine.execution.unfilled_entry import UnfilledEntryResolver
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
-from kavzi_trader.spine.risk.schemas import RiskValidationResultSchema
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import PendingEntrySchema
-
-_REGIME_SEVERITY = [
-    VolatilityRegime.LOW,
-    VolatilityRegime.NORMAL,
-    VolatilityRegime.HIGH,
-    VolatilityRegime.EXTREME,
-]
 
 logger = logging.getLogger(__name__)
 
@@ -58,17 +49,53 @@ class ExecutionEngine:
     ) -> None:
         self._exchange = exchange
         self._state_manager = state_manager
-        self._risk_validator = risk_validator
-        self._staleness_checker = staleness_checker
         self._translator = translator
         self._monitor = monitor
-        self._event_store = event_store
         self._leverage = leverage
         self._symbol_leverage = symbol_leverage or {}
-        self._close_recorder = close_recorder
-        self._volatility_detector = volatility_detector
-        self._liquidation_calculator = liquidation_calculator
-        self._pullback_entry_expiry_ms = pullback_entry_expiry_ms
+
+        self._validator = DecisionValidator(
+            risk_validator,
+            staleness_checker,
+            state_manager,
+            self._leverage_for,
+            volatility_detector,
+        )
+        self._events = ExecutionEventRecorder(event_store)
+        self._linked_orders = LinkedOrderService(exchange, state_manager)
+        self._emergency_closer = EmergencyCloser(
+            exchange,
+            state_manager,
+            self._events,
+            close_recorder,
+        )
+        self._placer = ProtectiveOrderPlacer(
+            exchange,
+            state_manager,
+            self._linked_orders,
+            self._emergency_closer,
+            self._events,
+        )
+        self._fill_handler = FillHandler(
+            state_manager,
+            self._placer,
+            self._emergency_closer,
+            self._events,
+            self._leverage_for,
+            liquidation_calculator,
+        )
+        self._pending_entries = PendingEntryManager(
+            exchange,
+            state_manager,
+            self._fill_handler,
+            pullback_entry_expiry_ms,
+        )
+        self._unfilled_entries = UnfilledEntryResolver(
+            exchange,
+            state_manager,
+            self._fill_handler,
+            self._pending_entries,
+        )
 
     def _leverage_for(self, symbol: str) -> int:
         # Mirrors the leverage trade.py sets on the exchange for each symbol.
@@ -86,14 +113,16 @@ class ExecutionEngine:
             },
         )
 
-        regime_outcome = self._validate_regime_drift(decision)
+        regime_outcome = self._validator.validate_regime_drift(decision)
         effective_regime = (
             regime_outcome.extra["effective_regime"]
             if regime_outcome.extra is not None
             else decision.volatility_regime
         )
 
-        staleness_outcome = self._validate_staleness(decision, effective_regime)
+        staleness_outcome = self._validator.validate_staleness(
+            decision, effective_regime
+        )
         if not staleness_outcome.passed:
             logger.info(
                 "Decision %s EXPIRED for %s",
@@ -114,7 +143,7 @@ class ExecutionEngine:
         if decision.action == "CLOSE":
             return await self._close_position(decision)
 
-        risk_outcome, risk_result = await self._validate_risk(decision)
+        risk_outcome, risk_result = await self._validator.validate_risk(decision)
         if not risk_outcome.passed:
             logger.info(
                 "Decision %s REJECTED for %s: %s",
@@ -135,98 +164,6 @@ class ExecutionEngine:
 
         return await self._execute_validated(decision, risk_result.recommended_size)
 
-    def _validate_regime_drift(
-        self,
-        decision: DecisionMessageSchema,
-    ) -> ValidationOutcomeSchema:
-        """Resolve the volatility regime used for downstream staleness checks.
-
-        Always passes. When a detector is wired and disagrees with the
-        decision's regime, the stricter of the two is surfaced via
-        ``extra["effective_regime"]``; otherwise the decision's own regime is
-        returned verbatim.
-        """
-        effective_regime = decision.volatility_regime
-        if self._volatility_detector is not None:
-            detected = self._volatility_detector.detect_regime(
-                decision.current_atr,
-                decision.atr_history,
-            )
-            if detected.regime != decision.volatility_regime:
-                logger.info(
-                    "Regime drift for %s: decision=%s detected=%s, using stricter",
-                    decision.symbol,
-                    decision.volatility_regime.value,
-                    detected.regime.value,
-                )
-                effective_regime = max(
-                    decision.volatility_regime,
-                    detected.regime,
-                    key=lambda r: _REGIME_SEVERITY.index(r),
-                )
-        return ValidationOutcomeSchema(
-            passed=True,
-            reason=None,
-            extra={"effective_regime": effective_regime},
-        )
-
-    def _validate_staleness(
-        self,
-        decision: DecisionMessageSchema,
-        regime: VolatilityRegime,
-    ) -> ValidationOutcomeSchema:
-        """Check decision freshness against regime-specific thresholds.
-
-        Fails with reason ``"Decision expired"`` when the underlying
-        ``StalenessChecker`` flags the decision as stale for the effective
-        regime; this maps to an ``EXPIRED`` result in ``execute()``.
-        """
-        if self._staleness_checker.is_stale(
-            decision.created_at_ms,
-            regime,
-        ):
-            return ValidationOutcomeSchema(
-                passed=False,
-                reason="Decision expired",
-                extra={"regime": regime.value},
-            )
-        return ValidationOutcomeSchema(passed=True, reason=None, extra=None)
-
-    async def _validate_risk(
-        self,
-        decision: DecisionMessageSchema,
-    ) -> tuple[ValidationOutcomeSchema, RiskValidationResultSchema]:
-        """Delegate to the risk validator and translate its verdict.
-
-        Returns both the outcome (for the pipeline) and the raw validation
-        result (so ``execute()`` can read ``recommended_size`` on success).
-        """
-        side: Literal["LONG", "SHORT"] = decision.action  # type: ignore[assignment]
-        result = await self._risk_validator.validate_trade(
-            symbol=decision.symbol,
-            side=side,
-            entry_price=decision.entry_price,
-            stop_loss=decision.stop_loss,
-            take_profit=decision.take_profit,
-            current_atr=decision.current_atr,
-            atr_history=decision.atr_history,
-            state_manager=self._state_manager,
-            leverage=self._leverage_for(decision.symbol),
-            confidence=Decimal(str(decision.calibrated_confidence)),
-            symbol_tier=decision.symbol_tier,
-            size_multiplier=decision.size_multiplier,
-        )
-        if not result.is_valid:
-            return (
-                ValidationOutcomeSchema(
-                    passed=False,
-                    reason="; ".join(result.rejection_reasons),
-                    extra={"rejection_reasons": list(result.rejection_reasons)},
-                ),
-                result,
-            )
-        return ValidationOutcomeSchema(passed=True, reason=None, extra=None), result
-
     async def _execute_validated(
         self,
         decision: DecisionMessageSchema,
@@ -244,30 +181,11 @@ class ExecutionEngine:
                     "symbol": decision.symbol,
                 },
             )
-            try:
-                await self._record_event(
-                    aggregate_id=decision.decision_id,
-                    aggregate_type=AggregateType.DECISIONS,
-                    event_type="order_rejected",
-                    data={
-                        "symbol": decision.symbol,
-                        "reason": "risk_validator_returned_zero_size",
-                    },
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to record order_rejected event for %s",
-                    decision.decision_id,
-                )
-            return ExecutionResultSchema(
-                decision_id=decision.decision_id,
-                order_id=None,
-                status="REJECTED",
-                executed_qty=None,
-                executed_price=None,
-                error_message="risk_validator_returned_zero_size",
-                needs_reconciliation=False,
+            await self._record_rejection(
+                decision,
+                "risk_validator_returned_zero_size",
             )
+            return self._rejected(decision, "risk_validator_returned_zero_size")
         order_request = self._translator.translate(
             decision=decision,
             quantity_override=recommended_size,
@@ -280,18 +198,12 @@ class ExecutionEngine:
             order_request.price,
         )
 
-        try:
-            await self._record_event(
-                aggregate_id=decision.decision_id,
-                aggregate_type=AggregateType.DECISIONS,
-                event_type="order_created",
-                data={"symbol": decision.symbol, "action": decision.action},
-            )
-        except Exception:
-            logger.exception(
-                "Failed to record order_created event for %s",
-                decision.decision_id,
-            )
+        await self._events.record(
+            aggregate_id=decision.decision_id,
+            aggregate_type=AggregateType.DECISIONS,
+            event_type="order_created",
+            data={"symbol": decision.symbol, "action": decision.action},
+        )
         try:
             order_response = await self._exchange.create_order(
                 symbol=order_request.symbol,
@@ -312,30 +224,11 @@ class ExecutionEngine:
                 decision.symbol,
                 extra={"error_message_preview": error_text[:200]},
             )
-            try:
-                await self._record_event(
-                    aggregate_id=decision.decision_id,
-                    aggregate_type=AggregateType.DECISIONS,
-                    event_type="order_rejected",
-                    data={"symbol": decision.symbol, "reason": error_text},
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to record order_rejected event for %s",
-                    decision.decision_id,
-                )
-            return ExecutionResultSchema(
-                decision_id=decision.decision_id,
-                order_id=None,
-                status="REJECTED",
-                executed_qty=None,
-                executed_price=None,
-                error_message=error_text,
-                needs_reconciliation=False,
-            )
+            await self._record_rejection(decision, error_text)
+            return self._rejected(decision, error_text)
 
         try:
-            await self._save_open_order(order_response)
+            await self._linked_orders.save(order_response)
         except Exception:
             logger.exception(
                 "Failed to save open order for %s, order placed but not tracked",
@@ -354,7 +247,7 @@ class ExecutionEngine:
         )
 
         if order_response.status == OrderStatus.FILLED:
-            await self._on_order_filled(decision, order_response)
+            await self._fill_handler.on_order_filled(decision, order_response)
             return ExecutionResultSchema(
                 decision_id=decision.decision_id,
                 order_id=str(order_response.order_id),
@@ -370,7 +263,7 @@ class ExecutionEngine:
             # execution loop waiting on it. Register it for the async
             # pending-entry sweep, which protects it on fill and cancels it
             # on candle expiry.
-            await self._register_pending_entry(decision, order_response)
+            await self._pending_entries.register(decision, order_response)
             return ExecutionResultSchema(
                 decision_id=decision.decision_id,
                 order_id=str(order_response.order_id),
@@ -386,7 +279,7 @@ class ExecutionEngine:
             order_id=order_response.order_id,
         )
         if monitored and monitored.status == OrderStatus.FILLED:
-            await self._on_order_filled(decision, monitored)
+            await self._fill_handler.on_order_filled(decision, monitored)
             return ExecutionResultSchema(
                 decision_id=decision.decision_id,
                 order_id=str(monitored.order_id),
@@ -397,202 +290,31 @@ class ExecutionEngine:
                 needs_reconciliation=False,
             )
 
-        return await self._resolve_unfilled_entry(decision, order_response, monitored)
-
-    async def _resolve_unfilled_entry(
-        self,
-        decision: DecisionMessageSchema,
-        order_response: OrderResponseSchema,
-        monitored: OrderResponseSchema | None,
-    ) -> ExecutionResultSchema:
-        """Cancel a timed-out entry and protect whatever filled in the meantime."""
-        final = monitored
-        if final is None:
-            final = await self._cancel_entry(decision.symbol, order_response.order_id)
-
-        if final is None or final.status in {
-            OrderStatus.NEW,
-            OrderStatus.PARTIALLY_FILLED,
-            OrderStatus.PENDING_CANCEL,
-        }:
-            # Order state unknown or still live: track it so a late fill is protected.
-            await self._register_pending_entry(decision, order_response)
-            return ExecutionResultSchema(
-                decision_id=decision.decision_id,
-                order_id=str(order_response.order_id),
-                status="SUBMITTED",
-                executed_qty=order_response.executed_qty,
-                executed_price=order_response.price,
-                error_message=None,
-                needs_reconciliation=True,
-            )
-
-        if final.executed_qty > 0:
-            await self._on_order_filled(decision, final)
-            return ExecutionResultSchema(
-                decision_id=decision.decision_id,
-                order_id=str(final.order_id),
-                status="FILLED",
-                executed_qty=final.executed_qty,
-                executed_price=final.effective_fill_price,
-                error_message=None,
-                needs_reconciliation=False,
-            )
-
-        try:
-            await self._state_manager.remove_order(str(final.order_id))
-        except Exception:
-            logger.exception(
-                "Failed to remove dead entry order %s from state",
-                final.order_id,
-            )
-        logger.info(
-            "Entry order %s for %s ended unfilled: status=%s",
-            final.order_id,
-            decision.symbol,
-            final.status.value,
-            extra={"decision_id": decision.decision_id, "symbol": decision.symbol},
-        )
-        return ExecutionResultSchema(
-            decision_id=decision.decision_id,
-            order_id=str(final.order_id),
-            status="EXPIRED",
-            executed_qty=None,
-            executed_price=None,
-            error_message=f"entry not filled; order {final.status.value}",
-            needs_reconciliation=False,
-        )
-
-    async def _cancel_entry(
-        self,
-        symbol: str,
-        order_id: int,
-    ) -> OrderResponseSchema | None:
-        """Cancel the entry; if cancel fails (e.g. filled meanwhile), read its state."""
-        try:
-            return await self._exchange.cancel_order(symbol=symbol, order_id=order_id)
-        except Exception:
-            logger.exception(
-                "Failed to cancel timed-out entry %s for %s; checking order state",
-                order_id,
-                symbol,
-            )
-        try:
-            return await self._exchange.get_order(symbol=symbol, order_id=order_id)
-        except Exception:
-            logger.exception(
-                "Failed to read timed-out entry %s for %s",
-                order_id,
-                symbol,
-            )
-            return None
-
-    async def _register_pending_entry(
-        self,
-        decision: DecisionMessageSchema,
-        order_response: OrderResponseSchema,
-    ) -> None:
-        """Persist a resting pullback entry for the async sweep to manage."""
-        entry = PendingEntrySchema(
-            order_id=str(order_response.order_id),
-            symbol=decision.symbol,
-            decision_json=decision.model_dump_json(),
-            expires_at_ms=decision.created_at_ms + self._pullback_entry_expiry_ms,
-        )
-        try:
-            await self._state_manager.save_pending_entry(entry)
-        except Exception:
-            logger.exception(
-                "Failed to persist pending entry %s for %s; the resting limit "
-                "will rely on reconciliation instead",
-                entry.order_id,
-                decision.symbol,
-                extra={"decision_id": decision.decision_id},
-            )
-            return
-        logger.info(
-            "Registered pending PULLBACK entry %s for %s, expires_at_ms=%s",
-            entry.order_id,
-            decision.symbol,
-            entry.expires_at_ms,
-            extra={"decision_id": decision.decision_id, "symbol": decision.symbol},
+        return await self._unfilled_entries.resolve(
+            decision,
+            order_response,
+            monitored,
         )
 
     async def process_pending_entries(self, now_ms: int) -> None:
         """Sweep resting pullback entries: protect on fill, cancel on expiry.
 
-        Invoked periodically by the execution loop. Each entry is polled
-        independently so one bad order cannot stall the others.
+        Invoked periodically by the execution loop.
         """
-        entries = await self._state_manager.list_pending_entries()
-        for entry in entries:
-            try:
-                await self._process_pending_entry(entry, now_ms)
-            except Exception:
-                logger.exception(
-                    "Failed to process pending entry %s for %s",
-                    entry.order_id,
-                    entry.symbol,
-                )
+        await self._pending_entries.sweep(now_ms)
 
-    async def _process_pending_entry(
+    async def _place_protective_subset(
         self,
-        entry: PendingEntrySchema,
-        now_ms: int,
+        position: PositionSchema,
+        *,
+        place_stop_loss: bool,
+        place_take_profit: bool,
     ) -> None:
-        order = await self._exchange.get_order(
-            symbol=entry.symbol,
-            order_id=int(entry.order_id),
-        )
-        if order.status == OrderStatus.FILLED:
-            decision = DecisionMessageSchema.model_validate_json(entry.decision_json)
-            await self._on_order_filled(decision, order)
-            await self._state_manager.remove_pending_entry(entry.order_id)
-            logger.info(
-                "Pending PULLBACK entry %s filled for %s; position opened",
-                entry.order_id,
-                entry.symbol,
-                extra={"symbol": entry.symbol},
-            )
-            return
-        if order.status == OrderStatus.NEW:
-            if now_ms >= entry.expires_at_ms:
-                await self._expire_pending_entry(entry)
-            return
-        if order.status == OrderStatus.PARTIALLY_FILLED:
-            # Leave partial fills alone: cancelling would orphan the filled
-            # portion unprotected. Let it fill fully or be handled by the
-            # reconciler on the next pass.
-            return
-        # Terminal non-filled status (CANCELED / EXPIRED / REJECTED): the
-        # order has left the book, so stop tracking it.
-        await self._state_manager.remove_pending_entry(entry.order_id)
-        logger.info(
-            "Pending entry %s for %s ended with status %s; dropped from tracking",
-            entry.order_id,
-            entry.symbol,
-            order.status.value,
-            extra={"symbol": entry.symbol},
-        )
-
-    async def _expire_pending_entry(self, entry: PendingEntrySchema) -> None:
-        try:
-            await self._exchange.cancel_order(
-                symbol=entry.symbol,
-                order_id=int(entry.order_id),
-            )
-        except Exception:
-            logger.exception(
-                "Failed to cancel expired pending entry %s for %s",
-                entry.order_id,
-                entry.symbol,
-            )
-        await self._state_manager.remove_pending_entry(entry.order_id)
-        logger.info(
-            "Expired unfilled PULLBACK entry %s for %s and cancelled the limit",
-            entry.order_id,
-            entry.symbol,
-            extra={"symbol": entry.symbol},
+        """Reconciler recovery entry point; see ProtectiveOrderPlacer.place_subset."""
+        await self._placer.place_subset(
+            position,
+            place_stop_loss=place_stop_loss,
+            place_take_profit=place_take_profit,
         )
 
     async def _close_position(
@@ -608,15 +330,7 @@ class ExecutionEngine:
         position = await self._state_manager.get_position(decision.symbol)
         if position is None:
             logger.error("No open position found for %s", decision.symbol)
-            return ExecutionResultSchema(
-                decision_id=decision.decision_id,
-                order_id=None,
-                status="REJECTED",
-                executed_qty=None,
-                executed_price=None,
-                error_message=f"No open position for {decision.symbol}",
-                needs_reconciliation=False,
-            )
+            return self._rejected(decision, f"No open position for {decision.symbol}")
         side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
         try:
             order_response = await self._exchange.create_order(
@@ -628,20 +342,12 @@ class ExecutionEngine:
             )
         except Exception as exc:
             logger.exception("Failed to close position for %s", decision.symbol)
-            return ExecutionResultSchema(
-                decision_id=decision.decision_id,
-                order_id=None,
-                status="REJECTED",
-                executed_qty=None,
-                executed_price=None,
-                error_message=str(exc),
-                needs_reconciliation=False,
-            )
+            return self._rejected(decision, str(exc))
 
         # Close submitted successfully — tear down local state. Each step is
         # isolated so a Redis failure cannot mask the on-exchange close.
         try:
-            await self._cancel_linked_orders(position)
+            await self._linked_orders.cancel_for_position(position)
         except Exception:
             logger.exception(
                 "Failed to cancel linked orders for closed position %s",
@@ -654,18 +360,12 @@ class ExecutionEngine:
                 "Failed to remove position %s from state after close",
                 position.id,
             )
-        try:
-            await self._record_event(
-                aggregate_id=position.id,
-                aggregate_type=AggregateType.POSITIONS,
-                event_type="position_closed",
-                data={"symbol": position.symbol, "reason": "close_action"},
-            )
-        except Exception:
-            logger.exception(
-                "Failed to record position_closed event for %s",
-                position.id,
-            )
+        await self._events.record(
+            aggregate_id=position.id,
+            aggregate_type=AggregateType.POSITIONS,
+            event_type="position_closed",
+            data={"symbol": position.symbol, "reason": "close_action"},
+        )
 
         return ExecutionResultSchema(
             decision_id=decision.decision_id,
@@ -677,394 +377,29 @@ class ExecutionEngine:
             needs_reconciliation=False,
         )
 
-    async def _save_open_order(self, order: OrderResponseSchema) -> None:
-        created_at = order.time or utc_now()
-        open_order = OpenOrderSchema(
-            order_id=str(order.order_id),
-            symbol=order.symbol,
-            side=order.side,
-            order_type=order.type,
-            price=order.price,
-            quantity=order.orig_qty,
-            executed_qty=order.executed_qty,
-            status=order.status,
-            created_at=created_at,
-        )
-        await self._state_manager.save_order(open_order)
-
-    async def _on_order_filled(
+    async def _record_rejection(
         self,
         decision: DecisionMessageSchema,
-        order: OrderResponseSchema,
+        reason: str,
     ) -> None:
-        now = utc_now()
-        leverage = self._leverage_for(decision.symbol)
-        initial_margin = (
-            (order.price * order.executed_qty) / Decimal(leverage)
-            if leverage > 0
-            else Decimal(0)
-        )
-        position_side = self._position_side(decision.action)
-        liq_price: Decimal | None = None
-        if self._liquidation_calculator is not None and leverage > 0:
-            try:
-                liq_price = (
-                    await self._liquidation_calculator.estimate_liquidation_price(
-                        symbol=decision.symbol,
-                        side=position_side,
-                        entry_price=order.price,
-                        leverage=leverage,
-                        notional=order.price * order.executed_qty,
-                    )
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to estimate liquidation price for %s; "
-                    "recording position with liquidation_price=None",
-                    decision.symbol,
-                )
-                liq_price = None
-        position = PositionSchema(
-            id=decision.decision_id,
-            symbol=decision.symbol,
-            side=position_side,
-            quantity=order.executed_qty,
-            entry_price=order.price,
-            stop_loss=decision.stop_loss,
-            take_profit=decision.take_profit,
-            current_stop_loss=decision.stop_loss,
-            management_config=decision.position_management,
-            leverage=leverage,
-            liquidation_price=liq_price,
-            initial_margin=initial_margin,
-            atr_at_entry=decision.current_atr if decision.current_atr > 0 else None,
-            opened_at=now,
-            updated_at=now,
-        )
-        try:
-            await self._state_manager.update_position(position)
-        except Exception:
-            logger.exception(
-                "CRITICAL: Failed to persist filled position %s; "
-                "triggering emergency close",
-                position.id,
-                extra={"position_id": position.id, "symbol": position.symbol},
-            )
-            await self._emergency_close(position)
-            return
-        logger.info(
-            "Position opened: id=%s %s %s qty=%s entry=%s SL=%s TP=%s",
-            position.id,
-            position.symbol,
-            position.side,
-            position.quantity,
-            position.entry_price,
-            position.stop_loss,
-            position.take_profit,
-            extra={
-                "symbol": position.symbol,
-                "position_id": position.id,
-            },
-        )
-        # Effective risk = what the filled size actually risks to the stop.
-        # Carried on the event (alongside decision_id) so outcome-attribution
-        # can join decisions to fills and audit per-trade risk after the fact.
-        effective_risk = order.executed_qty * abs(order.price - position.stop_loss)
-        try:
-            await self._record_event(
-                aggregate_id=position.id,
-                aggregate_type=AggregateType.POSITIONS,
-                event_type="position_opened",
-                data={
-                    "symbol": position.symbol,
-                    "side": position.side,
-                    "decision_id": decision.decision_id,
-                    "entry_price": float(order.price),
-                    "stop_loss": float(position.stop_loss),
-                    "quantity": float(order.executed_qty),
-                    "effective_risk_usdt": float(effective_risk),
-                },
-            )
-        except Exception:
-            logger.exception(
-                "Failed to record position_opened event for %s",
-                position.id,
-            )
-        if decision.action in {"LONG", "SHORT"}:
-            try:
-                await self._place_protective_orders(position)
-            except Exception:
-                logger.exception(
-                    "CRITICAL: Unhandled error in protective order placement "
-                    "for position %s; triggering emergency close",
-                    position.id,
-                    extra={"position_id": position.id, "symbol": position.symbol},
-                )
-                await self._emergency_close(position)
-
-    async def _place_stop_loss(self, position: PositionSchema) -> None:
-        stop_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        stop_response = await self._exchange.create_order(
-            symbol=position.symbol,
-            side=stop_side,
-            order_type=OrderType.STOP_MARKET,
-            quantity=position.quantity,
-            stop_price=position.stop_loss,
-            reduce_only=True,
-        )
-        await self._save_linked_order(stop_response, position.id)
-        logger.info(
-            "Stop-loss placed for %s: stop_price=%s",
-            position.symbol,
-            position.stop_loss,
-            extra={"symbol": position.symbol},
+        await self._events.record(
+            aggregate_id=decision.decision_id,
+            aggregate_type=AggregateType.DECISIONS,
+            event_type="order_rejected",
+            data={"symbol": decision.symbol, "reason": reason},
         )
 
-    async def _place_take_profit(self, position: PositionSchema) -> None:
-        take_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        take_response = await self._exchange.create_order(
-            symbol=position.symbol,
-            side=take_side,
-            order_type=OrderType.TAKE_PROFIT_MARKET,
-            quantity=position.quantity,
-            stop_price=position.take_profit,
-            reduce_only=True,
-        )
-        await self._save_linked_order(take_response, position.id)
-        logger.info(
-            "Take-profit placed for %s: stop_price=%s",
-            position.symbol,
-            position.take_profit,
-            extra={"symbol": position.symbol},
-        )
-
-    async def _place_protective_subset(
+    def _rejected(
         self,
-        position: PositionSchema,
-        *,
-        place_stop_loss: bool,
-        place_take_profit: bool,
-    ) -> None:
-        """Place only the requested protective legs; never emergency-close.
-
-        Reconciler-driven recovery path. If a leg fails the exception bubbles
-        to `ReconciliationService._attempt_protective_recovery`, which records
-        the failure as unrecoverable. The already-live leg is preserved; no
-        duplicate orders are placed and no healthy position is auto-closed on
-        exchange hiccups.
-        """
-        if place_stop_loss:
-            await self._place_stop_loss(position)
-        if place_take_profit:
-            await self._place_take_profit(position)
-
-    async def _place_protective_orders(self, position: PositionSchema) -> None:
-        """Place SL+TP for a freshly filled position.
-
-        Initial-fill semantics: SL failure escalates to emergency-close because
-        the position has no live protection yet. Reconciler-driven retries MUST
-        use `_place_protective_subset` instead — that path keeps the live leg
-        and classifies failures as unrecoverable rather than auto-closing.
-        """
-        try:
-            await self._place_stop_loss(position)
-        except Exception:
-            logger.exception(
-                "Failed to place stop-loss for position %s, closing position",
-                position.id,
-            )
-            await self._emergency_close(position)
-            return
-
-        try:
-            await self._place_take_profit(position)
-        except Exception:
-            # Risk is bounded by the live SL — no emergency close. The flag lets
-            # the position-management loop re-place the take-profit on a later tick.
-            logger.exception(
-                "Failed to place take-profit for position %s; stop-loss is active",
-                position.id,
-            )
-            logger.warning(
-                "Position %s is half-bracketed (SL only); TP retry scheduled",
-                position.id,
-                extra={
-                    "needs_tp_retry": True,
-                    "position_id": position.id,
-                    "symbol": position.symbol,
-                },
-            )
-            await self._flag_take_profit_retry(position)
-            try:
-                await self._record_event(
-                    aggregate_id=position.id,
-                    aggregate_type=AggregateType.POSITIONS,
-                    event_type="protective_order_failed",
-                    data={
-                        "symbol": position.symbol,
-                        "failed_order": "take_profit",
-                        "stop_loss_active": True,
-                    },
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to record protective_order_failed event for %s",
-                    position.id,
-                )
-            try:
-                await self._record_event(
-                    aggregate_id=position.id,
-                    aggregate_type=AggregateType.POSITIONS,
-                    event_type="position_half_bracketed",
-                    data={
-                        "symbol": position.symbol,
-                        "position_id": position.id,
-                    },
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to record position_half_bracketed event for %s",
-                    position.id,
-                )
-
-    async def _flag_take_profit_retry(self, position: PositionSchema) -> None:
-        """Persist the half-bracket so the position loop re-places the TP."""
-        flagged = position.model_copy(
-            update={"needs_tp_retry": True, "updated_at": utc_now()},
+        decision: DecisionMessageSchema,
+        reason: str,
+    ) -> ExecutionResultSchema:
+        return ExecutionResultSchema(
+            decision_id=decision.decision_id,
+            order_id=None,
+            status="REJECTED",
+            executed_qty=None,
+            executed_price=None,
+            error_message=reason,
+            needs_reconciliation=False,
         )
-        try:
-            await self._state_manager.update_position(flagged)
-        except Exception:
-            logger.critical(
-                "Failed to flag position %s for take-profit retry; "
-                "it stays half-bracketed until reconciliation",
-                position.id,
-                extra={"position_id": position.id, "symbol": position.symbol},
-                exc_info=True,
-            )
-
-    async def _save_linked_order(
-        self,
-        order: OrderResponseSchema,
-        position_id: str,
-    ) -> None:
-        created_at = order.time or utc_now()
-        open_order = OpenOrderSchema(
-            order_id=str(order.order_id),
-            symbol=order.symbol,
-            side=order.side,
-            order_type=order.type,
-            price=order.price,
-            quantity=order.orig_qty,
-            executed_qty=order.executed_qty,
-            status=order.status,
-            linked_position_id=position_id,
-            created_at=created_at,
-        )
-        await self._state_manager.save_order(open_order)
-
-    async def _record_event(
-        self,
-        aggregate_id: str,
-        aggregate_type: AggregateType,
-        event_type: str,
-        data: dict[str, str | int | float | None],
-    ) -> None:
-        if self._event_store is None:
-            return
-        event = EventSchema(
-            event_id=str(uuid4()),
-            event_type=event_type,
-            version=1,
-            aggregate_id=aggregate_id,
-            aggregate_type=aggregate_type,
-            data=data,
-            metadata={},
-            timestamp=utc_now(),
-        )
-        await self._event_store.append(event)
-
-    async def _cancel_linked_orders(self, position: PositionSchema) -> None:
-        linked = await self._state_manager.orders.get_by_position(position.id)
-        for order in linked:
-            try:
-                await self._exchange.cancel_order(
-                    symbol=position.symbol,
-                    order_id=int(order.order_id),
-                )
-            except Exception as exc:
-                if getattr(exc, "code", None) != UNKNOWN_ORDER_ERROR_CODE:
-                    # Keep the record: the position sweep retries the cancel.
-                    logger.exception(
-                        "Failed to cancel linked order %s for position %s",
-                        order.order_id,
-                        position.id,
-                    )
-                    continue
-            try:
-                await self._state_manager.remove_order(order.order_id)
-            except Exception:
-                logger.exception(
-                    "Failed to remove linked order %s from state for position %s",
-                    order.order_id,
-                    position.id,
-                )
-
-    async def _emergency_close(self, position: PositionSchema) -> None:
-        """Close position on exchange when protective orders cannot be placed."""
-        close_side = OrderSide.SELL if position.side == "LONG" else OrderSide.BUY
-        exit_price: Decimal | None = None
-        try:
-            order_response = await self._exchange.create_order(
-                symbol=position.symbol,
-                side=close_side,
-                order_type=OrderType.MARKET,
-                quantity=position.quantity,
-                reduce_only=True,
-            )
-            exit_price = order_response.effective_fill_price
-            await self._state_manager.remove_position(position.id)
-            logger.warning(
-                "Emergency-closed position %s for %s",
-                position.id,
-                position.symbol,
-            )
-        except Exception:
-            logger.exception(
-                "CRITICAL: Emergency close FAILED for position %s — "
-                "manual intervention required",
-                position.id,
-            )
-        try:
-            await self._record_event(
-                aggregate_id=position.id,
-                aggregate_type=AggregateType.POSITIONS,
-                event_type="emergency_close",
-                data={"symbol": position.symbol, "reason": "protective_order_failure"},
-            )
-        except Exception:
-            logger.exception(
-                "Failed to record emergency_close event for %s",
-                position.id,
-            )
-        if exit_price is not None and self._close_recorder is not None:
-            try:
-                await self._close_recorder.record_position_close(
-                    position,
-                    "Emergency close",
-                    exit_price,
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to report emergency close for %s",
-                    position.symbol,
-                )
-
-    def _position_side(
-        self,
-        action: Literal["LONG", "SHORT", "CLOSE"],
-    ) -> Literal[
-        "LONG",
-        "SHORT",
-    ]:
-        return "LONG" if action == "LONG" else "SHORT"
