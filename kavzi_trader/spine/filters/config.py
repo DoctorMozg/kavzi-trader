@@ -76,6 +76,16 @@ class FilterConfigSchema(BaseModel):
         Field(default=Decimal("-2.0")),
     ] = Decimal("-2.0")
 
+    # Adverse funding from this |z| up to the crowded threshold shrinks size.
+    funding_reduce_zscore_lower: Annotated[
+        Decimal,
+        Field(default=Decimal("1.0"), ge=0),
+    ] = Decimal("1.0")
+    funding_reduce_size_multiplier: Annotated[
+        Decimal,
+        Field(default=Decimal("0.8"), gt=0, le=1),
+    ] = Decimal("0.8")
+
     min_body_atr_ratio: Annotated[
         Decimal,
         Field(default=Decimal("0.3")),

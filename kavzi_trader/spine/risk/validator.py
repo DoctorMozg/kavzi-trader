@@ -20,7 +20,7 @@ from kavzi_trader.spine.state.manager import StateManager
 logger = logging.getLogger(__name__)
 
 
-class DrawdownCheckResult(BaseModel):
+class DrawdownCheckResultSchema(BaseModel):
     rejections: list[str]
     should_close_all: bool
 
@@ -129,17 +129,6 @@ class DynamicRiskValidator:
             rejection_reasons.append(rr_result)
         logger.debug("R:R check: result=%s", rr_result)
 
-        liq_result = await self._check_liquidation_distance(
-            symbol=symbol,
-            entry_price=entry_price,
-            stop_loss=stop_loss,
-            side=side,
-            leverage=leverage,
-        )
-        if liq_result:
-            rejection_reasons.append(liq_result)
-        logger.debug("Liquidation check: result=%s", liq_result)
-
         margin_result = await self._check_margin_ratio(state_manager)
         if margin_result:
             rejection_reasons.append(margin_result)
@@ -150,19 +139,38 @@ class DynamicRiskValidator:
             rejection_reasons.append(confidence_result)
         logger.debug("Tier confidence check: result=%s", confidence_result)
 
-        recommended_size = Decimal(0)
+        # Sizing runs even after earlier rejections: the liquidation bracket
+        # needs the real quantity, and its reason should be reported alongside
+        # the others. Floor rejections stay exclusive to otherwise-clean trades.
+        sizing_rejections: list[str] = []
+        recommended_size = await self._compute_recommended_size(
+            symbol=symbol,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            current_atr=current_atr,
+            regime=regime,
+            leverage=leverage,
+            state_manager=state_manager,
+            rejection_reasons=sizing_rejections,
+            filter_size_multiplier=size_multiplier,
+        )
         if not rejection_reasons:
-            recommended_size = await self._compute_recommended_size(
-                symbol=symbol,
-                entry_price=entry_price,
-                stop_loss=stop_loss,
-                current_atr=current_atr,
-                regime=regime,
-                leverage=leverage,
-                state_manager=state_manager,
-                rejection_reasons=rejection_reasons,
-                filter_size_multiplier=size_multiplier,
-            )
+            rejection_reasons.extend(sizing_rejections)
+
+        liq_result = await self._check_liquidation_distance(
+            symbol=symbol,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            side=side,
+            leverage=leverage,
+            quantity=recommended_size,
+        )
+        if liq_result:
+            rejection_reasons.append(liq_result)
+        logger.debug("Liquidation check: result=%s", liq_result)
+
+        if rejection_reasons:
+            recommended_size = Decimal(0)
 
         if regime.regime == VolatilityRegime.HIGH:
             warnings.append("HIGH volatility regime - position size reduced by 50%")
@@ -199,7 +207,17 @@ class DynamicRiskValidator:
         rejection_reasons: list[str],
         filter_size_multiplier: Decimal,
     ) -> Decimal:
-        account = await state_manager.get_account_state()
+        try:
+            account = await state_manager.get_account_state()
+        except Exception:
+            # Sizing now runs after earlier rejections too, which may be
+            # caused by this very outage; the margin check already reports it.
+            logger.exception(
+                "Failed to load account state for sizing %s",
+                symbol,
+                extra={"symbol": symbol, "check": "sizing"},
+            )
+            return Decimal(0)
         if account is None:
             logger.warning(
                 "Account state unavailable, cannot size position for %s",
@@ -250,7 +268,7 @@ class DynamicRiskValidator:
     async def _check_drawdown(
         self,
         state_manager: StateManager,
-    ) -> DrawdownCheckResult:
+    ) -> DrawdownCheckResultSchema:
         try:
             drawdown = await state_manager.get_current_drawdown()
         except Exception:
@@ -258,7 +276,7 @@ class DynamicRiskValidator:
                 "Failed to check drawdown, rejecting trade as safety measure",
                 extra={"reason": "risk_validation_error", "check": "drawdown"},
             )
-            return DrawdownCheckResult(
+            return DrawdownCheckResultSchema(
                 rejections=["Drawdown check failed — state unavailable"],
                 should_close_all=False,
             )
@@ -277,7 +295,7 @@ class DynamicRiskValidator:
                 f"Drawdown {drawdown}% exceeds pause threshold ({pause_threshold}%)",
             )
 
-        return DrawdownCheckResult(
+        return DrawdownCheckResultSchema(
             rejections=rejections,
             should_close_all=should_close_all,
         )
@@ -446,8 +464,11 @@ class DynamicRiskValidator:
         stop_loss: Decimal,
         side: Literal["LONG", "SHORT"],
         leverage: int,
+        quantity: Decimal,
     ) -> str | None:
-        if leverage <= 1:
+        # Zero quantity means nothing will be opened (no account state, floor
+        # or sizer zero), so there is no notional to bracket.
+        if leverage <= 1 or quantity <= 0:
             return None
 
         if self._liquidation_calculator is None:
@@ -466,14 +487,8 @@ class DynamicRiskValidator:
                 f"(no MMR source for leverage {leverage}x)"
             )
 
-        notional = abs(entry_price)
-        # Notional at entry = entry_price * qty. We don't have the final qty
-        # here (position sizer runs later), so we approximate the tier
-        # lookup using the entry price as a per-unit notional. Bracket
-        # selection for any reasonable position size on this symbol is
-        # overwhelmingly dominated by the first (lowest) bracket, and a
-        # higher-bracket mismatch would tighten MMR, keeping the check
-        # conservative rather than permissive.
+        # MMR brackets are keyed on position notional, not per-unit price.
+        notional = quantity * entry_price
         liq_price = await self._liquidation_calculator.estimate_liquidation_price(
             symbol=symbol,
             side=side,

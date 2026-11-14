@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -11,10 +12,33 @@ from kavzi_trader.indicators.schemas import (
 )
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.config import FilterConfigSchema
+from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.state.schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
+
+
+@pytest.fixture
+def make_tier_registry() -> Callable[[str], SymbolTierRegistry]:
+    """Build a registry where SOLUSDT sits in a tier with the given threshold."""
+
+    def _make(crowded: str) -> SymbolTierRegistry:
+        tier_config = SymbolTierConfigSchema(
+            risk_per_trade_percent=Decimal("2.0"),
+            max_leverage=3,
+            max_exposure_percent=Decimal("50.0"),
+            min_confidence=Decimal("0.65"),
+            crowded_long_zscore=Decimal(crowded),
+            crowded_short_zscore=-Decimal(crowded),
+        )
+        return SymbolTierRegistry(
+            tier_configs={SymbolTier.TIER_2: tier_config},
+            symbol_map={"SOLUSDT": SymbolTier.TIER_2},
+        )
+
+    return _make
 
 
 @pytest.fixture

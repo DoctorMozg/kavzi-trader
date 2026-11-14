@@ -11,19 +11,19 @@ from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
 logger = logging.getLogger(__name__)
 
 
-class ScoutDedupEntry(BaseModel):
+class ScoutDedupEntrySchema(BaseModel):
     bar_close: datetime
     result: ScoutDecisionSchema
     model_config = ConfigDict(frozen=True)
 
 
-class AnalystDedupEntry(BaseModel):
+class AnalystDedupEntrySchema(BaseModel):
     bar_close: datetime
     result: AnalystDecisionSchema
     model_config = ConfigDict(frozen=True)
 
 
-class TraderDedupEntry(BaseModel):
+class TraderDedupEntrySchema(BaseModel):
     bar_close: datetime
     analyst_hash: str
     decision: TradeDecisionSchema
@@ -50,22 +50,22 @@ class DecisionDeduplicator:
     """
 
     def __init__(self) -> None:
-        self._scout: dict[str, ScoutDedupEntry] = {}
-        self._analyst: dict[str, AnalystDedupEntry] = {}
-        self._trader: dict[str, TraderDedupEntry] = {}
+        self._scout: dict[str, ScoutDedupEntrySchema] = {}
+        self._analyst: dict[str, AnalystDedupEntrySchema] = {}
+        self._trader: dict[str, TraderDedupEntrySchema] = {}
 
     @property
-    def scout_entries(self) -> dict[str, ScoutDedupEntry]:
+    def scout_entries(self) -> dict[str, ScoutDedupEntrySchema]:
         """Live reference to the per-symbol Scout dedup entries."""
         return self._scout
 
     @property
-    def analyst_entries(self) -> dict[str, AnalystDedupEntry]:
+    def analyst_entries(self) -> dict[str, AnalystDedupEntrySchema]:
         """Live reference to the per-symbol Analyst dedup entries."""
         return self._analyst
 
     @property
-    def trader_entries(self) -> dict[str, TraderDedupEntry]:
+    def trader_entries(self) -> dict[str, TraderDedupEntrySchema]:
         """Live reference to the per-symbol Trader dedup entries."""
         return self._trader
 
@@ -92,7 +92,7 @@ class DecisionDeduplicator:
         result: ScoutDecisionSchema,
     ) -> None:
         """Single write path for the Scout dedup cache."""
-        self._scout[symbol] = ScoutDedupEntry(
+        self._scout[symbol] = ScoutDedupEntrySchema(
             bar_close=bar_close,
             result=result,
         )
@@ -117,7 +117,7 @@ class DecisionDeduplicator:
         result: AnalystDecisionSchema,
     ) -> None:
         """Single write path for the Analyst dedup cache."""
-        self._analyst[symbol] = AnalystDedupEntry(
+        self._analyst[symbol] = AnalystDedupEntrySchema(
             bar_close=bar_close,
             result=result,
         )
@@ -127,7 +127,7 @@ class DecisionDeduplicator:
         symbol: str,
         analyst_hash: str,
         bar_close: datetime,
-    ) -> TraderDedupEntry | None:
+    ) -> TraderDedupEntrySchema | None:
         """Return the cached Trader entry for (symbol, analyst_hash,
         bar_close) if still valid; otherwise None.
 
@@ -136,7 +136,7 @@ class DecisionDeduplicator:
 
         Invariant: the cache key is the 3-tuple (symbol, bar_close,
         analyst_hash). All three must match for a hit. Changing the
-        ``TraderDedupEntry`` fields without updating this comparison
+        ``TraderDedupEntrySchema`` fields without updating this comparison
         would silently weaken dedup and leak stale Trader decisions
         across bars or Analyst revisions.
         """
@@ -158,7 +158,7 @@ class DecisionDeduplicator:
         geometry: TradeGeometrySchema | None = None,
     ) -> None:
         """Single write path for the Trader dedup cache."""
-        self._trader[symbol] = TraderDedupEntry(
+        self._trader[symbol] = TraderDedupEntrySchema(
             bar_close=bar_close,
             analyst_hash=analyst_hash,
             decision=decision,

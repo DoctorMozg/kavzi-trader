@@ -834,3 +834,154 @@ class TestDynamicRiskValidator:
         # 0.1 BTC x 0.001 = 0.0001 BTC = $5 < $10 floor
         assert result.is_valid is False
         assert any("below minimum" in r for r in result.rejection_reasons)
+
+
+class TestLiquidationUsesPositionNotional:
+    @pytest.mark.asyncio
+    async def test_small_btc_trade_uses_sized_notional_not_unit_price(
+        self, mock_state_manager
+    ) -> None:
+        """Regression: notional was the ~90k per-unit price, picking bracket 2."""
+        calc = MagicMock(spec=LiquidationCalculator)
+        calc.estimate_liquidation_price = AsyncMock(return_value=Decimal(1))
+        validator = DynamicRiskValidator(liquidation_calculator=calc)
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(90000),
+            stop_loss=Decimal(84000),
+            take_profit=Decimal(102000),
+            current_atr=Decimal(3000),
+            atr_history=[Decimal(3000)] * 10,
+            state_manager=mock_state_manager,
+            leverage=10,
+        )
+
+        assert result.is_valid is True
+        notional = calc.estimate_liquidation_price.await_args.kwargs["notional"]
+        assert notional == result.recommended_size * Decimal(90000)
+        assert notional < Decimal(50000), "Expected a bracket 1 sized position"
+
+    @pytest.mark.asyncio
+    async def test_small_btc_trade_is_judged_with_bracket_1_mmr(
+        self, mock_state_manager, bracketed_liquidation_calculator
+    ) -> None:
+        """Bracket 1 liq is 81360; the unit-price bracket would give 85500."""
+        validator = DynamicRiskValidator(
+            liquidation_calculator=bracketed_liquidation_calculator,
+        )
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(90000),
+            stop_loss=Decimal(84000),
+            take_profit=Decimal(102000),
+            current_atr=Decimal(3000),
+            atr_history=[Decimal(3000)] * 10,
+            state_manager=mock_state_manager,
+            leverage=10,
+        )
+
+        assert result.rejection_reasons == []
+        assert result.is_valid is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("side", "stop_loss", "take_profit", "atr", "is_valid"),
+        [
+            # LONG: liq 81360, buffered safe threshold 83088
+            ("LONG", Decimal(81000), Decimal(110000), Decimal(4500), False),
+            ("LONG", Decimal(83000), Decimal(105000), Decimal(3500), False),
+            ("LONG", Decimal(84000), Decimal(102000), Decimal(3000), True),
+            # SHORT: liq 98640, buffered safe threshold 96912
+            ("SHORT", Decimal(99000), Decimal(72000), Decimal(4500), False),
+            ("SHORT", Decimal(97000), Decimal(75000), Decimal(3500), False),
+            ("SHORT", Decimal(96000), Decimal(78000), Decimal(3000), True),
+        ],
+    )
+    async def test_stop_loss_vs_liquidation_by_side(
+        self,
+        mock_state_manager,
+        bracketed_liquidation_calculator,
+        side,
+        stop_loss,
+        take_profit,
+        atr,
+        is_valid,
+    ) -> None:
+        validator = DynamicRiskValidator(
+            liquidation_calculator=bracketed_liquidation_calculator,
+        )
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side=side,
+            entry_price=Decimal(90000),
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            current_atr=atr,
+            atr_history=[atr] * 10,
+            state_manager=mock_state_manager,
+            leverage=10,
+        )
+
+        assert result.is_valid is is_valid, result.rejection_reasons
+        if not is_valid:
+            assert any("liquidation" in r.lower() for r in result.rejection_reasons)
+            assert result.recommended_size == Decimal(0)
+
+    @pytest.mark.asyncio
+    async def test_liquidation_reason_kept_alongside_other_rejections(
+        self, mock_state_manager, bracketed_liquidation_calculator
+    ) -> None:
+        validator = DynamicRiskValidator(
+            liquidation_calculator=bracketed_liquidation_calculator,
+        )
+
+        result = await validator.validate_trade(
+            symbol="BTCUSDT",
+            side="LONG",
+            entry_price=Decimal(90000),
+            stop_loss=Decimal(81000),
+            take_profit=Decimal(91000),
+            current_atr=Decimal(4500),
+            atr_history=[Decimal(4500)] * 10,
+            state_manager=mock_state_manager,
+            leverage=10,
+        )
+
+        reasons = [r.lower() for r in result.rejection_reasons]
+        assert any("r:r" in r for r in reasons), reasons
+        assert any("liquidation" in r for r in reasons), reasons
+        assert result.recommended_size == Decimal(0)
+
+    @pytest.mark.asyncio
+    async def test_liquidation_notional_includes_filter_size_multiplier(
+        self, mock_state_manager
+    ) -> None:
+        calc = MagicMock(spec=LiquidationCalculator)
+        calc.estimate_liquidation_price = AsyncMock(return_value=Decimal(1))
+        validator = DynamicRiskValidator(liquidation_calculator=calc)
+        trade = {
+            "symbol": "BTCUSDT",
+            "side": "LONG",
+            "entry_price": Decimal(90000),
+            "stop_loss": Decimal(84000),
+            "take_profit": Decimal(102000),
+            "current_atr": Decimal(3000),
+            "atr_history": [Decimal(3000)] * 10,
+            "state_manager": mock_state_manager,
+            "leverage": 10,
+        }
+
+        full = await validator.validate_trade(**trade)
+        reduced = await validator.validate_trade(
+            **trade,
+            size_multiplier=Decimal("0.5"),
+        )
+
+        notional = calc.estimate_liquidation_price.await_args.kwargs["notional"]
+        assert reduced.recommended_size < full.recommended_size
+        assert notional == reduced.recommended_size * Decimal(90000)

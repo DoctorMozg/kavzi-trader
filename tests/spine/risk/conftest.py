@@ -53,6 +53,40 @@ def mock_liquidation_calculator() -> MagicMock:
 
 
 @pytest.fixture
+def bracketed_liquidation_calculator() -> LiquidationCalculator:
+    """Real calculator over two brackets with a deliberately wide MMR gap.
+
+    Bracket 1 covers notionals up to 50k at 0.4%; bracket 2 jumps to 5% so a
+    wrong bracket pick changes the liquidation price enough to flip verdicts.
+    """
+    exchange = MagicMock()
+    exchange.futures_get_leverage_brackets = AsyncMock(
+        return_value=[
+            {
+                "symbol": "BTCUSDT",
+                "brackets": [
+                    {
+                        "bracket": 1,
+                        "initialLeverage": 125,
+                        "notionalFloor": 0,
+                        "notionalCap": 50000,
+                        "maintMarginRatio": 0.004,
+                    },
+                    {
+                        "bracket": 2,
+                        "initialLeverage": 100,
+                        "notionalFloor": 50000,
+                        "notionalCap": 250000,
+                        "maintMarginRatio": 0.05,
+                    },
+                ],
+            },
+        ],
+    )
+    return LiquidationCalculator(exchange)
+
+
+@pytest.fixture
 def sample_position() -> PositionSchema:
     return PositionSchema(
         id="pos-1",

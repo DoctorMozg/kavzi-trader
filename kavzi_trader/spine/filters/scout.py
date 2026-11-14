@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 _ZERO = Decimal(0)
 
 
-class _ScoutCriterionResult(BaseModel):
+class _ScoutCriterionResultSchema(BaseModel):
     verdict: Literal["INTERESTING", "SKIP"]
     reason: str
     pattern_detected: str | None = None
     model_config = ConfigDict(frozen=True)
 
 
-_CRITERION_SKIP = _ScoutCriterionResult(verdict="SKIP", reason="")
+_CRITERION_SKIP = _ScoutCriterionResultSchema(verdict="SKIP", reason="")
 
 
 class _GateOutcomeSchema(BaseModel):
@@ -38,7 +38,7 @@ class _GateOutcomeSchema(BaseModel):
 
     passed: bool
     reason: str | None = None
-    matched: _ScoutCriterionResult | None = None
+    matched: _ScoutCriterionResultSchema | None = None
     model_config = ConfigDict(frozen=True)
 
 
@@ -238,7 +238,7 @@ class ScoutFilter:
         self,
         ind: TechnicalIndicatorsSchema,
         vol_ratio: Decimal | None,
-    ) -> _ScoutCriterionResult:
+    ) -> _ScoutCriterionResultSchema:
         """Criterion 1: price beyond Bollinger Band with volume."""
         cfg = self._cfg
         bb = ind.bollinger
@@ -248,7 +248,7 @@ class ScoutFilter:
             return _CRITERION_SKIP
         margin = cfg.breakout_percent_b_margin_min
         if bb.percent_b >= (Decimal(1) + margin) or bb.percent_b <= (_ZERO - margin):
-            return _ScoutCriterionResult(
+            return _ScoutCriterionResultSchema(
                 verdict="INTERESTING",
                 reason=(
                     f"Criterion 1 BREAKOUT: %B={bb.percent_b}, vol_ratio={vol_ratio}"
@@ -263,7 +263,7 @@ class ScoutFilter:
         vol_ratio: Decimal | None,
         alignment: str,
         candles: list[CandlestickSchema],
-    ) -> _ScoutCriterionResult:
+    ) -> _ScoutCriterionResultSchema:
         """Criterion 2: EMA alignment + RSI mid-range + volume + short-term momentum."""
         cfg = self._cfg
         if alignment == "NEUTRAL":
@@ -279,7 +279,7 @@ class ScoutFilter:
         # stacks where price is already reversing (report_2026_06_11b C3).
         if not self._short_term_momentum_confirms(candles, alignment):
             return _CRITERION_SKIP
-        return _ScoutCriterionResult(
+        return _ScoutCriterionResultSchema(
             verdict="INTERESTING",
             reason=(
                 f"Criterion 2 TREND_CONTINUATION:"
@@ -292,7 +292,7 @@ class ScoutFilter:
     def _check_reversal(
         self,
         ind: TechnicalIndicatorsSchema,
-    ) -> _ScoutCriterionResult:
+    ) -> _ScoutCriterionResultSchema:
         """Criterion 3: RSI extreme + price at BB boundary."""
         cfg = self._cfg
         rsi = ind.rsi_14
@@ -307,7 +307,7 @@ class ScoutFilter:
             or bb.percent_b > cfg.reversal_percent_b_upper
         )
         if rsi_extreme and bb_boundary:
-            return _ScoutCriterionResult(
+            return _ScoutCriterionResultSchema(
                 verdict="INTERESTING",
                 reason=f"Criterion 3 REVERSAL: RSI={rsi}, %B={bb.percent_b}",
                 pattern_detected="REVERSAL",
@@ -320,7 +320,7 @@ class ScoutFilter:
         vol_ratio: Decimal | None,
         candles: list[CandlestickSchema],
         alignment: str,
-    ) -> _ScoutCriterionResult:
+    ) -> _ScoutCriterionResultSchema:
         """Criterion 4: volume spike + large body + supporting signal."""
         cfg = self._cfg
         if vol_ratio is None or vol_ratio < cfg.volume_spike_ratio_min:
@@ -353,7 +353,7 @@ class ScoutFilter:
             support_parts.append(f"RSI={rsi}")
         if has_bb_support:
             support_parts.append(f"%B={bb.percent_b}")  # type: ignore[union-attr]
-        return _ScoutCriterionResult(
+        return _ScoutCriterionResultSchema(
             verdict="INTERESTING",
             reason=(
                 f"Criterion 4 VOLUME_SPIKE: vol_ratio={vol_ratio},"
@@ -367,7 +367,7 @@ class ScoutFilter:
         self,
         ind: TechnicalIndicatorsSchema,
         candles: list[CandlestickSchema],
-    ) -> _ScoutCriterionResult:
+    ) -> _ScoutCriterionResultSchema:
         """Criterion 5: MACD histogram sign change.
 
         Since we only have a single indicator snapshot, we detect momentum
@@ -396,7 +396,7 @@ class ScoutFilter:
                 return _CRITERION_SKIP
 
         shift_dir = "bullish" if histogram_bullish else "bearish"
-        return _ScoutCriterionResult(
+        return _ScoutCriterionResultSchema(
             verdict="INTERESTING",
             reason=(
                 f"Criterion 5 MOMENTUM_SHIFT: histogram={histogram}"
@@ -410,7 +410,7 @@ class ScoutFilter:
         self,
         candles: list[CandlestickSchema],
         alignment: str,
-    ) -> _ScoutCriterionResult:
+    ) -> _ScoutCriterionResultSchema:
         """Criterion 6: EMA aligned + meaningful price change + short-term momentum."""
         cfg = self._cfg
         if alignment == "NEUTRAL":
@@ -431,7 +431,7 @@ class ScoutFilter:
         if not self._short_term_momentum_confirms(candles, alignment):
             return _CRITERION_SKIP
 
-        return _ScoutCriterionResult(
+        return _ScoutCriterionResultSchema(
             verdict="INTERESTING",
             reason=(
                 f"Criterion 6 TREND_PULLBACK: {alignment} alignment, change={pct}%"

@@ -73,12 +73,15 @@ class FundingRateFilter:
         size_multiplier = Decimal("1.0")
         abs_zscore = abs(zscore)
         adverse = (side == "LONG" and zscore > 0) or (side == "SHORT" and zscore < 0)
-        if adverse and Decimal("1.0") <= abs_zscore < Decimal("2.0"):
-            size_multiplier = Decimal("0.8")
+        # The crowded checks above already block beyond the tier threshold, so
+        # the band [lower, threshold] is just "adverse and |z| >= lower"; this
+        # keeps sizing monotonic, including at z == threshold exactly.
+        if adverse and abs_zscore >= self._config.funding_reduce_zscore_lower:
+            size_multiplier = self._config.funding_reduce_size_multiplier
             logger.debug(
-                "Funding filter: moderate adverse funding zscore=%s,"
-                " reducing size to 80%%",
+                "Funding filter: adverse funding zscore=%s, size multiplier=%s",
                 zscore,
+                size_multiplier,
             )
 
         logger.debug(

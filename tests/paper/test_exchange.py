@@ -12,7 +12,7 @@ from kavzi_trader.api.common.models import (
     TickerSchema,
     TimeInForce,
 )
-from kavzi_trader.paper.exchange import PaperExchangeClient, _PaperPositionTracker
+from kavzi_trader.paper.exchange import PaperExchangeClient, _PaperPositionTrackerSchema
 
 
 @pytest.fixture
@@ -431,7 +431,7 @@ def test_unrealized_pnl_long_position() -> None:
     """Unrealized PnL computed from cached prices for LONG positions."""
     with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
         client = PaperExchangeClient()
-    client._positions["BTCUSDT"] = _PaperPositionTracker(
+    client._positions["BTCUSDT"] = _PaperPositionTrackerSchema(
         symbol="BTCUSDT",
         side="LONG",
         quantity=Decimal("0.1"),
@@ -449,7 +449,7 @@ def test_unrealized_pnl_short_position() -> None:
     """Unrealized PnL computed from cached prices for SHORT positions."""
     with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
         client = PaperExchangeClient()
-    client._positions["DOGEUSDT"] = _PaperPositionTracker(
+    client._positions["DOGEUSDT"] = _PaperPositionTrackerSchema(
         symbol="DOGEUSDT",
         side="SHORT",
         quantity=Decimal(86207),
@@ -469,7 +469,7 @@ def test_unrealized_pnl_no_cached_price() -> None:
     """Positions without a cached price contribute zero PnL."""
     with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
         client = PaperExchangeClient()
-    client._positions["BTCUSDT"] = _PaperPositionTracker(
+    client._positions["BTCUSDT"] = _PaperPositionTrackerSchema(
         symbol="BTCUSDT",
         side="LONG",
         quantity=Decimal("0.1"),

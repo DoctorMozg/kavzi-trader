@@ -37,13 +37,13 @@ class ProtectiveOrderPlacer(Protocol):
     ) -> None: ...
 
 
-class _OrderReconciliationCounts(BaseModel):
+class _OrderReconciliationCountsSchema(BaseModel):
     synced: int
     removed: int
     model_config = ConfigDict(frozen=True)
 
 
-class _ProtectiveOrderRecovery(BaseModel):
+class _ProtectiveOrderRecoverySchema(BaseModel):
     verified: int
     unrecoverable: list[str]
     model_config = ConfigDict(frozen=True)
@@ -147,7 +147,7 @@ class ReconciliationService:
     async def _reconcile_orders(
         self,
         discrepancies: list[str],
-    ) -> _OrderReconciliationCounts:
+    ) -> _OrderReconciliationCountsSchema:
         exchange_orders = await self._exchange.get_open_orders()
         local_orders = await self._orders.get_all()
 
@@ -173,7 +173,7 @@ class ReconciliationService:
                 await self._orders.delete(local_order.order_id)
                 orders_removed += 1
 
-        return _OrderReconciliationCounts(
+        return _OrderReconciliationCountsSchema(
             synced=orders_synced,
             removed=orders_removed,
         )
@@ -200,7 +200,7 @@ class ReconciliationService:
     async def _verify_protective_orders(
         self,
         discrepancies: list[str],
-    ) -> _ProtectiveOrderRecovery:
+    ) -> _ProtectiveOrderRecoverySchema:
         positions = await self._positions.get_all()
         verified_count = 0
         unrecoverable: list[str] = []
@@ -239,7 +239,7 @@ class ReconciliationService:
             discrepancies.extend(outcomes)
             unrecoverable.extend(o for o in outcomes if "unrecoverable" in o)
 
-        return _ProtectiveOrderRecovery(
+        return _ProtectiveOrderRecoverySchema(
             verified=verified_count,
             unrecoverable=unrecoverable,
         )
