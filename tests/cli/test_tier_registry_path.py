@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from kavzi_trader.cli.composition import load_tier_registry
+from kavzi_trader.domain.symbol_tier import SymbolTier
 
 
 def test_tier_registry_loads_from_any_cwd(
@@ -13,4 +14,4 @@ def test_tier_registry_loads_from_any_cwd(
 
     registry = load_tier_registry()
 
-    assert registry.get_tier("BTCUSDT") is not None
+    assert registry.get_tier("BTCUSDT") is SymbolTier.TIER_1

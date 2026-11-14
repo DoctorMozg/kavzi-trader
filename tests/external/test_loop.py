@@ -214,8 +214,7 @@ async def test_typed_get_returns_correct_type() -> None:
         "deribit_dvol",
         DeribitDvolDataSchema,
     )
-    assert result is not None
-    assert isinstance(result, DeribitDvolDataSchema)
+    assert result is data["deribit_dvol"]
 
 
 @pytest.mark.asyncio

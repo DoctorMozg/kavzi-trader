@@ -61,3 +61,6 @@ def test_calculate_funding_zscore_with_custom_window(sample_funding_rates):
 
     assert result is not None
     assert isinstance(result.funding_zscore, Decimal)
+    default = calculate_funding_zscore(sample_funding_rates)
+    assert default is not None
+    assert result.funding_zscore != default.funding_zscore

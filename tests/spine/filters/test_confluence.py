@@ -444,3 +444,65 @@ def test_no_volume_double_counting_in_score(
     assert result.score == 3, (
         f"Expected score=3 (ema + rsi + spike), got {result.score}"
     )
+
+
+class TestEvaluateBoth:
+    def test_each_side_is_scored_independently(
+        self,
+        sample_candle,
+        sample_indicators,
+        sample_order_flow,
+    ) -> None:
+        calculator = ConfluenceCalculator()
+
+        dual = calculator.evaluate_both(
+            "LONG",
+            sample_candle,
+            sample_indicators,
+            sample_order_flow,
+        )
+
+        assert dual.detected_side == "LONG"
+        assert dual.long == calculator.evaluate(
+            "LONG", sample_candle, sample_indicators, sample_order_flow
+        )
+        assert dual.short == calculator.evaluate(
+            "SHORT", sample_candle, sample_indicators, sample_order_flow
+        )
+        # Bullish EMA stack: only the LONG side gets the alignment point.
+        assert dual.long.ema_alignment is True
+        assert dual.short.ema_alignment is False
+        assert dual.long.score > dual.short.score
+
+    def test_detected_side_does_not_change_scores(
+        self,
+        sample_candle,
+        sample_indicators,
+        sample_order_flow,
+    ) -> None:
+        calculator = ConfluenceCalculator()
+
+        as_long = calculator.evaluate_both(
+            "LONG", sample_candle, sample_indicators, sample_order_flow
+        )
+        as_short = calculator.evaluate_both(
+            "SHORT", sample_candle, sample_indicators, sample_order_flow
+        )
+
+        assert as_short.detected_side == "SHORT"
+        assert as_short.long == as_long.long
+        assert as_short.short == as_long.short
+
+    def test_missing_order_flow_scores_only_indicator_signals(
+        self,
+        sample_candle,
+        sample_indicators,
+    ) -> None:
+        dual = ConfluenceCalculator().evaluate_both(
+            "LONG", sample_candle, sample_indicators, None
+        )
+
+        for side in (dual.long, dual.short):
+            assert side.funding_favorable is False
+            assert side.oi_supports_direction is False
+            assert side.oi_funding_divergence is False

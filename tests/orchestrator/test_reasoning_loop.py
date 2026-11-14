@@ -84,6 +84,13 @@ def _long_trader_decision() -> TradeDecisionSchema:
     )
 
 
+def _assert_long_btc_enqueued(redis_client: AsyncMock) -> None:
+    redis_client.client.lpush.assert_called_once()
+    _queue_key, payload = redis_client.client.lpush.call_args.args
+    message = DecisionMessageSchema.model_validate_json(payload)
+    assert (message.symbol, message.action) == ("BTCUSDT", "LONG")
+
+
 class DummyDepsProvider:
     def __init__(self, deps: TradingDependenciesSchema) -> None:
         self._deps = deps
@@ -256,7 +263,7 @@ async def test_reasoning_loop_enqueues_decision() -> None:
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
 
-    redis_client.client.lpush.assert_called_once()
+    _assert_long_btc_enqueued(redis_client)
 
 
 @pytest.mark.asyncio
@@ -1018,7 +1025,7 @@ async def test_filter_chain_allows_trade() -> None:
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
 
-    redis_client.client.lpush.assert_called_once()
+    _assert_long_btc_enqueued(redis_client)
 
 
 @pytest.mark.asyncio
@@ -1048,7 +1055,7 @@ async def test_no_filter_chain_passes_through() -> None:
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
 
-    redis_client.client.lpush.assert_called_once()
+    _assert_long_btc_enqueued(redis_client)
 
 
 def test_consecutive_rejections_escalate_cooldown() -> None:

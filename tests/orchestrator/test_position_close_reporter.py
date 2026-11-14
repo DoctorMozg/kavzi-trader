@@ -45,9 +45,14 @@ async def test_report_swallows_and_logs_recorder_failure(
 
 
 @pytest.mark.asyncio
-async def test_report_without_recorder_is_noop() -> None:
-    await PositionCloseReporter(None, "execution").report(
-        _POSITION,
-        "TP",
-        Decimal(110),
-    )
+async def test_report_without_recorder_is_noop(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING"):
+        await PositionCloseReporter(None, "execution").report(
+            _POSITION,
+            "TP",
+            Decimal(110),
+        )
+
+    assert caplog.records == []

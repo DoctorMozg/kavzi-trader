@@ -1,7 +1,9 @@
 """
 Tests for Binance API client.
 
-This module contains tests for the Binance API client implementation.
+These hit the real Binance API, so they are deselected by default.
+Run them with `uv run pytest -m live`; credential tests also need
+BINANCE_TEST_API_KEY and BINANCE_TEST_API_SECRET in the environment.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -14,6 +16,8 @@ from kavzi_trader.api.common.exceptions import APIError
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.order_enums import OrderSide, OrderType, TimeInForce
+
+pytestmark = pytest.mark.live
 
 
 async def test_ping(binance_testnet_client: BinanceClient) -> None:
@@ -126,13 +130,9 @@ async def test_get_all_tickers(binance_testnet_client: BinanceClient) -> None:
     assert all(hasattr(t, "last_price") for t in tickers)
 
 
-async def test_create_test_order(binance_testnet_client: BinanceClient) -> None:
+async def test_create_test_order(binance_client: BinanceClient) -> None:
     """Test creating a test order."""
-    # Skip if no API credentials
-    if not binance_testnet_client.api_key or not binance_testnet_client.api_secret:
-        pytest.skip("No API credentials available")
-
-    test_order = await binance_testnet_client.create_order(
+    test_order = await binance_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.BUY,
         order_type=OrderType.LIMIT,
@@ -146,14 +146,10 @@ async def test_create_test_order(binance_testnet_client: BinanceClient) -> None:
     assert test_order.status.value == "NEW"
 
 
-async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
+async def test_order_helpers(binance_client: BinanceClient) -> None:
     """Test order helper methods."""
-    # Skip if no API credentials
-    if not binance_testnet_client.api_key or not binance_testnet_client.api_secret:
-        pytest.skip("No API credentials available")
-
     # Test limit buy
-    test_limit_buy = await binance_testnet_client.create_order(
+    test_limit_buy = await binance_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.BUY,
         order_type=OrderType.LIMIT,
@@ -166,7 +162,7 @@ async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
     assert test_limit_buy.type.value == "LIMIT"
 
     # Test limit sell
-    test_limit_sell = await binance_testnet_client.create_order(
+    test_limit_sell = await binance_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.SELL,
         order_type=OrderType.LIMIT,
@@ -179,7 +175,7 @@ async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
     assert test_limit_sell.type.value == "LIMIT"
 
     # Test market buy
-    test_market_buy = await binance_testnet_client.create_order(
+    test_market_buy = await binance_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.BUY,
         order_type=OrderType.MARKET,
@@ -190,7 +186,7 @@ async def test_order_helpers(binance_testnet_client: BinanceClient) -> None:
     assert test_market_buy.type.value == "MARKET"
 
     # Test market sell
-    test_market_sell = await binance_testnet_client.create_order(
+    test_market_sell = await binance_client.create_order(
         symbol="BTCUSDT",
         side=OrderSide.SELL,
         order_type=OrderType.MARKET,

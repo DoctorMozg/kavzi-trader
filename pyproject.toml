@@ -70,6 +70,11 @@ log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 asyncio_default_test_loop_scope = "function"
+# Tests marked `live` hit the real Binance API; run them with `uv run pytest -m live`.
+addopts = '-m "not live"'
+markers = [
+    "live: talks to the real Binance API (deselected by default)",
+]
 
 testpaths = [
     "tests",

@@ -172,6 +172,8 @@ class TestSupervisor:
             orchestrator.request_shutdown()
             await runner
 
+        assert ingest.runs >= 2
+
     async def test_loops_are_not_restarted_during_shutdown(self) -> None:
         ingest = _Loop()
         orchestrator = _orchestrator(ingest)

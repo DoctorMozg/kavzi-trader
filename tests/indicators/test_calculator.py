@@ -24,6 +24,12 @@ def test_calculator_basic(sample_candles: list[CandlestickSchema]) -> None:
 
     assert result is not None
     assert isinstance(result, TechnicalIndicatorsSchema)
+    lows = [c.low_price for c in sample_candles]
+    highs = [c.high_price for c in sample_candles]
+    assert result.ema_20 is not None
+    assert min(lows) <= result.ema_20 <= max(highs)
+    assert result.atr_14 is not None
+    assert result.atr_14 > 0
 
 
 def test_calculator_with_sufficient_data(
@@ -96,6 +102,10 @@ def test_calculator_custom_params(sample_candles: list[CandlestickSchema]) -> No
     assert result.ema_20 is not None
     assert result.ema_50 is not None
     assert result.bollinger is not None
+    default = TechnicalIndicatorCalculator().calculate(sample_candles)
+    assert default is not None
+    assert result.ema_20 != default.ema_20
+    assert result.rsi_14 != default.rsi_14
 
 
 def test_calculator_frozen_result(sample_candles: list[CandlestickSchema]) -> None:
