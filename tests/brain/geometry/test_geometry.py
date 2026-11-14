@@ -2,18 +2,20 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.brain.schemas.analyst import KeyLevelSchema
-from kavzi_trader.spine.execution.geometry import TradeGeometryCalculator
-from kavzi_trader.spine.execution.geometry_schemas import (
-    EntryTactic,
+from kavzi_trader.brain.geometry.calculator import TradeGeometryCalculator
+from kavzi_trader.brain.geometry.schemas import (
     GeometryInputsSchema,
     GeometryRejectionSchema,
+    TradeGeometrySchema,
+)
+from kavzi_trader.domain.analyst_decision import KeyLevelSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.trade_structure import (
+    EntryTactic,
     TargetStyle,
     TradeDirection,
-    TradeGeometrySchema,
     TradeStructureSchema,
 )
-from kavzi_trader.spine.risk.config import RiskConfigSchema
 
 
 @pytest.fixture

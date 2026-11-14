@@ -3,18 +3,20 @@ from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.state_schemas import (
+    AccountStateSchema,
+    OpenOrderSchema,
+    PositionSchema,
+)
+from kavzi_trader.infra.redis_client import RedisStateClient
+from kavzi_trader.infra.redis_config import RedisConfigSchema
 from kavzi_trader.spine.state.account_store import AccountStore
-from kavzi_trader.spine.state.config import RedisConfigSchema
 from kavzi_trader.spine.state.order_store import OrderStore
 from kavzi_trader.spine.state.pending_entry_store import PendingEntryStore
 from kavzi_trader.spine.state.position_store import PositionStore
 from kavzi_trader.spine.state.reconciliation import ProtectiveOrderPlacer
-from kavzi_trader.spine.state.redis_client import RedisStateClient
 from kavzi_trader.spine.state.schemas import (
-    AccountStateSchema,
-    OpenOrderSchema,
     PendingEntrySchema,
-    PositionSchema,
     ReconciliationResultSchema,
 )
 

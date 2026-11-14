@@ -19,9 +19,10 @@ from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.agent.router import AgentRouter
 from kavzi_trader.brain.agent.trader import TraderAgent
 from kavzi_trader.brain.context.builder import ContextBuilder
+from kavzi_trader.brain.geometry.calculator import TradeGeometryCalculator
 from kavzi_trader.brain.prompts.loader import PromptLoader
-from kavzi_trader.brain.schemas.dependencies import rebuild_deferred_models
 from kavzi_trader.config import CONFIG_DIR, AppConfig
+from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.external.cache import ExternalDataCache
@@ -30,6 +31,7 @@ from kavzi_trader.external.loop import ExternalSentimentLoop
 from kavzi_trader.external.sources import build_enabled_sources
 from kavzi_trader.external.synthesizer import SentimentSynthesizer
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
+from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
@@ -50,7 +52,6 @@ from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCach
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.paper.exchange import PaperExchangeClient
 from kavzi_trader.spine.execution.engine import ExecutionEngine
-from kavzi_trader.spine.execution.geometry import TradeGeometryCalculator
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
@@ -76,8 +77,6 @@ from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.redis_client import RedisStateClient
-from kavzi_trader.spine.state.schemas import PositionSchema
 from kavzi_trader.ui.recorder import UiEventRecorder
 from kavzi_trader.ui.redis_publisher import RedisUiPublisher
 
@@ -138,8 +137,6 @@ async def _start_orchestrator(
             app_config.trading.interval,
         )
         app_config.validate_for_trading()
-    rebuild_deferred_models()
-
     # --- Symbol tier registry ---
     tier_registry = _load_tier_registry()
 
@@ -305,8 +302,6 @@ async def _start_orchestrator(
         confluence_calculator=ConfluenceCalculator(),
         volatility_detector=volatility_detector,
         state_manager=state_manager,
-        exchange=exchange,
-        event_store=event_store,
         timeframe=app_config.trading.interval,
         futures_config=app_config.futures,
         external_cache=external_cache,

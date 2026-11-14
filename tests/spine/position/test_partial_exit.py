@@ -1,8 +1,8 @@
 from decimal import Decimal
 
+from kavzi_trader.domain.position_action_type import PositionActionType
+from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
-from kavzi_trader.spine.position.position_action_type import PositionActionType
-from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
 
 def test_partial_exit_triggers_at_threshold(position_factory) -> None:

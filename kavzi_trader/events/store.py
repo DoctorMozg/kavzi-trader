@@ -11,7 +11,7 @@ from kavzi_trader.events.serialization import (
     deserialize_event,
     serialize_event,
 )
-from kavzi_trader.spine.state.redis_client import RedisStateClient
+from kavzi_trader.infra.redis_client import RedisStateClient
 
 logger = logging.getLogger(__name__)
 

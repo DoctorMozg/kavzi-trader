@@ -6,12 +6,12 @@ from decimal import Decimal
 from typing import cast
 
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
+from kavzi_trader.domain.decision_message import DecisionMessageSchema
+from kavzi_trader.domain.execution_result import ExecutionResultSchema
+from kavzi_trader.domain.state_schemas import PositionSchema
+from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.spine.execution.engine import ExecutionEngine
-from kavzi_trader.spine.execution.execution_result_schema import ExecutionResultSchema
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.redis_client import RedisStateClient
-from kavzi_trader.spine.state.schemas import PositionSchema
 from kavzi_trader.ui.recorder import UiEventRecorder
 
 logger = logging.getLogger(__name__)

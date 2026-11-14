@@ -31,17 +31,10 @@ from kavzi_trader.api.common.exceptions import (
     RequestError,
 )
 from kavzi_trader.api.common.models import (
-    CandlestickSchema,
     OrderBookEntrySchema,
     OrderBookSchema,
-    OrderFillSchema,
-    OrderResponseSchema,
-    OrderSide,
-    OrderStatus,
-    OrderType,
     SymbolInfoSchema,
     TickerSchema,
-    TimeInForce,
     TradeSchema,
 )
 from kavzi_trader.commons.time_utility import (
@@ -49,6 +42,14 @@ from kavzi_trader.commons.time_utility import (
     utc_now,
     utc_timestamp,
 )
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.order_enums import (
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    TimeInForce,
+)
+from kavzi_trader.domain.order_response import OrderFillSchema, OrderResponseSchema
 
 logger = logging.getLogger(__name__)
 

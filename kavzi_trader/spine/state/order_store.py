@@ -2,8 +2,8 @@ import logging
 
 from pydantic import ValidationError
 
-from kavzi_trader.spine.state.redis_client import RedisStateClient
-from kavzi_trader.spine.state.schemas import OpenOrderSchema
+from kavzi_trader.domain.state_schemas import OpenOrderSchema
+from kavzi_trader.infra.redis_client import RedisStateClient
 
 logger = logging.getLogger(__name__)
 

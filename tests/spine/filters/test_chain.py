@@ -3,7 +3,9 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.external.schemas import (
     ExternalDataSnapshotSchema,
@@ -17,9 +19,7 @@ from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
 from kavzi_trader.spine.filters.funding import FundingRateFilter
 from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
-from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 
 

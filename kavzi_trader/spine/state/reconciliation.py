@@ -5,15 +5,12 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.models import OrderResponseSchema
+from kavzi_trader.domain.order_response import OrderResponseSchema
+from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
 from kavzi_trader.spine.state.account_store import AccountStore
 from kavzi_trader.spine.state.order_store import OrderStore
 from kavzi_trader.spine.state.position_store import PositionStore
-from kavzi_trader.spine.state.schemas import (
-    OpenOrderSchema,
-    PositionSchema,
-    ReconciliationResultSchema,
-)
+from kavzi_trader.spine.state.schemas import ReconciliationResultSchema
 
 logger = logging.getLogger(__name__)
 

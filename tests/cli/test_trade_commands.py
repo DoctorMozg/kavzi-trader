@@ -82,8 +82,6 @@ async def test_start_orchestrator_uses_configured_runtime_values(
     redis_client = AsyncMock()
     redis_client.connect = AsyncMock()
 
-    monkeypatch.setattr(trade_module, "rebuild_deferred_models", lambda: None)
-
     def _build_fake_state_manager(*_args: object, **_kw: object) -> AsyncMock:
         manager = AsyncMock()
         manager.set_protective_order_placer = Mock()

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from kavzi_trader.spine.position.position_action_type import PositionActionType
+from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 
 

@@ -4,20 +4,20 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.indicators.schemas import (
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import (
     BollingerBandsSchema,
     TechnicalIndicatorsSchema,
     VolumeAnalysisSchema,
 )
-from kavzi_trader.order_flow.schemas import OrderFlowSchema
-from kavzi_trader.spine.filters.config import FilterConfigSchema
-from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
-from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.order_flow.schemas import OrderFlowSchema
+from kavzi_trader.spine.filters.config import FilterConfigSchema
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 
 
 @pytest.fixture

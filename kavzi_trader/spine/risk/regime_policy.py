@@ -1,9 +1,9 @@
 from collections.abc import Sequence
 from decimal import Decimal
 
-from kavzi_trader.spine.risk.config import RiskConfigSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.risk.symbol_tier import SymbolTier
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.symbol_tier import SymbolTier
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 _BASE_MULTIPLIERS: dict[VolatilityRegime, Decimal] = {
     VolatilityRegime.LOW: Decimal(0),

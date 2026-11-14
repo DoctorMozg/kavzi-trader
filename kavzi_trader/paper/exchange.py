@@ -23,16 +23,15 @@ from kavzi_trader.api.common.exceptions import (
     UNKNOWN_ORDER_ERROR_CODE,
     ExchangeError,
 )
-from kavzi_trader.api.common.models import (
-    OrderFillSchema,
-    OrderResponseSchema,
+from kavzi_trader.api.common.models import TickerSchema
+from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.order_enums import (
     OrderSide,
     OrderStatus,
     OrderType,
-    TickerSchema,
     TimeInForce,
 )
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.order_response import OrderFillSchema, OrderResponseSchema
 from kavzi_trader.spine.state.account_store import AccountStore
 
 logger = logging.getLogger(__name__)

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.movement import MinimumMovementFilter
 

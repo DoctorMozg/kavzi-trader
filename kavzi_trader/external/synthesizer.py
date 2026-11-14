@@ -1,12 +1,11 @@
 import asyncio
 import logging
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent
 
-from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.external.schemas import (
     ExternalDataSnapshotSchema,
     SentimentSummarySchema,
@@ -91,6 +90,16 @@ def _format_snapshot_for_prompt(
     return "\n\n".join(parts)
 
 
+class SynthesisPromptRenderer(Protocol):
+    """Renders the synthesizer user prompt; the brain PromptLoader satisfies it."""
+
+    def render_user_prompt(
+        self,
+        request: Literal["synthesize_sentiment"],
+        context: dict[str, str],
+    ) -> str: ...
+
+
 class SentimentSynthesizer:
     """Cheap LLM agent that pre-digests raw external data into a compact summary.
 
@@ -101,7 +110,7 @@ class SentimentSynthesizer:
     def __init__(
         self,
         agent: Agent[None, _SynthesizerOutputSchema],
-        prompt_loader: PromptLoader,
+        prompt_loader: SynthesisPromptRenderer,
     ) -> None:
         self._agent = agent
         self._prompt_loader = prompt_loader

@@ -17,26 +17,26 @@ from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_REJECT_MAX,
     confluence_enter_min_for_regime,
 )
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
+from kavzi_trader.brain.geometry.schemas import TradeGeometrySchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
+from kavzi_trader.domain.decision_message import DecisionMessageSchema
+from kavzi_trader.domain.state_schemas import (
+    PositionManagementConfigSchema,
+    PositionSchema,
+)
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.orchestrator.loops.reasoning_config import (
     ReasoningLoopConfigSchema,
 )
 from kavzi_trader.orchestrator.loops.symbol_state import SymbolStateTracker
-from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
-from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
 from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
 )
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.redis_client import RedisStateClient
-from kavzi_trader.spine.state.schemas import (
-    PositionManagementConfigSchema,
-    PositionSchema,
-)
 from kavzi_trader.ui.recorder import UiEventRecorder
 
 logger = logging.getLogger(__name__)

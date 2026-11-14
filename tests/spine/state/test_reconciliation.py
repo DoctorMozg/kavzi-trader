@@ -4,16 +4,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kavzi_trader.api.common.models import (
-    OrderResponseSchema,
+from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.order_enums import (
     OrderSide,
     OrderStatus,
     OrderType,
     TimeInForce,
 )
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.order_response import OrderResponseSchema
+from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
 from kavzi_trader.spine.state.reconciliation import ReconciliationService
-from kavzi_trader.spine.state.schemas import OpenOrderSchema, PositionSchema
 
 
 class TestReconciliationService:

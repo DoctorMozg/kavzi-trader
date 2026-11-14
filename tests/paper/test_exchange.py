@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from kavzi_trader.api.common.exceptions import ExchangeError
-from kavzi_trader.api.common.models import (
+from kavzi_trader.api.common.models import TickerSchema
+from kavzi_trader.domain.order_enums import (
     OrderSide,
     OrderStatus,
     OrderType,
-    TickerSchema,
     TimeInForce,
 )
 from kavzi_trader.paper.exchange import PaperExchangeClient, _PaperPositionTrackerSchema

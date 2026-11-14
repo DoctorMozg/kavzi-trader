@@ -6,50 +6,9 @@ This module defines common data models for representing API responses.
 
 from datetime import datetime
 from decimal import Decimal
-from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class OrderSide(StrEnum):
-    """Order side enum: BUY or SELL."""
-
-    BUY = "BUY"
-    SELL = "SELL"
-
-
-class OrderType(StrEnum):
-    """Order type enum for USDT-M Futures."""
-
-    LIMIT = "LIMIT"
-    MARKET = "MARKET"
-    STOP = "STOP"
-    STOP_MARKET = "STOP_MARKET"
-    TAKE_PROFIT = "TAKE_PROFIT"
-    TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"
-    TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
-
-
-class OrderStatus(StrEnum):
-    """Order status enum."""
-
-    NEW = "NEW"
-    PARTIALLY_FILLED = "PARTIALLY_FILLED"
-    FILLED = "FILLED"
-    CANCELED = "CANCELED"
-    PENDING_CANCEL = "PENDING_CANCEL"
-    REJECTED = "REJECTED"
-    EXPIRED = "EXPIRED"
-
-
-class TimeInForce(StrEnum):
-    """Time in force enum."""
-
-    GTC = "GTC"  # Good Till Canceled
-    IOC = "IOC"  # Immediate or Cancel
-    FOK = "FOK"  # Fill or Kill
-    GTX = "GTX"  # Good Till Crossing (post-only)
+from pydantic import BaseModel, ConfigDict
 
 
 class SymbolInfoSchema(BaseModel):
@@ -136,78 +95,3 @@ class TickerSchema(BaseModel):
     count: int | None = None
 
     model_config = ConfigDict(frozen=True)
-
-
-class CandlestickSchema(BaseModel):
-    """Candlestick/kline data."""
-
-    open_time: datetime
-    open_price: Decimal
-    high_price: Decimal
-    low_price: Decimal
-    close_price: Decimal
-    volume: Decimal
-    close_time: datetime
-    quote_volume: Decimal
-    trades_count: int
-    taker_buy_base_volume: Decimal
-    taker_buy_quote_volume: Decimal
-    interval: str | None = None
-    symbol: str | None = None
-
-    model_config = ConfigDict(frozen=True)
-
-
-class OrderFillSchema(BaseModel):
-    """Information about a fill for an order."""
-
-    price: Decimal
-    qty: Decimal
-    commission: Decimal
-    commission_asset: str
-    trade_id: int | None = None
-
-    model_config = ConfigDict(frozen=True)
-
-
-class OrderResponseSchema(BaseModel):
-    """Response for order creation or query."""
-
-    symbol: str
-    order_id: int
-    client_order_id: str
-    transact_time: datetime
-    price: Decimal
-    orig_qty: Decimal
-    executed_qty: Decimal
-    status: OrderStatus
-    time_in_force: TimeInForce
-    type: OrderType
-    side: OrderSide
-    fills: list[OrderFillSchema] = Field(default_factory=list)
-    # Optional fields
-    stop_price: Decimal | None = None
-    # Futures REST reports the real fill price here; `price` is 0 for MARKET.
-    avg_price: Decimal | None = None
-    iceberg_qty: Decimal | None = None
-    time: datetime | None = None
-    update_time: datetime | None = None
-    is_working: bool | None = None
-    orig_quote_order_qty: Decimal | None = None
-    # Futures-specific fields
-    reduce_only: bool = False
-    position_side: str | None = None
-    close_position: bool = False
-
-    model_config = ConfigDict(frozen=True)
-
-    @property
-    def effective_fill_price(self) -> Decimal | None:
-        """Weighted-average fill price, or None when the exchange gave none."""
-        if self.avg_price is not None and self.avg_price > 0:
-            return self.avg_price
-        total_qty = sum((f.qty for f in self.fills), Decimal(0))
-        if total_qty > 0:
-            weighted = sum((f.price * f.qty for f in self.fills), Decimal(0))
-            return weighted / total_qty
-        return self.price if self.price > 0 else None

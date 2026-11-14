@@ -3,17 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.brain.schemas.analyst import KeyLevelSchema
-
-# Re-exported for callers that pull geometry types from one place. The
-# structure types themselves live in the Brain layer (trade_structure) to
-# keep brain.schemas.decision from importing the spine execution package.
-from kavzi_trader.brain.schemas.trade_structure import (  # noqa: F401
-    EntryTactic,
-    TargetStyle,
-    TradeDirection,
-    TradeStructureSchema,
-)
+from kavzi_trader.domain.analyst_decision import KeyLevelSchema
 
 GeometryRejectionCode = Literal[
     "NO_ATR",

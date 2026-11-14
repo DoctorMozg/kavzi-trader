@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pandas as pd
 
-from kavzi_trader.indicators.schemas import VolumeAnalysisSchema
+from kavzi_trader.domain.indicator_schemas import VolumeAnalysisSchema
 
 
 def calculate_obv(close: pd.Series, volume: pd.Series) -> Decimal | None:

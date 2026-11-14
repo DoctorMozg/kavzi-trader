@@ -4,22 +4,22 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kavzi_trader.api.common.exceptions import ExchangeError
-from kavzi_trader.api.common.models import (
-    OrderResponseSchema,
+from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.order_enums import (
     OrderSide,
     OrderStatus,
     OrderType,
     TimeInForce,
 )
-from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.spine.position.action_executor import PositionActionExecutor
-from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
-from kavzi_trader.spine.position.position_action_type import PositionActionType
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.order_response import OrderResponseSchema
+from kavzi_trader.domain.position_action import PositionActionSchema
+from kavzi_trader.domain.position_action_type import PositionActionType
+from kavzi_trader.domain.state_schemas import (
     OpenOrderSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 
 
 @pytest.fixture

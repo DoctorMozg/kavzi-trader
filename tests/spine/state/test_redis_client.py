@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import redis.asyncio.client
 
-from kavzi_trader.spine.state.config import RedisConfigSchema
-from kavzi_trader.spine.state.redis_client import RedisStateClient
+from kavzi_trader.infra.redis_client import RedisStateClient
+from kavzi_trader.infra.redis_config import RedisConfigSchema
 
 
 class TestRedisStateClientExecutePipeline:

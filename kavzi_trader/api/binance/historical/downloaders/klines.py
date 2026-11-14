@@ -11,8 +11,8 @@ from kavzi_trader.api.binance.historical.batch import (
 )
 from kavzi_trader.api.binance.historical.downloaders.base import BaseDownloader
 from kavzi_trader.api.common.exceptions import APIError, RateLimitError
-from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.commons.time_utility import milliseconds_to_datetime
+from kavzi_trader.domain.candlestick import CandlestickSchema
 
 logger = logging.getLogger(__name__)
 

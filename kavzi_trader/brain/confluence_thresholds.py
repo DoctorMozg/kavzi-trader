@@ -11,7 +11,7 @@
 # factory, and router. Keeping it here avoids a Brain->orchestrator import
 # inversion that would drag the eager orchestrator package init into every
 # brain import and create a circular import.
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 CONFLUENCE_REJECT_MAX = 4  # score <= 4 → escalating rejection cooldown
 CONFLUENCE_ENTER_MIN = 6  # NORMAL-regime alias; kept for legacy callers

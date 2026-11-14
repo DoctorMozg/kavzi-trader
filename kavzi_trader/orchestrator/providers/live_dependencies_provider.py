@@ -3,30 +3,26 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal, TypedDict, cast
 
-from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
-    ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.config import FuturesConfigSchema
-from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.domain.algorithm_confluence import DualConfluenceSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
+from kavzi_trader.domain.state_schemas import AccountStateSchema, PositionSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.external.schemas import SentimentSummarySchema
 from kavzi_trader.indicators.htf import HtfTrendSchema, compute_htf_trend
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
+from kavzi_trader.orchestrator.futures_config import FuturesConfigSchema
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
-    DualConfluenceSchema,
-)
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import AccountStateSchema, PositionSchema
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +48,6 @@ class LiveDependenciesProvider:
         confluence_calculator: ConfluenceCalculator,
         volatility_detector: VolatilityRegimeDetector,
         state_manager: StateManager,
-        exchange: BinanceClient,
-        event_store: RedisEventStore,
         timeframe: str,
         futures_config: FuturesConfigSchema | None = None,
         external_cache: ExternalDataCache | None = None,
@@ -63,8 +57,6 @@ class LiveDependenciesProvider:
         self._confluence = confluence_calculator
         self._volatility = volatility_detector
         self._state_manager = state_manager
-        self._exchange = exchange
-        self._event_store = event_store
         self._timeframe = timeframe
         self._futures_config = futures_config or FuturesConfigSchema.model_validate({})
         self._external_cache = external_cache
@@ -280,8 +272,6 @@ class LiveDependenciesProvider:
                 "account_state": account_state,
                 "open_positions": open_positions,
                 "leverage": self._get_leverage(symbol),
-                "exchange_client": self._exchange,
-                "event_store": self._event_store,
                 "atr_history": self._cache.get_atr_history(symbol),
                 "sentiment_summary": self._get_sentiment(),
                 **tier_fields,

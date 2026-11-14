@@ -4,9 +4,9 @@ import logging
 from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 
 logger = logging.getLogger(__name__)

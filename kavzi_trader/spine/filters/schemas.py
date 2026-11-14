@@ -1,4 +1,4 @@
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
+from kavzi_trader.domain.algorithm_confluence import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
 )

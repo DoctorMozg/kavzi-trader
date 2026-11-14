@@ -3,13 +3,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kavzi_trader.spine.state.config import RedisConfigSchema
-from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     OpenOrderSchema,
     PositionSchema,
 )
+from kavzi_trader.infra.redis_config import RedisConfigSchema
+from kavzi_trader.spine.state.manager import StateManager
 
 
 class TestStateManager:

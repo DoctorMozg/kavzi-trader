@@ -2,8 +2,9 @@ import logging
 from decimal import Decimal
 from typing import Literal
 
-from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
@@ -19,7 +20,6 @@ from kavzi_trader.spine.filters.movement import MinimumMovementFilter
 from kavzi_trader.spine.filters.spike_cooldown import SpikeCooldownFilter
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
-from kavzi_trader.spine.state.schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
 

@@ -2,12 +2,10 @@ import logging
 from decimal import Decimal
 from statistics import mean, stdev
 
-from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
-from kavzi_trader.spine.risk.schemas import (
-    VolatilityRegime,
-    VolatilityRegimeSchema,
-)
+from kavzi_trader.spine.risk.schemas import VolatilityRegimeSchema
 
 logger = logging.getLogger(__name__)
 

@@ -10,8 +10,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from kavzi_trader.commons.structured_logger import JsonLogFormatter
 from kavzi_trader.commons.time_utility import timestamp_path
-from kavzi_trader.monitoring.structured_logger import JsonLogFormatter
 
 
 def setup_logging(

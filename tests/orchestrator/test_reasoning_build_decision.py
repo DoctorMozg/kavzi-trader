@@ -2,24 +2,22 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
-from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
+from kavzi_trader.brain.geometry.schemas import TradeGeometrySchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
-from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
-from kavzi_trader.order_flow.schemas import OrderFlowSchema
-from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
+from kavzi_trader.domain.algorithm_confluence import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
 )
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     PositionManagementConfigSchema,
 )
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.order_flow.schemas import OrderFlowSchema
 
 _LONG_GEOMETRY = TradeGeometrySchema(
     entry=Decimal(105),
@@ -141,8 +139,6 @@ def _build_deps() -> TradingDependenciesSchema:
         volatility_regime=VolatilityRegime.NORMAL,
         account_state=account_state,
         open_positions=[],
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
 
 

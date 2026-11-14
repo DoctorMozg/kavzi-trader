@@ -1,8 +1,8 @@
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
 from kavzi_trader.indicators.base import candles_to_dataframe
 from kavzi_trader.indicators.config import IndicatorConfigSchema
 from kavzi_trader.indicators.momentum import calculate_macd, calculate_rsi
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
 from kavzi_trader.indicators.trend import calculate_ema, calculate_sma
 from kavzi_trader.indicators.volatility import calculate_atr, calculate_bollinger_bands
 from kavzi_trader.indicators.volume import calculate_volume_analysis

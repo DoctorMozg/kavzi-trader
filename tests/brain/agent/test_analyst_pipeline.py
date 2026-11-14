@@ -8,18 +8,15 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from kavzi_trader.brain.agent.analyst_pipeline import AnalystPipeline
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
-from kavzi_trader.brain.schemas.analyst import (
-    AnalystDecisionSchema,
-    KeyLevelsSchema,
-)
 from kavzi_trader.brain.schemas.dependencies import AnalystDependenciesSchema
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
+from kavzi_trader.domain.algorithm_confluence import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
 )
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 _ANALYST_PIPELINE_LOGGER = "kavzi_trader.brain.agent.analyst_pipeline"
 

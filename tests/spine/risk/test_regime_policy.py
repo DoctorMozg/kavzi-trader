@@ -2,9 +2,9 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 _OVERRIDE_ON = RiskConfigSchema(extreme_high_confidence_pass=True)
 

@@ -9,21 +9,16 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.brain.agent.router import AgentRouter
-from kavzi_trader.brain.schemas.analyst import (
-    AnalystDecisionSchema,
-    KeyLevelsSchema,
-)
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
-    ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 _REASONING = (
     "EMA alignment is bullish with EMA20 above EMA50 above EMA200."
@@ -119,8 +114,6 @@ class _Provider:
             volatility_regime=regime,
             account_state=account_state,
             open_positions=positions,
-            exchange_client=BinanceClient.__new__(BinanceClient),
-            event_store=RedisEventStore.__new__(RedisEventStore),
         )
 
     def indicators_available(self, symbol: str) -> bool:

@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.state_schemas import AccountStateSchema
 from kavzi_trader.orchestrator.loops.ui_snapshot import UiSnapshotLoop
-from kavzi_trader.spine.state.schemas import AccountStateSchema
 from kavzi_trader.ui.config import UiConfigSchema
 from kavzi_trader.ui.event_schemas import (
     UiAccountEventSchema,

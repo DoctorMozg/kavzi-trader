@@ -4,20 +4,18 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kavzi_trader.api.common.models import (
-    OrderResponseSchema,
+from kavzi_trader.domain.decision_message import DecisionMessageSchema
+from kavzi_trader.domain.order_enums import (
     OrderSide,
     OrderStatus,
     OrderType,
     TimeInForce,
 )
-from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
+from kavzi_trader.domain.order_response import OrderResponseSchema
+from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.execution.engine import ExecutionEngine
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.state.schemas import (
-    PendingEntrySchema,
-    PositionManagementConfigSchema,
-)
+from kavzi_trader.spine.state.schemas import PendingEntrySchema
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 

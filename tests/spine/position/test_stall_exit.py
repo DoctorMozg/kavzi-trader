@@ -1,9 +1,9 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from kavzi_trader.spine.position.position_action_type import PositionActionType
+from kavzi_trader.domain.position_action_type import PositionActionType
+from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
 from kavzi_trader.spine.position.stall_exit import StallExitChecker
-from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
 
 def test_no_exit_before_stall_window(position_factory) -> None:

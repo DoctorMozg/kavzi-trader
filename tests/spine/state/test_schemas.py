@@ -2,15 +2,15 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.api.common.models import OrderSide, OrderType
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.order_enums import OrderSide, OrderType
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     OpenOrderSchema,
     PositionManagementConfigSchema,
     PositionSchema,
-    ReconciliationResultSchema,
 )
+from kavzi_trader.spine.state.schemas import ReconciliationResultSchema
 
 
 class TestPositionManagementConfigSchema:

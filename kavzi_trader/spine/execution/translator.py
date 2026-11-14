@@ -1,12 +1,8 @@
 import logging
 from decimal import Decimal
 
-from kavzi_trader.api.common.models import (
-    OrderSide,
-    OrderType,
-    TimeInForce,
-)
-from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
+from kavzi_trader.domain.decision_message import DecisionMessageSchema
+from kavzi_trader.domain.order_enums import OrderSide, OrderType, TimeInForce
 from kavzi_trader.spine.execution.order_request_schema import OrderRequestSchema
 
 logger = logging.getLogger(__name__)

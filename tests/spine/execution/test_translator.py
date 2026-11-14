@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.api.common.models import OrderSide, OrderType, TimeInForce
+from kavzi_trader.domain.order_enums import OrderSide, OrderType, TimeInForce
 from kavzi_trader.spine.execution.translator import (
     DecisionTranslator,
     OrderTranslationError,

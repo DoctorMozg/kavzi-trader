@@ -3,9 +3,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 
 class MarketSnapshotSchema(BaseModel):

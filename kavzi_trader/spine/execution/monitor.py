@@ -2,7 +2,8 @@ import asyncio
 import logging
 
 from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.models import OrderResponseSchema, OrderStatus
+from kavzi_trader.domain.order_enums import OrderStatus
+from kavzi_trader.domain.order_response import OrderResponseSchema
 
 logger = logging.getLogger(__name__)
 

@@ -17,7 +17,7 @@ from redis.exceptions import (
 from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
-from kavzi_trader.spine.state.config import RedisConfigSchema
+from kavzi_trader.infra.redis_config import RedisConfigSchema
 
 logger = logging.getLogger(__name__)
 

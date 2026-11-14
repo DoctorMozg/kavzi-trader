@@ -2,9 +2,10 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.risk.position_sizer import PositionSizer
-from kavzi_trader.spine.risk.schemas import VolatilityRegime, VolatilityRegimeSchema
+from kavzi_trader.spine.risk.schemas import VolatilityRegimeSchema
 
 
 @pytest.fixture

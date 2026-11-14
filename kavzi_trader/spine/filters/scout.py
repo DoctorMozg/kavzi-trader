@@ -4,10 +4,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.brain.schemas.dependencies import ScoutDependenciesSchema
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
 from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 

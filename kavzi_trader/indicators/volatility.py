@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pandas as pd
 
-from kavzi_trader.indicators.schemas import BollingerBandsSchema
+from kavzi_trader.domain.indicator_schemas import BollingerBandsSchema
 
 
 def calculate_atr(

@@ -1,18 +1,16 @@
 from decimal import Decimal
 from typing import Literal
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.brain.context.builder import ContextBuilder
-from kavzi_trader.brain.schemas.analyst import (
-    AnalystDecisionSchema,
-    KeyLevelSchema,
-    KeyLevelsSchema,
-)
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.domain.analyst_decision import (
+    AnalystDecisionSchema,
+    KeyLevelSchema,
+    KeyLevelsSchema,
+)
 from kavzi_trader.external.schemas import SentimentSummarySchema
 
 
@@ -143,8 +141,6 @@ def test_context_builder_trader(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=positions,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
@@ -176,8 +172,6 @@ def test_context_builder_trader_with_analyst_result(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=positions,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     analyst_result = AnalystDecisionSchema(
         setup_valid=True,
@@ -216,8 +210,6 @@ def test_trader_context_no_positions(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=[],
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
@@ -242,8 +234,6 @@ def test_trader_context_funding_cost(
         algorithm_confluence=algorithm_confluence,
         volatility_regime=volatility_regime,
         account_state=account_state,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
@@ -268,8 +258,6 @@ def test_trader_context_no_funding_without_order_flow(
         algorithm_confluence=algorithm_confluence,
         volatility_regime=volatility_regime,
         account_state=account_state,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
@@ -297,8 +285,6 @@ def test_trader_context_funding_preserves_negative_sign(
         algorithm_confluence=algorithm_confluence,
         volatility_regime=volatility_regime,
         account_state=account_state,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
@@ -329,8 +315,6 @@ def test_trader_context_funding_preserves_positive_sign(
         algorithm_confluence=algorithm_confluence,
         volatility_regime=volatility_regime,
         account_state=account_state,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
@@ -359,8 +343,6 @@ def test_trader_context_includes_scout_pattern(
         algorithm_confluence=algorithm_confluence,
         volatility_regime=volatility_regime,
         account_state=account_state,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(
@@ -388,8 +370,6 @@ def test_trader_context_scout_pattern_defaults_to_none(
         algorithm_confluence=algorithm_confluence,
         volatility_regime=volatility_regime,
         account_state=account_state,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     builder = ContextBuilder()
     context = builder.build_trader_context(deps)
@@ -474,8 +454,6 @@ def test_trader_context_with_sentiment(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=[],
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
         sentiment_summary=summary,
     )
     builder = ContextBuilder()
@@ -646,8 +624,6 @@ def test_atr_fallback_injected_in_trader_context(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=[],
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     # Analyst with LONG direction but all resistance levels below current_price
     analyst = _make_analyst(

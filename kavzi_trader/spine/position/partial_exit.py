@@ -1,9 +1,9 @@
 import logging
 from decimal import Decimal
 
-from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
-from kavzi_trader.spine.position.position_action_type import PositionActionType
-from kavzi_trader.spine.state.schemas import PositionSchema
+from kavzi_trader.domain.position_action import PositionActionSchema
+from kavzi_trader.domain.position_action_type import PositionActionType
+from kavzi_trader.domain.state_schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
 

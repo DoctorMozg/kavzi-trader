@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
 from kavzi_trader.spine.execution.staleness import StalenessChecker
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 
 def test_staleness_checker_detects_expired() -> None:

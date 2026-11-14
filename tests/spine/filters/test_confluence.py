@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from kavzi_trader.indicators.schemas import (
+from kavzi_trader.domain.indicator_schemas import (
     BollingerBandsSchema,
     TechnicalIndicatorsSchema,
     VolumeAnalysisSchema,
@@ -137,7 +137,7 @@ def test_bollinger_walks_band_short(
 ) -> None:
     """SHORT with bearish EMAs + price at lower band = walks the band (True)."""
     now = datetime.now(UTC)
-    from kavzi_trader.api.common.models import CandlestickSchema
+    from kavzi_trader.domain.candlestick import CandlestickSchema
 
     candle = CandlestickSchema(
         open_time=now,

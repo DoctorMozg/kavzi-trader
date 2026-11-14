@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.state_schemas import AccountStateSchema
 from kavzi_trader.spine.state.account_store import AccountStore
-from kavzi_trader.spine.state.schemas import AccountStateSchema
 
 
 class TestAccountStore:

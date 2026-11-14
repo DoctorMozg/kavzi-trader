@@ -1,12 +1,12 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from kavzi_trader.spine.risk.config import RiskConfigSchema
-from kavzi_trader.spine.risk.exposure import ExposureLimiter
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.spine.risk.exposure import ExposureLimiter
 
 
 def make_position(symbol: str, position_id: str = "pos-1") -> PositionSchema:

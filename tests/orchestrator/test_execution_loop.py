@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from kavzi_trader.domain.decision_message import DecisionMessageSchema
+from kavzi_trader.domain.execution_result import ExecutionResultSchema
+from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
-from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
-from kavzi_trader.spine.execution.execution_result_schema import ExecutionResultSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
 
 @pytest.mark.asyncio

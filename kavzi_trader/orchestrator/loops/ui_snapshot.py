@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.ui.config import UiConfigSchema
 from kavzi_trader.ui.recorder import UiEventRecorder

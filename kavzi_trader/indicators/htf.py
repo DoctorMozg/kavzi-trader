@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.indicators.momentum import calculate_rsi
 from kavzi_trader.indicators.trend import calculate_ema
 

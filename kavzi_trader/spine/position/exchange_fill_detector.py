@@ -3,10 +3,10 @@ from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.exceptions import ExchangeError
-from kavzi_trader.api.common.models import OrderStatus, OrderType
+from kavzi_trader.domain.order_enums import OrderStatus, OrderType
+from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
 from kavzi_trader.spine.position.exchange_close_schema import ExchangeCloseSchema
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import OpenOrderSchema, PositionSchema
 
 logger = logging.getLogger(__name__)
 

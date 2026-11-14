@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from kavzi_trader.domain.state_schemas import OpenOrderSchema
 from kavzi_trader.spine.state.order_store import ORDER_KEY_PREFIX, OrderStore
-from kavzi_trader.spine.state.schemas import OpenOrderSchema
 
 
 class TestOrderStore:

@@ -1,15 +1,15 @@
 from datetime import datetime
 from decimal import Decimal
 
-from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
-from kavzi_trader.spine.execution.execution_result_schema import ExecutionResultSchema
-from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
-from kavzi_trader.spine.state.schemas import AccountStateSchema, PositionSchema
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.decision_message import DecisionMessageSchema
+from kavzi_trader.domain.execution_result import ExecutionResultSchema
+from kavzi_trader.domain.position_action import PositionActionSchema
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.state_schemas import AccountStateSchema, PositionSchema
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 from kavzi_trader.ui.event_schemas import (
     UiAccountEventSchema,
     UiCandleSchema,

@@ -2,20 +2,20 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
-from kavzi_trader.order_flow.schemas import OrderFlowSchema
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
+from kavzi_trader.domain.algorithm_confluence import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
 )
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.order_flow.schemas import OrderFlowSchema
 
 
 @pytest.fixture

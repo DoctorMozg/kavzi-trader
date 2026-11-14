@@ -2,13 +2,13 @@ import logging
 from decimal import Decimal
 from typing import Literal
 
-from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
-from kavzi_trader.order_flow.schemas import OrderFlowSchema
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
+from kavzi_trader.domain.algorithm_confluence import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
 )
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.order_flow.schemas import OrderFlowSchema
 
 logger = logging.getLogger(__name__)
 

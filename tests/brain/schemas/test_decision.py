@@ -3,8 +3,8 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
-from kavzi_trader.brain.schemas.trade_structure import TradeStructureSchema
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.domain.trade_structure import TradeStructureSchema
 
 _STUB_REASONING = (
     "EMA alignment is bullish with EMA20 above EMA50 above EMA200. "

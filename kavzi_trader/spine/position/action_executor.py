@@ -6,16 +6,13 @@ from kavzi_trader.api.common.exceptions import (
     UNKNOWN_ORDER_ERROR_CODE,
     ExchangeError,
 )
-from kavzi_trader.api.common.models import (
-    OrderResponseSchema,
-    OrderSide,
-    OrderType,
-)
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
-from kavzi_trader.spine.position.position_action_type import PositionActionType
+from kavzi_trader.domain.order_enums import OrderSide, OrderType
+from kavzi_trader.domain.order_response import OrderResponseSchema
+from kavzi_trader.domain.position_action import PositionActionSchema
+from kavzi_trader.domain.position_action_type import PositionActionType
+from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import OpenOrderSchema, PositionSchema
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
 
 
 def candles_to_dataframe(candles: list[CandlestickSchema]) -> pd.DataFrame:

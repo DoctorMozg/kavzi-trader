@@ -3,9 +3,9 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
+from kavzi_trader.domain.decision_message import DecisionMessageSchema
+from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 
 def _base_kwargs() -> dict:

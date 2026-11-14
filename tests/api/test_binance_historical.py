@@ -17,8 +17,9 @@ from kavzi_trader.api.binance.historical.batch import (
     SymbolicDownloadBatchConfigSchema,
 )
 from kavzi_trader.api.binance.historical.client import BinanceHistoricalDataClient
-from kavzi_trader.api.common.models import CandlestickSchema, TradeSchema
+from kavzi_trader.api.common.models import TradeSchema
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.candlestick import CandlestickSchema
 
 
 def test_init(historical_client: BinanceHistoricalDataClient) -> None:

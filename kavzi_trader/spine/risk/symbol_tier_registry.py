@@ -4,7 +4,7 @@ from typing import Any
 
 import yaml
 
-from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
 
 logger = logging.getLogger(__name__)
 

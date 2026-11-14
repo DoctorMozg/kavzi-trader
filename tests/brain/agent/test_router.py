@@ -6,37 +6,32 @@ from typing import Literal
 import pytest
 from pydantic_ai.exceptions import ModelTimeoutError
 
-from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.agent.router import AgentRouter
-from kavzi_trader.brain.schemas.analyst import (
+from kavzi_trader.brain.schemas.dependencies import (
+    AnalystDependenciesSchema,
+    TradingDependenciesSchema,
+)
+from kavzi_trader.domain.algorithm_confluence import (
+    AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
+)
+from kavzi_trader.domain.analyst_decision import (
     AnalystDecisionSchema,
     KeyLevelSchema,
     KeyLevelsSchema,
 )
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
-from kavzi_trader.brain.schemas.dependencies import (
-    AnalystDependenciesSchema,
-    ScoutDependenciesSchema,
-    TradingDependenciesSchema,
-)
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.indicators.htf import HtfTrendSchema
-from kavzi_trader.indicators.schemas import (
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import (
     BollingerBandsSchema,
     TechnicalIndicatorsSchema,
 )
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
+from kavzi_trader.domain.state_schemas import AccountStateSchema, PositionSchema
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.indicators.htf import HtfTrendSchema
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
-    AlgorithmConfluenceSchema,
-    DualConfluenceSchema,
-)
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.state.schemas import (
-    AccountStateSchema,
-    PositionSchema,
-)
 
 # NOTE: VolatilityRegime is still imported for fixture construction but the
 # volatility gate itself now lives inside ScoutFilter, not in the router.
@@ -160,8 +155,6 @@ def _make_provider(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=positions,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     return FakeDepsProvider(scout_deps, analyst_deps, trader_deps)
 
@@ -1322,8 +1315,6 @@ def _make_trader_deps_with_bb(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=positions,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
 
 

@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kavzi_trader.api.common.models import OrderStatus
+from kavzi_trader.domain.order_enums import OrderStatus
 from kavzi_trader.spine.execution import monitor as monitor_module
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 

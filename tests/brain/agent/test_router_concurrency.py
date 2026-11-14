@@ -11,20 +11,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.brain.agent.router import AgentRouter
-from kavzi_trader.brain.schemas.analyst import (
-    AnalystDecisionSchema,
-    KeyLevelsSchema,
-)
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
-    ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 
 _REASONING = (
     "EMA alignment is bullish with EMA20 above EMA50 above EMA200."
@@ -148,8 +143,6 @@ def _make_multi_provider(
         volatility_regime=volatility_regime,
         account_state=account_state,
         open_positions=positions,
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
     return _MultiProvider(scout_deps, analyst_deps, trader_deps)
 

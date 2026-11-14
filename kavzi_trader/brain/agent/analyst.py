@@ -6,8 +6,8 @@ from pydantic_ai import Agent
 
 from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.prompts.loader import PromptLoader
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import AnalystDependenciesSchema
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
 
 logger = logging.getLogger(__name__)
 

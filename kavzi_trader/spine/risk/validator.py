@@ -4,13 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.position_sizer import PositionSizer
 from kavzi_trader.spine.risk.schemas import (
     RiskValidationResultSchema,
-    VolatilityRegime,
     VolatilityRegimeSchema,
 )
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry

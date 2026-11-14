@@ -12,15 +12,15 @@ from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
 from kavzi_trader.brain.agent.llm_errors import LLM_TIMEOUT_ERRORS
 from kavzi_trader.brain.agent.router_config import RouterConfigSchema
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
-from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
-from kavzi_trader.spine.execution.geometry import TradeGeometryCalculator
-from kavzi_trader.spine.execution.geometry_schemas import (
+from kavzi_trader.brain.geometry.calculator import TradeGeometryCalculator
+from kavzi_trader.brain.geometry.schemas import (
     GeometryInputsSchema,
     GeometryRejectionSchema,
     TradeGeometrySchema,
 )
+from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 
 logger = logging.getLogger(__name__)
 

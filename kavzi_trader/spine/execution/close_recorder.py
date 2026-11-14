@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Protocol
 
-from kavzi_trader.spine.state.schemas import PositionSchema
+from kavzi_trader.domain.state_schemas import PositionSchema
 
 
 class PositionCloseRecorder(Protocol):

@@ -18,8 +18,9 @@ from kavzi_trader.api.binance.historical.batch import (
 )
 from kavzi_trader.api.binance.historical.downloaders.klines import KlinesDownloader
 from kavzi_trader.api.binance.historical.downloaders.trades import TradesDownloader
-from kavzi_trader.api.common.models import CandlestickSchema, TradeSchema
+from kavzi_trader.api.common.models import TradeSchema
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.candlestick import CandlestickSchema
 
 logger = logging.getLogger(__name__)
 

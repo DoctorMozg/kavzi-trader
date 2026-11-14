@@ -5,7 +5,7 @@ from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_REJECT_MAX,
     confluence_enter_min_for_regime,
 )
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 
 @pytest.mark.parametrize(

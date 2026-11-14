@@ -7,8 +7,8 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.config import AgentModelConfigSchema, BrainConfigSchema
 from kavzi_trader.brain.prompts.loader import PromptLoader
-from kavzi_trader.spine.risk.config import RiskConfigSchema
-from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 
 

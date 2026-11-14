@@ -3,8 +3,8 @@ import logging
 import redis.asyncio.client
 from pydantic import ValidationError
 
-from kavzi_trader.spine.state.redis_client import RedisStateClient
-from kavzi_trader.spine.state.schemas import PositionSchema
+from kavzi_trader.domain.state_schemas import PositionSchema
+from kavzi_trader.infra.redis_client import RedisStateClient
 
 logger = logging.getLogger(__name__)
 

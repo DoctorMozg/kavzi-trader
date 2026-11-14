@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
 
 
 @pytest.fixture

@@ -3,19 +3,19 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.brain.schemas.dependencies import ScoutDependenciesSchema
-from kavzi_trader.indicators.schemas import (
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import (
     BollingerBandsSchema,
     MACDResultSchema,
     TechnicalIndicatorsSchema,
     VolumeAnalysisSchema,
 )
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
-from kavzi_trader.spine.risk.config import RiskConfigSchema
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 _OVERRIDE_ON = RiskConfigSchema(extreme_high_confidence_pass=True)

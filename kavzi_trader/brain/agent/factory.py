@@ -1,4 +1,5 @@
 import logging
+from typing import Protocol
 
 import httpx2
 from openai import AsyncOpenAI
@@ -17,18 +18,23 @@ from kavzi_trader.brain.context.context_dicts import (
     SystemPromptContextDict,
 )
 from kavzi_trader.brain.prompts.loader import PromptLoader
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
 from kavzi_trader.commons.trading_constants import MAX_TP_ATR
-from kavzi_trader.spine.risk.config import RiskConfigSchema
-from kavzi_trader.spine.risk.symbol_tier import SymbolTier
-from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 
 logger = logging.getLogger(__name__)
+
+
+class TierConfigSource(Protocol):
+    """Tier config lookup the factory needs; the spine registry satisfies it."""
+
+    def get_config_for_tier(self, tier: SymbolTier) -> SymbolTierConfigSchema: ...
 
 
 class AgentFactory:
@@ -39,7 +45,7 @@ class AgentFactory:
         config: BrainConfigSchema,
         prompt_loader: PromptLoader,
         risk_config: RiskConfigSchema,
-        tier_registry: SymbolTierRegistry,
+        tier_registry: TierConfigSource,
     ) -> None:
         self._config = config
         self._prompt_loader = prompt_loader

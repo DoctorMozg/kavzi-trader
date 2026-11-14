@@ -1,10 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from kavzi_trader.brain.schemas.analyst import (
-    AnalystDecisionSchema,
-    KeyLevelsSchema,
-)
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
 
 
 def _make_reasoning() -> str:

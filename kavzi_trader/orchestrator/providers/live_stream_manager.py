@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from kavzi_trader.api.binance.schemas.data_dicts import KlineData, TickerData
 from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.orchestrator.providers.stream_disconnected_error import (
     StreamDisconnectedError,

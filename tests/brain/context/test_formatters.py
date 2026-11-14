@@ -1,14 +1,14 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.context.formatters import (
     _price_based_precision,
     format_candles_table,
     format_indicators_compact,
     format_order_flow_compact,
 )
-from kavzi_trader.indicators.schemas import (
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import (
     BollingerBandsSchema,
     MACDResultSchema,
     TechnicalIndicatorsSchema,

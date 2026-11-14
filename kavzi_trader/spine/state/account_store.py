@@ -6,8 +6,8 @@ from decimal import Decimal
 from pydantic import ValidationError
 
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.spine.state.redis_client import RedisStateClient
-from kavzi_trader.spine.state.schemas import AccountStateSchema
+from kavzi_trader.domain.state_schemas import AccountStateSchema
+from kavzi_trader.infra.redis_client import RedisStateClient
 
 logger = logging.getLogger(__name__)
 

@@ -3,15 +3,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from kavzi_trader.api.common.models import OrderSide, OrderStatus, OrderType
 from kavzi_trader.commons.time_utility import utc_now
-from kavzi_trader.spine.state.config import RedisConfigSchema
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.order_enums import OrderSide, OrderStatus, OrderType
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     OpenOrderSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.infra.redis_config import RedisConfigSchema
 
 
 @pytest.fixture

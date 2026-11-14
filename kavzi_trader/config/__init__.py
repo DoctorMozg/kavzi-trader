@@ -3,7 +3,6 @@ Configuration management for KavziTrader.
 """
 
 import os
-from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -11,16 +10,17 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from kavzi_trader.brain.config import BrainConfigSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
 from kavzi_trader.events.config import EventStoreConfigSchema
 from kavzi_trader.external.config import ExternalSourcesConfigSchema
+from kavzi_trader.infra.redis_config import RedisConfigSchema
 from kavzi_trader.orchestrator.config import OrchestratorConfigSchema
+from kavzi_trader.orchestrator.futures_config import FuturesConfigSchema
 from kavzi_trader.paper.config import PaperTradingConfigSchema
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
 from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
-from kavzi_trader.spine.risk.config import RiskConfigSchema
-from kavzi_trader.spine.state.config import RedisConfigSchema
-from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 from kavzi_trader.ui.config import UiConfigSchema
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
@@ -80,17 +80,6 @@ class MonitoringConfigSchema(BaseModel):
 
     log_format: Annotated[str, Field(default="json")]
     log_level: Annotated[str, Field(default="DEBUG")]
-
-    model_config = ConfigDict(frozen=True)
-
-
-class FuturesConfigSchema(BaseModel):
-    """Configuration for USDT-M perpetual futures trading."""
-
-    default_leverage: Annotated[int, Field(default=5, ge=1, le=125)]
-    margin_type: Annotated[str, Field(default="ISOLATED")]
-    symbol_leverage: Annotated[dict[str, int], Field(default_factory=dict)]
-    liquidation_emergency_percent: Annotated[Decimal, Field(default=Decimal("5.0"))]
 
     model_config = ConfigDict(frozen=True)
 

@@ -8,6 +8,7 @@ from kavzi_trader.brain.confluence_thresholds import (
     COUNTER_TREND_GATE_BUMP,
     confluence_enter_min_for_regime,
 )
+from kavzi_trader.brain.context.confluence_trimmer import side_trim_confluence
 from kavzi_trader.brain.context.context_dicts import (
     AccountStateDict,
     AnalystContextDict,
@@ -21,13 +22,12 @@ from kavzi_trader.brain.context.formatters import (
     format_indicators_compact,
     format_order_flow_compact,
 )
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
 from kavzi_trader.indicators.htf import HtfTrendSchema
-from kavzi_trader.spine.confluence import side_trim_confluence
 
 logger = logging.getLogger(__name__)
 

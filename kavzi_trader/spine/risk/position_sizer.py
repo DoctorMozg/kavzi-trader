@@ -1,7 +1,7 @@
 import logging
 from decimal import ROUND_DOWN, Decimal
 
-from kavzi_trader.spine.risk.config import RiskConfigSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.spine.risk.schemas import (
     PositionSizeResultSchema,
     VolatilityRegimeSchema,

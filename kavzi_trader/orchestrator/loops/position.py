@@ -7,13 +7,13 @@ from decimal import Decimal
 from typing import Protocol
 
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.position_action import PositionActionSchema
+from kavzi_trader.domain.position_action_type import PositionActionType
+from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.exchange_fill_detector import ExchangeFillDetector
 from kavzi_trader.spine.position.manager import PositionManager
-from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
-from kavzi_trader.spine.position.position_action_type import PositionActionType
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import PositionSchema
 from kavzi_trader.ui.recorder import UiEventRecorder
 
 logger = logging.getLogger(__name__)

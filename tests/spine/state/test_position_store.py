@@ -3,12 +3,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
 
+from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.spine.state.position_store import (
     POSITION_INDEX_KEY,
     POSITION_KEY_PREFIX,
     PositionStore,
 )
-from kavzi_trader.spine.state.schemas import PositionSchema
 
 
 class TestPositionStore:

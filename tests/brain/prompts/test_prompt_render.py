@@ -4,7 +4,6 @@ from decimal import Decimal
 import pytest
 from pydantic import SecretStr
 
-from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.config import BrainConfigSchema
 from kavzi_trader.brain.confluence_thresholds import (
@@ -20,10 +19,9 @@ from kavzi_trader.brain.schemas.dependencies import (
     TradingDependenciesSchema,
 )
 from kavzi_trader.commons.trading_constants import MAX_TP_ATR
-from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.spine.risk.config import RiskConfigSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 
 _RISK_CONFIG = RiskConfigSchema()
@@ -87,8 +85,6 @@ def make_deps(
             **shared,
             account_state=account_state,
             open_positions=positions,
-            exchange_client=BinanceClient.__new__(BinanceClient),
-            event_store=RedisEventStore.__new__(RedisEventStore),
         )
         return analyst, trader
 

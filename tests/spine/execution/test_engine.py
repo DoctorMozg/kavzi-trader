@@ -5,30 +5,31 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from kavzi_trader.api.common.exceptions import ExchangeError
-from kavzi_trader.api.common.models import (
-    OrderResponseSchema,
+from kavzi_trader.domain.execution_result import ExecutionResultSchema
+from kavzi_trader.domain.order_enums import (
     OrderSide,
     OrderStatus,
     OrderType,
     TimeInForce,
 )
-from kavzi_trader.events.config import EventStoreConfigSchema
-from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.spine.execution.config import ExecutionConfigSchema
-from kavzi_trader.spine.execution.engine import ExecutionEngine
-from kavzi_trader.spine.execution.execution_result_schema import ExecutionResultSchema
-from kavzi_trader.spine.execution.monitor import OrderMonitor
-from kavzi_trader.spine.execution.staleness import StalenessChecker
-from kavzi_trader.spine.execution.translator import DecisionTranslator
-from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
-from kavzi_trader.spine.risk.schemas import RiskValidationResultSchema, VolatilityRegime
-from kavzi_trader.spine.risk.validator import DynamicRiskValidator
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.order_response import OrderResponseSchema
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     OpenOrderSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.events.config import EventStoreConfigSchema
+from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.spine.execution.config import ExecutionConfigSchema
+from kavzi_trader.spine.execution.engine import ExecutionEngine
+from kavzi_trader.spine.execution.monitor import OrderMonitor
+from kavzi_trader.spine.execution.staleness import StalenessChecker
+from kavzi_trader.spine.execution.translator import DecisionTranslator
+from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
+from kavzi_trader.spine.risk.schemas import RiskValidationResultSchema
+from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 
 
 @pytest.mark.asyncio

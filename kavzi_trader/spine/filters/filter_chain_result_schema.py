@@ -3,11 +3,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
-    AlgorithmConfluenceSchema,
-)
+from kavzi_trader.domain.algorithm_confluence import AlgorithmConfluenceSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 
 class FilterChainResultSchema(BaseModel):

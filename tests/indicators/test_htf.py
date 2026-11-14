@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.indicators.htf import aggregate_1h_closes, compute_htf_trend
 
 _START = datetime(2026, 1, 1, tzinfo=UTC)

@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kavzi_trader.brain.agent.router import PipelineResult
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
 from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
-from kavzi_trader.spine.state.schemas import PositionManagementConfigSchema
 
 
 @pytest.fixture

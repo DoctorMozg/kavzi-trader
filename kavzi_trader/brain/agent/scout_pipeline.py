@@ -5,8 +5,8 @@ from typing import Annotated, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
-from kavzi_trader.brain.schemas.dependencies import ScoutDependenciesSchema
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
 
 logger = logging.getLogger(__name__)
 

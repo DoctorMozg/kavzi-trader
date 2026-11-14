@@ -2,8 +2,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TypedDict
 
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
-from kavzi_trader.spine.confluence import ConfluenceBlockDict
+from kavzi_trader.brain.context.confluence_trimmer import ConfluenceBlockDict
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
 
 __all__ = [
     "ATRFallbackTargetDict",

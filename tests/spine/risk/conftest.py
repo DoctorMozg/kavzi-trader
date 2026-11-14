@@ -4,13 +4,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from kavzi_trader.spine.risk.config import RiskConfigSchema
-from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 
 
 @pytest.fixture

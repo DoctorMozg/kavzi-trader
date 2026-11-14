@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.api.common.models import OrderSide, OrderType, TimeInForce
+from kavzi_trader.domain.order_enums import OrderSide, OrderType, TimeInForce
 
 
 class OrderRequestSchema(BaseModel):

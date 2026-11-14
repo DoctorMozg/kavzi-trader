@@ -3,10 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# The Trader agent's structural output vocabulary. Lives in the Brain layer
-# because it is what the Trader emits; the Spine geometry calculator consumes
-# it (spine -> brain, the established direction). Keeping these here avoids a
-# brain.schemas.decision -> spine.execution import cycle.
+# The Trader's structural output vocabulary, shared with geometry and execution.
 EntryTactic = Literal["IMMEDIATE", "PULLBACK_TO_LEVEL"]
 TargetStyle = Literal["STRUCTURAL", "ATR_2X", "ATR_3X"]
 TradeDirection = Literal["LONG", "SHORT"]

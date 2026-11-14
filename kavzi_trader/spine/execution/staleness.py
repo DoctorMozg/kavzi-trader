@@ -1,8 +1,8 @@
 import logging
 from datetime import UTC, datetime
 
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 logger = logging.getLogger(__name__)
 

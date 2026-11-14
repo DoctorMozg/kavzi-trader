@@ -4,17 +4,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from kavzi_trader.spine.risk.config import RiskConfigSchema
-from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.risk.symbol_tier import SymbolTier, SymbolTierConfigSchema
-from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
-from kavzi_trader.spine.risk.validator import DynamicRiskValidator
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
+from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
+from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 
 _EXTREME_ATR_HISTORY = [
     Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
@@ -374,7 +374,7 @@ class TestDynamicRiskValidator:
     @pytest.mark.asyncio
     async def test_rejects_below_min_notional_floor(self, mock_state_manager) -> None:
         """Account too small to afford the $10 floor → trade rejected cleanly."""
-        from kavzi_trader.spine.risk.config import RiskConfigSchema
+        from kavzi_trader.domain.risk_config import RiskConfigSchema
 
         # Tiny balance + 1% cap forces max notional below the $10 floor.
         config = RiskConfigSchema(
@@ -412,7 +412,7 @@ class TestDynamicRiskValidator:
         self, mock_state_manager, mock_liquidation_calculator
     ) -> None:
         """Below-floor risk sizing is bumped up to $10 and trade stays valid."""
-        from kavzi_trader.spine.risk.config import RiskConfigSchema
+        from kavzi_trader.domain.risk_config import RiskConfigSchema
 
         # Risk-based size is microscopic; cap/margin allow floor to be met.
         config = RiskConfigSchema(
@@ -625,7 +625,7 @@ class TestDynamicRiskValidator:
         self, mock_state_manager
     ) -> None:
         """EXTREME regime passes when opt-in enabled and confidence >= threshold."""
-        from kavzi_trader.spine.risk.config import RiskConfigSchema
+        from kavzi_trader.domain.risk_config import RiskConfigSchema
 
         config = RiskConfigSchema(
             extreme_high_confidence_pass=True,
@@ -656,7 +656,7 @@ class TestDynamicRiskValidator:
         self, mock_state_manager
     ) -> None:
         """Even with opt-in enabled, confidence < threshold keeps the block in place."""
-        from kavzi_trader.spine.risk.config import RiskConfigSchema
+        from kavzi_trader.domain.risk_config import RiskConfigSchema
 
         config = RiskConfigSchema(
             extreme_high_confidence_pass=True,
@@ -686,7 +686,7 @@ class TestDynamicRiskValidator:
     @pytest.mark.asyncio
     async def test_allows_single_position_below_cap(self, mock_state_manager) -> None:
         """Zero open positions + single TIER_1 (4%) < 4.5% cap → no rejection."""
-        from kavzi_trader.spine.risk.config import RiskConfigSchema
+        from kavzi_trader.domain.risk_config import RiskConfigSchema
 
         # pause=5% → cap = 5 - 0.5 = 4.5%, so a lone 4% trade fits.
         # close-all must stay above pause to satisfy the config ordering check.

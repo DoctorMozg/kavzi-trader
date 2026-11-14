@@ -11,13 +11,9 @@ import pytest
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.common.exceptions import APIError
-from kavzi_trader.api.common.models import (
-    CandlestickSchema,
-    OrderSide,
-    OrderType,
-    TimeInForce,
-)
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.order_enums import OrderSide, OrderType, TimeInForce
 
 
 async def test_ping(binance_testnet_client: BinanceClient) -> None:

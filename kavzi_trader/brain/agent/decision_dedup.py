@@ -3,10 +3,10 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
+from kavzi_trader.brain.geometry.schemas import TradeGeometrySchema
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 
 logger = logging.getLogger(__name__)
 

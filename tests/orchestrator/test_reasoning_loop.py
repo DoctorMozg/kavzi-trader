@@ -6,41 +6,39 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.models import CandlestickSchema
 from kavzi_trader.brain.agent.router import PipelineResult
 from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_ENTER_MIN,
     CONFLUENCE_REJECT_MAX,
 )
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema, KeyLevelsSchema
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
+from kavzi_trader.brain.geometry.schemas import TradeGeometrySchema
 from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
-    ScoutDependenciesSchema,
     TradingDependenciesSchema,
 )
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
-from kavzi_trader.order_flow.schemas import OrderFlowSchema
-from kavzi_trader.spine.execution.decision_message_schema import DecisionMessageSchema
-from kavzi_trader.spine.execution.geometry_schemas import TradeGeometrySchema
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
+from kavzi_trader.domain.algorithm_confluence import (
     AlgorithmConfluenceSchema,
     DualConfluenceSchema,
 )
-from kavzi_trader.spine.filters.filter_chain_result_schema import (
-    FilterChainResultSchema,
-)
-from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.decision_message import DecisionMessageSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.order_flow.schemas import OrderFlowSchema
+from kavzi_trader.spine.filters.filter_chain_result_schema import (
+    FilterChainResultSchema,
+)
+from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
 from kavzi_trader.ui.recorder import UiEventRecorder
 from tests.ui.factories import CollectingUiPublisher
 
@@ -211,8 +209,6 @@ def _build_deps() -> TradingDependenciesSchema:
         volatility_regime=VolatilityRegime.NORMAL,
         account_state=account_state,
         open_positions=[],
-        exchange_client=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
     )
 
 

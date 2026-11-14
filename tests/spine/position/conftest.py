@@ -5,7 +5,7 @@ from typing import Literal
 
 import pytest
 
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )

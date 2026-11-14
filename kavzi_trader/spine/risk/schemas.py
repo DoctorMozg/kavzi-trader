@@ -1,14 +1,8 @@
 from decimal import Decimal
-from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
-
-class VolatilityRegime(StrEnum):
-    LOW = "LOW"
-    NORMAL = "NORMAL"
-    HIGH = "HIGH"
-    EXTREME = "EXTREME"
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 
 class VolatilityRegimeSchema(BaseModel):

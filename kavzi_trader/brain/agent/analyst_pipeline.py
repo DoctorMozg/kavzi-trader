@@ -13,13 +13,10 @@ from kavzi_trader.brain.confluence_thresholds import (
     COUNTER_TREND_GATE_BUMP,
     confluence_enter_min_for_regime,
 )
-from kavzi_trader.brain.schemas.analyst import (
-    AnalystDecisionSchema,
-    KeyLevelsSchema,
-)
 from kavzi_trader.brain.schemas.dependencies import AnalystDependenciesSchema
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.indicators.htf import HtfTrendSchema
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
 
 logger = logging.getLogger(__name__)
 

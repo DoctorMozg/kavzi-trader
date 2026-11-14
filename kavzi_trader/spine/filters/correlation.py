@@ -1,9 +1,9 @@
 import logging
 from decimal import Decimal
 
+from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
-from kavzi_trader.spine.state.schemas import PositionSchema
 
 logger = logging.getLogger(__name__)
 

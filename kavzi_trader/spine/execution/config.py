@@ -2,7 +2,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.spine.risk.schemas import VolatilityRegime
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 
 
 def _default_staleness_thresholds() -> dict[str, int]:

@@ -6,7 +6,7 @@ from enum import Enum
 
 from pydantic import BaseModel
 
-from kavzi_trader.monitoring.structured_logger import JsonLogFormatter
+from kavzi_trader.commons.structured_logger import JsonLogFormatter
 
 
 def test_json_log_formatter() -> None:

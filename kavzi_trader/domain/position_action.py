@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.spine.position.position_action_type import PositionActionType
+from kavzi_trader.domain.position_action_type import PositionActionType
 
 
 class PositionActionSchema(BaseModel):

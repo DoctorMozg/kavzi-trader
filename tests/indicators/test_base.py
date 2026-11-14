@@ -1,4 +1,4 @@
-from kavzi_trader.api.common.models import CandlestickSchema
+from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.indicators.base import candles_to_dataframe
 
 

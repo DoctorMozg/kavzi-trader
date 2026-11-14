@@ -4,10 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from kavzi_trader.spine.risk.symbol_tier import (
-    SymbolTier,
-    SymbolTierConfigSchema,
-)
+from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 
 

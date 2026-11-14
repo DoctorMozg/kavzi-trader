@@ -13,8 +13,8 @@ from kavzi_trader.events.aggregate_type import (
 from kavzi_trader.events.config import EventStoreConfigSchema
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.store import RedisEventStore
-from kavzi_trader.spine.state.config import RedisConfigSchema
-from kavzi_trader.spine.state.redis_client import RedisStateClient
+from kavzi_trader.infra.redis_client import RedisStateClient
+from kavzi_trader.infra.redis_config import RedisConfigSchema
 
 
 class DummyRedisClient:

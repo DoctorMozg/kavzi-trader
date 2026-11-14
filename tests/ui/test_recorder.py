@@ -3,16 +3,16 @@ from decimal import Decimal
 
 import pytest
 
-from kavzi_trader.brain.schemas.analyst import AnalystDecisionSchema, KeyLevelsSchema
-from kavzi_trader.brain.schemas.decision import TradeDecisionSchema
-from kavzi_trader.brain.schemas.scout import ScoutDecisionSchema
-from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
-from kavzi_trader.spine.position.position_action_type import PositionActionType
-from kavzi_trader.spine.state.schemas import (
+from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
+from kavzi_trader.domain.position_action import PositionActionSchema
+from kavzi_trader.domain.position_action_type import PositionActionType
+from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
+from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 from kavzi_trader.ui.event_schemas import (
     UiAccountEventSchema,
     UiDecisionEventSchema,

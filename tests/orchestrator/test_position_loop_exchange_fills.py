@@ -6,13 +6,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from kavzi_trader.api.common.exceptions import ExchangeError
-from kavzi_trader.api.common.models import (
-    OrderSide,
-    OrderStatus,
-    OrderType,
-    TickerSchema,
-)
+from kavzi_trader.api.common.models import TickerSchema
 from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.domain.order_enums import OrderSide, OrderStatus, OrderType
+from kavzi_trader.domain.state_schemas import (
+    OpenOrderSchema,
+    PositionManagementConfigSchema,
+    PositionSchema,
+)
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
 from kavzi_trader.paper.exchange import PaperExchangeClient
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
@@ -22,11 +23,6 @@ from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.stall_exit import StallExitChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.state.manager import StateManager
-from kavzi_trader.spine.state.schemas import (
-    OpenOrderSchema,
-    PositionManagementConfigSchema,
-    PositionSchema,
-)
 
 Side = Literal["LONG", "SHORT"]
 

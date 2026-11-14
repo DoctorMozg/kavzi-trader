@@ -5,24 +5,23 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from kavzi_trader.api.binance.client import BinanceClient
-from kavzi_trader.api.common.models import CandlestickSchema
-from kavzi_trader.config import FuturesConfigSchema
-from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.domain.algorithm_confluence import (
+    AlgorithmConfluenceSchema,
+    DualConfluenceSchema,
+)
+from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
+from kavzi_trader.domain.state_schemas import AccountStateSchema
+from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.external.schemas import SentimentSummarySchema
-from kavzi_trader.indicators.schemas import TechnicalIndicatorsSchema
+from kavzi_trader.orchestrator.futures_config import FuturesConfigSchema
 from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
     ANALYSIS_CANDLES_COUNT,
     SCOUT_CANDLES_COUNT,
     LiveDependenciesProvider,
 )
-from kavzi_trader.spine.filters.algorithm_confluence_schema import (
-    AlgorithmConfluenceSchema,
-    DualConfluenceSchema,
-)
-from kavzi_trader.spine.risk.schemas import VolatilityRegime, VolatilityRegimeSchema
-from kavzi_trader.spine.state.schemas import AccountStateSchema
+from kavzi_trader.spine.risk.schemas import VolatilityRegimeSchema
 
 
 def _build_candle(minute: int) -> CandlestickSchema:
@@ -110,8 +109,6 @@ def _make_provider(
         confluence_calculator=confluence_calc,
         volatility_detector=detector,
         state_manager=state_manager,
-        exchange=BinanceClient.__new__(BinanceClient),
-        event_store=RedisEventStore.__new__(RedisEventStore),
         timeframe="1m",
         futures_config=futures_config,
         external_cache=external_cache,
