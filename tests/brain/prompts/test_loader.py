@@ -157,3 +157,12 @@ def test_order_flow_guide_explains_unavailable_long_short() -> None:
     )
 
     assert "L/S=unavailable" in rendered
+
+
+def test_regime_guide_stop_advice_stays_within_stop_cap() -> None:
+    loader = PromptLoader()
+    context = _make_system_prompt_context() | {"max_stop_atr": "1.4"}
+    rendered = loader.render_system_prompt("trader", context=context)
+    assert "1.0-1.4 ATR stops" in rendered
+    assert "1.25-1.4 ATR stops" in rendered
+    assert "2.0 ATR stops" not in rendered

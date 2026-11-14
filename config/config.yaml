@@ -251,10 +251,9 @@ risk:
 
   # Maximum stop-loss distance in ATR multiples.
   # Rejects trades where SL is too wide (excessive per-trade risk).
-  #   2.0 = tight cap
-  #   3.0 = default
-  #   5.0 = permissive (large swings tolerated)
-  max_sl_atr: 5.0
+  # Keep it at MAX_TP_ATR (3.0) / min_rr_ratio: a wider stop can never reach
+  # min R:R under the target ceiling, so the geometry rejects it anyway.
+  max_sl_atr: 1.5
 
   # Volatility regime detection via ATR Z-score.
   # Z-score = (current_ATR - mean_ATR) / stdev_ATR over the recent ATR history.
