@@ -1,3 +1,4 @@
+import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -478,3 +479,196 @@ def test_unrealized_pnl_no_cached_price() -> None:
     )
     # No price cached
     assert client._calculate_total_unrealized_pnl() == Decimal(0)
+
+
+# ---- SEX-006: resting protective orders trigger on price cross --------------
+
+
+def _set_price(client: PaperExchangeClient, price: int) -> None:
+    client.get_ticker = AsyncMock(
+        return_value=TickerSchema(symbol="BTCUSDT", last_price=Decimal(price)),
+    )
+
+
+async def _open_position(
+    client: PaperExchangeClient,
+    side: OrderSide,
+) -> None:
+    await client.create_order(
+        symbol="BTCUSDT",
+        side=side,
+        order_type=OrderType.MARKET,
+        quantity=Decimal("0.1"),
+    )
+
+
+async def _place_protective(
+    client: PaperExchangeClient,
+    side: OrderSide,
+    order_type: OrderType,
+    stop_price: int,
+) -> int:
+    order = await client.create_order(
+        symbol="BTCUSDT",
+        side=side,
+        order_type=order_type,
+        quantity=Decimal("0.1"),
+        stop_price=Decimal(stop_price),
+        reduce_only=True,
+    )
+    return order.order_id
+
+
+@pytest.mark.parametrize(
+    ("entry_side", "exit_side", "order_type", "stop_price", "price", "fill_price"),
+    [
+        # LONG stop-loss: gap below the stop fills at the worse (lower) price.
+        (
+            OrderSide.BUY,
+            OrderSide.SELL,
+            OrderType.STOP_MARKET,
+            49000,
+            48500,
+            48500,
+        ),
+        # LONG take-profit: fills at the trigger, not the better gap price.
+        (
+            OrderSide.BUY,
+            OrderSide.SELL,
+            OrderType.TAKE_PROFIT_MARKET,
+            52000,
+            52500,
+            52000,
+        ),
+        # SHORT stop-loss: gap above the stop fills at the worse (higher) price.
+        (
+            OrderSide.SELL,
+            OrderSide.BUY,
+            OrderType.STOP_MARKET,
+            51000,
+            51500,
+            51500,
+        ),
+        # SHORT take-profit
+        (
+            OrderSide.SELL,
+            OrderSide.BUY,
+            OrderType.TAKE_PROFIT_MARKET,
+            48000,
+            47500,
+            48000,
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_protective_order_fills_when_price_crosses_trigger(
+    paper_client: PaperExchangeClient,
+    entry_side: OrderSide,
+    exit_side: OrderSide,
+    order_type: OrderType,
+    stop_price: int,
+    price: int,
+    fill_price: int,
+) -> None:
+    await _open_position(paper_client, entry_side)
+    order_id = await _place_protective(paper_client, exit_side, order_type, stop_price)
+    _set_price(paper_client, price)
+
+    async with asyncio.timeout(2):
+        order = await paper_client.get_order("BTCUSDT", order_id=order_id)
+
+    assert order.status == OrderStatus.FILLED
+    assert order.executed_qty == Decimal("0.1")
+    assert order.effective_fill_price == Decimal(fill_price)
+    assert paper_client._positions == {}
+    assert await paper_client.get_open_orders("BTCUSDT") == []
+
+
+@pytest.mark.parametrize(
+    ("entry_side", "exit_side", "order_type", "stop_price", "price"),
+    [
+        (OrderSide.BUY, OrderSide.SELL, OrderType.STOP_MARKET, 49000, 49500),
+        (OrderSide.BUY, OrderSide.SELL, OrderType.TAKE_PROFIT_MARKET, 52000, 51500),
+        (OrderSide.SELL, OrderSide.BUY, OrderType.STOP_MARKET, 51000, 50500),
+        (OrderSide.SELL, OrderSide.BUY, OrderType.TAKE_PROFIT_MARKET, 48000, 48500),
+    ],
+)
+@pytest.mark.asyncio
+async def test_protective_order_rests_while_price_inside_bracket(
+    paper_client: PaperExchangeClient,
+    entry_side: OrderSide,
+    exit_side: OrderSide,
+    order_type: OrderType,
+    stop_price: int,
+    price: int,
+) -> None:
+    await _open_position(paper_client, entry_side)
+    order_id = await _place_protective(paper_client, exit_side, order_type, stop_price)
+    _set_price(paper_client, price)
+
+    order = await paper_client.get_order("BTCUSDT", order_id=order_id)
+
+    assert order.status == OrderStatus.NEW
+    assert "BTCUSDT" in paper_client._positions
+
+
+@pytest.mark.asyncio
+async def test_protective_fill_realizes_pnl_and_returns_margin(
+    paper_client: PaperExchangeClient,
+) -> None:
+    await _open_position(paper_client, OrderSide.BUY)
+    order_id = await _place_protective(
+        paper_client,
+        OrderSide.SELL,
+        OrderType.TAKE_PROFIT_MARKET,
+        52000,
+    )
+    _set_price(paper_client, 52000)
+
+    await paper_client.get_order("BTCUSDT", order_id=order_id)
+
+    # entry commission 5, exit commission 0.1 * 52000 * 0.001 = 5.2, pnl +200
+    assert paper_client.balance_usdt == Decimal(10000) + 200 - 5 - Decimal("5.2")
+
+
+@pytest.mark.asyncio
+async def test_cancel_after_trigger_reports_order_already_filled(
+    paper_client: PaperExchangeClient,
+) -> None:
+    await _open_position(paper_client, OrderSide.BUY)
+    sl_id = await _place_protective(
+        paper_client,
+        OrderSide.SELL,
+        OrderType.STOP_MARKET,
+        49000,
+    )
+    _set_price(paper_client, 48900)
+
+    with pytest.raises(ExchangeError) as exc_info:
+        await paper_client.cancel_order("BTCUSDT", order_id=sl_id)
+
+    assert exc_info.value.code == -2011
+    filled = await paper_client.get_order("BTCUSDT", order_id=sl_id)
+    assert filled.status == OrderStatus.FILLED
+
+
+@pytest.mark.asyncio
+async def test_orphaned_protective_order_is_cancelled_not_raised(
+    paper_client: PaperExchangeClient,
+) -> None:
+    await _open_position(paper_client, OrderSide.BUY)
+    sl_id = await _place_protective(
+        paper_client, OrderSide.SELL, OrderType.STOP_MARKET, 49000
+    )
+    tp_id = await _place_protective(
+        paper_client, OrderSide.SELL, OrderType.TAKE_PROFIT_MARKET, 52000
+    )
+    _set_price(paper_client, 48900)
+    await paper_client.get_order("BTCUSDT", order_id=sl_id)
+    # Price rebounds through the TP trigger after the position is already flat.
+    _set_price(paper_client, 52100)
+
+    order = await paper_client.get_order("BTCUSDT", order_id=tp_id)
+
+    assert order.status == OrderStatus.CANCELED
+    assert paper_client._positions == {}

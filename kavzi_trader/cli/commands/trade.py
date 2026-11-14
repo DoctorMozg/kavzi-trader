@@ -65,6 +65,7 @@ from kavzi_trader.spine.filters.movement import MinimumMovementFilter
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.filters.spike_cooldown import SpikeCooldownFilter
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
+from kavzi_trader.spine.position.exchange_fill_detector import ExchangeFillDetector
 from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.stall_exit import StallExitChecker
@@ -456,6 +457,10 @@ async def _start_orchestrator(
             atr_provider=atr_provider,
             price_provider=price_provider,
             action_executor=PositionActionExecutor(
+                exchange=exchange,
+                state_manager=state_manager,
+            ),
+            fill_detector=ExchangeFillDetector(
                 exchange=exchange,
                 state_manager=state_manager,
             ),

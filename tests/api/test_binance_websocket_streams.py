@@ -1,7 +1,7 @@
 """Futures stream wiring, message routing and dead-feed detection."""
 
 import asyncio
-from typing import Any
+from typing import Any, Self
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -29,7 +29,7 @@ class _FakeSocket:
         self._messages = list(messages)
         self._die = die
 
-    async def __aenter__(self) -> "_FakeSocket":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *_: object) -> None:
@@ -151,8 +151,8 @@ class TestDeadFeedDetection:
         manager.stop = AsyncMock()  # type: ignore[method-assign]
         manager._bsm = MagicMock()
         manager._bsm.futures_multiplex_socket.return_value = _FakeSocket([])
-        manager._bsm.individual_symbol_ticker_futures_socket.return_value = (
-            _FakeSocket([])
+        manager._bsm.individual_symbol_ticker_futures_socket.return_value = _FakeSocket(
+            []
         )
         live = LiveStreamManager(
             ws_client=ws_client,

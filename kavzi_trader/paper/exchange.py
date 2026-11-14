@@ -44,6 +44,14 @@ _PROTECTIVE_ORDER_TYPES = frozenset(
 )
 
 
+_TRIGGERED_ORDER_TYPES = frozenset(
+    {OrderType.STOP_MARKET, OrderType.TAKE_PROFIT_MARKET},
+)
+
+# Binance "Unknown order sent": what cancelling an already-filled order returns.
+_ERROR_CODE_UNKNOWN_ORDER = -2011
+
+
 class _PaperPositionTracker(BaseModel):
     """Internal position tracking for paper futures exchange."""
 
@@ -503,19 +511,120 @@ class PaperExchangeClient(BinanceClient):
         order_id: int | None = None,
         client_order_id: str | None = None,
     ) -> OrderResponseSchema:
-        """Look up a simulated order, lazily filling resting limits on cross."""
-        if order_id is not None and order_id in self._orders:
-            return await self._maybe_fill_resting_limit(self._orders[order_id])
+        """Look up a simulated order, lazily filling resting orders on cross."""
+        order = self._find_order(order_id, client_order_id)
+        return await self._maybe_fill_resting_order(order)
 
+    def _find_order(
+        self,
+        order_id: int | None,
+        client_order_id: str | None,
+    ) -> OrderResponseSchema:
+        if order_id is not None and order_id in self._orders:
+            return self._orders[order_id]
         if client_order_id is not None:
             for order in self._orders.values():
                 if order.client_order_id == client_order_id:
-                    return await self._maybe_fill_resting_limit(order)
-
+                    return order
         raise ExchangeError(
             f"Paper order not found: order_id={order_id} "
             f"client_order_id={client_order_id}",
         )
+
+    async def _maybe_fill_resting_order(
+        self,
+        order: OrderResponseSchema,
+    ) -> OrderResponseSchema:
+        if order.type in _TRIGGERED_ORDER_TYPES:
+            return await self._maybe_fill_triggered_order(order)
+        return await self._maybe_fill_resting_limit(order)
+
+    async def _maybe_fill_triggered_order(
+        self,
+        order: OrderResponseSchema,
+    ) -> OrderResponseSchema:
+        """Fill a resting STOP_MARKET / TAKE_PROFIT_MARKET once price crosses it.
+
+        Stops fill at the worse of trigger and current price (a real stop-market
+        slips through gaps); take-profits fill at the trigger so a favourable
+        gap never inflates paper PnL.
+        """
+        if order.status != OrderStatus.NEW or order.stop_price is None:
+            return order
+
+        if order.symbol not in self._positions:
+            # Real Binance drops reduce-only orders once the position is flat.
+            return self._cancel_orphaned_order(order)
+
+        ticker = await self.get_ticker(order.symbol)
+        last_price = ticker.last_price
+        is_stop = order.type == OrderType.STOP_MARKET
+        # A SELL stop / BUY take-profit triggers on a falling price, and vice versa.
+        triggers_below = (order.side == OrderSide.SELL) == is_stop
+        crossed = (
+            last_price <= order.stop_price
+            if triggers_below
+            else last_price >= order.stop_price
+        )
+        if not crossed:
+            return order
+
+        if not is_stop:
+            fill_price = order.stop_price
+        elif order.side == OrderSide.SELL:
+            fill_price = min(order.stop_price, last_price)
+        else:
+            fill_price = max(order.stop_price, last_price)
+
+        position = self._positions[order.symbol]
+        fill_qty = min(order.orig_qty, position.quantity)
+        self._apply_balance_change(
+            order.symbol, order.side, fill_qty, fill_price, reduce_only=True
+        )
+        fill = OrderFillSchema(
+            price=fill_price,
+            qty=fill_qty,
+            commission=fill_qty * fill_price * self._commission_rate,
+            commission_asset="USDT",
+        )
+        filled = order.model_copy(
+            update={
+                "status": OrderStatus.FILLED,
+                "executed_qty": fill_qty,
+                "avg_price": fill_price,
+                "fills": [fill],
+                "update_time": utc_now(),
+                "is_working": False,
+            },
+        )
+        self._orders[order.order_id] = filled
+        logger.info(
+            "Paper %s %s triggered for %s: trigger=%s last=%s fill=%s",
+            order.type.value,
+            order.order_id,
+            order.symbol,
+            order.stop_price,
+            last_price,
+            fill_price,
+        )
+        await self._sync_balance_to_store()
+        return filled
+
+    def _cancel_orphaned_order(self, order: OrderResponseSchema) -> OrderResponseSchema:
+        cancelled = order.model_copy(
+            update={
+                "status": OrderStatus.CANCELED,
+                "update_time": utc_now(),
+                "is_working": False,
+            },
+        )
+        self._orders[order.order_id] = cancelled
+        logger.info(
+            "Paper protective order %s cancelled: no position left for %s",
+            order.order_id,
+            order.symbol,
+        )
+        return cancelled
 
     async def cancel_order(
         self,
@@ -523,12 +632,17 @@ class PaperExchangeClient(BinanceClient):
         order_id: int | None = None,
         client_order_id: str | None = None,
     ) -> OrderResponseSchema:
-        """Cancel a simulated order."""
+        """Cancel a simulated order; filled orders raise like Binance's -2011."""
         existing = await self.get_order(
             symbol,
             order_id=order_id,
             client_order_id=client_order_id,
         )
+        if existing.status == OrderStatus.FILLED:
+            raise ExchangeError(
+                f"Unknown order sent: order {existing.order_id} already filled",
+                code=_ERROR_CODE_UNKNOWN_ORDER,
+            )
         cancelled = existing.model_copy(
             update={
                 "status": OrderStatus.CANCELED,
@@ -544,7 +658,10 @@ class PaperExchangeClient(BinanceClient):
         self,
         symbol: str | None = None,
     ) -> list[OrderResponseSchema]:
-        """Return simulated orders with status NEW."""
+        """Return simulated orders with status NEW, triggering crossed ones first."""
+        for order in list(self._orders.values()):
+            if order.type in _TRIGGERED_ORDER_TYPES:
+                await self._maybe_fill_triggered_order(order)
         result = [o for o in self._orders.values() if o.status == OrderStatus.NEW]
         if symbol is not None:
             result = [o for o in result if o.symbol == symbol]

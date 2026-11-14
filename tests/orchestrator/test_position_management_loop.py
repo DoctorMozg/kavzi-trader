@@ -54,6 +54,7 @@ def _make_loop(
         atr_provider=atr_provider or AsyncMock(),
         price_provider=price_provider or AsyncMock(),
         action_executor=action_executor or AsyncMock(),
+        fill_detector=AsyncMock(detect=AsyncMock(return_value=None)),
         interval_s=5,
     )
 

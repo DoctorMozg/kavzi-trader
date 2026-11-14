@@ -52,6 +52,11 @@ class PositionActionExecutor:
         # PositionActionType.FULL_EXIT
         return await self._full_exit(position)
 
+    async def close_after_exchange_fill(self, position: PositionSchema) -> None:
+        """Drop a position the exchange already closed, with its surviving orders."""
+        await self._cancel_linked_orders(position)
+        await self._state.remove_position(position.id)
+
     async def _partial_exit(
         self,
         position: PositionSchema,

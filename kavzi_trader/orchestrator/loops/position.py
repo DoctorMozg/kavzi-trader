@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from decimal import Decimal
 from typing import Literal, Protocol
 
 from kavzi_trader.reporting.trade_report_populator import TradeReportPopulator
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
+from kavzi_trader.spine.position.exchange_fill_detector import ExchangeFillDetector
 from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.position_action_schema import PositionActionSchema
 from kavzi_trader.spine.position.position_action_type import PositionActionType
@@ -34,18 +36,23 @@ class PositionManagementLoop:
         atr_provider: AtrProvider,
         price_provider: PriceProvider,
         action_executor: PositionActionExecutor,
+        fill_detector: ExchangeFillDetector,
         interval_s: int,
         report_populator: TradeReportPopulator | None = None,
         cycle_timeout_s: int = 30,
+        fill_check_interval_s: int = 15,
     ) -> None:
         self._manager = manager
         self._state_manager = state_manager
         self._atr_provider = atr_provider
         self._price_provider = price_provider
         self._action_executor = action_executor
+        self._fill_detector = fill_detector
         self._interval_s = interval_s
         self._report_populator = report_populator
         self._cycle_timeout_s = cycle_timeout_s
+        self._fill_check_interval_s = fill_check_interval_s
+        self._last_fill_check_s: float | None = None
 
     async def run(self) -> None:
         logger.info(
@@ -67,6 +74,8 @@ class PositionManagementLoop:
 
     async def _manage_positions(self) -> None:
         positions = await self._state_manager.get_all_positions()
+        if positions and self._fill_check_due():
+            positions = await self._drop_exchange_closed(positions)
         if positions:
             logger.debug(
                 "Position management cycle: %d open positions",
@@ -89,6 +98,66 @@ class PositionManagementLoop:
                     "position_count": len(positions),
                 },
             )
+
+    def _fill_check_due(self) -> bool:
+        now_s = time.monotonic()
+        if (
+            self._last_fill_check_s is not None
+            and now_s - self._last_fill_check_s < self._fill_check_interval_s
+        ):
+            return False
+        self._last_fill_check_s = now_s
+        return True
+
+    async def _drop_exchange_closed(
+        self,
+        positions: list[PositionSchema],
+    ) -> list[PositionSchema]:
+        """Handle positions the exchange closed via SL/TP; return the rest."""
+        results = await asyncio.gather(
+            *(self._handle_exchange_close(p) for p in positions),
+        )
+        return [p for p, closed in zip(positions, results, strict=True) if not closed]
+
+    async def _handle_exchange_close(self, position: PositionSchema) -> bool:
+        try:
+            return await self._close_if_exchange_closed(position)
+        except Exception:
+            logger.exception(
+                "Exchange fill check failed for %s",
+                position.symbol,
+                extra={"loop": "position", "position_id": position.id},
+            )
+            return False
+
+    async def _close_if_exchange_closed(self, position: PositionSchema) -> bool:
+        close = await self._fill_detector.detect(position)
+        if close is None:
+            return False
+        exit_price = close.exit_price
+        if exit_price is None:
+            exit_price = await self._price_provider.get_current_price(position.symbol)
+        logger.warning(
+            "Position %s on %s was closed by the exchange (%s) at %s",
+            position.id,
+            position.symbol,
+            close.close_reason,
+            exit_price,
+            extra={
+                "loop": "position",
+                "position_id": position.id,
+                "symbol": position.symbol,
+                "close_reason": close.close_reason,
+                "exit_price": str(exit_price),
+            },
+        )
+        await self._action_executor.close_after_exchange_fill(position)
+        await self._safe_report_position_close(
+            position,
+            close.close_reason,
+            exit_price,
+        )
+        return True
 
     async def _manage_single_position(
         self,
