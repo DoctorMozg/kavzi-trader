@@ -74,7 +74,7 @@ class CaseMeter:
         tally = self._tallies[role]
         tally.requests += 1
         tally.latency_ms += elapsed_ms
-        tally.error = type(error).__name__
+        tally.error = f"{type(error).__name__}: {error}"[:300]
 
     def metrics(
         self, role: Role, model_id: str, costs: CostCalculator

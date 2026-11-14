@@ -145,6 +145,7 @@ class TestFullPipeline:
         agents = FakeLlmAgents(app_config, refuse="analyst")
         result = await make_runner(agents, StubScout("INTERESTING")).run_case(case)
 
+        assert result.status == "ok"
         assert result.stopped_at == "analyst_error"
         assert result.analyst is not None
         assert result.analyst.direction is None
@@ -164,6 +165,22 @@ class TestFullPipeline:
         assert result.trader.stop_reason == "llm_unexpected_model"
         assert result.trader.stop_loss is None
         assert result.trader.metrics.error == "refusal"
+
+    @pytest.mark.parametrize("role", ["analyst", "trader"])
+    async def test_api_failure_marks_case_as_error_for_resume(
+        self,
+        make_runner: RunnerFactory,
+        app_config: AppConfig,
+        case: EvalCaseSchema,
+        role: str,
+    ) -> None:
+        agents = FakeLlmAgents(app_config, http_error=role)
+        result = await make_runner(agents, StubScout("INTERESTING")).run_case(case)
+
+        assert result.stopped_at == f"{role}_error"
+        assert result.status == "error"
+        assert result.error is not None
+        assert "ModelHTTPError" in result.error
 
     async def test_unparseable_trader_output_is_recorded_as_no_decision(
         self, make_runner: RunnerFactory, app_config: AppConfig, case: EvalCaseSchema

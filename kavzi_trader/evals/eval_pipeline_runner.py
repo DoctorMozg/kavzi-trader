@@ -92,9 +92,17 @@ class EvalPipelineRunner:
         analyst_metrics = meter.metrics("analyst", self._analyst_model, self._costs)
         trader_metrics = meter.metrics("trader", self._trader_model, self._costs)
         real_scout = scout.verdict
+        stopped_at = self._stopped_at(result, analyst_metrics, trader_metrics)
+        # A failed API request is infrastructure, not a decision: mark it so
+        # --resume retries the case instead of scoring it as "no trade".
+        api_error = {
+            "analyst_error": analyst_metrics.error,
+            "trader_error": trader_metrics.error,
+        }.get(stopped_at)
         return CaseResultSchema(
             case_id=case.case_id,
-            status="ok",
+            status="error" if api_error else "ok",
+            error=api_error,
             label=case.label.value,
             regime=case.regime,
             tier=case.tier,
@@ -107,7 +115,7 @@ class EvalPipelineRunner:
                 and real_scout is not None
                 and real_scout.verdict != "INTERESTING"
             ),
-            stopped_at=self._stopped_at(result, analyst_metrics, trader_metrics),
+            stopped_at=stopped_at,
             analyst=self._analyst_record(result, analyst_metrics),
             trader=self._trader_record(anonymized, result, trader_metrics),
         )

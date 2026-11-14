@@ -63,7 +63,8 @@ class TestMeteredModel:
             else:
                 raise AssertionError("TimeoutError should propagate")
 
-        assert meter.metrics("analyst", "x", CostCalculator()).error == "TimeoutError"
+        error = meter.metrics("analyst", "x", CostCalculator()).error
+        assert error == "TimeoutError: slow"
 
     async def test_meters_of_concurrent_cases_stay_separate(self) -> None:
         reply = ModelResponse(

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -153,6 +154,7 @@ class FakeLlmAgents:
         trader_reply: dict[str, object] | None = None,
         *,
         refuse: str | None = None,
+        http_error: str | None = None,
     ) -> None:
         brain = BrainConfigSchema.model_validate(
             {
@@ -172,6 +174,7 @@ class FakeLlmAgents:
             "trader": TRADER_JSON | (trader_reply or {}),
         }
         self._refuse = refuse
+        self._http_error = http_error
         self.log = PromptLog()
         self.calls = {"analyst": 0, "trader": 0}
 
@@ -182,6 +185,8 @@ class FakeLlmAgents:
             sink.append(_user_text(messages))
             self.log.instructions.extend(_instructions(messages))
             self.calls[role] += 1
+            if self._http_error == role:
+                raise ModelHTTPError(400, f"fake-{role}", {"error": "bad request"})
             if self._refuse == role:
                 return ModelResponse(parts=[], finish_reason="content_filter")
             return ModelResponse(parts=[TextPart(json.dumps(self._replies[role]))])
