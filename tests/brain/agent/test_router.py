@@ -1339,7 +1339,7 @@ def test_pre_trader_breakout_rejects_long_overextended(
         positions,
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    result = router._trader_pipeline.pre_trader_breakout_check(
+    result = router._trader_pipeline._gates.pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1371,7 +1371,7 @@ def test_pre_trader_breakout_allows_short_at_high_b(
         positions,
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    result = router._trader_pipeline.pre_trader_breakout_check(
+    result = router._trader_pipeline._gates.pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1401,7 +1401,7 @@ def test_pre_trader_breakout_rejects_short_overextended(
         positions,
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    result = router._trader_pipeline.pre_trader_breakout_check(
+    result = router._trader_pipeline._gates.pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1433,7 +1433,7 @@ def test_pre_trader_breakout_allows_long_at_low_b(
         positions,
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
-    result = router._trader_pipeline.pre_trader_breakout_check(
+    result = router._trader_pipeline._gates.pre_trader_breakout_check(
         "BTCUSDT",
         "BREAKOUT",
         deps,
@@ -1465,7 +1465,7 @@ def test_pre_trader_breakout_caution_long_zone(
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
     with caplog.at_level(logging.WARNING):
-        result = router._trader_pipeline.pre_trader_breakout_check(
+        result = router._trader_pipeline._gates.pre_trader_breakout_check(
             "BTCUSDT",
             "BREAKOUT",
             deps,
@@ -1498,7 +1498,7 @@ def test_pre_trader_breakout_caution_short_zone(
     )
     router = AgentRouter(DummyScout("INTERESTING"), DummyAnalyst(True), DummyTrader())
     with caplog.at_level(logging.WARNING):
-        result = router._trader_pipeline.pre_trader_breakout_check(
+        result = router._trader_pipeline._gates.pre_trader_breakout_check(
             "BTCUSDT",
             "BREAKOUT",
             deps,

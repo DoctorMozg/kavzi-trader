@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
+from kavzi_trader.brain.agent.protocols import ScoutDepsFetcher, ScoutRunner
 from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
 from kavzi_trader.domain.scout_dependencies import ScoutDependenciesSchema
 
@@ -21,14 +22,6 @@ _SKIP_NO_CANDLES = ScoutDecisionSchema(
     reason="agent_error",
     pattern_detected=None,
 )
-
-
-class ScoutRunner(Protocol):
-    async def run(self, deps: ScoutDependenciesSchema) -> ScoutDecisionSchema: ...
-
-
-class ScoutDepsFetcher(Protocol):
-    async def get_scout(self, symbol: str) -> ScoutDependenciesSchema: ...
 
 
 class ScoutPipelineResultSchema(BaseModel):

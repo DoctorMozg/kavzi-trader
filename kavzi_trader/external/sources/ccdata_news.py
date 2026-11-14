@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from datetime import UTC, datetime
@@ -6,6 +5,7 @@ from decimal import Decimal
 
 import httpx2
 
+from kavzi_trader.commons.retry import RetryPolicySchema, retry_async
 from kavzi_trader.external.base import ExternalSource
 from kavzi_trader.external.schemas import CCDataNewsDataSchema
 
@@ -14,7 +14,19 @@ logger = logging.getLogger(__name__)
 _CCDATA_NEWS_URL = "https://data-api.ccdata.io/news/v1/article/list"
 _TIMEOUT_S = 10.0
 _MAX_RETRIES = 3
-_RETRY_BACKOFF_BASE_S = 1.0
+_RETRYABLE_ERRORS = (
+    httpx2.HTTPStatusError,
+    httpx2.RequestError,
+    json.JSONDecodeError,
+    ValueError,
+    KeyError,
+    AttributeError,
+)
+_RETRY_POLICY = RetryPolicySchema(
+    attempts=_MAX_RETRIES,
+    backoff_base_s=1.0,
+    retry_on=_RETRYABLE_ERRORS,
+)
 _HTTP_FORBIDDEN = 403
 
 
@@ -72,84 +84,54 @@ class CCDataNewsSource(ExternalSource):
         """Fetch raw article list with bounded retries.
 
         Transient network / 5xx errors are retried with exponential
-        backoff (1s, 2s, 4s) up to `_MAX_RETRIES` attempts. Intermediate
-        failures are logged as warnings; the final failure is logged
-        once as an exception and `None` is returned so the caller's
-        graceful-degradation path (stale cache + circuit breaker in
-        `external/loop.py`) can take over.
+        backoff (1s, 2s) across `_MAX_RETRIES` attempts. The final failure
+        is logged once as an exception and `None` is returned so the
+        caller's graceful-degradation path (stale cache + circuit breaker
+        in `external/loop.py`) can take over.
         """
-        for attempt in range(1, _MAX_RETRIES + 1):
-            try:
-                resp = await self._client.get(
-                    _CCDATA_NEWS_URL,
-                    params={
-                        "lang": "EN",
-                        "categories": "BTC,ETH",
-                        "limit": self._max_results,
-                    },
-                )
-                resp.raise_for_status()
-                body = resp.json()
-                articles: list[dict[str, object]] = body.get("Data", [])
-            except httpx2.HTTPStatusError as exc:
-                if exc.response.status_code == _HTTP_FORBIDDEN:
-                    # 403 means access denied — the free tier now requires an
-                    # API key. Retrying won't help; self-disable for the session
-                    # to avoid log spam and wasted cycles.
-                    self._permanently_disabled = True
-                    logger.warning(
-                        "CCData news API returned 403 Forbidden — "
-                        "source disabled for this session. "
-                        "Set external_sources.ccdata_news.enabled=false to suppress.",
-                        extra={"status_code": 403},
-                    )
-                    return None
-                if attempt < _MAX_RETRIES:
-                    backoff_s = _RETRY_BACKOFF_BASE_S * (2 ** (attempt - 1))
-                    logger.warning(
-                        "CCData news fetch attempt %d/%d failed: %s; retrying in %.1fs",
-                        attempt,
-                        _MAX_RETRIES,
-                        exc,
-                        backoff_s,
-                        extra={"attempt": attempt, "max_retries": _MAX_RETRIES},
-                    )
-                    await asyncio.sleep(backoff_s)
-                    continue
-                logger.exception(
-                    "CCData news fetch failed after %d attempts",
-                    attempt,
-                    extra={"attempts": attempt},
-                )
-                return None
-            except (
-                httpx2.RequestError,
-                json.JSONDecodeError,
-                ValueError,
-                KeyError,
-                AttributeError,
-            ) as exc:
-                if attempt < _MAX_RETRIES:
-                    backoff_s = _RETRY_BACKOFF_BASE_S * (2 ** (attempt - 1))
-                    logger.warning(
-                        "CCData news fetch attempt %d/%d failed: %s; retrying in %.1fs",
-                        attempt,
-                        _MAX_RETRIES,
-                        exc,
-                        backoff_s,
-                        extra={"attempt": attempt, "max_retries": _MAX_RETRIES},
-                    )
-                    await asyncio.sleep(backoff_s)
-                    continue
-                logger.exception(
-                    "CCData news fetch failed after %d attempts",
-                    attempt,
-                    extra={"attempts": attempt},
-                )
-                return None
-            else:
-                return articles
-        return None
+        try:
+            return await retry_async(
+                self._fetch_articles,
+                _RETRY_POLICY,
+                name="CCData news fetch",
+            )
+        except _RETRYABLE_ERRORS:
+            logger.exception(
+                "CCData news fetch failed after %d attempts",
+                _MAX_RETRIES,
+                extra={"attempts": _MAX_RETRIES},
+            )
+            return None
+
+    async def _fetch_articles(self) -> list[dict[str, object]] | None:
+        """One fetch attempt; `None` means the source is now disabled."""
+        try:
+            resp = await self._client.get(
+                _CCDATA_NEWS_URL,
+                params={
+                    "lang": "EN",
+                    "categories": "BTC,ETH",
+                    "limit": self._max_results,
+                },
+            )
+            resp.raise_for_status()
+        except httpx2.HTTPStatusError as exc:
+            if exc.response.status_code != _HTTP_FORBIDDEN:
+                raise
+            # 403 means access denied — the free tier now requires an API
+            # key. Retrying won't help; self-disable for the session to
+            # avoid log spam and wasted cycles.
+            self._permanently_disabled = True
+            logger.warning(
+                "CCData news API returned 403 Forbidden — "
+                "source disabled for this session. "
+                "Set external_sources.ccdata_news.enabled=false to suppress.",
+                extra={"status_code": 403},
+            )
+            return None
+        body = resp.json()
+        articles: list[dict[str, object]] = body.get("Data", [])
+        return articles
 
     def _parse_articles(
         self,

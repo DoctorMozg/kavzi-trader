@@ -1,10 +1,6 @@
 import logging
-import time
 
-from pydantic_ai import Agent
-
-from kavzi_trader.brain.context.builder import ContextBuilder
-from kavzi_trader.brain.prompts.loader import PromptLoader
+from kavzi_trader.brain.agent.prompted_agent import PromptedAgent
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
 from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
 from kavzi_trader.domain.trade_decision import TradeDecisionSchema
@@ -12,20 +8,12 @@ from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 logger = logging.getLogger(__name__)
 
 
-class TraderAgent:
+class TraderAgent(PromptedAgent[TradingDependenciesSchema, TradeDecisionSchema]):
     """
     Produces the final trade decision and management parameters.
     """
 
-    def __init__(
-        self,
-        agent: Agent[TradingDependenciesSchema, TradeDecisionSchema],
-        prompt_loader: PromptLoader,
-        context_builder: ContextBuilder,
-    ) -> None:
-        self._agent = agent
-        self._prompt_loader = prompt_loader
-        self._context_builder = context_builder
+    _label = "Trader"
 
     async def run(
         self,
@@ -40,10 +28,7 @@ class TraderAgent:
             scout_pattern=scout_pattern,
         )
         user_prompt = self._prompt_loader.render_user_prompt("make_decision", context)
-        t0 = time.monotonic()
-        result = await self._agent.run(user_prompt, deps=deps)
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        output = result.output
+        output, elapsed_ms = await self._run_llm(deps.symbol, user_prompt, deps)
         logger.info(
             "Trader result for %s: action=%s confidence=%.2f "
             "entry_tactic=%s entry_idx=%s stop_idx=%s stop_atr=%s "

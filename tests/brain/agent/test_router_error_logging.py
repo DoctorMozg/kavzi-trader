@@ -16,7 +16,7 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from kavzi_trader.brain.agent.router import _log_llm_exception
+from kavzi_trader.brain.agent.llm_error_logging import log_llm_exception
 
 Handler = Callable[[httpx2.Request], httpx2.Response]
 
@@ -56,7 +56,7 @@ def _timeout_handler(request: httpx2.Request) -> httpx2.Response:
 
 
 def _log(exc: BaseException, symbol: str = "BTCUSDT", agent: str = "analyst") -> None:
-    _log_llm_exception(
+    log_llm_exception(
         symbol,
         agent,
         exc,
@@ -121,7 +121,7 @@ def test_builtin_timeout_error_logged_as_timeout(
     exc = TimeoutError("builtin timeout")
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception(
+        log_llm_exception(
             "XRPUSDT",
             "analyst",
             exc,
@@ -142,7 +142,7 @@ def test_unexpected_model_body_preview_in_message(
     exc = UnexpectedModelBehavior("parse failed", body=long_body)
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception(
+        log_llm_exception(
             "ADAUSDT",
             "trader",
             exc,
@@ -169,7 +169,7 @@ def test_unexpected_model_handles_none_body(
     exc = UnexpectedModelBehavior("parse failed", body=None)
 
     with caplog.at_level(logging.WARNING):
-        _log_llm_exception(
+        log_llm_exception(
             "LINKUSDT",
             "trader",
             exc,
@@ -192,7 +192,7 @@ def test_generic_exception_includes_type_and_prefix(
     exc = RuntimeError(message)
 
     with caplog.at_level(logging.ERROR):
-        _log_llm_exception(
+        log_llm_exception(
             "AVAXUSDT",
             "analyst",
             exc,

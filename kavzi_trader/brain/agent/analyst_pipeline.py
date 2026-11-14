@@ -1,13 +1,19 @@
 import asyncio
 import logging
 import time
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from kavzi_trader.brain.agent.circuit_breaker import AgentCircuitBreaker
 from kavzi_trader.brain.agent.decision_dedup import DecisionDeduplicator
+from kavzi_trader.brain.agent.protocols import (
+    AnalystDepsFetcher,
+    AnalystRunner,
+    ConfluenceOverrideProvider,
+    LLMExceptionLogger,
+)
 from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_ENTER_MIN,
     COUNTER_TREND_GATE_BUMP,
@@ -24,28 +30,6 @@ logger = logging.getLogger(__name__)
 # Sourced from the shared confluence_thresholds module so reasoning loop,
 # router, and prompt templates all use the same value.
 _ANALYST_CONFLUENCE_ENTER = CONFLUENCE_ENTER_MIN
-
-
-class AnalystRunner(Protocol):
-    async def run(self, deps: AnalystDependenciesSchema) -> AnalystDecisionSchema: ...
-
-
-class AnalystDepsFetcher(Protocol):
-    async def get_analyst(self, symbol: str) -> AnalystDependenciesSchema: ...
-
-
-class ConfluenceOverrideProvider(Protocol):
-    def get_confluence_override(self, direction: str) -> int | None: ...
-
-
-class LLMExceptionLogger(Protocol):
-    def __call__(
-        self,
-        symbol: str,
-        agent: str,
-        exc: BaseException,
-        elapsed_ms: float,
-    ) -> None: ...
 
 
 _AnalystStopReason = Literal[
@@ -113,12 +97,10 @@ class AnalystPipeline:
         self._concurrency_limit = concurrency_limit
         self._confluence_override = confluence_override
         self._log_llm_exception = log_llm_exception
-        self._circuit_breaker = AgentCircuitBreaker(threshold=circuit_threshold)
-        self._open_skip_cycles = circuit_open_cycles
-        # Tracks how many more cycles to skip per symbol while the circuit is open.
-        # Populated when the circuit trips; cleared when the last skip cycle elapses
-        # (at which point the failure counter is also reset).
-        self._skip_cycles_remaining: dict[str, int] = {}
+        self._circuit_breaker = AgentCircuitBreaker(
+            threshold=circuit_threshold,
+            cooldown_cycles=circuit_open_cycles,
+        )
         # Semaphore gating Analyst LLM calls. Acquired only around the LLM
         # await so cached dedup hits and deterministic skip gates don't
         # consume slots. Created lazily per event loop so construction in
@@ -145,14 +127,8 @@ class AnalystPipeline:
         # Circuit breaker: skip LLM while symbol is in the cooling window.
         # When the last skip cycle elapses the counter is reset so the LLM
         # is retried cleanly on the next evaluation.
-        skip_remaining = self._skip_cycles_remaining.get(symbol, 0)
+        skip_remaining = self._circuit_breaker.consume_cooldown_cycle(symbol)
         if skip_remaining > 0:
-            new_remaining = skip_remaining - 1
-            if new_remaining == 0:
-                self._skip_cycles_remaining.pop(symbol, None)
-                self._circuit_breaker.reset(symbol)
-            else:
-                self._skip_cycles_remaining[symbol] = new_remaining
             logger.warning(
                 "Analyst circuit open for %s: skipping LLM call (%d cycles remaining)",
                 symbol,
@@ -261,13 +237,12 @@ class AnalystPipeline:
             if isinstance(exc, UnexpectedModelBehavior):
                 failures = self._circuit_breaker.record_failure(symbol)
                 if self._circuit_breaker.is_open(symbol):
-                    self._skip_cycles_remaining[symbol] = self._open_skip_cycles
                     logger.warning(
                         "Analyst circuit opened for %s after %d consecutive parse"
                         " failures; suppressing LLM calls for %d cycles",
                         symbol,
                         failures,
-                        self._open_skip_cycles,
+                        self._circuit_breaker.cooldown_cycles,
                         extra={"symbol": symbol, "agent": "analyst"},
                     )
             return AnalystPipelineResultSchema(
@@ -282,7 +257,6 @@ class AnalystPipeline:
         # same candle can short-circuit via the dedup hit above.
         self._dedup.cache_analyst(symbol, bar_close=current_bar, result=result)
         self._circuit_breaker.reset(symbol)
-        self._skip_cycles_remaining.pop(symbol, None)
         return self._apply_confluence_gate(
             symbol,
             decision=result,

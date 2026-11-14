@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import builtins
 import logging
 from collections.abc import Awaitable, Callable, Mapping
@@ -17,6 +16,7 @@ from redis.exceptions import (
 from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
+from kavzi_trader.commons.retry import RetryPolicySchema, retry_async
 from kavzi_trader.infra.redis_config import RedisConfigSchema
 
 logger = logging.getLogger(__name__)
@@ -71,31 +71,25 @@ class RedisStateClient:
         **kwargs: object,
     ) -> T:
         """Execute a Redis operation with retry on transient failures."""
-        last_error: Exception | None = None
-        for attempt in range(1, self._retry_attempts + 1):
-            try:
-                return await operation(*args, **kwargs)
-            except _RETRYABLE as exc:
-                last_error = exc
-                if attempt < self._retry_attempts:
-                    delay = self._retry_backoff_s * attempt
-                    logger.warning(
-                        "Redis operation failed (attempt %d/%d), retrying in %.1fs: %s",
-                        attempt,
-                        self._retry_attempts,
-                        delay,
-                        exc,
-                    )
-                    await asyncio.sleep(delay)
-                    await self._reconnect()
-            except RedisError as exc:
-                logger.exception("Non-retryable Redis error")
-                raise RedisStateError(str(exc)) from exc
-        msg = (
-            f"Redis operation failed after {self._retry_attempts} attempts: "
-            f"{last_error}"
+        policy = RetryPolicySchema(
+            attempts=self._retry_attempts,
+            backoff_base_s=self._retry_backoff_s,
+            retry_on=_RETRYABLE,
+            strategy="linear",
         )
-        raise RedisStateError(msg)
+        try:
+            return await retry_async(
+                lambda: operation(*args, **kwargs),
+                policy,
+                name="Redis operation",
+                before_retry=self._reconnect,
+            )
+        except _RETRYABLE as exc:
+            msg = f"Redis operation failed after {self._retry_attempts} attempts: {exc}"
+            raise RedisStateError(msg) from exc
+        except RedisError as exc:
+            logger.exception("Non-retryable Redis error")
+            raise RedisStateError(str(exc)) from exc
 
     async def _reconnect(self) -> None:
         """Attempt to re-establish the Redis connection."""

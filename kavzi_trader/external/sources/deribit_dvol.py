@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from datetime import UTC, datetime
@@ -6,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 import httpx2
 
+from kavzi_trader.commons.retry import RetryPolicySchema, retry_async
 from kavzi_trader.external.base import ExternalSource
 from kavzi_trader.external.schemas import DeribitDvolDataSchema
 
@@ -15,9 +15,14 @@ _DERIBIT_BASE = "https://www.deribit.com/api/v2/public"
 _DVOL_URL = f"{_DERIBIT_BASE}/get_index_price"
 _BOOK_SUMMARY_URL = f"{_DERIBIT_BASE}/get_book_summary_by_currency"
 _TIMEOUT_S = 15.0
-_MAX_RETRIES = 2
-_RETRY_BACKOFF_S = 1.0
 _ZERO = Decimal(0)
+# 3 attempts, waiting 1s then 2s between them.
+_RETRY_POLICY = RetryPolicySchema(
+    attempts=3,
+    backoff_base_s=1.0,
+    retry_on=(httpx2.HTTPStatusError, httpx2.TimeoutException),
+    strategy="linear",
+)
 
 
 class DeribitDvolSource(ExternalSource):
@@ -68,31 +73,14 @@ class DeribitDvolSource(ExternalSource):
         url: str,
         params: dict[str, str],
     ) -> httpx2.Response:
-        """GET with simple retry on transient HTTP/timeout errors."""
-        last_exc: httpx2.HTTPStatusError | httpx2.TimeoutException | None = None
-        for attempt in range(_MAX_RETRIES + 1):
-            try:
-                resp = await self._client.get(url, params=params)
-                resp.raise_for_status()
-            except (httpx2.HTTPStatusError, httpx2.TimeoutException) as exc:
-                last_exc = exc
-                if attempt < _MAX_RETRIES:
-                    delay = _RETRY_BACKOFF_S * (attempt + 1)
-                    logger.warning(
-                        "Deribit request to %s failed (attempt %d/%d), "
-                        "retrying in %.1fs: %s",
-                        url,
-                        attempt + 1,
-                        _MAX_RETRIES + 1,
-                        delay,
-                        exc,
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                raise
-            else:
-                return resp
-        raise last_exc  # type: ignore[misc]
+        """GET with retry on transient HTTP/timeout errors."""
+
+        async def _get() -> httpx2.Response:
+            resp = await self._client.get(url, params=params)
+            resp.raise_for_status()
+            return resp
+
+        return await retry_async(_get, _RETRY_POLICY, name=f"Deribit request to {url}")
 
     async def _fetch_dvol(self) -> Decimal:
         resp = await self._get_with_retry(

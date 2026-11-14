@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import httpx2
 import pytest
 
+from kavzi_trader.commons import retry as retry_module
 from kavzi_trader.external.sources import ccdata_news as ccdata_news_module
 from kavzi_trader.external.sources.ccdata_news import CCDataNewsSource
 
@@ -20,7 +21,7 @@ def _fast_retry_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr(ccdata_news_module.asyncio, "sleep", _no_sleep)
+    monkeypatch.setattr(retry_module.asyncio, "sleep", _no_sleep)
 
 
 def _mock_response() -> Mock:
