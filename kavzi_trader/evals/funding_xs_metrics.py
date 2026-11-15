@@ -9,6 +9,8 @@ _DAYS_PER_YEAR = 365
 _MS_PER_S = 1000
 _MIN_SHARPE = 0.5
 _MIN_POSITIVE_YEARS = 3
+# Sample std (ddof=1) needs two returns.
+_MIN_MARKS = 2
 
 
 class FundingXsMetrics:
@@ -17,8 +19,8 @@ class FundingXsMetrics:
     @staticmethod
     def summarize(run: FundingXsRunSchema) -> FundingXsSummarySchema:
         days = run.days
-        if len(days) < 2:
-            msg = f"need at least 2 daily marks, got {len(days)}"
+        if len(days) < _MIN_MARKS:
+            msg = f"need at least {_MIN_MARKS} daily marks, got {len(days)}"
             raise ValueError(msg)
         returns = np.array([d.net_return for d in days])
         equity = np.array([1.0, *(d.equity for d in days)])
@@ -27,7 +29,7 @@ class FundingXsMetrics:
         yearly: dict[int, float] = {}
         for day in days:
             year = datetime.fromtimestamp(day.day_ms / _MS_PER_S, UTC).year
-            yearly[year] = (yearly.get(year, 1.0) * (1.0 + day.net_return)) 
+            yearly[year] = yearly.get(year, 1.0) * (1.0 + day.net_return)
         return FundingXsSummarySchema(
             days=len(days),
             annual_return=float(equity[-1] ** (1.0 / years) - 1.0),

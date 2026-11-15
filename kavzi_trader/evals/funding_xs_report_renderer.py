@@ -57,13 +57,25 @@ class FundingXsReportRenderer:
             ["Volatility", pct(net.annual_volatility), pct(gross.annual_volatility)],
             ["Sharpe", Md.rate(net.sharpe), Md.rate(gross.sharpe)],
             ["Max drawdown", pct(net.max_drawdown), pct(gross.max_drawdown)],
-            ["Price component (annual)", pct(net.annual_price_return),
-             pct(gross.annual_price_return)],
-            ["Funding component (annual)", pct(net.annual_funding_return),
-             pct(gross.annual_funding_return)],
-            ["Costs (annual)", pct(net.annual_cost_return),
-             pct(gross.annual_cost_return)],
-            ["Turnover (sum |dw| per year)", f"{net.annual_turnover:.1f}",
-             f"{gross.annual_turnover:.1f}"],
+            [
+                "Price component (annual)",
+                pct(net.annual_price_return),
+                pct(gross.annual_price_return),
+            ],
+            [
+                "Funding component (annual)",
+                pct(net.annual_funding_return),
+                pct(gross.annual_funding_return),
+            ],
+            [
+                "Costs (annual)",
+                pct(net.annual_cost_return),
+                pct(gross.annual_cost_return),
+            ],
+            [
+                "Turnover (sum |dw| per year)",
+                f"{net.annual_turnover:.1f}",
+                f"{gross.annual_turnover:.1f}",
+            ],
         ]
         return Md.table(["Metric", "Net", "Gross"], rows)

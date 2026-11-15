@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class FundingXsParamsSchema(BaseModel):
-    """Knobs of the cross-sectional funding rule; defaults are the pre-registered ones."""
+    """Cross-sectional funding rule knobs; defaults are the pre-registered ones."""
 
     legs: Annotated[int, Field(ge=1)] = 3
     hold_days: Annotated[int, Field(ge=1)] = 3

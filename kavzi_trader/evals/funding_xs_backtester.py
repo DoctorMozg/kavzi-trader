@@ -28,8 +28,12 @@ class FundingXsBacktester:
         self._prices = prices
         self._params = params
         self._marks = prices.index.to_numpy(dtype=np.int64)
-        self._times = {s: f[TIME].to_numpy(dtype=np.int64) for s, f in settlements.items()}
-        self._values = {s: f[VALUE].to_numpy(dtype=np.float64) for s, f in settlements.items()}
+        self._times = {
+            s: f[TIME].to_numpy(dtype=np.int64) for s, f in settlements.items()
+        }
+        self._values = {
+            s: f[VALUE].to_numpy(dtype=np.float64) for s, f in settlements.items()
+        }
         self._cum = {
             s: np.concatenate(([0.0], np.cumsum(v))) for s, v in self._values.items()
         }
@@ -76,7 +80,10 @@ class FundingXsBacktester:
             weights = target
             start = end
         return FundingXsRunSchema(
-            days=days, rebalances=rebalances, skipped_rebalances=skipped, turnover=turnover
+            days=days,
+            rebalances=rebalances,
+            skipped_rebalances=skipped,
+            turnover=turnover,
         )
 
     def _target_weights(self, row: int) -> dict[str, float]:
@@ -87,7 +94,7 @@ class FundingXsBacktester:
             return {}
         legs = self._picker.pick(scores)
         w = self._params.leg_weight
-        return {**{s: w for s in legs.longs}, **{s: -w for s in legs.shorts}}
+        return {**dict.fromkeys(legs.longs, w), **dict.fromkeys(legs.shorts, -w)}
 
     def _hold_days(
         self,
@@ -106,7 +113,10 @@ class FundingXsBacktester:
             price = _price_pnl(weights, entry, now)
             # A long pays positive funding, a short receives it.
             funding = -sum(
-                w * self.funding_rate_sum(s, int(self._marks[start]), int(self._marks[row]))
+                w
+                * self.funding_rate_sum(
+                    s, int(self._marks[start]), int(self._marks[row])
+                )
                 for s, w in weights.items()
             )
             day_cost = cost if row == start + 1 else 0.0
@@ -126,9 +136,7 @@ class FundingXsBacktester:
         return days
 
 
-def _price_pnl(
-    weights: dict[str, float], entry: pd.Series, now: pd.Series
-) -> float:
+def _price_pnl(weights: dict[str, float], entry: pd.Series, now: pd.Series) -> float:
     total = 0.0
     for symbol, w in weights.items():
         if np.isnan(now[symbol]):

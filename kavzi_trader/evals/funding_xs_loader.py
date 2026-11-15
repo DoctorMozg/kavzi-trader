@@ -12,7 +12,22 @@ logger = logging.getLogger(__name__)
 UNIVERSE = tuple(
     f"{base}USDT"
     for base in (
-        "BTC ETH SOL XRP BNB ADA LINK AVAX DOGE LTC DOT BCH ATOM TRX ETC FIL".split()
+        "BTC",
+        "ETH",
+        "SOL",
+        "XRP",
+        "BNB",
+        "ADA",
+        "LINK",
+        "AVAX",
+        "DOGE",
+        "LTC",
+        "DOT",
+        "BCH",
+        "ATOM",
+        "TRX",
+        "ETC",
+        "FIL",
     )
 )
 # 2022-03-15 00:00 UTC: first rebalance and day index 0 of the pre-registration.
