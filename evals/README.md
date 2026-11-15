@@ -112,6 +112,9 @@ Cache files in `data/eval_cache/`: `<SYMBOL>_15m.csv.gz` (and `<SYMBOL>_<interva
 - Longer timeframes cut the fee in R: about 0.07 to 0.14 R at 1h and 0.03 to 0.07 R at 4h. 1h, 12 months: no signal with positive lift (two negative cells).
 - 4h, 12 months: `ema_alignment` lift was positive in all 8 side and bracket cells (+0.04 to +0.23 R). Over 5 years (79k bars) it shrank to +0.01 to +0.05 R and was not significant, so the 12-month result was mostly one regime.
 - 4h, 5 years: `taker_flow` LONG lift was +0.04 to +0.075 R in all 4 brackets, above the fee in two, but only 2 of 104 tests passed, fewer than chance predicts. It is a lead to check out of sample (for example per year), not an edge.
+- 4h `taker_flow` LONG, year by year at `1.5:3:12`: lift was positive in all 5 years (+0.02 to +0.14 R) and +0.062 over 5 years, above the 0.036 R fee. But the fired bars themselves averaged only +0.027 R, below the fee: the signal makes LONG entries less bad than average, it does not make them profitable on its own. 1h agrees in sign but is weaker.
+- Scout `trend_vol_ratio_min` 1.2 instead of 0.8 (15m, `--scout-vol-min`): it halves the TREND_CONTINUATION calls and makes the LONG ones worse in all six brackets. The calls already have negative lift at 0.8.
+- RSI above 70 two bars running (`rsi_exhausted`): LONG after it did better than average (+0.09 to +0.21 R lift), so a guard that vetoes those LONGs would cut the better trades.
 - Implication: loosening the Scout or Analyst gates would trade noise. A new feature should show lift above the fee in `eval signals` first.
 
 Rerun the command before relying on these numbers, since they describe one data window.
