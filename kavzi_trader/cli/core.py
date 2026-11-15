@@ -22,12 +22,15 @@ def setup_cli_environment(
     app_config = AppConfig.from_env()
 
     log_level = "DEBUG" if verbose else app_config.monitoring.log_level
+    # DEBUG floods the terminal, so it reaches only the log file unless --verbose.
+    console_level = "INFO" if log_level == "DEBUG" and not verbose else log_level
     setup_logging(
         log_level=log_level,
         log_dir=app_config.system.results_dir / "logs",
         log_format=app_config.monitoring.log_format,
         console=True,
         name="kavzi_trader",
+        console_level=console_level,
     )
 
     if verbose:
@@ -36,4 +39,4 @@ def setup_cli_environment(
     ctx.obj = ctx.obj or {}
     ctx.obj["app_config"] = app_config
 
-    logger.info("Configuration loaded successfully")
+    logger.debug("Configuration loaded successfully")

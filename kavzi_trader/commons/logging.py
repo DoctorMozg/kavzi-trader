@@ -20,6 +20,7 @@ def setup_logging(
     log_dir: Path | None = None,
     log_format: str = "text",
     console: bool = True,
+    console_level: str | None = None,
 ) -> logging.Logger:
     """
     Set up logging for the application.
@@ -30,6 +31,7 @@ def setup_logging(
         log_file: Log file path (optional)
         console: Whether to log to console
         name: Logger name
+        console_level: Console threshold; defaults to log_level
 
     Returns:
         Configured logger instance
@@ -47,7 +49,8 @@ def setup_logging(
         "CRITICAL": logging.CRITICAL,
     }
     level = level_map.get(log_level, logging.DEBUG)
-    logger.setLevel(level)
+    shown = level_map.get(console_level or log_level, level)
+    logger.setLevel(min(level, shown) if console else level)
 
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s %(filename)s:%(lineno)d - %(message)s",
@@ -55,19 +58,21 @@ def setup_logging(
     if console:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
+        console_handler.setLevel(shown)
         logger.addHandler(console_handler)
 
     if log_dir is not None:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = timestamp_path("kavzitrader_log", log_dir, extension="jsonl")
         file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setLevel(level)
         if log_format == "json":
             file_handler.setFormatter(JsonLogFormatter())
         else:
             file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
-    logger.info("Logging initialized with level %s", log_level)
+    logger.debug("Logging initialized with level %s", log_level)
 
     load_dotenv()
     logger.debug("Environment variables loaded from .env file")
