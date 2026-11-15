@@ -43,6 +43,7 @@ from kavzi_trader.evals.dataset_builder import (
     DatasetBuilder,
 )
 from kavzi_trader.evals.distribution_report_schema import DistributionReportSchema
+from kavzi_trader.evals.donchian_trend_signal import DonchianTrendSignal
 from kavzi_trader.evals.eval_case_schema import EvalCaseSchema
 from kavzi_trader.evals.eval_pipeline_runner import EvalPipelineRunner
 from kavzi_trader.evals.eval_run_orchestrator import EvalRunOrchestrator
@@ -73,6 +74,12 @@ from kavzi_trader.evals.signal_sampler import (
     SIDES,
     SignalSampler,
 )
+from kavzi_trader.evals.trend_backtest import TrendBacktest
+from kavzi_trader.evals.trend_data_loader import TrendDataLoader
+from kavzi_trader.evals.trend_params_schema import TrendParamsSchema
+from kavzi_trader.evals.trend_portfolio import TrendPortfolio
+from kavzi_trader.evals.trend_report_renderer import TrendReportRenderer
+from kavzi_trader.evals.turnover_buffer import TurnoverBuffer
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
@@ -81,6 +88,17 @@ from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 logger = logging.getLogger(__name__)
 
 _MS_PER_S = 1000
+TREND_TRADING_SYMBOLS = [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "BNBUSDT",
+    "ADAUSDT",
+    "LINKUSDT",
+    "AVAXUSDT",
+]
+TREND_BUFFER_BAND = 0.2
 _S_PER_MIN = 60
 
 
@@ -875,5 +893,72 @@ def funding_xs(
     verdict = "PASS" if FundingXsMetrics.passes(net) else "FAIL"
     click.echo(
         f"Net Sharpe {net.sharpe}, annual return {net.annual_return:+.2%}: {verdict}"
+    )
+    click.echo(f"Report: {path}")
+
+
+def _parse_lookbacks(
+    _ctx: click.Context, _param: click.Parameter, value: str
+) -> tuple[int, ...]:
+    try:
+        return tuple(int(v) for v in value.split(","))
+    except ValueError as exc:
+        raise click.BadParameter("use comma-separated integers") from exc
+
+
+@eval_group.command("trend")
+@click.option(
+    "--variant",
+    type=click.Choice(["long-flat", "long-short"]),
+    default="long-flat",
+    show_default=True,
+)
+@click.option(
+    "--lookbacks",
+    default="20,40,80",
+    show_default=True,
+    callback=_parse_lookbacks,
+    help="Donchian lookbacks in days; the preregistered rule uses all three.",
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("data/eval_cache"),
+    show_default=True,
+)
+@click.option(
+    "--out",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="Report path; default results/evals/trend_<UTC time>.md.",
+)
+@_SYMBOLS_OPTION
+@click.pass_context
+def trend_backtest(
+    ctx: click.Context,
+    variant: str,
+    lookbacks: tuple[int, ...],
+    cache_dir: Path,
+    out: Path | None,
+    symbols: list[str] | None,
+) -> None:
+    """Backtest the daily Donchian trend ensemble on cached candles and funding."""
+    app_config: AppConfig = ctx.obj["app_config"]
+    params = TrendParamsSchema(lookbacks=lookbacks, long_short=variant == "long-short")
+    data = TrendDataLoader(cache_dir).load(symbols or TREND_TRADING_SYMBOLS)
+    backtest = TrendBacktest(
+        DonchianTrendSignal(params),
+        TurnoverBuffer(TREND_BUFFER_BAND),
+        TrendPortfolio(float(app_config.paper.commission_rate)),
+    )
+    result = backtest.run(data)
+    renderer = TrendReportRenderer(params)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    path = out or app_config.system.results_dir / "evals" / f"trend_{stamp}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(renderer.render(result), encoding="utf-8")
+    click.echo(
+        f"net Sharpe {result.net.sharpe}, benchmark {result.benchmark.sharpe}, "
+        f"criterion met: {renderer.criterion_met(result)}"
     )
     click.echo(f"Report: {path}")
