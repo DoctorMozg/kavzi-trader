@@ -89,7 +89,7 @@ Options:
   - `taker_flow`: taker-buy share of volume over the last 4 bars, ranked within the trailing history window. Top third fires LONG, bottom third fires SHORT.
   - `htf_trend`: the live 1h trend (EMA20/EMA50 plus RSI from `indicators/htf.py`) agrees with the side. 15m only.
   - `btc_lead`: BTCUSDT's return over the last 4 bars, ranked the same way, applied to every other symbol.
-- `--oi` (implies `--funding`): downloads open interest (15m at the 15m interval, see below) and scores `oi_supports_direction` and `oi_funding_divergence` through the live `OrderFlowCalculator`. Binance serves only about the last 30 days of OI, so only bars inside that window, with a full 24h of OI history, are sampled. Use a small stride such as 5. The cache keeps old rows, so running `eval refresh-cache` monthly grows the OI history past Binance's ~30-day limit and adds the new candles, without which new bars won't be sampled.
+- `--oi` (implies `--funding`): downloads open interest (15m at the 15m interval, see below) and scores `oi_supports_direction` and `oi_funding_divergence` through the live `OrderFlowCalculator`. Binance serves only about the last 30 days of OI, so only bars inside that window, with a full 24h of OI history, are sampled. Use a small stride such as 5. The cache keeps old rows, so running `eval refresh-cache` weekly grows the OI history past Binance's ~30-day limit and adds the new candles, without which new bars won't be sampled.
 
 ### Refreshing the cache
 
@@ -97,9 +97,41 @@ Options:
 
 No LLM calls. Options: `--interval` (default: trading interval), `--months` (default 12), `--cache-dir`. Fills candles, funding and OI up to today 00:00 UTC and never touches `cases_v1.jsonl`. Reruns fetch only the missing head or tail. OI uses the largest openInterestHist period that doesn't exceed the interval, capped at 30m, so 1h and 4h use `oi_30m`. It prints one line per symbol with candle count, date range, funding rows and OI rows.
 
-`scripts/refresh_eval_cache.sh` refreshes 15m, 1h and 4h in one go and logs to `results/logs/refresh_eval_cache_<date>.log`. Run it at least monthly, or OI older than Binance's ~30 days is lost. A crontab line for the 1st of each month at 03:00:
+`scripts/refresh_eval_cache.sh` refreshes 15m, 1h and 4h for the trading symbols, then 4h only for 8 extra symbols (DOGE LTC DOT BCH ATOM TRX ETC FIL) that the forward test needs. It logs to `results/logs/refresh_eval_cache_<date>.log`. Run it weekly: Binance serves about the last 30 days of OI, so a monthly run in a 31-day month can lose a day.
 
-    0 3 1 * * /path/to/kavzitrader/scripts/refresh_eval_cache.sh
+Schedule it with a systemd user timer. `~/.config/systemd/user/kavzi-eval-refresh.service`:
+
+    [Unit]
+    Description=Refresh KavziTrader eval cache (candles, funding, OI)
+    Wants=network-online.target
+    After=network-online.target
+
+    [Service]
+    Type=oneshot
+    ExecStart=/path/to/kavzitrader/scripts/refresh_eval_cache.sh
+
+`~/.config/systemd/user/kavzi-eval-refresh.timer`:
+
+    [Unit]
+    Description=Weekly KavziTrader eval cache refresh
+
+    [Timer]
+    OnCalendar=Mon *-*-* 03:00:00
+    Persistent=true
+    RandomizedDelaySec=15min
+
+    [Install]
+    WantedBy=timers.target
+
+Enable it:
+
+    systemctl --user daemon-reload && systemctl --user enable --now kavzi-eval-refresh.timer
+
+`Persistent=true` runs a missed refresh at the next login or boot, which cron would skip. A user timer fires only while the user's systemd instance is up, so if the machine has no open session on Monday, run `loginctl enable-linger $USER` (optional) to keep that instance alive.
+
+Cron alternative, Mondays at 03:00:
+
+    0 3 * * 1 /path/to/kavzitrader/scripts/refresh_eval_cache.sh
 
 Cache files in `data/eval_cache/`: `<SYMBOL>_15m.csv.gz` (and `<SYMBOL>_<interval>.csv.gz` for other intervals), `<SYMBOL>_funding.csv.gz`, `<SYMBOL>_oi_15m.csv.gz`, `<SYMBOL>_oi_30m.csv.gz`.
 
@@ -116,6 +148,7 @@ Cache files in `data/eval_cache/`: `<SYMBOL>_15m.csv.gz` (and `<SYMBOL>_<interva
 - Scout `trend_vol_ratio_min` 1.2 instead of 0.8 (15m, `--scout-vol-min`): it halves the TREND_CONTINUATION calls and makes the LONG ones worse in all six brackets. The calls already have negative lift at 0.8.
 - RSI above 70 two bars running (`rsi_exhausted`): LONG after it did better than average (+0.09 to +0.21 R lift), so a guard that vetoes those LONGs would cut the better trades.
 - Combinations on 4h (`--combo`, rules fixed before scoring): 16 pairs of `taker_flow` with another signal, trained on the 8 trading symbols 2022 to 2025. The best, LONG `taker_flow+rsi_exhausted` (+0.18 R on 1.8k bars), failed on 8 never-analysed symbols (DOGE LTC DOT BCH ATOM TRX ETC FIL, `--symbols`): +0.011 R against a 0.035 R fee. Unselected but worth a fresh test: SHORT `taker_flow+funding_favorable` cleared the fee on both sets (+0.055 and +0.079 R), with intervals that still reach below it.
+- That SHORT rule is now frozen in `evals/preregistrations/2026_11_16_short_taker_funding.md`: bracket `1.5:3:12`, 16 symbols, bars from 2026-11-15 to 2027-11-15. It is scored once, after the 48h outcomes are complete (on or after 2027-11-17), with no early looks.
 - Implication: loosening the Scout or Analyst gates would trade noise. A new feature should show lift above the fee in `eval signals` first.
 
 Rerun the command before relying on these numbers, since they describe one data window.
