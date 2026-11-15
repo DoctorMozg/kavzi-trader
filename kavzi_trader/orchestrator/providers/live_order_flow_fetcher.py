@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 ONE_HOUR = timedelta(hours=1)
 _MIN_CANDLES_FOR_1H_CHANGE = 2
+# The funding z-score is computed over this many latest settlements.
+FUNDING_HISTORY_LIMIT = 100
 
 
 class LiveOrderFlowFetcher:
@@ -47,7 +49,7 @@ class LiveOrderFlowFetcher:
     async def _fetch_symbol(self, symbol: str) -> None:
         raw_funding = await self._exchange.get_funding_rate(
             symbol,
-            limit=100,
+            limit=FUNDING_HISTORY_LIMIT,
         )
         funding_rates = [
             FundingRateSchema(

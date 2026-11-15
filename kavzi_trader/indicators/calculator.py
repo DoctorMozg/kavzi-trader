@@ -1,3 +1,7 @@
+from datetime import datetime
+
+import pandas as pd
+
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.indicator_schemas import TechnicalIndicatorsSchema
 from kavzi_trader.indicators.base import candles_to_dataframe
@@ -35,9 +39,14 @@ class TechnicalIndicatorCalculator:
         """
         if not candles:
             return None
+        return self.calculate_frame(
+            candles_to_dataframe(candles), candles[-1].close_time
+        )
 
-        ohlcv = candles_to_dataframe(candles)
-
+    def calculate_frame(
+        self, ohlcv: pd.DataFrame, timestamp: datetime
+    ) -> TechnicalIndicatorsSchema | None:
+        """Indicators for the last row of an OHLCV frame (high/low/close/volume)."""
         if ohlcv.empty:
             return None
 
@@ -67,5 +76,5 @@ class TechnicalIndicatorCalculator:
             ),
             atr_14=calculate_atr(high, low, close, cfg.atr_period),
             volume=calculate_volume_analysis(close, volume, cfg.volume_period),
-            timestamp=candles[-1].close_time,
+            timestamp=timestamp,
         )

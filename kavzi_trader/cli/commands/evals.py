@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import click
+import pandas as pd
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.brain.agent.factory import AgentFactory
@@ -30,11 +31,16 @@ from kavzi_trader.evals.distribution_report_schema import DistributionReportSche
 from kavzi_trader.evals.eval_case_schema import EvalCaseSchema
 from kavzi_trader.evals.eval_pipeline_runner import EvalPipelineRunner
 from kavzi_trader.evals.eval_run_orchestrator import EvalRunOrchestrator
+from kavzi_trader.evals.market_feature_builder import MarketFeatureBuilder
 from kavzi_trader.evals.result_store import ResultStore
 from kavzi_trader.evals.run_header_schema import RunHeaderSchema
 from kavzi_trader.evals.run_loader import RunLoader
 from kavzi_trader.evals.run_projection_schema import RunProjectionSchema
 from kavzi_trader.evals.run_report_builder import RunReportBuilder
+from kavzi_trader.evals.signal_bracket_schema import SignalBracketSchema
+from kavzi_trader.evals.signal_edge_analyzer import SignalEdgeAnalyzer
+from kavzi_trader.evals.signal_report_renderer import SignalReportRenderer
+from kavzi_trader.evals.signal_sampler import CANDLE_SIGNALS, SignalSampler
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -420,5 +426,81 @@ def report_eval(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(builder.markdown(), encoding="utf-8")
     for line in builder.summary():
+        click.echo(line)
+    click.echo(f"Report: {path}")
+
+
+def _parse_brackets(
+    _ctx: click.Context, _param: click.Parameter, values: tuple[str, ...]
+) -> list[SignalBracketSchema]:
+    try:
+        return [SignalBracketSchema.parse(v) for v in values]
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
+
+
+@eval_group.command("signals")
+@click.option(
+    "--bracket",
+    "brackets",
+    multiple=True,
+    default=("1.5:3:96",),
+    show_default=True,
+    callback=_parse_brackets,
+    help="SL_ATR:TP_ATR:HORIZON_BARS; repeat to compare brackets.",
+)
+@click.option(
+    "--stride",
+    type=click.IntRange(min=1),
+    default=17,
+    show_default=True,
+    # Volume is intraday-seasonal; a divisor of 96 would only sample a few
+    # times of day (16 bars always hits the same 6 slots).
+    help="Sample every Nth bar; keep it coprime with the bars per day.",
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("data/eval_cache"),
+    show_default=True,
+)
+@click.option(
+    "--out",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="Report path; default results/evals/signals_<UTC time>.md.",
+)
+@click.pass_context
+def signal_edge(
+    ctx: click.Context,
+    brackets: list[SignalBracketSchema],
+    stride: int,
+    cache_dir: Path,
+    out: Path | None,
+) -> None:
+    """Measure each confluence signal's R edge on cached candles; no LLM calls."""
+    app_config: AppConfig = ctx.obj["app_config"]
+    history = app_config.trading.history_candles
+    cache = CandleCache(cache_dir, app_config.trading.interval)
+    frames = {
+        s: cache.load(s).reset_index(drop=True) for s in app_config.trading.symbols
+    }
+    frames = {s: f for s, f in frames.items() if not f.empty}
+    if not frames:
+        raise click.ClickException(f"No cached candles in {cache_dir}")
+    sampler = SignalSampler(MarketFeatureBuilder(app_config.risk), history, stride)
+    max_horizon = max(b.horizon_bars for b in brackets)
+    samples = pd.concat(
+        [sampler.sample(s, f, max_horizon) for s, f in frames.items()],
+        ignore_index=True,
+    )
+    analyzer = SignalEdgeAnalyzer(stride, CANDLE_SIGNALS)
+    results = [analyzer.analyze(samples, frames, b) for b in brackets]
+    renderer = SignalReportRenderer(stride, history, list(frames))
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    path = out or app_config.system.results_dir / "evals" / f"signals_{stamp}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(renderer.render(results), encoding="utf-8")
+    for line in renderer.summary(results):
         click.echo(line)
     click.echo(f"Report: {path}")
