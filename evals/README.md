@@ -97,6 +97,10 @@ Options:
 
 No LLM calls. Options: `--interval` (default: trading interval), `--months` (default 12), `--cache-dir`. Fills candles, funding and OI up to today 00:00 UTC and never touches `cases_v1.jsonl`. Reruns fetch only the missing head or tail. OI uses the largest openInterestHist period that doesn't exceed the interval, capped at 30m, so 1h and 4h use `oi_30m`. It prints one line per symbol with candle count, date range, funding rows and OI rows.
 
+`scripts/refresh_eval_cache.sh` refreshes 15m, 1h and 4h in one go and logs to `results/logs/refresh_eval_cache_<date>.log`. Run it at least monthly, or OI older than Binance's ~30 days is lost. A crontab line for the 1st of each month at 03:00:
+
+    0 3 1 * * /path/to/kavzitrader/scripts/refresh_eval_cache.sh
+
 Cache files in `data/eval_cache/`: `<SYMBOL>_15m.csv.gz` (and `<SYMBOL>_<interval>.csv.gz` for other intervals), `<SYMBOL>_funding.csv.gz`, `<SYMBOL>_oi_15m.csv.gz`, `<SYMBOL>_oi_30m.csv.gz`.
 
 ### What we found (snapshot, 2026-11-15)
