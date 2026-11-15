@@ -17,6 +17,7 @@ from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from tests.evals.frames import make_frame
 
 HISTORY = 300
+COMMISSION = 0.0005
 
 
 def _candles(frame: pd.DataFrame) -> list[CandlestickSchema]:
@@ -41,15 +42,32 @@ def _candles(frame: pd.DataFrame) -> list[CandlestickSchema]:
     ]
 
 
-def _trend_frame(n: int) -> pd.DataFrame:
-    """Close rises 1.0 per bar with a 0.2 range, so LONG always wins."""
-    frame = make_frame(n)
-    close = 100.0 + np.arange(n, dtype=np.float64)
-    frame["open"] = close - 1.0
+def _path_frame(close: np.ndarray) -> pd.DataFrame:
+    """Candles that move 1.0 per bar along ``close`` with 0.1 wicks."""
+    frame = make_frame(len(close))
+    open_ = np.concatenate(([close[0]], close[:-1]))
+    frame["open"] = open_
     frame["close"] = close
-    frame["high"] = close + 0.1
-    frame["low"] = close - 1.1
+    frame["high"] = np.maximum(open_, close) + 0.1
+    frame["low"] = np.minimum(open_, close) - 0.1
     return frame
+
+
+def _trend_frame(n: int) -> pd.DataFrame:
+    """Close rises 1.0 per bar, so LONG always hits TP and SHORT its stop."""
+    return _path_frame(100.0 + np.arange(n, dtype=np.float64))
+
+
+def _vee_frame() -> pd.DataFrame:
+    """Up for 50 bars, then down: LONG wins early, SHORT wins late."""
+    up = 100.0 + np.arange(50, dtype=np.float64)
+    return _path_frame(np.concatenate((up, up[-1] - np.arange(1, 51))))
+
+
+def _analyzer() -> SignalEdgeAnalyzer:
+    return SignalEdgeAnalyzer(
+        stride=5, signals=CANDLE_SIGNALS, commission_rate=COMMISSION
+    )
 
 
 def _samples(idx: list[int], fired: list[bool], scores: list[int]) -> pd.DataFrame:
@@ -118,9 +136,7 @@ class TestSignalEdgeAnalyzer:
         samples = _samples([10, 20, 30, 40], [True, False, True, False], [0, 1, 4, 6])
         bracket = SignalBracketSchema(sl_atr=1.5, tp_atr=3.0, horizon_bars=10)
 
-        result = SignalEdgeAnalyzer(stride=5, signals=CANDLE_SIGNALS).analyze(
-            samples, {"AAA": frame}, bracket
-        )
+        result = _analyzer().analyze(samples, {"AAA": frame}, bracket)
 
         assert result.samples == 4
         assert result.ci_widening == pytest.approx(2**0.5)
@@ -132,6 +148,11 @@ class TestSignalEdgeAnalyzer:
         )
         assert edge.fired_share == 0.5
         assert (edge.fired.n, edge.fired.win_rate, edge.fired.ci95) == (2, 1.0, 0.0)
+        # Same R either way: no lift, however certain.
+        assert (edge.lift, edge.lift_ci95) == (0.0, 0.0)
+        closes = np.array([110.0, 120.0, 130.0, 140.0])
+        expected_fee = (2 * COMMISSION * closes / 1.5).mean()
+        assert result.mean_fee_r == pytest.approx(expected_fee)
         top = [
             b for b in result.score_buckets if b.side == "SHORT" and b.bucket == "4+"
         ]
@@ -139,7 +160,7 @@ class TestSignalEdgeAnalyzer:
 
     def test_empty_group_has_no_mean(self) -> None:
         samples = _samples([10, 20], [False, False], [0, 0])
-        result = SignalEdgeAnalyzer(stride=5, signals=CANDLE_SIGNALS).analyze(
+        result = _analyzer().analyze(
             samples,
             {"AAA": _trend_frame(50)},
             SignalBracketSchema(sl_atr=1, tp_atr=2, horizon_bars=5),
@@ -147,22 +168,25 @@ class TestSignalEdgeAnalyzer:
 
         fired = result.signals[0].fired
         assert (fired.n, fired.mean_r, fired.ci95) == (0, None, None)
+        assert result.signals[0].lift is None
 
 
 class TestSignalReportRenderer:
-    def test_lists_only_signals_whose_interval_excludes_zero(self) -> None:
-        samples = _samples([10, 20, 30, 40], [True, False, True, False], [0] * 4)
-        frame = _trend_frame(100)
-        result = SignalEdgeAnalyzer(stride=5, signals=CANDLE_SIGNALS).analyze(
-            samples, {"AAA": frame}, SignalBracketSchema.parse("1.5:3:10")
+    def test_lists_signals_by_lift_not_by_drift(self) -> None:
+        # Fired on the up leg only: LONG +2 vs -1, SHORT -1 vs +2.
+        samples = _samples([10, 30, 60, 80], [True, True, False, False], [0] * 4)
+        bracket = SignalBracketSchema.parse("1.5:3:10")
+        lifted = _analyzer().analyze(samples, {"AAA": _vee_frame()}, bracket)
+        drift = _analyzer().analyze(
+            _samples([10, 20, 30, 40], [True, False, True, False], [0] * 4),
+            {"AAA": _trend_frame(100)},
+            bracket,
         )
         renderer = SignalReportRenderer(stride=5, history=HISTORY, symbols=["AAA"])
 
-        text = renderer.render([result])
+        text = renderer.render([lifted])
 
-        assert "LONG ema_alignment +2.000" in text
-        assert "SHORT ema_alignment -1.000" in text
+        assert "LONG ema_alignment +3.000" in text
+        assert "SHORT ema_alignment -3.000" in text
         assert "## 1.5/3 ATR, 10 bars" in text
-        assert renderer.summary([result])[0].startswith(
-            "1.5/3 ATR, 10 bars: 4 bars, LONG"
-        )
+        assert renderer.summary([drift])[0].endswith("no signal with lift")

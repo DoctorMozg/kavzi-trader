@@ -20,8 +20,10 @@ class SignalReportRenderer:
             f"Every {self._stride}th 15m bar of {', '.join(self._symbols)}; "
             f"live indicators over the trailing {self._history} bars and the live "
             "ConfluenceCalculator. R is the result of taking that side with the "
-            "bracket (same-bar SL+TP counts as SL, timeout marked to market, no "
-            "fees). ± is a 95% interval widened for overlapping outcome windows."
+            "bracket (same-bar SL+TP counts as SL, timeout marked to market), "
+            "before fees. Lift is fired minus not-fired mean R, so market drift "
+            "cancels out. ± is a 95% interval widened for overlapping outcome "
+            "windows; the fee is the taker round trip in R."
         )
         blocks = ["# Signal edge report", intro, self._verdicts(results)]
         blocks += [self._bracket(result) for result in results]
@@ -31,29 +33,34 @@ class SignalReportRenderer:
         lines = []
         for result in results:
             found = self._edges(result)
-            text = ", ".join(found) if found else "no signal with an edge"
-            lines.append(f"{result.bracket.label}: {result.samples} bars, {text}")
+            text = ", ".join(found) if found else "no signal with lift"
+            lines.append(
+                f"{result.bracket.label}: {result.samples} bars, "
+                f"fee {result.mean_fee_r:.3f}R, {text}"
+            )
         return lines
 
     def _verdicts(self, results: list[BracketEdgeSchema]) -> str:
         rows = [
-            [result.bracket.label, ", ".join(self._edges(result)) or "none"]
+            [
+                result.bracket.label,
+                f"{result.mean_fee_r:.3f}",
+                ", ".join(self._edges(result)) or "none",
+            ]
             for result in results
         ]
         return Md.section(
-            "Signals whose fired mean R excludes zero",
-            Md.table(["bracket", "signals (side, mean R)"], rows),
+            "Signals whose lift excludes zero",
+            Md.table(["bracket", "fee (R)", "signals (side, lift)"], rows),
         )
 
     @staticmethod
     def _edges(result: BracketEdgeSchema) -> list[str]:
         found = []
         for edge in result.signals:
-            stat = edge.fired
-            if stat.mean_r is None or stat.ci95 is None:
-                continue
-            if abs(stat.mean_r) > stat.ci95:
-                found.append(f"{edge.side} {edge.signal} {stat.mean_r:+.3f}")
+            lift, ci = edge.lift, edge.lift_ci95
+            if lift is not None and ci is not None and abs(lift) > ci:
+                found.append(f"{edge.side} {edge.signal} {lift:+.3f}")
         return found
 
     def _bracket(self, result: BracketEdgeSchema) -> str:
@@ -61,7 +68,8 @@ class SignalReportRenderer:
         base = ", ".join(f"{s} {self._fmt(result.base[s])}" for s in SIDES)
         head = (
             f"{result.samples} bars. Labels: {shares}. "
-            f"All bars: {base}. Interval widening x{result.ci_widening:.2f}."
+            f"All bars: {base}. Round-trip fee {result.mean_fee_r:.3f}R. "
+            f"Interval widening x{result.ci_widening:.2f}."
         )
         signal_rows = [
             self._signal_row(edge)
@@ -70,7 +78,7 @@ class SignalReportRenderer:
             if edge.side == side
         ]
         signals = Md.table(
-            ["side", "signal", "fires", "fired: mean R", "win", "not fired: mean R"],
+            ["side", "signal", "fires", "fired: mean R", "win", "not fired", "lift"],
             signal_rows,
         )
         buckets = Md.table(
@@ -96,7 +104,15 @@ class SignalReportRenderer:
             self._fmt(edge.fired),
             Md.rate(edge.fired.win_rate),
             self._fmt(edge.not_fired),
+            self._lift(edge),
         ]
+
+    @staticmethod
+    def _lift(edge: SignalEdgeSchema) -> str:
+        if edge.lift is None:
+            return NA
+        ci = NA if edge.lift_ci95 is None else f"{edge.lift_ci95:.3f}"
+        return f"{edge.lift:+.3f} ±{ci}"
 
     @staticmethod
     def _fmt(stat: EdgeStatSchema) -> str:

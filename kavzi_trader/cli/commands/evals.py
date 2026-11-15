@@ -494,7 +494,9 @@ def signal_edge(
         [sampler.sample(s, f, max_horizon) for s, f in frames.items()],
         ignore_index=True,
     )
-    analyzer = SignalEdgeAnalyzer(stride, CANDLE_SIGNALS)
+    analyzer = SignalEdgeAnalyzer(
+        stride, CANDLE_SIGNALS, float(app_config.paper.commission_rate)
+    )
     results = [analyzer.analyze(samples, frames, b) for b in brackets]
     renderer = SignalReportRenderer(stride, history, list(frames))
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

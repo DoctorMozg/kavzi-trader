@@ -1,3 +1,4 @@
+import math
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,6 +27,19 @@ class SignalEdgeSchema(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    @property
+    def lift(self) -> float | None:
+        """Fired minus not-fired mean R: what the signal adds over market drift."""
+        if self.fired.mean_r is None or self.not_fired.mean_r is None:
+            return None
+        return self.fired.mean_r - self.not_fired.mean_r
+
+    @property
+    def lift_ci95(self) -> float | None:
+        if self.fired.ci95 is None or self.not_fired.ci95 is None:
+            return None
+        return math.hypot(self.fired.ci95, self.not_fired.ci95)
+
 
 class ScoreBucketSchema(BaseModel):
     side: str
@@ -41,6 +55,7 @@ class BracketEdgeSchema(BaseModel):
     bracket: SignalBracketSchema
     samples: Annotated[int, Field(ge=0)]
     ci_widening: Annotated[float, Field(ge=1)]
+    mean_fee_r: Annotated[float, Field(ge=0)]
     label_shares: dict[str, float]
     base: dict[str, EdgeStatSchema]
     signals: list[SignalEdgeSchema]

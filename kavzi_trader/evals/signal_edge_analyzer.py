@@ -24,9 +24,12 @@ _TOP_SCORE_BUCKET = 4
 class SignalEdgeAnalyzer:
     """Labels sampled bars with a bracket and measures each signal's R edge."""
 
-    def __init__(self, stride: int, signals: tuple[str, ...]) -> None:
+    def __init__(
+        self, stride: int, signals: tuple[str, ...], commission_rate: float
+    ) -> None:
         self._stride = stride
         self._signals = signals
+        self._commission_rate = commission_rate
 
     def analyze(
         self,
@@ -35,6 +38,13 @@ class SignalEdgeAnalyzer:
         bracket: SignalBracketSchema,
     ) -> BracketEdgeSchema:
         outcomes = self._label(samples, frames, bracket)
+        # Entry plus exit at the taker rate, in units of the stop distance.
+        fee_r = (
+            2
+            * self._commission_rate
+            * outcomes["close"]
+            / (outcomes["atr"] * bracket.sl_atr)
+        )
         # Bars `stride` apart share most of a `horizon`-bar outcome window, so
         # the naive interval is too narrow by about sqrt(horizon / stride).
         widening = math.sqrt(max(1.0, bracket.horizon_bars / self._stride))
@@ -73,6 +83,7 @@ class SignalEdgeAnalyzer:
             bracket=bracket,
             samples=len(samples),
             ci_widening=widening,
+            mean_fee_r=float(fee_r.mean()),
             label_shares={
                 label.value: float(shares.get(label.value, 0.0)) for label in CaseLabel
             },
@@ -92,11 +103,12 @@ class SignalEdgeAnalyzer:
         for symbol, group in samples.groupby("symbol", sort=False):
             frame = frames[str(symbol)]
             atr = group["atr"].to_numpy(dtype=np.float64)
+            entry_idx = group["idx"].to_numpy(dtype=np.int64)
             barriers = labeler.label(
                 frame["high"].to_numpy(dtype=np.float64),
                 frame["low"].to_numpy(dtype=np.float64),
                 frame["close"].to_numpy(dtype=np.float64),
-                group["idx"].to_numpy(dtype=np.int64),
+                entry_idx,
                 atr * bracket.sl_atr,
                 atr * bracket.tp_atr,
             )
@@ -104,6 +116,8 @@ class SignalEdgeAnalyzer:
                 pd.DataFrame(
                     {
                         "label": [label.value for label in barriers.labels],
+                        "close": frame["close"].to_numpy(dtype=np.float64)[entry_idx],
+                        "atr": atr,
                         "LONG_r": barriers.long.r_multiple,
                         "SHORT_r": barriers.short.r_multiple,
                         "LONG_win": barriers.long.outcome_code == OutcomeCode.TP,
