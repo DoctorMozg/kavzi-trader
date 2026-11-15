@@ -12,6 +12,7 @@ import click
 import pandas as pd
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
 from kavzi_trader.brain.prompts.loader import PromptLoader
@@ -31,6 +32,8 @@ from kavzi_trader.evals.distribution_report_schema import DistributionReportSche
 from kavzi_trader.evals.eval_case_schema import EvalCaseSchema
 from kavzi_trader.evals.eval_pipeline_runner import EvalPipelineRunner
 from kavzi_trader.evals.eval_run_orchestrator import EvalRunOrchestrator
+from kavzi_trader.evals.funding_cache import FundingCache
+from kavzi_trader.evals.funding_downloader import FundingDownloader
 from kavzi_trader.evals.market_feature_builder import MarketFeatureBuilder
 from kavzi_trader.evals.result_store import ResultStore
 from kavzi_trader.evals.run_header_schema import RunHeaderSchema
@@ -40,7 +43,11 @@ from kavzi_trader.evals.run_report_builder import RunReportBuilder
 from kavzi_trader.evals.signal_bracket_schema import SignalBracketSchema
 from kavzi_trader.evals.signal_edge_analyzer import SignalEdgeAnalyzer
 from kavzi_trader.evals.signal_report_renderer import SignalReportRenderer
-from kavzi_trader.evals.signal_sampler import CANDLE_SIGNALS, SignalSampler
+from kavzi_trader.evals.signal_sampler import (
+    CANDLE_SIGNALS,
+    FUNDING_SIGNAL,
+    SignalSampler,
+)
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -430,6 +437,36 @@ def report_eval(
     click.echo(f"Report: {path}")
 
 
+# The live z-score needs FUNDING_HISTORY_LIMIT settlements (8h apart) of lead-in.
+_FUNDING_LEAD_MS = 40 * 24 * 3600 * _MS_PER_S
+
+
+def _load_funding(
+    client: ExchangeClient | None, cache_dir: Path, frames: dict[str, pd.DataFrame]
+) -> dict[str, pd.DataFrame]:
+    """Download missing funding settlements covering each candle frame."""
+    cache = FundingCache(cache_dir)
+
+    async def _run(exchange: ExchangeClient) -> None:
+        downloader = FundingDownloader(exchange, cache)
+        for symbol, frame in frames.items():
+            await downloader.ensure_range(
+                symbol,
+                int(frame["open_time_ms"].iloc[0]) - _FUNDING_LEAD_MS,
+                int(frame["close_time_ms"].iloc[-1]) + 1,
+            )
+
+    async def _with_public_client() -> None:
+        public = BinanceClient()  # public market data, no credentials
+        try:
+            await _run(public)
+        finally:
+            await public.close()
+
+    asyncio.run(_run(client) if client is not None else _with_public_client())
+    return {symbol: cache.load(symbol) for symbol in frames}
+
+
 def _parse_brackets(
     _ctx: click.Context, _param: click.Parameter, values: tuple[str, ...]
 ) -> list[SignalBracketSchema]:
@@ -470,6 +507,11 @@ def _parse_brackets(
     default=None,
     help="Report path; default results/evals/signals_<UTC time>.md.",
 )
+@click.option(
+    "--funding/--no-funding",
+    default=False,
+    help="Download funding history and score the live funding signal too.",
+)
 @click.pass_context
 def signal_edge(
     ctx: click.Context,
@@ -477,6 +519,7 @@ def signal_edge(
     stride: int,
     cache_dir: Path,
     out: Path | None,
+    funding: bool,
 ) -> None:
     """Measure each confluence signal's R edge on cached candles; no LLM calls."""
     app_config: AppConfig = ctx.obj["app_config"]
@@ -490,12 +533,21 @@ def signal_edge(
         raise click.ClickException(f"No cached candles in {cache_dir}")
     sampler = SignalSampler(MarketFeatureBuilder(app_config.risk), history, stride)
     max_horizon = max(b.horizon_bars for b in brackets)
+    settlements = (
+        _load_funding(ctx.obj.get("exchange_client"), cache_dir, frames)
+        if funding
+        else {}
+    )
     samples = pd.concat(
-        [sampler.sample(s, f, max_horizon) for s, f in frames.items()],
+        [
+            sampler.sample(s, f, max_horizon, settlements.get(s))
+            for s, f in frames.items()
+        ],
         ignore_index=True,
     )
+    signals = (*CANDLE_SIGNALS, FUNDING_SIGNAL) if funding else CANDLE_SIGNALS
     analyzer = SignalEdgeAnalyzer(
-        stride, CANDLE_SIGNALS, float(app_config.paper.commission_rate)
+        stride, signals, float(app_config.paper.commission_rate)
     )
     results = [analyzer.analyze(samples, frames, b) for b in brackets]
     renderer = SignalReportRenderer(stride, history, list(frames))

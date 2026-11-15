@@ -7,6 +7,7 @@ from kavzi_trader.cli.commands.evals import eval_group
 from kavzi_trader.config import AppConfig, TradingConfigSchema
 from tests.cli.test_eval_run_command import _silenced_live_logs
 from tests.evals.eval_fixtures import btc_frame, write_cache
+from tests.evals.test_funding_history import FakeFundingClient
 
 
 @pytest.fixture
@@ -60,3 +61,25 @@ def test_fails_without_cached_candles(config: AppConfig, tmp_path: Path) -> None
     result = _invoke(config, tmp_path / "empty")
     assert result.exception is not None
     assert "No cached candles" in str(result.exception)
+
+
+def test_funding_flag_downloads_and_scores_funding(
+    config: AppConfig, tmp_path: Path
+) -> None:
+    write_cache(tmp_path / "cache", btc_frame(extra_bars=200))
+    out = tmp_path / "signals.md"
+    client = FakeFundingClient()
+
+    with _silenced_live_logs():
+        result = CliRunner().invoke(
+            eval_group,
+            ["signals", "--cache-dir", str(tmp_path / "cache"), "--funding",
+             "--stride", "29", "--bracket", "1:2:10", "--out", str(out)],
+            obj={"app_config": config, "exchange_client": client},
+            standalone_mode=False,
+        )  # fmt: skip
+
+    assert result.exception is None
+    assert client.calls
+    assert (tmp_path / "cache" / "BTCUSDT_funding.csv.gz").exists()
+    assert "| LONG | funding_favorable |" in out.read_text(encoding="utf-8")
