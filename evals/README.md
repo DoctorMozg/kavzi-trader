@@ -115,6 +115,7 @@ Cache files in `data/eval_cache/`: `<SYMBOL>_15m.csv.gz` (and `<SYMBOL>_<interva
 - 4h `taker_flow` LONG, year by year at `1.5:3:12`: lift was positive in all 5 years (+0.02 to +0.14 R) and +0.062 over 5 years, above the 0.036 R fee. But the fired bars themselves averaged only +0.027 R, below the fee: the signal makes LONG entries less bad than average, it does not make them profitable on its own. 1h agrees in sign but is weaker.
 - Scout `trend_vol_ratio_min` 1.2 instead of 0.8 (15m, `--scout-vol-min`): it halves the TREND_CONTINUATION calls and makes the LONG ones worse in all six brackets. The calls already have negative lift at 0.8.
 - RSI above 70 two bars running (`rsi_exhausted`): LONG after it did better than average (+0.09 to +0.21 R lift), so a guard that vetoes those LONGs would cut the better trades.
+- Combinations on 4h (`--combo`, rules fixed before scoring): 16 pairs of `taker_flow` with another signal, trained on the 8 trading symbols 2022 to 2025. The best, LONG `taker_flow+rsi_exhausted` (+0.18 R on 1.8k bars), failed on 8 never-analysed symbols (DOGE LTC DOT BCH ATOM TRX ETC FIL, `--symbols`): +0.011 R against a 0.035 R fee. Unselected but worth a fresh test: SHORT `taker_flow+funding_favorable` cleared the fee on both sets (+0.055 and +0.079 R), with intervals that still reach below it.
 - Implication: loosening the Scout or Analyst gates would trade noise. A new feature should show lift above the fee in `eval signals` first.
 
 Rerun the command before relying on these numbers, since they describe one data window.
