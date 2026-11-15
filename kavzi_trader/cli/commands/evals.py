@@ -21,6 +21,11 @@ from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.cli.composition import load_tier_registry
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.agent_source import AgentSource
+from kavzi_trader.evals.candidate_signals import (
+    CANDIDATE_SIGNALS,
+    LEADER_SYMBOL,
+    CandidateSignals,
+)
 from kavzi_trader.evals.candle_cache import CandleCache
 from kavzi_trader.evals.case_anonymizer import CaseAnonymizer
 from kavzi_trader.evals.case_context_builder import CaseContextBuilder
@@ -561,6 +566,11 @@ def _parse_brackets(
         "days of OI, so only bars in that window are sampled."
     ),
 )
+@click.option(
+    "--candidates/--no-candidates",
+    default=False,
+    help="Also score signals the bot does not use yet: taker flow, 1h trend, BTC lead.",
+)
 @click.pass_context
 def signal_edge(
     ctx: click.Context,
@@ -570,6 +580,7 @@ def signal_edge(
     out: Path | None,
     funding: bool,
     oi: bool,
+    candidates: bool,
 ) -> None:
     """Measure each confluence signal's R edge on cached candles; no LLM calls."""
     app_config: AppConfig = ctx.obj["app_config"]
@@ -596,6 +607,11 @@ def signal_edge(
         sampler.sample(s, f, max_horizon, settlements.get(s), snapshots.get(s))
         for s, f in frames.items()
     ]
+    if candidates:
+        extra = CandidateSignals(
+            history, frames.get(LEADER_SYMBOL), htf=app_config.trading.interval == "15m"
+        )
+        parts = [extra.add(s, frames[s], p) for s, p in zip(frames, parts, strict=True)]
     parts = [part for part in parts if not part.empty]
     if not parts:
         raise click.ClickException("No bars to sample; is the OI window covered?")
@@ -605,6 +621,8 @@ def signal_edge(
         signals = (*signals, FUNDING_SIGNAL)
     if oi:
         signals = (*signals, *OI_SIGNALS)
+    if candidates:
+        signals = (*signals, *[c for c in CANDIDATE_SIGNALS if f"LONG_{c}" in samples])
     analyzer = SignalEdgeAnalyzer(
         stride, signals, float(app_config.paper.commission_rate)
     )

@@ -62,7 +62,11 @@ def compute_htf_trend(candles_15m: list[CandlestickSchema]) -> HtfTrendSchema:
     LONG when the 1h EMA20 leads EMA50 with RSI confirming (>50); SHORT for
     the mirror; NEUTRAL when the stack is mixed or history is too short.
     """
-    closes = aggregate_1h_closes(candles_15m)
+    return htf_trend_from_closes(aggregate_1h_closes(candles_15m))
+
+
+def htf_trend_from_closes(closes: list[Decimal]) -> HtfTrendSchema:
+    """The 1h trend from hourly closes, oldest first."""
     bars = len(closes)
     if bars < _MIN_BARS_1H:
         return HtfTrendSchema(

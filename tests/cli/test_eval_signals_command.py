@@ -113,3 +113,20 @@ def test_oi_flag_scores_oi_signals_in_the_oi_window(
     assert "| LONG | oi_supports_direction |" in text
     assert "| SHORT | oi_funding_divergence |" in text
     assert "| LONG | funding_favorable |" in text
+
+
+def test_candidates_flag_adds_candidate_signals(
+    config: AppConfig, tmp_path: Path
+) -> None:
+    write_cache(tmp_path / "cache", btc_frame(extra_bars=200))
+    out = tmp_path / "signals.md"
+
+    result = _invoke(
+        config, tmp_path / "cache",
+        "--candidates", "--stride", "29", "--bracket", "1:2:10", "--out", str(out),
+    )  # fmt: skip
+
+    assert result.exception is None
+    text = out.read_text(encoding="utf-8")
+    for name in ("taker_flow", "htf_trend", "btc_lead"):
+        assert f"| LONG | {name} |" in text
