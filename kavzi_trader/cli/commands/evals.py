@@ -7,6 +7,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import click
@@ -54,6 +55,7 @@ from kavzi_trader.evals.run_loader import RunLoader
 from kavzi_trader.evals.run_projection_schema import RunProjectionSchema
 from kavzi_trader.evals.run_report_builder import RunReportBuilder
 from kavzi_trader.evals.sample_window_schema import SampleWindowSchema
+from kavzi_trader.evals.scout_signals import ScoutSignals
 from kavzi_trader.evals.series_cache import SeriesCache
 from kavzi_trader.evals.signal_bracket_schema import SignalBracketSchema
 from kavzi_trader.evals.signal_edge_analyzer import SignalEdgeAnalyzer
@@ -657,6 +659,14 @@ def _parse_brackets(
     default=False,
     help="Also score signals the bot does not use yet: taker flow, 1h trend, BTC lead.",
 )
+@click.option(
+    "--scout-vol-min",
+    "scout_vol_mins",
+    type=click.FloatRange(min=0),
+    multiple=True,
+    help="Replay the live Scout with this trend_vol_ratio_min and score its "
+    "TREND_CONTINUATION calls; repeat to compare thresholds.",
+)
 @click.pass_context
 def signal_edge(
     ctx: click.Context,
@@ -670,6 +680,7 @@ def signal_edge(
     start_day: datetime | None,
     end_day: datetime | None,
     candidates: bool,
+    scout_vol_mins: tuple[float, ...],
 ) -> None:
     """Measure each confluence signal's R edge on cached candles; no LLM calls."""
     app_config: AppConfig = ctx.obj["app_config"]
@@ -711,6 +722,17 @@ def signal_edge(
             history, frames.get(LEADER_SYMBOL), htf=interval == "15m"
         )
         parts = [extra.add(s, frames[s], p) for s, p in zip(frames, parts, strict=True)]
+    scout = ScoutSignals(
+        app_config,
+        load_tier_registry(),
+        interval,
+        [Decimal(str(v)) for v in scout_vol_mins],
+    )
+    if scout_vol_mins:
+        parts = [
+            asyncio.run(scout.add(s, frames[s], p))
+            for s, p in zip(frames, parts, strict=True)
+        ]
     parts = [part for part in parts if not part.empty]
     if not parts:
         raise click.ClickException("No bars to sample; is the OI window covered?")
@@ -722,6 +744,7 @@ def signal_edge(
         signals = (*signals, *OI_SIGNALS)
     if candidates:
         signals = (*signals, *[c for c in CANDIDATE_SIGNALS if f"LONG_{c}" in samples])
+    signals = (*signals, *scout.names)
     analyzer = SignalEdgeAnalyzer(
         stride, signals, float(app_config.paper.commission_rate)
     )

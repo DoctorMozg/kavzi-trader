@@ -188,3 +188,21 @@ class TestWindow:
         )
         assert result.exception is not None
         assert "--from must be before --to" in str(result.exception)
+
+
+def test_scout_vol_min_adds_one_scout_signal_per_threshold(
+    config: AppConfig, tmp_path: Path
+) -> None:
+    write_cache(tmp_path / "cache", btc_frame(extra_bars=100))
+    out = tmp_path / "signals.md"
+
+    result = _invoke(
+        config, tmp_path / "cache",
+        "--scout-vol-min", "0.8", "--scout-vol-min", "1.2",
+        "--stride", "29", "--bracket", "1:2:10", "--out", str(out),
+    )  # fmt: skip
+
+    assert result.exception is None
+    text = out.read_text(encoding="utf-8")
+    assert "| LONG | scout_trend_0.8 |" in text
+    assert "| SHORT | scout_trend_1.2 |" in text

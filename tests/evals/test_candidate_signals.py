@@ -6,6 +6,7 @@ import pandas as pd
 
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.evals.candidate_signals import LEADER_SYMBOL, CandidateSignals
+from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
 from kavzi_trader.indicators.htf import compute_htf_trend
 from tests.evals.frames import make_frame
 
@@ -84,6 +85,34 @@ class TestHtfTrend:
             live = compute_htf_trend(_candles(frame.iloc[i - HISTORY + 1 : i + 1]))
             assert long == (live.direction == "LONG")
             assert short == (live.direction == "SHORT")
+
+
+class TestRsiExhausted:
+    def test_fires_when_live_rsi_is_beyond_the_band_two_bars_running(self) -> None:
+        frame = make_frame(HISTORY + 120, seed=4)
+        rally = np.exp(0.004 * np.arange(60))
+        for column in ("open", "high", "low", "close"):
+            frame.loc[HISTORY : HISTORY + 59, column] *= rally
+            frame.loc[HISTORY + 60 :, column] *= rally[-1]
+        idx = list(range(HISTORY - 1, HISTORY + 119, 3))
+
+        out = CandidateSignals(HISTORY, None, htf=False).add(
+            "ETHUSDT", frame, _samples(idx)
+        )
+
+        def live_rsi(i: int) -> Decimal | None:
+            window = frame.iloc[max(i - HISTORY + 1, 0) : i + 1]
+            indicators = TechnicalIndicatorCalculator().calculate(_candles(window))
+            assert indicators is not None
+            return indicators.rsi_14
+
+        for i, long, short in zip(
+            idx, out["LONG_rsi_exhausted"], out["SHORT_rsi_exhausted"], strict=True
+        ):
+            pair = [live_rsi(i - 1), live_rsi(i)]
+            assert long == all(r is not None and r > 70 for r in pair)
+            assert short == all(r is not None and r < 30 for r in pair)
+        assert out["LONG_rsi_exhausted"].any()
 
 
 class TestBtcLead:

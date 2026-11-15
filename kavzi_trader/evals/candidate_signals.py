@@ -4,8 +4,9 @@ import numpy as np
 import pandas as pd
 
 from kavzi_trader.indicators.htf import htf_trend_from_closes
+from kavzi_trader.indicators.momentum import calculate_rsi
 
-CANDIDATE_SIGNALS = ("taker_flow", "htf_trend", "btc_lead")
+CANDIDATE_SIGNALS = ("taker_flow", "htf_trend", "btc_lead", "rsi_exhausted")
 LEADER_SYMBOL = "BTCUSDT"
 # Flow and lead windows, in bars (one hour at 15m).
 _LOOKBACK_BARS = 4
@@ -14,6 +15,10 @@ _LOOKBACK_BARS = 4
 _UPPER_RANK = 2 / 3
 _LOWER_RANK = 1 / 3
 _MS_PER_HOUR = 3_600_000
+# The exhaustion guard proposed in the 2026-06-11 report: RSI beyond 70/30 on
+# this bar and the one before.
+_RSI_HIGH = Decimal(70)
+_RSI_LOW = Decimal(30)
 
 
 class CandidateSignals:
@@ -22,7 +27,8 @@ class CandidateSignals:
     taker_flow: taker-buy share of volume over the last 4 bars, ranked within
     the trailing history window. htf_trend: the live 1h trend agrees with the
     side (15m candles only). btc_lead: BTC's return over the last 4 bars,
-    ranked the same way, for every other symbol.
+    ranked the same way, for every other symbol. rsi_exhausted: the live RSI
+    was above 70 on this bar and the previous one (LONG), or below 30 (SHORT).
     """
 
     def __init__(self, history: int, leader: pd.DataFrame | None, *, htf: bool) -> None:
@@ -44,6 +50,9 @@ class CandidateSignals:
             direction = np.array([self._htf_direction(frame, int(i)) for i in idx])
             out["LONG_htf_trend"] = direction == "LONG"
             out["SHORT_htf_trend"] = direction == "SHORT"
+        pairs = [self._rsi_pair(frame, int(i)) for i in idx]
+        out["LONG_rsi_exhausted"] = [_beyond(p, _RSI_HIGH, high=True) for p in pairs]
+        out["SHORT_rsi_exhausted"] = [_beyond(p, _RSI_LOW, high=False) for p in pairs]
         if self._leader_rank is not None:
             lead = np.full(len(idx), np.nan)
             if symbol != LEADER_SYMBOL:
@@ -74,9 +83,21 @@ class CandidateSignals:
             ranks.to_numpy(), index=leader["close_time_ms"].to_numpy(dtype=np.int64)
         )
 
+    def _rsi_pair(self, frame: pd.DataFrame, i: int) -> list[Decimal | None]:
+        """Live RSI at bars ``i - 1`` and ``i``, each over its own window."""
+        close = frame["close"]
+        return [
+            calculate_rsi(close.iloc[max(j - self._history + 1, 0) : j + 1])
+            for j in (i - 1, i)
+        ]
+
     def _htf_direction(self, frame: pd.DataFrame, i: int) -> str:
         window = frame.iloc[i - self._history + 1 : i + 1]
         # Same bucketing as the live aggregate_1h_closes: last close per UTC hour.
         hourly = window.groupby(window["open_time_ms"] // _MS_PER_HOUR)["close"].last()
         closes = [Decimal(str(c)) for c in hourly]
         return htf_trend_from_closes(closes).direction
+
+
+def _beyond(pair: list[Decimal | None], bound: Decimal, *, high: bool) -> bool:
+    return all(r is not None and (r > bound if high else r < bound) for r in pair)
