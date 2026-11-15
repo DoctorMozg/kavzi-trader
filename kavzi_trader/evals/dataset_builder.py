@@ -41,8 +41,8 @@ logger = logging.getLogger(__name__)
 DATASET_VERSION = "v1"
 _MS_PER_S = 1000
 _MS_PER_HOUR = 3_600_000
-_MS_PER_DAY = 86_400_000
-_DAYS_PER_MONTH = 365.25 / 12
+MS_PER_DAY = 86_400_000
+DAYS_PER_MONTH = 365.25 / 12
 _GEOMETRY_TOLERANCE = 1e-6
 
 
@@ -70,7 +70,7 @@ class DatasetBuilder:
         self._step_ms = step_ms
         self._horizon_bars = params.max_hold_time_hours * _MS_PER_HOUR // step_ms
         self._window_start_ms = params.data_end_ms - int(
-            params.months * _DAYS_PER_MONTH * _MS_PER_DAY
+            params.months * DAYS_PER_MONTH * MS_PER_DAY
         )
         self._cache = CandleCache(params.cache_dir, params.interval)
         self._downloader = KlineDownloader(client, self._cache, params.interval)

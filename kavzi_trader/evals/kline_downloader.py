@@ -34,7 +34,8 @@ class KlineDownloader:
             first = int(cached["open_time_ms"].iloc[0])
             last = int(cached["open_time_ms"].iloc[-1])
             gaps = []
-            if start_ms < first:
+            # An off-grid start opens no candle before the next step boundary.
+            if start_ms + (-start_ms) % self._step_ms < first:
                 gaps.append((start_ms, first))
             if last + self._step_ms < end_ms:
                 gaps.append((last + self._step_ms, end_ms))

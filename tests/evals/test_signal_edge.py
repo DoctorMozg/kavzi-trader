@@ -185,7 +185,9 @@ class TestSignalReportRenderer:
             {"AAA": _trend_frame(100)},
             bracket,
         )
-        renderer = SignalReportRenderer(stride=5, history=HISTORY, symbols=["AAA"])
+        renderer = SignalReportRenderer(
+            stride=5, history=HISTORY, symbols=["AAA"], interval="15m"
+        )
 
         text = renderer.render([lifted])
 

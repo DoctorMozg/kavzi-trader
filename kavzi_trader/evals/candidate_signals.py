@@ -7,7 +7,7 @@ from kavzi_trader.indicators.htf import htf_trend_from_closes
 
 CANDIDATE_SIGNALS = ("taker_flow", "htf_trend", "btc_lead")
 LEADER_SYMBOL = "BTCUSDT"
-# One hour of 15m bars for the flow and lead windows.
+# Flow and lead windows, in bars (one hour at 15m).
 _LOOKBACK_BARS = 4
 # Fixed before looking at outcomes: the top or bottom third of the trailing
 # window counts as a signal, so each side fires on about a third of bars.
@@ -19,10 +19,10 @@ _MS_PER_HOUR = 3_600_000
 class CandidateSignals:
     """Signals the live confluence score does not use yet, for edge testing.
 
-    taker_flow: taker-buy share of volume over the last hour, ranked within
+    taker_flow: taker-buy share of volume over the last 4 bars, ranked within
     the trailing history window. htf_trend: the live 1h trend agrees with the
-    side (15m candles only). btc_lead: BTC's last-hour return, ranked the same
-    way, for every other symbol.
+    side (15m candles only). btc_lead: BTC's return over the last 4 bars,
+    ranked the same way, for every other symbol.
     """
 
     def __init__(self, history: int, leader: pd.DataFrame | None, *, htf: bool) -> None:

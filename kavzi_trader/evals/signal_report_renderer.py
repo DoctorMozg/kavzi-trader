@@ -10,14 +10,18 @@ from kavzi_trader.evals.signal_sampler import SIDES
 class SignalReportRenderer:
     """Markdown report of signal edge across one or more brackets."""
 
-    def __init__(self, stride: int, history: int, symbols: list[str]) -> None:
+    def __init__(
+        self, stride: int, history: int, symbols: list[str], interval: str
+    ) -> None:
         self._stride = stride
+        self._interval = interval
         self._history = history
         self._symbols = symbols
 
     def render(self, results: list[BracketEdgeSchema]) -> str:
         intro = (
-            f"Every {self._stride}th 15m bar of {', '.join(self._symbols)}; "
+            f"Every {self._stride}th {self._interval} bar of "
+            f"{', '.join(self._symbols)}; "
             f"live indicators over the trailing {self._history} bars and the live "
             "ConfluenceCalculator. R is the result of taking that side with the "
             "bracket (same-bar SL+TP counts as SL, timeout marked to market), "

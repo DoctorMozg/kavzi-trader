@@ -34,12 +34,17 @@ from kavzi_trader.evals.case_result_schema import CaseResultSchema
 from kavzi_trader.evals.case_selector import CaseSelector
 from kavzi_trader.evals.cost_calculator import CostCalculator
 from kavzi_trader.evals.dataset_build_params_schema import DatasetBuildParamsSchema
-from kavzi_trader.evals.dataset_builder import DatasetBuilder
+from kavzi_trader.evals.dataset_builder import (
+    DAYS_PER_MONTH,
+    MS_PER_DAY,
+    DatasetBuilder,
+)
 from kavzi_trader.evals.distribution_report_schema import DistributionReportSchema
 from kavzi_trader.evals.eval_case_schema import EvalCaseSchema
 from kavzi_trader.evals.eval_pipeline_runner import EvalPipelineRunner
 from kavzi_trader.evals.eval_run_orchestrator import EvalRunOrchestrator
 from kavzi_trader.evals.funding_downloader import FundingDownloader
+from kavzi_trader.evals.kline_downloader import KlineDownloader
 from kavzi_trader.evals.market_feature_builder import MarketFeatureBuilder
 from kavzi_trader.evals.oi_downloader import OiDownloader
 from kavzi_trader.evals.result_store import ResultStore
@@ -450,6 +455,7 @@ def report_eval(
 
 # The live z-score needs FUNDING_HISTORY_LIMIT settlements (8h apart) of lead-in.
 _FUNDING_LEAD_MS = 40 * 24 * 3600 * _MS_PER_S
+_INTERVALS = click.Choice(list(KLINE_INTERVALS))
 # Binance rejects openInterestHist start times older than about 30 days.
 _OI_LOOKBACK_MS = 29 * 24 * 3600 * _MS_PER_S
 
@@ -513,6 +519,62 @@ def _load_oi(
     return {symbol: cache.load(symbol) for symbol in frames}
 
 
+def _day(ms: int) -> str:
+    return datetime.fromtimestamp(ms / _MS_PER_S, UTC).date().isoformat()
+
+
+@eval_group.command("refresh-cache")
+@click.option(
+    "--interval",
+    type=_INTERVALS,
+    default=None,
+    help="Candle interval; default the trading interval.",
+)
+@click.option(
+    "--months",
+    type=click.FloatRange(min=0, min_open=True),
+    default=12.0,
+    show_default=True,
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("data/eval_cache"),
+    show_default=True,
+)
+@click.pass_context
+def refresh_cache(
+    ctx: click.Context, interval: str | None, months: float, cache_dir: Path
+) -> None:
+    """Fill cached candles, funding and OI up to today; the dataset is untouched."""
+    app_config: AppConfig = ctx.obj["app_config"]
+    interval = interval or app_config.trading.interval
+    end_ms = _day_start_ms(None)
+    start_ms = end_ms - int(months * DAYS_PER_MONTH * MS_PER_DAY)
+    cache = CandleCache(cache_dir, interval)
+    symbols = app_config.trading.symbols
+
+    async def _job(exchange: ExchangeClient) -> None:
+        downloader = KlineDownloader(exchange, cache, interval)
+        for symbol in symbols:
+            await downloader.ensure_range(symbol, start_ms, end_ms)
+
+    client = ctx.obj.get("exchange_client")
+    _with_exchange(client, _job)
+    frames = {s: cache.load(s) for s in symbols}
+    frames = {s: f for s, f in frames.items() if not f.empty}
+    settlements = _load_funding(client, cache_dir, frames)
+    period = OrderFlowCalculator(KLINE_INTERVALS[interval] // _S_PER_MIN).oi_period
+    snapshots = _load_oi(client, cache_dir, frames, period)
+    for symbol, frame in frames.items():
+        first, last = frame["open_time_ms"].iloc[[0, -1]]
+        click.echo(
+            f"{symbol}: {len(frame)} {interval} candles {_day(first)} to "
+            f"{_day(last)}, {len(settlements[symbol])} funding, "
+            f"{len(snapshots[symbol])} OI {period}"
+        )
+
+
 def _parse_brackets(
     _ctx: click.Context, _param: click.Parameter, values: tuple[str, ...]
 ) -> list[SignalBracketSchema]:
@@ -567,6 +629,13 @@ def _parse_brackets(
     ),
 )
 @click.option(
+    "--interval",
+    type=_INTERVALS,
+    default=None,
+    help="Candle interval to test; default the trading interval. Fill it with "
+    "refresh-cache first.",
+)
+@click.option(
     "--candidates/--no-candidates",
     default=False,
     help="Also score signals the bot does not use yet: taker flow, 1h trend, BTC lead.",
@@ -580,21 +649,25 @@ def signal_edge(
     out: Path | None,
     funding: bool,
     oi: bool,
+    interval: str | None,
     candidates: bool,
 ) -> None:
     """Measure each confluence signal's R edge on cached candles; no LLM calls."""
     app_config: AppConfig = ctx.obj["app_config"]
     history = app_config.trading.history_candles
-    cache = CandleCache(cache_dir, app_config.trading.interval)
+    interval = interval or app_config.trading.interval
+    cache = CandleCache(cache_dir, interval)
     frames = {
         s: cache.load(s).reset_index(drop=True) for s in app_config.trading.symbols
     }
     frames = {s: f for s, f in frames.items() if not f.empty}
     if not frames:
-        raise click.ClickException(f"No cached candles in {cache_dir}")
-    order_flow = OrderFlowCalculator(
-        KLINE_INTERVALS[app_config.trading.interval] // _S_PER_MIN
-    )
+        msg = (
+            f"No cached {interval} candles in {cache_dir}; run "
+            f"`eval refresh-cache --interval {interval}`"
+        )
+        raise click.ClickException(msg)
+    order_flow = OrderFlowCalculator(KLINE_INTERVALS[interval] // _S_PER_MIN)
     sampler = SignalSampler(
         MarketFeatureBuilder(app_config.risk), history, stride, order_flow
     )
@@ -609,7 +682,7 @@ def signal_edge(
     ]
     if candidates:
         extra = CandidateSignals(
-            history, frames.get(LEADER_SYMBOL), htf=app_config.trading.interval == "15m"
+            history, frames.get(LEADER_SYMBOL), htf=interval == "15m"
         )
         parts = [extra.add(s, frames[s], p) for s, p in zip(frames, parts, strict=True)]
     parts = [part for part in parts if not part.empty]
@@ -627,7 +700,7 @@ def signal_edge(
         stride, signals, float(app_config.paper.commission_rate)
     )
     results = [analyzer.analyze(samples, frames, b) for b in brackets]
-    renderer = SignalReportRenderer(stride, history, list(frames))
+    renderer = SignalReportRenderer(stride, history, list(frames), interval)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = out or app_config.system.results_dir / "evals" / f"signals_{stamp}.md"
     path.parent.mkdir(parents=True, exist_ok=True)

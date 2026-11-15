@@ -57,9 +57,12 @@ def btc_frame(
     return frame
 
 
-def write_cache(cache_dir: Path, frame: pd.DataFrame, symbol: str = SYMBOL) -> None:
+def write_cache(
+    cache_dir: Path, frame: pd.DataFrame, symbol: str = SYMBOL, interval: str = "15m"
+) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
-    frame.to_csv(cache_dir / f"{symbol}_15m.csv.gz", index=False, compression="gzip")
+    path = cache_dir / f"{symbol}_{interval}.csv.gz"
+    frame.to_csv(path, index=False, compression="gzip")
 
 
 def case_at(frame: pd.DataFrame, index: int, **overrides: object) -> EvalCaseSchema:

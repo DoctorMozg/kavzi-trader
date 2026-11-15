@@ -1,7 +1,12 @@
+from datetime import UTC, datetime
+from decimal import Decimal
+
+from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.binance.schemas.data_dicts import (
     FundingRateDict,
     OpenInterestHistDict,
 )
+from kavzi_trader.domain.candlestick import CandlestickSchema
 
 SETTLE_MS = 8 * 3600 * 1000
 OI_STEP_MS = 15 * 60 * 1000
@@ -16,7 +21,7 @@ def open_interest(ms: int) -> float:
 
 
 class FakeExchange:
-    """Serves 8h funding and 15m OI histories in pages, like Binance does.
+    """Serves klines, 8h funding and 15m OI histories in pages, like Binance does.
 
     As on Binance, OI without an end time returns the latest rows.
     """
@@ -25,6 +30,16 @@ class FakeExchange:
         self.now_ms = now_ms
         self.funding_calls: list[tuple[int, int, int]] = []
         self.oi_calls: list[tuple[int, int | None, int]] = []
+        self.kline_calls: list[tuple[str, int, int]] = []
+
+    async def get_klines(
+        self, symbol: str, interval: str, start_time: int, end_time: int, limit: int
+    ) -> list[CandlestickSchema]:
+        self.kline_calls.append((interval, start_time, end_time))
+        step_ms = KLINE_INTERVALS[interval] * 1000
+        first = start_time + (-start_time) % step_ms
+        last = min(end_time, self.now_ms - step_ms)
+        return [_candle(t, step_ms) for t in range(first, last + 1, step_ms)][:limit]
 
     async def get_funding_rate(
         self, symbol: str, limit: int, start_time: int, end_time: int
@@ -61,3 +76,20 @@ class FakeExchange:
             )
             for t in times
         ]
+
+
+def _candle(open_ms: int, step_ms: int) -> CandlestickSchema:
+    price = Decimal(100 + (open_ms // step_ms) % 9)
+    return CandlestickSchema(
+        open_time=datetime.fromtimestamp(open_ms / 1000, UTC),
+        open_price=price,
+        high_price=price + 1,
+        low_price=price - 1,
+        close_price=price,
+        volume=Decimal(10),
+        close_time=datetime.fromtimestamp((open_ms + step_ms - 1) / 1000, UTC),
+        quote_volume=Decimal(1000),
+        trades_count=5,
+        taker_buy_base_volume=Decimal(5),
+        taker_buy_quote_volume=Decimal(500),
+    )

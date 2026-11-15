@@ -62,7 +62,7 @@ def test_rejects_a_malformed_bracket(config: AppConfig, tmp_path: Path) -> None:
 def test_fails_without_cached_candles(config: AppConfig, tmp_path: Path) -> None:
     result = _invoke(config, tmp_path / "empty")
     assert result.exception is not None
-    assert "No cached candles" in str(result.exception)
+    assert "No cached 15m candles in" in str(result.exception)
 
 
 def test_funding_flag_downloads_and_scores_funding(
@@ -130,3 +130,28 @@ def test_candidates_flag_adds_candidate_signals(
     text = out.read_text(encoding="utf-8")
     for name in ("taker_flow", "htf_trend", "btc_lead"):
         assert f"| LONG | {name} |" in text
+
+
+class TestInterval:
+    def test_reads_the_cache_of_the_given_interval(
+        self, config: AppConfig, tmp_path: Path
+    ) -> None:
+        write_cache(tmp_path / "cache", btc_frame(extra_bars=200), interval="4h")
+        out = tmp_path / "signals.md"
+
+        result = _invoke(
+            config, tmp_path / "cache",
+            "--interval", "4h", "--stride", "29", "--bracket", "1:2:10",
+            "--out", str(out),
+        )  # fmt: skip
+
+        assert result.exception is None
+        assert "Every 29th 4h bar of BTCUSDT;" in out.read_text(encoding="utf-8")
+
+    def test_missing_interval_cache_points_at_refresh(
+        self, config: AppConfig, tmp_path: Path
+    ) -> None:
+        write_cache(tmp_path / "cache", btc_frame())
+        result = _invoke(config, tmp_path / "cache", "--interval", "1h")
+        assert result.exception is not None
+        assert "eval refresh-cache --interval 1h" in str(result.exception)

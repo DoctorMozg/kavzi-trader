@@ -66,13 +66,18 @@ class TestKlineDownloader:
         assert len(client.calls) == 3
         assert all(limit == 1500 for _, _, limit in client.calls)
 
-    async def test_rerun_downloads_nothing(self, cache: CandleCache) -> None:
+    # An off-grid start used to refetch the sub-step head gap on every rerun.
+    @pytest.mark.parametrize("offset_ms", [0, STEP_MS // 3])
+    async def test_rerun_downloads_nothing(
+        self, cache: CandleCache, offset_ms: int
+    ) -> None:
         client = FakeClient()
         downloader = KlineDownloader(cast("ExchangeClient", client), cache, "15m")
+        start = START - offset_ms
         end = START + 100 * STEP_MS
-        await downloader.ensure_range("AAA", START, end)
+        await downloader.ensure_range("AAA", start, end)
         client.calls.clear()
-        await downloader.ensure_range("AAA", START, end)
+        await downloader.ensure_range("AAA", start, end)
         assert client.calls == []
         assert len(cache.load("AAA")) == 100
 
