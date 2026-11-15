@@ -201,4 +201,4 @@ npm test
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GPL-3.0-only. Copyright (c) 2026 Stanislav Gonorovskii. See [LICENSE](LICENSE).

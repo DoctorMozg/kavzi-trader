@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Personal research project exploring the trading capabilities of LLMs: a Brain-Spine crypto trading platform for Binance with tiered PydanticAI agents."
 readme = "README.md"
 requires-python = ">=3.14"
-license = "MIT"
+license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 authors = [
     { name = "Stanislav Gonorovskii", email = "drmozg@gmail.com" },
