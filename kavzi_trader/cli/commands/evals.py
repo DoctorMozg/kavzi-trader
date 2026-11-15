@@ -11,6 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import click
+import numpy as np
 import pandas as pd
 from pydantic import ValidationError
 
@@ -64,6 +65,7 @@ from kavzi_trader.evals.signal_sampler import (
     CANDLE_SIGNALS,
     FUNDING_SIGNAL,
     OI_SIGNALS,
+    SIDES,
     SignalSampler,
 )
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
@@ -523,6 +525,25 @@ def _load_oi(
     return {symbol: cache.load(symbol) for symbol in frames}
 
 
+def _parse_symbols(
+    _ctx: click.Context, _param: click.Parameter, value: str | None
+) -> list[str] | None:
+    if value is None:
+        return None
+    symbols = [s.strip().upper() for s in value.split(",") if s.strip()]
+    if not symbols:
+        raise click.BadParameter("give at least one symbol")
+    return symbols
+
+
+_SYMBOLS_OPTION = click.option(
+    "--symbols",
+    default=None,
+    callback=_parse_symbols,
+    help="Comma-separated symbols; default the trading symbols.",
+)
+
+
 def _day(ms: int) -> str:
     return datetime.fromtimestamp(ms / _MS_PER_S, UTC).date().isoformat()
 
@@ -546,9 +567,14 @@ def _day(ms: int) -> str:
     default=Path("data/eval_cache"),
     show_default=True,
 )
+@_SYMBOLS_OPTION
 @click.pass_context
 def refresh_cache(
-    ctx: click.Context, interval: str | None, months: float, cache_dir: Path
+    ctx: click.Context,
+    interval: str | None,
+    months: float,
+    cache_dir: Path,
+    symbols: list[str] | None,
 ) -> None:
     """Fill cached candles, funding and OI up to today; the dataset is untouched."""
     app_config: AppConfig = ctx.obj["app_config"]
@@ -556,7 +582,7 @@ def refresh_cache(
     end_ms = _day_start_ms(None)
     start_ms = end_ms - int(months * DAYS_PER_MONTH * MS_PER_DAY)
     cache = CandleCache(cache_dir, interval)
-    symbols = app_config.trading.symbols
+    symbols = symbols or app_config.trading.symbols
 
     async def _job(exchange: ExchangeClient) -> None:
         downloader = KlineDownloader(exchange, cache, interval)
@@ -577,6 +603,29 @@ def refresh_cache(
             f"{_day(last)}, {len(settlements[symbol])} funding, "
             f"{len(snapshots[symbol])} OI {period}"
         )
+
+
+def _leader(cache: CandleCache, frames: dict[str, pd.DataFrame]) -> pd.DataFrame | None:
+    """BTC candles for the lead signal, from the cache when BTC is not sampled."""
+    if LEADER_SYMBOL in frames:
+        return frames[LEADER_SYMBOL]
+    leader = cache.load(LEADER_SYMBOL).reset_index(drop=True)
+    return None if leader.empty else leader
+
+
+def _add_combos(
+    samples: pd.DataFrame, combos: tuple[str, ...], signals: tuple[str, ...]
+) -> None:
+    """Add a LONG_/SHORT_ column per combo: every listed signal fires on that side."""
+    for combo in combos:
+        names = combo.split("+")
+        unknown = [n for n in names if n not in signals]
+        if len(names) < 2 or unknown:  # noqa: PLR2004 - a combo joins two or more
+            msg = f"--combo {combo!r}: need 2+ scored signals, unknown {unknown}"
+            raise click.BadParameter(msg)
+        for side in SIDES:
+            columns = [samples[f"{side}_{n}"].to_numpy(dtype=bool) for n in names]
+            samples[f"{side}_{combo}"] = np.logical_and.reduce(columns)
 
 
 def _parse_brackets(
@@ -667,6 +716,14 @@ def _parse_brackets(
     help="Replay the live Scout with this trend_vol_ratio_min and score its "
     "TREND_CONTINUATION calls; repeat to compare thresholds.",
 )
+@click.option(
+    "--combo",
+    "combos",
+    multiple=True,
+    help="A+B: also score bars where all listed signals fire on the same side; "
+    "repeatable.",
+)
+@_SYMBOLS_OPTION
 @click.pass_context
 def signal_edge(
     ctx: click.Context,
@@ -681,6 +738,8 @@ def signal_edge(
     end_day: datetime | None,
     candidates: bool,
     scout_vol_mins: tuple[float, ...],
+    combos: tuple[str, ...],
+    symbols: list[str] | None,
 ) -> None:
     """Measure each confluence signal's R edge on cached candles; no LLM calls."""
     app_config: AppConfig = ctx.obj["app_config"]
@@ -688,7 +747,8 @@ def signal_edge(
     interval = interval or app_config.trading.interval
     cache = CandleCache(cache_dir, interval)
     frames = {
-        s: cache.load(s).reset_index(drop=True) for s in app_config.trading.symbols
+        s: cache.load(s).reset_index(drop=True)
+        for s in symbols or app_config.trading.symbols
     }
     frames = {s: f for s, f in frames.items() if not f.empty}
     if not frames:
@@ -718,9 +778,7 @@ def signal_edge(
         for s, f in frames.items()
     ]
     if candidates:
-        extra = CandidateSignals(
-            history, frames.get(LEADER_SYMBOL), htf=interval == "15m"
-        )
+        extra = CandidateSignals(history, _leader(cache, frames), htf=interval == "15m")
         parts = [extra.add(s, frames[s], p) for s, p in zip(frames, parts, strict=True)]
     scout = ScoutSignals(
         app_config,
@@ -745,6 +803,8 @@ def signal_edge(
     if candidates:
         signals = (*signals, *[c for c in CANDIDATE_SIGNALS if f"LONG_{c}" in samples])
     signals = (*signals, *scout.names)
+    _add_combos(samples, combos, signals)
+    signals = (*signals, *combos)
     analyzer = SignalEdgeAnalyzer(
         stride, signals, float(app_config.paper.commission_rate)
     )

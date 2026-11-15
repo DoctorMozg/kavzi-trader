@@ -206,3 +206,50 @@ def test_scout_vol_min_adds_one_scout_signal_per_threshold(
     text = out.read_text(encoding="utf-8")
     assert "| LONG | scout_trend_0.8 |" in text
     assert "| SHORT | scout_trend_1.2 |" in text
+
+
+class TestCombos:
+    def test_combo_fires_only_where_every_part_fires(
+        self, config: AppConfig, tmp_path: Path
+    ) -> None:
+        write_cache(tmp_path / "cache", btc_frame(extra_bars=200))
+        out = tmp_path / "signals.md"
+
+        result = _invoke(
+            config, tmp_path / "cache",
+            "--combo", "ema_alignment+rsi_favorable",
+            "--stride", "29", "--bracket", "1:2:10", "--out", str(out),
+        )  # fmt: skip
+
+        assert result.exception is None
+        rows = {
+            line.split("|")[2].strip(): line.split("|")[3].strip()
+            for line in out.read_text(encoding="utf-8").splitlines()
+            if line.startswith("| LONG |")
+        }
+        combo = float(rows["ema_alignment+rsi_favorable"].rstrip("%"))
+        parts = [float(rows[n].rstrip("%")) for n in ("ema_alignment", "rsi_favorable")]
+        assert combo <= min(parts)
+
+    def test_rejects_an_unknown_part(self, config: AppConfig, tmp_path: Path) -> None:
+        write_cache(tmp_path / "cache", btc_frame(extra_bars=200))
+        result = _invoke(
+            config, tmp_path / "cache", "--combo", "ema_alignment+nope",
+            "--stride", "29", "--bracket", "1:2:10",
+        )  # fmt: skip
+        assert result.exception is not None
+        assert "unknown ['nope']" in str(result.exception)
+
+
+def test_symbols_limits_the_sampled_symbols(config: AppConfig, tmp_path: Path) -> None:
+    write_cache(tmp_path / "cache", btc_frame(extra_bars=200))
+    write_cache(tmp_path / "cache", btc_frame(extra_bars=200, seed=8), symbol="ETHUSDT")
+    out = tmp_path / "signals.md"
+
+    result = _invoke(
+        config, tmp_path / "cache", "--symbols", "ethusdt",
+        "--stride", "29", "--bracket", "1:2:10", "--out", str(out),
+    )  # fmt: skip
+
+    assert result.exception is None
+    assert "bar of ETHUSDT, all cached bars;" in out.read_text(encoding="utf-8")

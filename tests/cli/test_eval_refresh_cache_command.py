@@ -78,3 +78,14 @@ class TestRefreshCache:
         assert not CandleCache(tmp_path, "15m").path("BTCUSDT").exists()
         # openInterestHist has no period above 30m.
         assert "OI 30m" in result.output
+
+    def test_symbols_override_the_trading_symbols(
+        self, config: AppConfig, exchange: FakeExchange, tmp_path: Path
+    ) -> None:
+        result = _refresh(config, exchange, tmp_path, "--symbols", "DOGEUSDT")
+
+        assert result.exception is None
+        assert [line.split(":")[0] for line in result.output.splitlines()] == [
+            "DOGEUSDT"
+        ]
+        assert not CandleCache(tmp_path, "15m").path("BTCUSDT").exists()
