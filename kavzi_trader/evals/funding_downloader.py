@@ -1,7 +1,7 @@
 import logging
 
 from kavzi_trader.api.exchange_client import ExchangeClient
-from kavzi_trader.evals.funding_cache import FundingCache
+from kavzi_trader.evals.series_cache import TIME, SeriesCache
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ _MAX_SETTLEMENT_GAP_MS = 8 * 3600 * 1000
 class FundingDownloader:
     """Fills the funding cache for a time range; reruns only fetch what is missing."""
 
-    def __init__(self, client: ExchangeClient, cache: FundingCache) -> None:
+    def __init__(self, client: ExchangeClient, cache: SeriesCache) -> None:
         self._client = client
         self._cache = cache
 
@@ -27,8 +27,8 @@ class FundingDownloader:
         if cached.empty:
             gaps = [(start_ms, end_ms)]
         else:
-            first = int(cached["funding_time_ms"].iloc[0])
-            last = int(cached["funding_time_ms"].iloc[-1])
+            first = int(cached[TIME].iloc[0])
+            last = int(cached[TIME].iloc[-1])
             gaps = []
             if start_ms < first - _MAX_SETTLEMENT_GAP_MS:
                 gaps.append((start_ms, first))
@@ -46,7 +46,11 @@ class FundingDownloader:
             )
             if not batch:
                 break
-            self._cache.merge(symbol, batch)
+            self._cache.merge(
+                symbol,
+                [int(r["fundingTime"]) for r in batch],
+                [float(r["fundingRate"]) for r in batch],
+            )
             total += len(batch)
             cursor = int(batch[-1]["fundingTime"]) + 1
             if len(batch) < _PAGE_LIMIT:

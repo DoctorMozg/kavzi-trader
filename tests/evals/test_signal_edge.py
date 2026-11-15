@@ -13,6 +13,7 @@ from kavzi_trader.evals.signal_edge_analyzer import SignalEdgeAnalyzer
 from kavzi_trader.evals.signal_report_renderer import SignalReportRenderer
 from kavzi_trader.evals.signal_sampler import CANDLE_SIGNALS, SIDES, SignalSampler
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
+from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from tests.evals.frames import make_frame
 
@@ -81,7 +82,9 @@ def _samples(idx: list[int], fired: list[bool], scores: list[int]) -> pd.DataFra
 
 @pytest.fixture
 def sampler(app_config: AppConfig) -> SignalSampler:
-    return SignalSampler(MarketFeatureBuilder(app_config.risk), HISTORY, stride=37)
+    return SignalSampler(
+        MarketFeatureBuilder(app_config.risk), HISTORY, 37, OrderFlowCalculator(15)
+    )
 
 
 class TestSignalBracket:

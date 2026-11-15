@@ -5,6 +5,7 @@ import logging
 import subprocess
 import time
 from collections import Counter
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import click
 import pandas as pd
 
 from kavzi_trader.api.binance.client import BinanceClient
+from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
@@ -32,22 +34,25 @@ from kavzi_trader.evals.distribution_report_schema import DistributionReportSche
 from kavzi_trader.evals.eval_case_schema import EvalCaseSchema
 from kavzi_trader.evals.eval_pipeline_runner import EvalPipelineRunner
 from kavzi_trader.evals.eval_run_orchestrator import EvalRunOrchestrator
-from kavzi_trader.evals.funding_cache import FundingCache
 from kavzi_trader.evals.funding_downloader import FundingDownloader
 from kavzi_trader.evals.market_feature_builder import MarketFeatureBuilder
+from kavzi_trader.evals.oi_downloader import OiDownloader
 from kavzi_trader.evals.result_store import ResultStore
 from kavzi_trader.evals.run_header_schema import RunHeaderSchema
 from kavzi_trader.evals.run_loader import RunLoader
 from kavzi_trader.evals.run_projection_schema import RunProjectionSchema
 from kavzi_trader.evals.run_report_builder import RunReportBuilder
+from kavzi_trader.evals.series_cache import SeriesCache
 from kavzi_trader.evals.signal_bracket_schema import SignalBracketSchema
 from kavzi_trader.evals.signal_edge_analyzer import SignalEdgeAnalyzer
 from kavzi_trader.evals.signal_report_renderer import SignalReportRenderer
 from kavzi_trader.evals.signal_sampler import (
     CANDLE_SIGNALS,
     FUNDING_SIGNAL,
+    OI_SIGNALS,
     SignalSampler,
 )
+from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -55,6 +60,7 @@ from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 logger = logging.getLogger(__name__)
 
 _MS_PER_S = 1000
+_S_PER_MIN = 60
 
 
 def _day_start_ms(day: datetime | None) -> int:
@@ -439,15 +445,33 @@ def report_eval(
 
 # The live z-score needs FUNDING_HISTORY_LIMIT settlements (8h apart) of lead-in.
 _FUNDING_LEAD_MS = 40 * 24 * 3600 * _MS_PER_S
+# Binance rejects openInterestHist start times older than about 30 days.
+_OI_LOOKBACK_MS = 29 * 24 * 3600 * _MS_PER_S
+
+
+def _with_exchange(
+    client: ExchangeClient | None,
+    job: Callable[[ExchangeClient], Coroutine[None, None, None]],
+) -> None:
+    """Run ``job`` on the injected client, or on a public one closed afterwards."""
+
+    async def _public() -> None:
+        public = BinanceClient()  # public market data, no credentials
+        try:
+            await job(public)
+        finally:
+            await public.close()
+
+    asyncio.run(job(client) if client is not None else _public())
 
 
 def _load_funding(
     client: ExchangeClient | None, cache_dir: Path, frames: dict[str, pd.DataFrame]
 ) -> dict[str, pd.DataFrame]:
     """Download missing funding settlements covering each candle frame."""
-    cache = FundingCache(cache_dir)
+    cache = SeriesCache(cache_dir, "funding")
 
-    async def _run(exchange: ExchangeClient) -> None:
+    async def _job(exchange: ExchangeClient) -> None:
         downloader = FundingDownloader(exchange, cache)
         for symbol, frame in frames.items():
             await downloader.ensure_range(
@@ -456,14 +480,31 @@ def _load_funding(
                 int(frame["close_time_ms"].iloc[-1]) + 1,
             )
 
-    async def _with_public_client() -> None:
-        public = BinanceClient()  # public market data, no credentials
-        try:
-            await _run(public)
-        finally:
-            await public.close()
+    _with_exchange(client, _job)
+    return {symbol: cache.load(symbol) for symbol in frames}
 
-    asyncio.run(_run(client) if client is not None else _with_public_client())
+
+def _load_oi(
+    client: ExchangeClient | None,
+    cache_dir: Path,
+    frames: dict[str, pd.DataFrame],
+    period: str,
+) -> dict[str, pd.DataFrame]:
+    """Download the OI snapshots Binance still serves that overlap each frame."""
+    cache = SeriesCache(cache_dir, f"oi_{period}")
+    oldest_ms = int(time.time() * _MS_PER_S) - _OI_LOOKBACK_MS
+
+    async def _job(exchange: ExchangeClient) -> None:
+        downloader = OiDownloader(exchange, cache, period)
+        for symbol, frame in frames.items():
+            start = max(int(frame["open_time_ms"].iloc[0]), oldest_ms)
+            end = int(frame["close_time_ms"].iloc[-1]) + 1
+            if start >= end:
+                logger.warning("%s candles end before the OI history starts", symbol)
+                continue
+            await downloader.ensure_range(symbol, start, end)
+
+    _with_exchange(client, _job)
     return {symbol: cache.load(symbol) for symbol in frames}
 
 
@@ -512,6 +553,14 @@ def _parse_brackets(
     default=False,
     help="Download funding history and score the live funding signal too.",
 )
+@click.option(
+    "--oi/--no-oi",
+    default=False,
+    help=(
+        "Also score the OI signals (implies --funding). Binance keeps about 30 "
+        "days of OI, so only bars in that window are sampled."
+    ),
+)
 @click.pass_context
 def signal_edge(
     ctx: click.Context,
@@ -520,6 +569,7 @@ def signal_edge(
     cache_dir: Path,
     out: Path | None,
     funding: bool,
+    oi: bool,
 ) -> None:
     """Measure each confluence signal's R edge on cached candles; no LLM calls."""
     app_config: AppConfig = ctx.obj["app_config"]
@@ -531,21 +581,30 @@ def signal_edge(
     frames = {s: f for s, f in frames.items() if not f.empty}
     if not frames:
         raise click.ClickException(f"No cached candles in {cache_dir}")
-    sampler = SignalSampler(MarketFeatureBuilder(app_config.risk), history, stride)
+    order_flow = OrderFlowCalculator(
+        KLINE_INTERVALS[app_config.trading.interval] // _S_PER_MIN
+    )
+    sampler = SignalSampler(
+        MarketFeatureBuilder(app_config.risk), history, stride, order_flow
+    )
+    funding = funding or oi
     max_horizon = max(b.horizon_bars for b in brackets)
-    settlements = (
-        _load_funding(ctx.obj.get("exchange_client"), cache_dir, frames)
-        if funding
-        else {}
-    )
-    samples = pd.concat(
-        [
-            sampler.sample(s, f, max_horizon, settlements.get(s))
-            for s, f in frames.items()
-        ],
-        ignore_index=True,
-    )
-    signals = (*CANDLE_SIGNALS, FUNDING_SIGNAL) if funding else CANDLE_SIGNALS
+    client = ctx.obj.get("exchange_client")
+    settlements = _load_funding(client, cache_dir, frames) if funding else {}
+    snapshots = _load_oi(client, cache_dir, frames, order_flow.oi_period) if oi else {}
+    parts = [
+        sampler.sample(s, f, max_horizon, settlements.get(s), snapshots.get(s))
+        for s, f in frames.items()
+    ]
+    parts = [part for part in parts if not part.empty]
+    if not parts:
+        raise click.ClickException("No bars to sample; is the OI window covered?")
+    samples = pd.concat(parts, ignore_index=True)
+    signals: tuple[str, ...] = CANDLE_SIGNALS
+    if funding:
+        signals = (*signals, FUNDING_SIGNAL)
+    if oi:
+        signals = (*signals, *OI_SIGNALS)
     analyzer = SignalEdgeAnalyzer(
         stride, signals, float(app_config.paper.commission_rate)
     )

@@ -3,11 +3,13 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
+from kavzi_trader.cli.commands import evals as evals_cli
 from kavzi_trader.cli.commands.evals import eval_group
 from kavzi_trader.config import AppConfig, TradingConfigSchema
 from tests.cli.test_eval_run_command import _silenced_live_logs
 from tests.evals.eval_fixtures import btc_frame, write_cache
-from tests.evals.test_funding_history import FakeFundingClient
+from tests.evals.fake_exchange import FakeExchange
+from tests.evals.frames import BASE_MS
 
 
 @pytest.fixture
@@ -68,7 +70,7 @@ def test_funding_flag_downloads_and_scores_funding(
 ) -> None:
     write_cache(tmp_path / "cache", btc_frame(extra_bars=200))
     out = tmp_path / "signals.md"
-    client = FakeFundingClient()
+    client = FakeExchange(BASE_MS)
 
     with _silenced_live_logs():
         result = CliRunner().invoke(
@@ -80,6 +82,34 @@ def test_funding_flag_downloads_and_scores_funding(
         )  # fmt: skip
 
     assert result.exception is None
-    assert client.calls
+    assert client.funding_calls
     assert (tmp_path / "cache" / "BTCUSDT_funding.csv.gz").exists()
     assert "| LONG | funding_favorable |" in out.read_text(encoding="utf-8")
+
+
+def test_oi_flag_scores_oi_signals_in_the_oi_window(
+    config: AppConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    frame = btc_frame(extra_bars=400)
+    write_cache(tmp_path / "cache", frame)
+    out = tmp_path / "signals.md"
+    # Synthetic candles are years old; let the OI window reach back to them.
+    monkeypatch.setattr(evals_cli, "_OI_LOOKBACK_MS", 10**13)
+    client = FakeExchange(int(frame["close_time_ms"].iloc[-1]))
+
+    with _silenced_live_logs():
+        result = CliRunner().invoke(
+            eval_group,
+            ["signals", "--cache-dir", str(tmp_path / "cache"), "--oi",
+             "--stride", "29", "--bracket", "1:2:10", "--out", str(out)],
+            obj={"app_config": config, "exchange_client": client},
+            standalone_mode=False,
+        )  # fmt: skip
+
+    assert result.exception is None
+    assert client.oi_calls
+    assert client.funding_calls
+    text = out.read_text(encoding="utf-8")
+    assert "| LONG | oi_supports_direction |" in text
+    assert "| SHORT | oi_funding_divergence |" in text
+    assert "| LONG | funding_favorable |" in text

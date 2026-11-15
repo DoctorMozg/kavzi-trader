@@ -8,12 +8,18 @@ import pandas as pd
 
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.evals.market_feature_builder import REGIME_ORDER, MarketFeatureBuilder
+from kavzi_trader.evals.series_cache import TIME, VALUE
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
 from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
     FUNDING_HISTORY_LIMIT,
 )
+from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.order_flow.funding import calculate_funding_zscore
-from kavzi_trader.order_flow.schemas import FundingRateSchema, OrderFlowSchema
+from kavzi_trader.order_flow.schemas import (
+    FundingRateSchema,
+    OpenInterestSchema,
+    OrderFlowSchema,
+)
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 
 logger = logging.getLogger(__name__)
@@ -27,6 +33,7 @@ CANDLE_SIGNALS = (
     "volume_spike",
 )
 FUNDING_SIGNAL = "funding_favorable"
+OI_SIGNALS = ("oi_supports_direction", "oi_funding_divergence")
 _MS_PER_S = 1000
 
 
@@ -42,6 +49,7 @@ class SignalSampler:
         features: MarketFeatureBuilder,
         history: int,
         stride: int,
+        order_flow: OrderFlowCalculator,
     ) -> None:
         if history < 1 or stride < 1:
             msg = f"history and stride must be >= 1, got {history}, {stride}"
@@ -51,6 +59,7 @@ class SignalSampler:
         self._stride = stride
         self._indicators = TechnicalIndicatorCalculator()
         self._confluence = ConfluenceCalculator()
+        self._order_flow = order_flow
 
     def sample(
         self,
@@ -58,17 +67,30 @@ class SignalSampler:
         frame: pd.DataFrame,
         max_horizon: int,
         funding: pd.DataFrame | None = None,
+        oi: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
         """One row per sampled bar; leaves ``max_horizon`` bars after the last one.
 
-        With ``funding`` settlements, rows also carry the funding signal.
+        With ``funding`` settlements, rows also carry the funding signal. Adding
+        ``oi`` snapshots adds the OI signals and keeps only bars with a full OI
+        history, since Binance serves only about the last 30 days.
         """
+        if oi is not None and funding is None:
+            msg = "OI signals need funding settlements too"
+            raise ValueError(msg)
         features = self._features.build(frame)
         idx = np.arange(self._history - 1, len(frame) - max_horizon - 1, self._stride)
         idx = idx[
             np.isfinite(features.atr[idx]) & np.isfinite(features.atr_zscore[idx])
         ]
-        lookup = None if funding is None else _FundingLookup(symbol, funding)
+        lookup = (
+            None
+            if funding is None
+            else _OrderFlowLookup(symbol, funding, oi, self._order_flow)
+        )
+        if lookup is not None and oi is not None:
+            close_ms = frame["close_time_ms"].to_numpy(dtype=np.int64)[idx]
+            idx = idx[lookup.has_full_oi(close_ms)]
         rows = [self._row(frame, int(i), lookup) for i in idx]
         samples = pd.DataFrame(rows)
         if samples.empty:
@@ -81,7 +103,7 @@ class SignalSampler:
         return samples
 
     def _row(
-        self, frame: pd.DataFrame, i: int, funding: _FundingLookup | None
+        self, frame: pd.DataFrame, i: int, lookup: _OrderFlowLookup | None
     ) -> dict[str, int | bool | float]:
         window = frame.iloc[i - self._history + 1 : i + 1]
         close_time = datetime.fromtimestamp(
@@ -95,12 +117,19 @@ class SignalSampler:
         order_flow = None
         row: dict[str, int | bool | float] = {"idx": i}
         names: tuple[str, ...] = CANDLE_SIGNALS
-        if funding is not None:
-            order_flow = funding.at(int(window["close_time_ms"].iloc[-1]), close_time)
+        if lookup is not None:
+            order_flow = lookup.at(int(window["close_time_ms"].iloc[-1]), close_time)
             row["funding_z"] = (
                 np.nan if order_flow is None else float(order_flow.funding_zscore)
             )
             names = (*CANDLE_SIGNALS, FUNDING_SIGNAL)
+            if lookup.with_oi:
+                row["oi_change_1h"] = (
+                    np.nan
+                    if order_flow is None
+                    else float(order_flow.oi_change_1h_percent)
+                )
+                names = (*names, *OI_SIGNALS)
         for side in SIDES:
             # Not the detected side: skips the live "score is 0" warning per bar.
             conf = self._confluence.evaluate(
@@ -135,38 +164,76 @@ class SignalSampler:
         )
 
 
-class _FundingLookup:
-    """Live funding z-score as of any bar, from cached settlements.
+class _OrderFlowLookup:
+    """Live order flow as of any bar, from cached funding and OI history.
 
-    The z-score only changes at a settlement, so it is computed once per
-    settlement over the FUNDING_HISTORY_LIMIT latest, as the live fetcher does.
+    Funding alone: the z-score only changes at a settlement, so it is computed
+    once per settlement over the FUNDING_HISTORY_LIMIT latest, as the live
+    fetcher does. With OI, each bar goes through the live OrderFlowCalculator
+    with the funding and OI rows a live fetch would have returned at its close.
     """
 
-    def __init__(self, symbol: str, funding: pd.DataFrame) -> None:
-        self._times = funding["funding_time_ms"].to_numpy(dtype=np.int64)
-        rates = [
+    def __init__(
+        self,
+        symbol: str,
+        funding: pd.DataFrame,
+        oi: pd.DataFrame | None,
+        calculator: OrderFlowCalculator,
+    ) -> None:
+        self._symbol = symbol
+        self._calculator = calculator
+        self._funding_times = funding[TIME].to_numpy(dtype=np.int64)
+        self._rates = [
             FundingRateSchema(
                 symbol=symbol,
                 funding_rate=Decimal(str(rate)),
                 funding_time=datetime.fromtimestamp(ms / _MS_PER_S, UTC),
             )
-            for ms, rate in zip(self._times, funding["funding_rate"], strict=True)
+            for ms, rate in zip(self._funding_times, funding[VALUE], strict=True)
         ]
-        self._symbol = symbol
         self._analyses = [
-            calculate_funding_zscore(
-                rates[max(0, k + 1 - FUNDING_HISTORY_LIMIT) : k + 1]
-            )
-            for k in range(len(rates))
+            calculate_funding_zscore(self._settled(k)) for k in range(len(self._rates))
         ]
+        self._oi_times = (
+            np.empty(0, np.int64) if oi is None else oi[TIME].to_numpy(dtype=np.int64)
+        )
+        self._oi = (
+            None
+            if oi is None
+            else [
+                OpenInterestSchema(
+                    symbol=symbol,
+                    open_interest=Decimal(str(value)),
+                    timestamp=datetime.fromtimestamp(ms / _MS_PER_S, UTC),
+                )
+                for ms, value in zip(self._oi_times, oi[VALUE], strict=True)
+            ]
+        )
+
+    @property
+    def with_oi(self) -> bool:
+        return self._oi is not None
+
+    def has_full_oi(self, close_ms: np.ndarray) -> np.ndarray:
+        """Bars whose close has the full OI history a live fetch requests."""
+        known = np.searchsorted(self._oi_times, close_ms, side="right")
+        return known >= self._calculator.oi_history_limit
 
     def at(self, close_ms: int, close_time: datetime) -> OrderFlowSchema | None:
-        """Order flow with the latest settled funding; None before two settlements."""
-        k = int(np.searchsorted(self._times, close_ms, side="right")) - 1
-        analysis = self._analyses[k] if k >= 0 else None
+        """Order flow known at ``close_ms``; None before two funding settlements."""
+        k = int(np.searchsorted(self._funding_times, close_ms, side="right")) - 1
+        if k < 0:
+            return None
+        if self._oi is not None:
+            known = int(np.searchsorted(self._oi_times, close_ms, side="right"))
+            history = self._oi[
+                max(0, known - self._calculator.oi_history_limit) : known
+            ]
+            return self._calculator.calculate(self._symbol, self._settled(k), history)
+        analysis = self._analyses[k]
         if analysis is None:
             return None
-        # OI history is not backtestable; a zero change keeps both OI signals off.
+        # Without OI history a zero change keeps both OI signals off.
         return OrderFlowSchema(
             symbol=self._symbol,
             timestamp=close_time,
@@ -177,3 +244,6 @@ class _FundingLookup:
             oi_change_1h_percent=Decimal(0),
             oi_change_24h_percent=None,
         )
+
+    def _settled(self, k: int) -> list[FundingRateSchema]:
+        return self._rates[max(0, k + 1 - FUNDING_HISTORY_LIMIT) : k + 1]
