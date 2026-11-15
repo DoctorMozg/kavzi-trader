@@ -20,6 +20,9 @@ class FilterChainParamsSchema(BaseModel):
     positions: list[PositionSchema]
     atr_history: list[Decimal]
     analyst_confluence_score: Annotated[int | None, Field(default=None)]
+    # Points to lower confluence bypass thresholds when signals lack data; the
+    # orchestrator derives it from the Analyst's signal-scaled gates.
+    confluence_threshold_shift: Annotated[int, Field(ge=0)]
     symbol_tier: Annotated[str, Field(default="TIER_2")]
     confidence: Annotated[Decimal | None, Field(default=None)]
 

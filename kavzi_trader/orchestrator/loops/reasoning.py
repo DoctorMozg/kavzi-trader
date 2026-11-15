@@ -324,6 +324,7 @@ class ReasoningLoop:
             self._filter_chain is None
             or result.trader is None
             or result.trader_deps is None
+            or result.gates is None
         ):
             return None
         if result.trader.action not in {"LONG", "SHORT"}:
@@ -342,6 +343,7 @@ class ReasoningLoop:
                 "positions": cached_positions,
                 "atr_history": deps.atr_history,
                 "analyst_confluence_score": confluence_score,
+                "confluence_threshold_shift": result.gates.threshold_shift,
                 "symbol_tier": deps.symbol_tier,
                 "confidence": Decimal(str(result.trader.confidence)),
             },

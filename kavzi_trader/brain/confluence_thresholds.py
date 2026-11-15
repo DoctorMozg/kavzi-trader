@@ -75,7 +75,11 @@ def signal_adjusted_threshold(threshold: int, available_signals: int) -> int:
     Used for thresholds tied to the NORMAL gate: the Analyst pre-filter, the
     cooldown bands and the Trader's high-confluence cue.
     """
-    reduction = CONFLUENCE_ENTER_MIN - effective_regime_gate(
+    return max(0, threshold - normal_gate_reduction(available_signals))
+
+
+def normal_gate_reduction(available_signals: int) -> int:
+    """Points the NORMAL gate drops when some algorithm signals have no input."""
+    return CONFLUENCE_ENTER_MIN - effective_regime_gate(
         VolatilityRegime.NORMAL, available_signals
     )
-    return max(0, threshold - reduction)

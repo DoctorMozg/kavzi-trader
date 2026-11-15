@@ -77,7 +77,10 @@ class PreTradeFilterChain:
             fgi_result = self._fear_greed_gate.evaluate()
             results.append(fgi_result)
             if not fgi_result.is_allowed:
-                fgi_bypass = self._config.fgi_fear_bypass_confluence_min
+                fgi_bypass = (
+                    self._config.fgi_fear_bypass_confluence_min
+                    - params.confluence_threshold_shift
+                )
                 if (
                     analyst_confluence_score is not None
                     and analyst_confluence_score >= fgi_bypass
@@ -204,7 +207,10 @@ class PreTradeFilterChain:
             movement_result.reason,
         )
         if not movement_result.is_allowed:
-            bypass_threshold = self._config.movement_bypass_confluence_min
+            bypass_threshold = (
+                self._config.movement_bypass_confluence_min
+                - params.confluence_threshold_shift
+            )
             if (
                 analyst_confluence_score is not None
                 and analyst_confluence_score >= bypass_threshold

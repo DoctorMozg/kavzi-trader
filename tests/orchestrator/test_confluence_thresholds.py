@@ -1,5 +1,6 @@
 import pytest
 
+from kavzi_trader.brain.confluence_gates_schema import ConfluenceGatesSchema
 from kavzi_trader.brain.confluence_thresholds import (
     CONFLUENCE_ENTER_MIN,
     CONFLUENCE_REJECT_MAX,
@@ -79,3 +80,14 @@ def test_effective_min_algo_follows_normal_gate_reduction(
     expected: int,
 ) -> None:
     assert signal_adjusted_threshold(3, available) == expected
+
+
+@pytest.mark.parametrize(("available", "shift"), [(8, 0), (6, 1), (5, 1)])
+def test_gates_threshold_shift_matches_normal_gate_drop(
+    available: int, shift: int
+) -> None:
+    gates = ConfluenceGatesSchema.model_validate(
+        {"regime_gate": 6, "available_signals": available}
+    )
+    assert gates.threshold_shift == shift
+    assert gates.adjusted(7) == 7 - shift

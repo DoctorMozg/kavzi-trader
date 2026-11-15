@@ -1731,3 +1731,28 @@ async def test_failed_enqueue_does_not_burn_cooldown() -> None:
 
     assert loop._state.cooldown("BTCUSDT", "LONG") == 0
     assert loop._state.cooldown("BTCUSDT", "SHORT") == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("available", "shift"), [(8, 0), (5, 1)])
+async def test_filter_chain_gets_threshold_shift_from_gates(
+    available: int, shift: int
+) -> None:
+    mock_filter_chain = AsyncMock()
+    loop = ReasoningLoop(
+        position_management=PositionManagementConfigSchema(),
+        symbols=["BTCUSDT"],
+        router=AsyncMock(),
+        deps_provider=AsyncMock(),
+        redis_client=AsyncMock(),
+        filter_chain=mock_filter_chain,
+    )
+    result = _make_trade_result()
+    result.gates = _gates(
+        effective_regime_gate(VolatilityRegime.NORMAL, available), available
+    )
+
+    await loop._run_filter_chain(result, [])
+
+    params = mock_filter_chain.evaluate.call_args.args[0]
+    assert params.confluence_threshold_shift == shift

@@ -48,6 +48,7 @@ async def test_chain_allows_and_returns_confluence(
             {
                 "symbol": "BTCUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": sample_candle,
                 "indicators": sample_indicators,
                 "order_flow": sample_order_flow,
@@ -87,6 +88,7 @@ async def test_chain_blocks_on_funding(
             {
                 "symbol": "BTCUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": sample_candle,
                 "indicators": sample_indicators,
                 "order_flow": crowded,
@@ -142,6 +144,7 @@ async def test_chain_bypasses_movement_on_high_confluence(
             {
                 "symbol": "NEARUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": _small_body_candle(),
                 "indicators": sample_indicators,
                 "order_flow": sample_order_flow,
@@ -177,6 +180,7 @@ async def test_chain_still_blocks_movement_on_low_confluence(
             {
                 "symbol": "NEARUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": _small_body_candle(),
                 "indicators": sample_indicators,
                 "order_flow": sample_order_flow,
@@ -213,6 +217,7 @@ async def test_chain_blocks_movement_when_no_confluence_provided(
             {
                 "symbol": "NEARUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": _small_body_candle(),
                 "indicators": sample_indicators,
                 "order_flow": sample_order_flow,
@@ -281,6 +286,7 @@ async def test_fgi_bypass_high_confluence_allows(
             {
                 "symbol": "BTCUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": sample_candle,
                 "indicators": sample_indicators,
                 "order_flow": sample_order_flow,
@@ -310,6 +316,7 @@ async def test_fgi_still_blocks_low_confluence(
             {
                 "symbol": "BTCUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": sample_candle,
                 "indicators": sample_indicators,
                 "order_flow": sample_order_flow,
@@ -339,6 +346,7 @@ async def test_fgi_no_confluence_still_blocks(
             {
                 "symbol": "BTCUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": sample_candle,
                 "indicators": sample_indicators,
                 "order_flow": sample_order_flow,
@@ -391,6 +399,7 @@ async def test_chain_size_multiplier_combines_weekend_and_funding(
             {
                 "symbol": "BTCUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": sample_candle,
                 "indicators": sample_indicators,
                 "order_flow": sample_order_flow,
@@ -422,6 +431,7 @@ async def test_chain_size_multiplier_excludes_regime_multiplier(
             {
                 "symbol": "BTCUSDT",
                 "side": "LONG",
+                "confluence_threshold_shift": 0,
                 "candle": sample_candle,
                 "indicators": sample_indicators,
                 "order_flow": flat_funding,
@@ -448,6 +458,7 @@ async def test_chain_extreme_allows_tier1_and_blocks_tier2(
     common = {
         "symbol": "BTCUSDT",
         "side": "LONG",
+        "confluence_threshold_shift": 0,
         "candle": sample_candle,
         "indicators": sample_indicators,
         "order_flow": sample_order_flow,
@@ -482,6 +493,7 @@ async def test_chain_extreme_confidence_override_matches_validator(
     common = {
         "symbol": "SOLUSDT",
         "side": "LONG",
+        "confluence_threshold_shift": 0,
         "candle": sample_candle,
         "indicators": sample_indicators,
         "order_flow": sample_order_flow,
@@ -503,3 +515,43 @@ async def test_chain_extreme_confidence_override_matches_validator(
 
     assert confident.is_allowed is True
     assert unsure.is_allowed is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("shift", "allowed"), [(0, False), (1, True)])
+async def test_movement_bypass_threshold_drops_with_missing_signals(
+    filter_config,
+    sample_indicators,
+    sample_order_flow,
+    shift: int,
+    allowed: bool,
+) -> None:
+    chain = PreTradeFilterChain(
+        volatility_detector=VolatilityRegimeDetector(),
+        funding_filter=FundingRateFilter(filter_config),
+        movement_filter=MinimumMovementFilter(filter_config),
+        exposure_limiter=ExposureLimiter(),
+        liquidity_filter=LiquidityFilter(filter_config),
+        correlation_filter=CorrelationFilter(filter_config),
+        confluence_calculator=ConfluenceCalculator(),
+        config=filter_config,
+    )
+    bypass_min = filter_config.movement_bypass_confluence_min
+
+    result = await chain.evaluate(
+        FilterChainParamsSchema.model_validate(
+            {
+                "symbol": "NEARUSDT",
+                "side": "LONG",
+                "confluence_threshold_shift": shift,
+                "candle": _small_body_candle(),
+                "indicators": sample_indicators,
+                "order_flow": sample_order_flow,
+                "positions": [],
+                "atr_history": [Decimal(5)] * 10,
+                "analyst_confluence_score": bypass_min - 1,
+            }
+        ),
+    )
+
+    assert result.is_allowed is allowed
