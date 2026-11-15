@@ -31,7 +31,9 @@ from kavzi_trader.evals.eval_pipeline_runner import EvalPipelineRunner
 from kavzi_trader.evals.eval_run_orchestrator import EvalRunOrchestrator
 from kavzi_trader.evals.result_store import ResultStore
 from kavzi_trader.evals.run_header_schema import RunHeaderSchema
+from kavzi_trader.evals.run_loader import RunLoader
 from kavzi_trader.evals.run_projection_schema import RunProjectionSchema
+from kavzi_trader.evals.run_report_builder import RunReportBuilder
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -324,3 +326,33 @@ def run_eval(
 
     results = asyncio.run(_drive())
     _echo_summary(results, store.results_path)
+
+
+@eval_group.command("report")
+@click.option("--run", "run_id", required=True, help="Run id to report on.")
+@click.option(
+    "--out",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="Report path; default results/evals/<run_id>.report.md.",
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=Path("data/eval_cache"),
+    show_default=True,
+)
+@click.pass_context
+def report_eval(
+    ctx: click.Context, run_id: str, out: Path | None, cache_dir: Path
+) -> None:
+    """Score a finished run and write a Markdown report; no LLM calls."""
+    app_config: AppConfig = ctx.obj["app_config"]
+    results_dir = app_config.system.results_dir / "evals"
+    builder = RunReportBuilder(RunLoader(results_dir).load(run_id), cache_dir)
+    path = out or results_dir / f"{run_id}.report.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(builder.markdown(), encoding="utf-8")
+    for line in builder.summary():
+        click.echo(line)
+    click.echo(f"Report: {path}")

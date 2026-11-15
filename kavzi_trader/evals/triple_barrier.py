@@ -68,19 +68,15 @@ class TripleBarrierLabeler:
         tp_distance: FloatArray,
     ) -> LabeledBarriersSchema:
         """Label every candidate; ``entry_idx + horizon_bars`` must be in range."""
-        if len(entry_idx) and int(entry_idx.max()) + self._horizon >= len(close):
-            msg = (
-                f"entry index {int(entry_idx.max())} + horizon {self._horizon} "
-                f"exceeds {len(close)} candles"
-            )
-            raise ValueError(msg)
-        long = self._walk(+1, high, low, close, entry_idx, sl_distance, tp_distance)
-        short = self._walk(-1, high, low, close, entry_idx, sl_distance, tp_distance)
+        long = self.walk_side(+1, high, low, close, entry_idx, sl_distance, tp_distance)
+        short = self.walk_side(
+            -1, high, low, close, entry_idx, sl_distance, tp_distance
+        )
         labels = self._combine(long, short)
         logger.debug("Labeled %d candidates", len(entry_idx))
         return LabeledBarriersSchema(labels=labels, long=long, short=short)
 
-    def _walk(
+    def walk_side(
         self,
         sign: Literal[1, -1],
         high: FloatArray,
@@ -89,8 +85,17 @@ class TripleBarrierLabeler:
         entry_idx: IntArray,
         sl_distance: FloatArray,
         tp_distance: FloatArray,
+        entry: FloatArray | None = None,
     ) -> SideWalkSchema:
-        entry = close[entry_idx]
+        """Walk one side; ``entry`` overrides the decision close as the fill price."""
+        if len(entry_idx) and int(entry_idx.max()) + self._horizon >= len(close):
+            msg = (
+                f"entry index {int(entry_idx.max())} + horizon {self._horizon} "
+                f"exceeds {len(close)} candles"
+            )
+            raise ValueError(msg)
+        if entry is None:
+            entry = close[entry_idx]
         take_profit = entry + sign * tp_distance
         stop_loss = entry - sign * sl_distance
         count = len(entry_idx)
