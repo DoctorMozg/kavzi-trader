@@ -8,6 +8,7 @@ import pandas as pd
 
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.evals.market_feature_builder import REGIME_ORDER, MarketFeatureBuilder
+from kavzi_trader.evals.sample_window_schema import SampleWindowSchema
 from kavzi_trader.evals.series_cache import TIME, VALUE
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
 from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
@@ -50,6 +51,7 @@ class SignalSampler:
         history: int,
         stride: int,
         order_flow: OrderFlowCalculator,
+        window: SampleWindowSchema | None = None,
     ) -> None:
         if history < 1 or stride < 1:
             msg = f"history and stride must be >= 1, got {history}, {stride}"
@@ -60,6 +62,7 @@ class SignalSampler:
         self._indicators = TechnicalIndicatorCalculator()
         self._confluence = ConfluenceCalculator()
         self._order_flow = order_flow
+        self._window = window or SampleWindowSchema()
 
     def sample(
         self,
@@ -80,8 +83,11 @@ class SignalSampler:
             raise ValueError(msg)
         features = self._features.build(frame)
         idx = np.arange(self._history - 1, len(frame) - max_horizon - 1, self._stride)
+        close_ms = frame["close_time_ms"].to_numpy(dtype=np.int64)
         idx = idx[
-            np.isfinite(features.atr[idx]) & np.isfinite(features.atr_zscore[idx])
+            np.isfinite(features.atr[idx])
+            & np.isfinite(features.atr_zscore[idx])
+            & self._window.contains(close_ms[idx])
         ]
         lookup = (
             None
@@ -89,8 +95,7 @@ class SignalSampler:
             else _OrderFlowLookup(symbol, funding, oi, self._order_flow)
         )
         if lookup is not None and oi is not None:
-            close_ms = frame["close_time_ms"].to_numpy(dtype=np.int64)[idx]
-            idx = idx[lookup.has_full_oi(close_ms)]
+            idx = idx[lookup.has_full_oi(close_ms[idx])]
         rows = [self._row(frame, int(i), lookup) for i in idx]
         samples = pd.DataFrame(rows)
         if samples.empty:

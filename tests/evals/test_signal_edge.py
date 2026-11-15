@@ -8,6 +8,7 @@ import pytest
 from kavzi_trader.config import AppConfig
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.evals.market_feature_builder import MarketFeatureBuilder
+from kavzi_trader.evals.sample_window_schema import SampleWindowSchema
 from kavzi_trader.evals.signal_bracket_schema import SignalBracketSchema
 from kavzi_trader.evals.signal_edge_analyzer import SignalEdgeAnalyzer
 from kavzi_trader.evals.signal_report_renderer import SignalReportRenderer
@@ -133,6 +134,49 @@ class TestSignalSampler:
         assert sampler.sample("AAA", make_frame(HISTORY), max_horizon=10).empty
 
 
+class TestSampleWindow:
+    def test_window_keeps_inside_bars_with_unchanged_scores(
+        self, app_config: AppConfig, sampler: SignalSampler
+    ) -> None:
+        frame = make_frame(HISTORY + 400, seed=5)
+        close_ms = frame["close_time_ms"]
+        window = SampleWindowSchema(
+            start_ms=int(close_ms.iloc[HISTORY + 100]),
+            end_ms=int(close_ms.iloc[HISTORY + 300]),
+        )
+        windowed = SignalSampler(
+            MarketFeatureBuilder(app_config.risk),
+            HISTORY,
+            37,
+            OrderFlowCalculator(15),
+            window,
+        ).sample("AAA", frame, max_horizon=10)
+        full = sampler.sample("AAA", frame, max_horizon=10)
+
+        inside = full[full["idx"].between(HISTORY + 100, HISTORY + 299)]
+        assert len(windowed) == len(inside) > 0
+        pd.testing.assert_frame_equal(
+            windowed.reset_index(drop=True), inside.reset_index(drop=True)
+        )
+
+    def test_rejects_an_empty_window(self) -> None:
+        with pytest.raises(ValueError, match="must precede"):
+            SampleWindowSchema(start_ms=5, end_ms=5)
+
+    @pytest.mark.parametrize(
+        ("start_ms", "end_ms", "label"),
+        [
+            (None, None, "all cached bars"),
+            (1_640_995_200_000, None, "bars closing from 2022-01-01 to end"),
+        ],
+    )
+    def test_label_names_the_range(
+        self, start_ms: int | None, end_ms: int | None, label: str
+    ) -> None:
+        window = SampleWindowSchema(start_ms=start_ms, end_ms=end_ms)
+        assert window.label.startswith(label)
+
+
 class TestSignalEdgeAnalyzer:
     def test_measures_fired_and_unfired_r(self) -> None:
         frame = _trend_frame(100)
@@ -186,7 +230,11 @@ class TestSignalReportRenderer:
             bracket,
         )
         renderer = SignalReportRenderer(
-            stride=5, history=HISTORY, symbols=["AAA"], interval="15m"
+            stride=5,
+            history=HISTORY,
+            symbols=["AAA"],
+            interval="15m",
+            window=SampleWindowSchema(),
         )
 
         text = renderer.render([lifted])

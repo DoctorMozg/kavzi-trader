@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -47,7 +48,7 @@ def test_writes_one_section_per_bracket(config: AppConfig, tmp_path: Path) -> No
     assert "## 1.5/3 ATR, 20 bars" in text
     assert "## 1/2 ATR, 10 bars" in text
     # ETHUSDT has no cache, so only BTCUSDT is sampled.
-    assert "Every 29th 15m bar of BTCUSDT;" in text
+    assert "Every 29th 15m bar of BTCUSDT, all cached bars;" in text
     assert result.output.splitlines()[0].startswith("1.5/3 ATR, 20 bars: ")
     assert f"Report: {out}" in result.output
 
@@ -146,7 +147,9 @@ class TestInterval:
         )  # fmt: skip
 
         assert result.exception is None
-        assert "Every 29th 4h bar of BTCUSDT;" in out.read_text(encoding="utf-8")
+        assert "Every 29th 4h bar of BTCUSDT, all cached bars;" in out.read_text(
+            encoding="utf-8"
+        )
 
     def test_missing_interval_cache_points_at_refresh(
         self, config: AppConfig, tmp_path: Path
@@ -155,3 +158,33 @@ class TestInterval:
         result = _invoke(config, tmp_path / "cache", "--interval", "1h")
         assert result.exception is not None
         assert "eval refresh-cache --interval 1h" in str(result.exception)
+
+
+class TestWindow:
+    def test_from_to_names_the_window_in_the_report(
+        self, config: AppConfig, tmp_path: Path
+    ) -> None:
+        frame = btc_frame(extra_bars=400)
+        write_cache(tmp_path / "cache", frame)
+        out = tmp_path / "signals.md"
+        day = datetime.fromtimestamp(
+            int(frame["close_time_ms"].iloc[1100]) / 1000, UTC
+        ).date()
+
+        result = _invoke(
+            config, tmp_path / "cache",
+            "--from", day.isoformat(), "--stride", "29", "--bracket", "1:2:10",
+            "--out", str(out),
+        )  # fmt: skip
+
+        assert result.exception is None
+        text = out.read_text(encoding="utf-8")
+        assert f"bars closing from {day.isoformat()} to end (exclusive)" in text
+
+    def test_rejects_from_after_to(self, config: AppConfig, tmp_path: Path) -> None:
+        write_cache(tmp_path / "cache", btc_frame())
+        result = _invoke(
+            config, tmp_path / "cache", "--from", "2024-02-01", "--to", "2024-01-01"
+        )
+        assert result.exception is not None
+        assert "--from must be before --to" in str(result.exception)

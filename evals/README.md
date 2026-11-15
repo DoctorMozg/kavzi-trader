@@ -10,7 +10,7 @@ Five commands under `kavzitrader eval` (`kavzi_trader/cli/commands/evals.py`):
 | `signals` | no | Measure whether each live confluence signal predicts outcomes |
 | `refresh-cache` | no | Fill cached candles, funding and OI up to today 00:00 UTC, leave `cases_v1.jsonl` alone |
 
-All of them read candles from the gitignored cache `data/eval_cache/` (`--cache-dir`). Candle and funding history can always be re-downloaded from Binance. Open interest older than about 30 days cannot, so don't delete the OI files.
+They share the gitignored cache `data/eval_cache/` (`--cache-dir`): `build-dataset` and `refresh-cache` download into it, the other commands read from it. Candle and funding history can always be re-downloaded from Binance. Open interest older than about 30 days cannot, so don't delete the OI files.
 
 ## Dataset
 
@@ -84,6 +84,7 @@ Options:
 - `--stride N` (default 17): keep it coprime with the bars per day (96 at 15m, 24 at 1h, 6 at 4h). A stride of 16 sampled the same 6 times of day and biased the volume signals (above-average-volume rate swung 27% to 43% by phase).
 - `--funding`: downloads Binance funding history (public endpoint, no key) and scores the live funding signal: z-score of the latest settlement over the last 100 settlements, as live.
 - `--interval` (default: trading interval): reads `<SYMBOL>_<interval>.csv.gz`. If the cache is missing it errors with a hint to run `eval refresh-cache --interval X`.
+- `--from` / `--to` (UTC days, `--to` exclusive): only bars closing inside the window are sampled. Bars before it still warm up the indicators, so a window scores its bars exactly as a full run does. Use it to check a lead year by year.
 - `--candidates`: also scores signals the live bot does not use yet:
   - `taker_flow`: taker-buy share of volume over the last 4 bars, ranked within the trailing history window. Top third fires LONG, bottom third fires SHORT.
   - `htf_trend`: the live 1h trend (EMA20/EMA50 plus RSI from `indicators/htf.py`) agrees with the side. 15m only.

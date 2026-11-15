@@ -11,6 +11,7 @@ from pathlib import Path
 
 import click
 import pandas as pd
+from pydantic import ValidationError
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
@@ -52,6 +53,7 @@ from kavzi_trader.evals.run_header_schema import RunHeaderSchema
 from kavzi_trader.evals.run_loader import RunLoader
 from kavzi_trader.evals.run_projection_schema import RunProjectionSchema
 from kavzi_trader.evals.run_report_builder import RunReportBuilder
+from kavzi_trader.evals.sample_window_schema import SampleWindowSchema
 from kavzi_trader.evals.series_cache import SeriesCache
 from kavzi_trader.evals.signal_bracket_schema import SignalBracketSchema
 from kavzi_trader.evals.signal_edge_analyzer import SignalEdgeAnalyzer
@@ -636,6 +638,21 @@ def _parse_brackets(
     "refresh-cache first.",
 )
 @click.option(
+    "--from",
+    "start_day",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Only sample bars closing on or after this UTC day; earlier bars still "
+    "warm up the indicators.",
+)
+@click.option(
+    "--to",
+    "end_day",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Only sample bars closing before this UTC day (exclusive).",
+)
+@click.option(
     "--candidates/--no-candidates",
     default=False,
     help="Also score signals the bot does not use yet: taker flow, 1h trend, BTC lead.",
@@ -650,6 +667,8 @@ def signal_edge(
     funding: bool,
     oi: bool,
     interval: str | None,
+    start_day: datetime | None,
+    end_day: datetime | None,
     candidates: bool,
 ) -> None:
     """Measure each confluence signal's R edge on cached candles; no LLM calls."""
@@ -668,8 +687,15 @@ def signal_edge(
         )
         raise click.ClickException(msg)
     order_flow = OrderFlowCalculator(KLINE_INTERVALS[interval] // _S_PER_MIN)
+    try:
+        window = SampleWindowSchema(
+            start_ms=None if start_day is None else _day_start_ms(start_day),
+            end_ms=None if end_day is None else _day_start_ms(end_day),
+        )
+    except ValidationError as exc:
+        raise click.BadParameter("--from must be before --to") from exc
     sampler = SignalSampler(
-        MarketFeatureBuilder(app_config.risk), history, stride, order_flow
+        MarketFeatureBuilder(app_config.risk), history, stride, order_flow, window
     )
     funding = funding or oi
     max_horizon = max(b.horizon_bars for b in brackets)
@@ -700,7 +726,7 @@ def signal_edge(
         stride, signals, float(app_config.paper.commission_rate)
     )
     results = [analyzer.analyze(samples, frames, b) for b in brackets]
-    renderer = SignalReportRenderer(stride, history, list(frames), interval)
+    renderer = SignalReportRenderer(stride, history, list(frames), interval, window)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = out or app_config.system.results_dir / "evals" / f"signals_{stamp}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
