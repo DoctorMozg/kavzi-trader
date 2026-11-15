@@ -9,13 +9,14 @@ from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaUsage
 from pydantic import SecretStr
 from pydantic_ai import Agent, NativeOutput
 from pydantic_ai.exceptions import ContentFilterError
-from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
+from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.agent.llm_error_logging import log_llm_exception
 from kavzi_trader.brain.config import (
     ANTHROPIC_AGENT_DEFAULTS,
+    ANTHROPIC_MAX_OUTPUT_TOKENS,
     AgentModelConfigSchema,
     BrainConfigSchema,
 )
@@ -31,8 +32,6 @@ ALL_ANTHROPIC: dict[str, object] = {
     "analyst": {"provider": "anthropic"},
     "trader": {"provider": "anthropic"},
 }
-# An explicit max_tokens keeps pydantic-ai on the non-streaming create() path.
-_NON_STREAMING = AnthropicModelSettings(max_tokens=1024)
 ROLES = ["analyst", "trader", "synthesizer"]
 
 
@@ -127,6 +126,18 @@ class TestAnthropicRequest:
         output_config = request["output_config"]
         assert output_config["format"]["type"] == "json_schema"
         assert output_config["effort"] == ANTHROPIC_AGENT_DEFAULTS[role].effort
+
+    @pytest.mark.parametrize("role", ROLES)
+    def test_output_is_capped_and_not_streamed(
+        self, make_factory: MakeFactory, sent_requests: SentRequests, role: str
+    ) -> None:
+        # Uncapped, pydantic-ai streams up to the model max and the read timeout
+        # never fires; one eval Analyst call ran 537 s and 128k tokens that way.
+        agent = _create_agent(make_factory(ALL_ANTHROPIC), role)
+        (request,) = sent_requests(agent)
+
+        assert request["max_tokens"] == ANTHROPIC_MAX_OUTPUT_TOKENS
+        assert request.get("stream") is not True
 
     def test_default_efforts(self) -> None:
         assert ANTHROPIC_AGENT_DEFAULTS["analyst"].effort == "medium"
@@ -254,7 +265,7 @@ class TestRefusalAndUsage:
         monkeypatch.setattr(_model(agent).client.beta.messages, "create", refuse)
 
         with pytest.raises(ContentFilterError, match="declined"):
-            await agent.run("prompt", model_settings=_NON_STREAMING)
+            await agent.run("prompt")
 
     async def test_cache_tokens_are_reported_in_usage(
         self, make_factory: MakeFactory, monkeypatch: pytest.MonkeyPatch
@@ -282,7 +293,7 @@ class TestRefusalAndUsage:
 
         monkeypatch.setattr(_model(agent).client.beta.messages, "create", reply)
 
-        result = await agent.run("prompt", model_settings=_NON_STREAMING)
+        result = await agent.run("prompt")
 
         assert result.usage.cache_read_tokens == 700
         assert result.usage.cache_write_tokens == 300

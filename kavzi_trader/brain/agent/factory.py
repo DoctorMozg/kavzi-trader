@@ -14,6 +14,7 @@ from pydantic_ai.settings import ModelSettings
 
 from kavzi_trader.brain.config import (
     ANTHROPIC_AGENT_DEFAULTS,
+    ANTHROPIC_MAX_OUTPUT_TOKENS,
     AgentModelConfigSchema,
     BrainConfigSchema,
 )
@@ -268,6 +269,7 @@ class AgentFactory:
         effort = source.effort or ANTHROPIC_AGENT_DEFAULTS[role].effort
         return AnthropicModelSettings(
             timeout=timeout_s,
+            max_tokens=ANTHROPIC_MAX_OUTPUT_TOKENS,
             anthropic_effort=effort,
             # Cache only the rendered system prompt; per-candle context lives in
             # the user prompt and stays outside the cached prefix.

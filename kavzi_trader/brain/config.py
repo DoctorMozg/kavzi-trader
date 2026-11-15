@@ -86,6 +86,10 @@ class AnthropicAgentDefaultsSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+# Thinking counts toward this. Eval p99 was ~2.1k (Analyst) and <1k (Trader);
+# staying under ~21k also keeps requests unstreamed, so timeout_s bounds them.
+ANTHROPIC_MAX_OUTPUT_TOKENS = 8192
+
 ANTHROPIC_AGENT_DEFAULTS: dict[str, AnthropicAgentDefaultsSchema] = {
     "analyst": AnthropicAgentDefaultsSchema(
         model_id="claude-sonnet-5-5", effort="medium"
