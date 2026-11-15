@@ -9,7 +9,7 @@ from kavzi_trader.evals.sim_trade_schema import SimTradeSchema
 from kavzi_trader.evals.stage_ops import StageOps
 
 
-def _stats_row(name: str, stats: RStatsSchema, *, win: bool = True) -> list[str]:
+def stats_row(name: str, stats: RStatsSchema, *, win: bool = True) -> list[str]:
     return [
         name,
         str(stats.trades),
@@ -19,7 +19,7 @@ def _stats_row(name: str, stats: RStatsSchema, *, win: bool = True) -> list[str]
     ]
 
 
-_R_HEADERS = ["strategy", "trades", "win rate", "mean R", "total R"]
+R_HEADERS = ["strategy", "trades", "win rate", "mean R", "total R"]
 
 
 class OutcomeRenderer:
@@ -40,12 +40,12 @@ class OutcomeRenderer:
     def simulation(self) -> str:
         baselines = BaselineReturns([j.case for j in self._scored])
         rows = [
-            _stats_row("bot (Trader's own entry/SL/TP)", self._r_stats(self._trades)),
-            _stats_row("oracle (label side, dataset bracket)", baselines.oracle()),
-            _stats_row("always long", baselines.always_long()),
-            _stats_row("always short", baselines.always_short()),
-            _stats_row(f"random side (seed {RANDOM_SEED})", baselines.random_side()),
-            _stats_row(
+            stats_row("bot (Trader's own entry/SL/TP)", self._r_stats(self._trades)),
+            stats_row("oracle (label side, dataset bracket)", baselines.oracle()),
+            stats_row("always long", baselines.always_long()),
+            stats_row("always short", baselines.always_short()),
+            stats_row(f"random side (seed {RANDOM_SEED})", baselines.random_side()),
+            stats_row(
                 "random side, expected", baselines.random_side_expected(), win=False
             ),
         ]
@@ -56,7 +56,7 @@ class OutcomeRenderer:
             "is marked to market. R = PnL / SL distance. Fees are ignored. Baselines "
             "use the dataset bracket (1.5 ATR stop, 3 ATR target) over all scored "
             "cases.",
-            Md.table(_R_HEADERS, rows),
+            Md.table(R_HEADERS, rows),
             "R of the bot's trades by label:\n\n" + self._grouped(lambda t: t.label),
             "R of the bot's trades by regime:\n\n" + self._grouped(lambda t: t.regime),
         )
@@ -160,8 +160,8 @@ class OutcomeRenderer:
         groups: dict[str, list[SimTradeSchema]] = defaultdict(list)
         for trade in self._trades:
             groups[key(trade)].append(trade)
-        rows = [_stats_row(n, self._r_stats(t)) for n, t in sorted(groups.items())]
-        return Md.table(["group", *_R_HEADERS[1:]], rows) if rows else "No trades."
+        rows = [stats_row(n, self._r_stats(t)) for n, t in sorted(groups.items())]
+        return Md.table(["group", *R_HEADERS[1:]], rows) if rows else "No trades."
 
     @staticmethod
     def _r_stats(trades: list[SimTradeSchema]) -> RStatsSchema:

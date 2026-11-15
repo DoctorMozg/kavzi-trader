@@ -42,6 +42,7 @@ class ReportRenderer:
                 ["Trader", f"{h.trader_model} (effort {h.trader_effort})"],
                 ["Provider", h.provider],
                 ["Bypass scout", str(h.bypass_scout)],
+                ["Force trader", str(h.force_trader)],
                 ["Dataset", h.dataset],
                 ["Git hash", h.git_hash or "n/a"],
                 ["Concurrency", str(h.concurrency)],
@@ -206,6 +207,7 @@ class ReportRenderer:
     def _trader_section(self) -> str:
         actions = self._stats.trader_actions()
         columns = sorted({a for c in actions.values() for a in c})
+        live = sum(sum(c.values()) for c in actions.values())
         rows = [
             [
                 label,
@@ -214,7 +216,6 @@ class ReportRenderer:
             ]
             for label in CLASSES
         ]
-        return (
-            f"### Trader (cases that reached it: {self._trader.cases})\n\n"
-            + Md.table(["label", "n", *columns], rows)
+        return f"### Trader (cases that reached it live: {live})\n\n" + Md.table(
+            ["label", "n", *columns], rows
         )

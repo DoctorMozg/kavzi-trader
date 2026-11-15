@@ -44,6 +44,7 @@ def joined(
     trader: TraderRecordSchema | None = None,
     *,
     bypassed: bool = False,
+    forced: bool = False,
 ) -> JoinedCaseSchema:
     result = CaseResultSchema.model_validate(
         {
@@ -55,11 +56,14 @@ def joined(
             "scout_verdict": "SKIP" if bypassed else "INTERESTING",
             "scout_bypassed": bypassed,
             "stopped_at": stopped_at,
+            "trader_forced": forced,
             "trader": trader,
         }
     )
     return JoinedCaseSchema(result=result, case=case)
 
 
-def case_for(frame: pd.DataFrame, label: str = "LONG", **overrides: object):
+def case_for(
+    frame: pd.DataFrame, label: str = "LONG", **overrides: object
+) -> EvalCaseSchema:
     return case_at(frame, DECISION, label=label, symbol=SYMBOL, **overrides)

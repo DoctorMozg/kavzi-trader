@@ -69,15 +69,19 @@ class StageStats:
         return cells
 
     def trader_actions(self) -> dict[str, Counter[str]]:
-        """Action per label among cases that reached the Trader."""
+        """Action per label among cases that reached the Trader live."""
+        return self._by_label(lambda j: self._action(j, forced=False))
 
-        def action(j: JoinedCaseSchema) -> str | None:
-            trader = j.result.trader
-            if trader is None:
-                return None
-            return trader.action or "no_decision"
+    def forced_trader_actions(self) -> dict[str, Counter[str]]:
+        """Action per label among cases whose Trader stage was forced."""
+        return self._by_label(lambda j: self._action(j, forced=True))
 
-        return self._by_label(action)
+    @staticmethod
+    def _action(joined: JoinedCaseSchema, *, forced: bool) -> str | None:
+        trader = joined.result.trader
+        if trader is None or joined.result.trader_forced != forced:
+            return None
+        return trader.action or "no_decision"
 
     def _by_label(
         self, key: Callable[[JoinedCaseSchema], str | None]

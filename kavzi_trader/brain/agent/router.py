@@ -71,7 +71,7 @@ class PipelineResult:
 # (CONFLUENCE_ENTER_MIN - 3) = 3 with all 8 signals — below this, even a
 # perfect LLM bonus cannot reach the entry gate. Lowered when fewer signals
 # are available (see signal_adjusted_threshold).
-_DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE = 3
+ANALYST_MIN_ALGO_CONFLUENCE = 3
 
 # Number of consecutive Trader validation failures (UnexpectedModelBehavior
 # or malformed output rejected downstream) before the Trader is suspended
@@ -90,7 +90,7 @@ class AgentRouter:
         scout: ScoutRunner,
         analyst: AnalystRunner,
         trader: TraderRunner,
-        analyst_min_algo_confluence: int = _DEFAULT_ANALYST_MIN_ALGO_CONFLUENCE,
+        analyst_min_algo_confluence: int = ANALYST_MIN_ALGO_CONFLUENCE,
         confluence_override: ConfluenceOverrideProvider | None = None,
         trader_circuit_threshold: int = _DEFAULT_TRADER_CIRCUIT_THRESHOLD,
         analyst_concurrency_limit: int = _DEFAULT_ANALYST_CONCURRENCY_LIMIT,
@@ -213,33 +213,56 @@ class AgentRouter:
         if analyst_decision is None:
             return PipelineResult(scout=scout_result)
 
+        trader_result = await self._run_trader(
+            symbol, scout_result, analyst_decision, analyst_result.gates, deps_provider
+        )
+        if trader_result.trader is not None:
+            total_ms = (time.monotonic() - total_start) * 1000
+            logger.info(
+                "Agent pipeline completed for %s in %.1fms — reached tier trader",
+                symbol,
+                total_ms,
+            )
+        return trader_result
+
+    async def run_trader_stage(
+        self,
+        symbol: str,
+        stopped: PipelineResult,
+        deps_provider: DependenciesProvider,
+    ) -> PipelineResult:
+        """Run the Trader on a result that stopped at the Analyst gate (for evals).
+
+        The Analyst decision is passed on untouched.
+        """
+        if stopped.analyst is None or stopped.gates is None:
+            msg = "run_trader_stage needs a result that carries an Analyst decision"
+            raise ValueError(msg)
+        return await self._run_trader(
+            symbol, stopped.scout, stopped.analyst, stopped.gates, deps_provider
+        )
+
+    async def _run_trader(
+        self,
+        symbol: str,
+        scout: ScoutDecisionSchema,
+        analyst: AnalystDecisionSchema,
+        gates: ConfluenceGatesSchema | None,
+        deps_provider: DependenciesProvider,
+    ) -> PipelineResult:
         trader_run = await self._trader_pipeline.run(
-            symbol,
-            analyst_decision,
-            scout_result.pattern_detected,
-            deps_provider,
+            symbol, analyst, scout.pattern_detected, deps_provider
         )
         if trader_run.decision is None:
-            return PipelineResult(
-                scout=scout_result,
-                analyst=analyst_decision,
-                gates=analyst_result.gates,
-            )
-
-        total_ms = (time.monotonic() - total_start) * 1000
-        logger.info(
-            "Agent pipeline completed for %s in %.1fms — reached tier trader",
-            symbol,
-            total_ms,
-        )
+            return PipelineResult(scout=scout, analyst=analyst, gates=gates)
         return PipelineResult(
-            scout=scout_result,
-            analyst=analyst_decision,
+            scout=scout,
+            analyst=analyst,
             trader=trader_run.decision,
             trader_deps=trader_run.deps,
             geometry=trader_run.geometry,
             trader_stop_reason=trader_run.reason,
-            gates=analyst_result.gates,
+            gates=gates,
         )
 
     @staticmethod

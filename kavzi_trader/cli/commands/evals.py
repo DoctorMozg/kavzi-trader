@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import subprocess
+import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -145,7 +146,13 @@ def _git_hash() -> str | None:
 
 
 def _run_header(
-    app_config: AppConfig, run_id: str, dataset: Path, *, bypass: bool, workers: int
+    app_config: AppConfig,
+    run_id: str,
+    dataset: Path,
+    *,
+    bypass: bool,
+    force_trader: bool,
+    workers: int,
 ) -> RunHeaderSchema:
     brain = app_config.brain
     analyst_defaults = ANTHROPIC_AGENT_DEFAULTS["analyst"]
@@ -159,13 +166,20 @@ def _run_header(
         trader_model=brain.trader.model_id or trader_defaults.model_id,
         trader_effort=brain.trader.effort or trader_defaults.effort,
         bypass_scout=bypass,
+        force_trader=force_trader,
         concurrency=workers,
         git_hash=_git_hash(),
     )
 
 
 def _check_resume(stored: RunHeaderSchema, current: RunHeaderSchema) -> None:
-    fields = ("analyst_model", "trader_model", "bypass_scout", "dataset")
+    fields = (
+        "analyst_model",
+        "trader_model",
+        "bypass_scout",
+        "force_trader",
+        "dataset",
+    )
     diffs = [
         f"{f}: run has {getattr(stored, f)!r}, now {getattr(current, f)!r}"
         for f in fields
@@ -213,7 +227,12 @@ def _build_agent_source(app_config: AppConfig) -> AgentFactory:
 
 
 def _build_runner(
-    app_config: AppConfig, agents: AgentSource, cache_dir: Path, *, bypass: bool
+    app_config: AppConfig,
+    agents: AgentSource,
+    cache_dir: Path,
+    *,
+    bypass: bool,
+    force_trader: bool,
 ) -> EvalPipelineRunner:
     policy = RegimePolicy(app_config.risk, app_config.scout.extreme_allowed_patterns)
     detector = VolatilityRegimeDetector(app_config.risk, policy)
@@ -226,12 +245,16 @@ def _build_runner(
         CaseContextBuilder(app_config, load_tier_registry(), detector),
         CostCalculator(),
         bypass_scout=bypass,
+        force_trader=force_trader,
     )
 
 
 def _echo_projection(projection: RunProjectionSchema) -> None:
     p = projection
-    click.echo(f"Dry run: {p.measured_cases} cases measured")
+    click.echo(
+        f"Dry run: {p.measured_cases} cases measured, "
+        f"{p.llm_cases} reached the Analyst LLM"
+    )
     click.echo(
         f"  cost/case:    mean ${p.mean_cost_usd:.4f}  max ${p.max_cost_usd:.4f}"
     )
@@ -239,8 +262,9 @@ def _echo_projection(projection: RunProjectionSchema) -> None:
         f"  latency/case: mean {p.mean_latency_s:.1f}s  max {p.max_latency_s:.1f}s"
     )
     click.echo(
-        f"Remaining {p.remaining_cases} cases: ~${p.projected_cost_usd:.2f}, "
-        f"~{p.projected_time_s / 60:.1f} min"
+        f"Remaining {p.remaining_cases} cases, {p.reach_fraction:.0%} of them expected "
+        "to reach the Analyst LLM (deterministic pre-pass, same gates, no LLM): "
+        f"~${p.projected_cost_usd:.2f}, ~{p.projected_time_s / 60:.1f} min"
     )
 
 
@@ -252,6 +276,27 @@ def _echo_summary(results: list[CaseResultSchema], path: Path) -> None:
     click.echo(f"Finished {len(results)} cases, cost ${cost:.2f}")
     click.echo("Stopped at: " + ", ".join(f"{k}={v}" for k, v in sorted(stops.items())))
     click.echo(f"Results: {path}")
+
+
+async def _llm_reaching_ids(
+    runner: EvalPipelineRunner, cases: list[EvalCaseSchema]
+) -> set[str]:
+    """Ids of the cases Scout and the algo-confluence gate let through; no LLM."""
+    started = time.monotonic()
+    reaching: set[str] = set()
+    for case in cases:
+        try:
+            if await runner.reaches_analyst_llm(case):
+                reaching.add(case.case_id)
+        except Exception:
+            # The real run fails on this case too and records it as an error.
+            logger.exception("Pre-pass failed for case %s", case.case_id)
+    elapsed_s = time.monotonic() - started
+    click.echo(
+        f"Pre-pass: {len(reaching)} of {len(cases)} pending cases reach the "
+        f"Analyst LLM ({elapsed_s:.1f}s)"
+    )
+    return reaching
 
 
 @eval_group.command("run")
@@ -267,6 +312,11 @@ def _echo_summary(results: list[CaseResultSchema], path: Path) -> None:
     "--bypass-scout",
     is_flag=True,
     help="Record the Scout verdict but continue to the Analyst on SKIP.",
+)
+@click.option(
+    "--force-trader",
+    is_flag=True,
+    help="Run the Trader on cases the Analyst gate stopped (scored separately).",
 )
 @click.option("--concurrency", type=click.IntRange(min=1), default=4, show_default=True)
 @click.option("--resume", "resume_id", default=None, help="Run id to continue.")
@@ -284,6 +334,7 @@ def run_eval(
     limit: int | None,
     case_ids: str | None,
     bypass_scout: bool,
+    force_trader: bool,
     concurrency: int,
     resume_id: str | None,
     yes: bool,
@@ -296,7 +347,12 @@ def run_eval(
     run_id = resume_id or datetime.now(UTC).strftime("run_%Y%m%dT%H%M%SZ")
     store = ResultStore(app_config.system.results_dir / "evals", run_id)
     header = _run_header(
-        app_config, run_id, dataset, bypass=bypass_scout, workers=concurrency
+        app_config,
+        run_id,
+        dataset,
+        bypass=bypass_scout,
+        force_trader=force_trader,
+        workers=concurrency,
     )
     if resume_id:
         _check_resume(store.read_header(), header)
@@ -306,15 +362,25 @@ def run_eval(
     pending = [c for c in cases if c.case_id not in done]
     click.echo(f"Run {run_id}: {len(pending)} cases to run, {len(done)} already done")
 
-    runner = _build_runner(app_config, agents, cache_dir, bypass=bypass_scout)
+    runner = _build_runner(
+        app_config, agents, cache_dir, bypass=bypass_scout, force_trader=force_trader
+    )
     orchestrator = EvalRunOrchestrator(runner, store, concurrency)
 
     async def _drive() -> list[CaseResultSchema]:
-        dry_cases = CaseSelector.dry_run(pending, app_config.scout.blocked_regimes)
+        reaching = await _llm_reaching_ids(runner, pending)
+        dry_cases = CaseSelector.dry_run(
+            pending, app_config.scout.blocked_regimes, reaching_llm=reaching
+        )
         results = await orchestrator.run_batch(dry_cases)
         rest = [c for c in pending if c not in dry_cases]
+        reach_fraction = (
+            sum(c.case_id in reaching for c in rest) / len(rest) if rest else 0.0
+        )
         _echo_projection(
-            RunProjectionSchema.from_results(results, len(rest), concurrency)
+            RunProjectionSchema.from_results(
+                results, len(rest), concurrency, reach_fraction
+            )
         )
         if not rest:
             return results

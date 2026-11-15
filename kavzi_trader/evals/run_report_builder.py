@@ -3,6 +3,7 @@ from pathlib import Path
 
 from kavzi_trader.evals.candle_cache import CandleCache
 from kavzi_trader.evals.confusion_metrics import ConfusionMetrics
+from kavzi_trader.evals.forced_trader_renderer import ForcedTraderRenderer
 from kavzi_trader.evals.loaded_run_schema import LoadedRunSchema
 from kavzi_trader.evals.markdown_format import Md
 from kavzi_trader.evals.outcome_renderer import OutcomeRenderer
@@ -31,6 +32,12 @@ class RunReportBuilder:
         )
         simulator = TradeSimulator(CandleCache(cache_dir, "15m"))
         self._trades = [t for j in cases if (t := simulator.simulate(j)) is not None]
+        self._forced_trades = [
+            t
+            for j in cases
+            if j.result.trader_forced
+            and (t := simulator.simulate(j, forced=True)) is not None
+        ]
         records = run.results
         self._stages = {
             "analyst": StageOps([r.analyst.metrics for r in records if r.analyst]),
@@ -44,6 +51,7 @@ class RunReportBuilder:
         outcomes = OutcomeRenderer(
             self._run.scored, self._trades, self._stages, len(self._run.results)
         )
+        forced = ForcedTraderRenderer(self._run.scored, self._forced_trades)
         title = f"# Eval report: {self._run.header.run_id}"
         sections = [
             title,
@@ -52,6 +60,7 @@ class RunReportBuilder:
             report.decisions(self._bot, self._live),
             report.stages(),
             outcomes.simulation(),
+            *([forced.section()] if forced.has_cases else []),
             outcomes.ops(),
             outcomes.breakdowns(),
         ]

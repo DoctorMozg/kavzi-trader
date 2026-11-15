@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,6 +41,7 @@ def make_runner(
         scout: ScoutRunner,
         *,
         bypass: bool = False,
+        force_trader: bool = False,
         cache: Path | None = None,
     ) -> EvalPipelineRunner:
         return EvalPipelineRunner(
@@ -50,6 +52,7 @@ def make_runner(
             context_builder,
             CostCalculator(),
             bypass_scout=bypass,
+            force_trader=force_trader,
         )
 
     return _make
@@ -207,8 +210,9 @@ class TestAnonymizationInPrompts:
         user = agents.log.user_text()
         everything = agents.log.all_text()
         assert SYMBOL not in everything
+        # Whole words only: "SOL" legitimately appears inside "OVERSOLD".
         for base_asset in ("BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "LINK", "AVAX"):
-            assert base_asset not in everything
+            assert re.search(rf"\b{base_asset}\b", everything) is None, base_asset
         assert "ASSET" in user
         for date_text in (
             decided.strftime("%Y-%m-%d"),
@@ -268,3 +272,158 @@ class TestNoLookahead:
         b = await self._prompts(make_runner, app_config, tmp_path / "b", tampered)
 
         assert a.log.analyst != b.log.analyst
+
+
+ANALYST_REJECTS: dict[str, object] = {"setup_valid": False}
+# A decision candle with no volume spike: algo confluence stays below the LLM gate.
+QUIET_INDEX = 1042
+
+
+class TestForceTrader:
+    async def test_runs_the_trader_past_the_analyst_gate(
+        self, make_runner: RunnerFactory, app_config: AppConfig, case: EvalCaseSchema
+    ) -> None:
+        agents = FakeLlmAgents(app_config, analyst_reply=ANALYST_REJECTS)
+        runner = make_runner(agents, StubScout("INTERESTING"), force_trader=True)
+        result = await runner.run_case(case)
+
+        assert result.stopped_at == "analyst_gate"
+        assert result.trader_forced
+        assert result.status == "ok"
+        assert agents.calls == {"analyst": 1, "trader": 1}
+        assert result.trader is not None
+        assert result.trader.action == "LONG"
+        assert result.trader.stop_reason == "ok"
+        assert result.trader.metrics.requests == 1
+        assert result.analyst is not None
+        assert result.analyst.setup_valid is False
+
+    async def test_trader_sees_the_analysts_actual_decision(
+        self, make_runner: RunnerFactory, app_config: AppConfig, case: EvalCaseSchema
+    ) -> None:
+        agents = FakeLlmAgents(app_config, analyst_reply=ANALYST_REJECTS)
+        runner = make_runner(agents, StubScout("INTERESTING"), force_trader=True)
+        await runner.run_case(case)
+
+        assert "Synthetic analyst verdict" in agents.log.trader[0]
+
+    async def test_forced_trader_still_goes_through_the_pre_trader_gates(
+        self, make_runner: RunnerFactory, app_config: AppConfig, tmp_path: Path
+    ) -> None:
+        frame = btc_frame(breakout=True)
+        write_cache(tmp_path, frame)
+        agents = FakeLlmAgents(app_config, analyst_reply=ANALYST_REJECTS)
+        runner = make_runner(
+            agents,
+            StubScout("INTERESTING", pattern="BREAKOUT"),
+            force_trader=True,
+            cache=tmp_path,
+        )
+        result = await runner.run_case(case_at(frame, DECISION_INDEX))
+
+        assert result.stopped_at == "analyst_gate"
+        assert result.trader_forced
+        assert result.trader is not None
+        assert result.trader.stop_reason == "pre_trade_gate_reject"
+        assert agents.calls["trader"] == 0
+
+    async def test_analyst_skipped_case_is_not_forced(
+        self, make_runner: RunnerFactory, app_config: AppConfig
+    ) -> None:
+        agents = FakeLlmAgents(app_config)
+        runner = make_runner(agents, StubScout("INTERESTING"), force_trader=True)
+        result = await runner.run_case(case_at(btc_frame(), QUIET_INDEX))
+
+        assert result.stopped_at == "analyst_skipped"
+        assert not result.trader_forced
+        assert result.trader is None
+        assert agents.calls == {"analyst": 0, "trader": 0}
+
+    async def test_scout_stop_is_not_forced(
+        self, make_runner: RunnerFactory, app_config: AppConfig, case: EvalCaseSchema
+    ) -> None:
+        agents = FakeLlmAgents(app_config)
+        runner = make_runner(agents, StubScout("SKIP"), force_trader=True)
+        result = await runner.run_case(case)
+
+        assert result.stopped_at == "scout"
+        assert not result.trader_forced
+        assert agents.calls == {"analyst": 0, "trader": 0}
+
+    async def test_analyst_error_is_not_forced(
+        self, make_runner: RunnerFactory, app_config: AppConfig, case: EvalCaseSchema
+    ) -> None:
+        agents = FakeLlmAgents(app_config, refuse="analyst")
+        runner = make_runner(agents, StubScout("INTERESTING"), force_trader=True)
+        result = await runner.run_case(case)
+
+        assert result.stopped_at == "analyst_error"
+        assert not result.trader_forced
+        assert agents.calls["trader"] == 0
+
+    async def test_forced_trader_api_failure_marks_the_case_for_resume(
+        self, make_runner: RunnerFactory, app_config: AppConfig, case: EvalCaseSchema
+    ) -> None:
+        agents = FakeLlmAgents(
+            app_config, analyst_reply=ANALYST_REJECTS, http_error="trader"
+        )
+        runner = make_runner(agents, StubScout("INTERESTING"), force_trader=True)
+        result = await runner.run_case(case)
+
+        assert result.stopped_at == "analyst_gate"
+        assert result.status == "error"
+        assert result.error is not None
+        assert "ModelHTTPError" in result.error
+
+    async def test_without_the_flag_the_trader_stays_idle(
+        self, make_runner: RunnerFactory, app_config: AppConfig, case: EvalCaseSchema
+    ) -> None:
+        agents = FakeLlmAgents(app_config, analyst_reply=ANALYST_REJECTS)
+        result = await make_runner(agents, StubScout("INTERESTING")).run_case(case)
+
+        assert result.stopped_at == "analyst_gate"
+        assert not result.trader_forced
+        assert result.trader is None
+        assert agents.calls == {"analyst": 1, "trader": 0}
+
+
+class TestReachesAnalystLlm:
+    async def test_quiet_case_stops_at_the_algo_confluence_pre_filter(
+        self, make_runner: RunnerFactory, app_config: AppConfig
+    ) -> None:
+        agents = FakeLlmAgents(app_config)
+        runner = make_runner(agents, StubScout("INTERESTING"))
+
+        assert not await runner.reaches_analyst_llm(case_at(btc_frame(), QUIET_INDEX))
+        assert agents.calls == {"analyst": 0, "trader": 0}
+
+    async def test_confluent_case_reaches_the_llm_without_calling_it(
+        self, make_runner: RunnerFactory, app_config: AppConfig, case: EvalCaseSchema
+    ) -> None:
+        agents = FakeLlmAgents(app_config)
+        runner = make_runner(agents, StubScout("INTERESTING"))
+
+        assert await runner.reaches_analyst_llm(case)
+        assert agents.calls == {"analyst": 0, "trader": 0}
+
+    async def test_scout_skip_blocks_unless_bypassed(
+        self, make_runner: RunnerFactory, app_config: AppConfig, case: EvalCaseSchema
+    ) -> None:
+        agents = FakeLlmAgents(app_config)
+
+        assert not await make_runner(agents, StubScout("SKIP")).reaches_analyst_llm(
+            case
+        )
+        bypassing = make_runner(agents, StubScout("SKIP"), bypass=True)
+        assert await bypassing.reaches_analyst_llm(case)
+
+    async def test_agrees_with_the_real_pipeline(
+        self, make_runner: RunnerFactory, app_config: AppConfig
+    ) -> None:
+        runner = make_runner(FakeLlmAgents(app_config), StubScout("INTERESTING"))
+        for index in (QUIET_INDEX, DECISION_INDEX):
+            case = case_at(btc_frame(), index)
+            result = await runner.run_case(case)
+
+            reached = result.stopped_at != "analyst_skipped"
+            assert await runner.reaches_analyst_llm(case) == reached

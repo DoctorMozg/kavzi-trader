@@ -26,11 +26,31 @@ class CaseSelector:
                     picked.append(queue.pop(0))
         return picked
 
-    @staticmethod
+    @classmethod
     def dry_run(
+        cls,
         cases: list[EvalCaseSchema],
         blocked_regimes: Collection[str],
         size: int = DRY_RUN_SIZE,
+        *,
+        reaching_llm: Collection[str] | None = None,
+    ) -> list[EvalCaseSchema]:
+        """Stratified pick from ``reaching_llm`` ids (the pre-pass), if at least
+        ``size`` of them exist; otherwise from all cases."""
+        if reaching_llm is not None:
+            eligible = [c for c in cases if c.case_id in reaching_llm]
+            if len(eligible) >= size:
+                return cls._stratified(eligible, (), size)
+            logger.warning(
+                "Only %d of %d cases reach the Analyst LLM; dry run is not LLM-only",
+                len(eligible),
+                len(cases),
+            )
+        return cls._stratified(cases, blocked_regimes, size)
+
+    @staticmethod
+    def _stratified(
+        cases: list[EvalCaseSchema], blocked_regimes: Collection[str], size: int
     ) -> list[EvalCaseSchema]:
         """One case per label from a regime Scout lets through, then new regimes."""
         chosen: list[EvalCaseSchema] = []

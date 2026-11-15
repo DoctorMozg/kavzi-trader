@@ -292,3 +292,65 @@ async def test_router_successful_trader_does_not_increment_counter(
     assert result.trader.action == "WAIT"
     assert "BTCUSDT" not in router._circuit_breaker.failures
     assert router._circuit_breaker.failures == {}
+
+
+@pytest.mark.asyncio
+async def test_run_trader_stage_runs_the_trader_on_a_gated_analyst_decision(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    router = AgentRouter(
+        DummyScout("INTERESTING"),
+        DummyAnalyst(setup_valid=False, confluence_score=8),
+        DummyTrader(),
+    )
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    stopped = await router.run("BTCUSDT", provider)
+    assert stopped.trader is None
+    assert provider.trader_calls == 0
+
+    forced = await router.run_trader_stage("BTCUSDT", stopped, provider)
+
+    assert forced.trader is not None
+    assert forced.analyst is stopped.analyst
+    assert forced.gates is stopped.gates
+    assert provider.trader_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_run_trader_stage_rejects_a_result_without_an_analyst_decision(
+    candle,
+    indicators,
+    volatility_regime,
+    order_flow,
+    algorithm_confluence,
+    account_state,
+    positions,
+) -> None:
+    router = AgentRouter(DummyScout("SKIP"), DummyAnalyst(True), DummyTrader())
+    provider = _make_provider(
+        candle,
+        indicators,
+        volatility_regime,
+        order_flow,
+        algorithm_confluence,
+        account_state,
+        positions,
+    )
+    stopped = await router.run("BTCUSDT", provider)
+
+    with pytest.raises(ValueError, match="Analyst decision"):
+        await router.run_trader_stage("BTCUSDT", stopped, provider)

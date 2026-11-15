@@ -19,9 +19,11 @@ class TradeSimulator:
         self._cache = cache
         self._frames: dict[str, pd.DataFrame] = {}
 
-    def simulate(self, joined: JoinedCaseSchema) -> SimTradeSchema | None:
-        """None when the Trader did not produce a valid trade."""
-        side = joined.trader_side
+    def simulate(
+        self, joined: JoinedCaseSchema, *, forced: bool = False
+    ) -> SimTradeSchema | None:
+        """None without a valid trade; ``forced`` walks a forced Trader's trade."""
+        side = joined.forced_trader_side if forced else joined.trader_side
         trader = joined.result.trader
         if side is None or trader is None:
             return None

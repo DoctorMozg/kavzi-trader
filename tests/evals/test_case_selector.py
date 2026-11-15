@@ -50,6 +50,34 @@ class TestDryRun:
         assert len(CaseSelector.dry_run(blocked_only, BLOCKED)) == 5
 
 
+class TestDryRunReachingLlm:
+    def test_prefers_cases_the_pre_pass_lets_through(self) -> None:
+        cases = _dataset()
+        reaching = {c.case_id for c in cases[3:15]}
+
+        picked = CaseSelector.dry_run(cases, BLOCKED, reaching_llm=reaching)
+
+        assert len(picked) == 5
+        assert {c.case_id for c in picked} <= reaching
+
+    def test_keeps_label_stratification_among_eligible_cases(self) -> None:
+        cases = _dataset()
+        reaching = {c.case_id for c in cases}
+
+        picked = CaseSelector.dry_run(cases, BLOCKED, reaching_llm=reaching)
+
+        assert {c.label.value for c in picked[:3]} == {"LONG", "SHORT", "NO_TRADE"}
+
+    def test_falls_back_to_the_plain_pick_when_too_few_are_eligible(self) -> None:
+        cases = _dataset()
+        reaching = {c.case_id for c in cases[:4]}
+
+        picked = CaseSelector.dry_run(cases, BLOCKED, reaching_llm=reaching)
+
+        plain = CaseSelector.dry_run(cases, BLOCKED)
+        assert [c.case_id for c in picked] == [c.case_id for c in plain]
+
+
 class TestBalancedHead:
     def test_limit_mixes_labels_although_the_file_is_grouped(self) -> None:
         picked = CaseSelector.balanced_head(_dataset(), 6)

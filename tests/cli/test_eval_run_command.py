@@ -10,6 +10,8 @@ from click.testing import CliRunner, Result
 from kavzi_trader.cli.commands.evals import eval_group
 from kavzi_trader.config import AppConfig, SystemConfigSchema
 from kavzi_trader.evals.case_dataset_file import CaseDatasetFile
+from kavzi_trader.evals.eval_case_schema import EvalCaseSchema
+from kavzi_trader.evals.eval_pipeline_runner import EvalPipelineRunner
 from kavzi_trader.evals.result_store import ResultStore
 from tests.evals.eval_fixtures import FakeLlmAgents, btc_frame, case_at, write_cache
 
@@ -185,3 +187,80 @@ def test_missing_api_key_is_reported_without_a_run(
 
     assert "KT_ANTHROPIC_API_KEY" in str(result.exception)
     assert not env.results_dir.exists()
+
+
+def test_resume_with_a_different_force_trader_flag_is_refused(env: RunEnv) -> None:
+    first = env.invoke("--bypass-scout", "--force-trader", answer="n\n")
+
+    second = env.invoke("--bypass-scout", "--resume", env.run_id(first), "--yes")
+
+    assert "force_trader" in str(second.exception)
+    assert "bypass_scout" not in str(second.exception)
+
+
+def test_header_records_force_trader(env: RunEnv) -> None:
+    forced = env.invoke("--bypass-scout", "--force-trader", "--limit", "5")
+    plain = env.invoke("--bypass-scout", "--limit", "5")
+
+    assert env.store(env.run_id(forced)).read_header().force_trader
+    assert not env.store(env.run_id(plain)).read_header().force_trader
+
+
+def test_force_trader_runs_the_trader_on_gated_cases(env: RunEnv) -> None:
+    env.agents = FakeLlmAgents(env.config, analyst_reply={"setup_valid": False})
+
+    result = env.invoke("--bypass-scout", "--force-trader", "--yes")
+
+    assert result.exception is None
+    done = env.store(env.run_id(result)).read_all()
+    gated = [r for r in done if r.stopped_at == "analyst_gate"]
+    assert gated
+    assert all(r.trader_forced and r.trader is not None for r in gated)
+    assert env.agents.calls["trader"] == len(gated)
+
+
+def _only_reaching(monkeypatch: pytest.MonkeyPatch, reaching: set[str]) -> None:
+    async def fake(_self: EvalPipelineRunner, case: EvalCaseSchema) -> bool:
+        return case.case_id in reaching
+
+    monkeypatch.setattr(EvalPipelineRunner, "reaches_analyst_llm", fake)
+
+
+def test_dry_run_picks_cases_that_reach_the_analyst_llm(
+    env: RunEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reaching = set(env.case_ids[2:])
+    _only_reaching(monkeypatch, reaching)
+
+    result = env.invoke("--bypass-scout", answer="n\n")
+
+    assert "Pre-pass: 6 of 8 pending cases reach the Analyst LLM" in result.output
+    picked = {r.case_id for r in env.store(env.run_id(result)).read_all()}
+    assert len(picked) == 5
+    assert picked <= reaching
+
+
+def test_dry_run_falls_back_when_fewer_than_five_cases_reach_the_llm(
+    env: RunEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _only_reaching(monkeypatch, set(env.case_ids[:2]))
+
+    result = env.invoke("--bypass-scout", answer="n\n")
+
+    assert "Pre-pass: 2 of 8" in result.output
+    assert len(env.store(env.run_id(result)).read_all()) == 5
+
+
+@pytest.mark.parametrize(
+    ("reaching", "expected"), [(slice(0, 6), "33%"), (slice(0, 5), "0%")]
+)
+def test_projection_reports_the_reach_fraction_of_the_remaining_cases(
+    env: RunEnv, monkeypatch: pytest.MonkeyPatch, reaching: slice, expected: str
+) -> None:
+    ids = set(env.case_ids[reaching])
+    _only_reaching(monkeypatch, ids)
+
+    result = env.invoke("--bypass-scout", answer="n\n")
+
+    # Five of the reaching cases are measured; the sixth, if any, is left over.
+    assert f"Remaining 3 cases, {expected} of them expected" in result.output

@@ -32,6 +32,8 @@ class CaseResultSchema(BaseModel):
     scout_bypassed: bool = False
     # Last stage that acted; "trader" means the Trader produced the final word.
     stopped_at: StopStage | None = None
+    # True when the Trader ran only because --force-trader overrode the Analyst gate.
+    trader_forced: bool = False
     analyst: AnalystRecordSchema | None = None
     trader: TraderRecordSchema | None = None
 

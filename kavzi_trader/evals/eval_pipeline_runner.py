@@ -4,8 +4,13 @@ from decimal import Decimal
 from pydantic_ai.models import Model
 
 from kavzi_trader.brain.agent.analyst import AnalystAgent
+from kavzi_trader.brain.agent.analyst_pipeline import analyst_gates
 from kavzi_trader.brain.agent.protocols import ScoutRunner
-from kavzi_trader.brain.agent.router import AgentRouter, PipelineResult
+from kavzi_trader.brain.agent.router import (
+    ANALYST_MIN_ALGO_CONFLUENCE,
+    AgentRouter,
+    PipelineResult,
+)
 from kavzi_trader.brain.agent.trader import TraderAgent
 from kavzi_trader.brain.context.builder import ContextBuilder
 from kavzi_trader.brain.geometry.calculator import TradeGeometryCalculator
@@ -44,6 +49,7 @@ class EvalPipelineRunner:
         costs: CostCalculator,
         *,
         bypass_scout: bool,
+        force_trader: bool = False,
     ) -> None:
         self._config = app_config
         self._scout = scout
@@ -51,6 +57,7 @@ class EvalPipelineRunner:
         self._contexts = contexts
         self._costs = costs
         self._bypass_scout = bypass_scout
+        self._force_trader = force_trader
         loader = PromptLoader()
         analyst_agent = agents.create_analyst_agent()
         trader_agent = agents.create_trader_agent()
@@ -79,7 +86,39 @@ class EvalPipelineRunner:
         meter = CaseMeter()
         with meter:
             result = await router.run(anonymized.symbol, provider)
-        return self._record(case, anonymized, scout, result, meter)
+            stopped_at = self._live_stop(result, meter)
+            forced = self._force_trader and stopped_at == "analyst_gate"
+            if forced:
+                logger.info(
+                    "Forcing the Trader on %s past the Analyst gate", case.case_id
+                )
+                result = await router.run_trader_stage(
+                    anonymized.symbol, result, provider
+                )
+        return self._record(case, anonymized, scout, result, meter, stopped_at, forced)
+
+    async def reaches_analyst_llm(self, case: EvalCaseSchema) -> bool:
+        """Whether Scout and the algo-confluence pre-filter let the case reach the
+        Analyst LLM. Runs no LLM call."""
+        anonymized = self._anonymizer.anonymize(case)
+        provider = await self._contexts.build(case, anonymized)
+        scout = RecordingScout(self._scout, bypass=self._bypass_scout)
+        scout_deps = await provider.get_scout(anonymized.symbol)
+        if not scout_deps.recent_candles:
+            return False
+        if (await scout.run(scout_deps)).verdict != "INTERESTING":
+            return False
+        deps = await provider.get_analyst(anonymized.symbol)
+        confluence = deps.algorithm_confluence
+        min_algo = analyst_gates(deps).adjusted(ANALYST_MIN_ALGO_CONFLUENCE)
+        return max(confluence.long.score, confluence.short.score) >= min_algo
+
+    def _live_stop(self, result: PipelineResult, meter: CaseMeter) -> StopStage:
+        return self._stopped_at(
+            result,
+            meter.metrics("analyst", self._analyst_model, self._costs),
+            meter.metrics("trader", self._trader_model, self._costs),
+        )
 
     def _record(
         self,
@@ -88,17 +127,18 @@ class EvalPipelineRunner:
         scout: RecordingScout,
         result: PipelineResult,
         meter: CaseMeter,
+        stopped_at: StopStage,
+        forced: bool,
     ) -> CaseResultSchema:
         analyst_metrics = meter.metrics("analyst", self._analyst_model, self._costs)
         trader_metrics = meter.metrics("trader", self._trader_model, self._costs)
         real_scout = scout.verdict
-        stopped_at = self._stopped_at(result, analyst_metrics, trader_metrics)
         # A failed API request is infrastructure, not a decision: mark it so
         # --resume retries the case instead of scoring it as "no trade".
         api_error = {
             "analyst_error": analyst_metrics.error,
             "trader_error": trader_metrics.error,
-        }.get(stopped_at)
+        }.get(stopped_at) or (trader_metrics.error if forced else None)
         return CaseResultSchema(
             case_id=case.case_id,
             status="error" if api_error else "ok",
@@ -116,6 +156,7 @@ class EvalPipelineRunner:
                 and real_scout.verdict != "INTERESTING"
             ),
             stopped_at=stopped_at,
+            trader_forced=forced,
             analyst=self._analyst_record(result, analyst_metrics),
             trader=self._trader_record(anonymized, result, trader_metrics),
         )

@@ -18,8 +18,18 @@ class JoinedCaseSchema(BaseModel):
     @property
     def trader_side(self) -> str | None:
         """LONG or SHORT only for a valid Trader trade with full geometry."""
+        if self.result.stopped_at != "trader":
+            return None
+        return self._valid_trade_side()
+
+    @property
+    def forced_trader_side(self) -> str | None:
+        """Like trader_side, for a Trader that ran only because it was forced."""
+        return self._valid_trade_side() if self.result.trader_forced else None
+
+    def _valid_trade_side(self) -> str | None:
         trader = self.result.trader
-        if self.result.stopped_at != "trader" or trader is None:
+        if trader is None:
             return None
         has_geometry = None not in (trader.entry, trader.stop_loss, trader.take_profit)
         if trader.stop_reason == "ok" and trader.action in TRADE_SIDES and has_geometry:

@@ -67,6 +67,17 @@ class AnalystPipelineResultSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+def analyst_gates(deps: AnalystDependenciesSchema) -> ConfluenceGatesSchema:
+    """Confluence gates scaled to the signals available for these deps."""
+    available = deps.algorithm_confluence.dominant.available_signals
+    return ConfluenceGatesSchema.model_validate(
+        {
+            "regime_gate": effective_regime_gate(deps.volatility_regime, available),
+            "available_signals": available,
+        }
+    )
+
+
 class AnalystPipeline:
     """Orchestrates the Analyst stage: dedup, guarded invoke, confluence gate.
 
@@ -145,11 +156,9 @@ class AnalystPipeline:
         deps = await deps_provider.get_analyst(symbol)
         self._log_analyst_inputs(deps)
         regime = deps.volatility_regime
-        available = deps.algorithm_confluence.dominant.available_signals
-        regime_gate = effective_regime_gate(regime, available)
-        gates = ConfluenceGatesSchema.model_validate(
-            {"regime_gate": regime_gate, "available_signals": available}
-        )
+        gates = analyst_gates(deps)
+        available = gates.available_signals
+        regime_gate = gates.regime_gate
         min_algo = gates.adjusted(self._min_algo_confluence)
         self._log_scaled_gates(
             symbol, regime, available, regime_gate, min_algo=min_algo
