@@ -11,6 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import click
+import httpx2
 import numpy as np
 import pandas as pd
 from pydantic import ValidationError
@@ -55,7 +56,14 @@ from kavzi_trader.evals.funding_xs_params_schema import FundingXsParamsSchema
 from kavzi_trader.evals.funding_xs_report_renderer import FundingXsReportRenderer
 from kavzi_trader.evals.kline_downloader import KlineDownloader
 from kavzi_trader.evals.market_feature_builder import MarketFeatureBuilder
+from kavzi_trader.evals.metrics_alignment import MetricsAlignment
+from kavzi_trader.evals.metrics_cache import MetricsCache
+from kavzi_trader.evals.metrics_downloader import MetricsDownloader
 from kavzi_trader.evals.oi_downloader import OiDownloader
+from kavzi_trader.evals.positioning_signals import (
+    POSITIONING_SIGNALS,
+    PositioningSignals,
+)
 from kavzi_trader.evals.result_store import ResultStore
 from kavzi_trader.evals.run_header_schema import RunHeaderSchema
 from kavzi_trader.evals.run_loader import RunLoader
@@ -487,6 +495,7 @@ _FUNDING_LEAD_MS = 40 * 24 * 3600 * _MS_PER_S
 _INTERVALS = click.Choice(list(KLINE_INTERVALS))
 # Binance rejects openInterestHist start times older than about 30 days.
 _OI_LOOKBACK_MS = 29 * 24 * 3600 * _MS_PER_S
+_METRICS_TIMEOUT_S = 60.0
 
 
 def _with_exchange(
@@ -548,6 +557,47 @@ def _load_oi(
     return {symbol: cache.load(symbol) for symbol in frames}
 
 
+def _load_metrics(
+    cache_dir: Path, frames: dict[str, pd.DataFrame]
+) -> dict[str, pd.DataFrame]:
+    """Download missing archive days covering each candle frame."""
+    cache = MetricsCache(cache_dir)
+
+    async def _job() -> None:
+        async with httpx2.AsyncClient(timeout=_METRICS_TIMEOUT_S) as http:
+            downloader = MetricsDownloader(http, cache)
+            for symbol, frame in frames.items():
+                await downloader.ensure_range(
+                    symbol,
+                    int(frame["open_time_ms"].iloc[0]),
+                    int(frame["close_time_ms"].iloc[-1]) + 1,
+                )
+
+    asyncio.run(_job())
+    return {symbol: cache.load(symbol) for symbol in frames}
+
+
+def _oi_grids(
+    archive: dict[str, pd.DataFrame], order_flow: OrderFlowCalculator
+) -> dict[str, pd.DataFrame]:
+    """Metrics OI on the period grid the live OrderFlowCalculator indexes by."""
+    period_ms = KLINE_INTERVALS[order_flow.oi_period] * _MS_PER_S
+    return {s: MetricsAlignment.oi_grid(m, period_ms) for s, m in archive.items()}
+
+
+def _add_positioning(
+    history: int,
+    frames: dict[str, pd.DataFrame],
+    parts: list[pd.DataFrame],
+    archive: dict[str, pd.DataFrame],
+) -> list[pd.DataFrame]:
+    positioning = PositioningSignals(history)
+    return [
+        positioning.add(frames[s], p, archive[s])
+        for s, p in zip(frames, parts, strict=True)
+    ]
+
+
 def _parse_symbols(
     _ctx: click.Context, _param: click.Parameter, value: str | None
 ) -> list[str] | None:
@@ -590,6 +640,11 @@ def _day(ms: int) -> str:
     default=Path("data/eval_cache"),
     show_default=True,
 )
+@click.option(
+    "--metrics/--no-metrics",
+    default=False,
+    help="Also fill the 5-minute metrics archive (OI and long/short ratios).",
+)
 @_SYMBOLS_OPTION
 @click.pass_context
 def refresh_cache(
@@ -597,6 +652,7 @@ def refresh_cache(
     interval: str | None,
     months: float,
     cache_dir: Path,
+    metrics: bool,
     symbols: list[str] | None,
 ) -> None:
     """Fill cached candles, funding and OI up to today; the dataset is untouched."""
@@ -619,13 +675,17 @@ def refresh_cache(
     settlements = _load_funding(client, cache_dir, frames)
     period = OrderFlowCalculator(KLINE_INTERVALS[interval] // _S_PER_MIN).oi_period
     snapshots = _load_oi(client, cache_dir, frames, period)
+    archive = _load_metrics(cache_dir, frames) if metrics else {}
     for symbol, frame in frames.items():
         first, last = frame["open_time_ms"].iloc[[0, -1]]
-        click.echo(
+        line = (
             f"{symbol}: {len(frame)} {interval} candles {_day(first)} to "
             f"{_day(last)}, {len(settlements[symbol])} funding, "
             f"{len(snapshots[symbol])} OI {period}"
         )
+        if metrics:
+            line += f", {len(archive[symbol])} metrics 5m"
+        click.echo(line)
 
 
 def _leader(cache: CandleCache, frames: dict[str, pd.DataFrame]) -> pd.DataFrame | None:
@@ -705,6 +765,12 @@ def _parse_brackets(
     ),
 )
 @click.option(
+    "--metrics/--no-metrics",
+    default=False,
+    help="Score OI and long/short flags from the 5-minute metrics archive, in "
+    "place of openInterestHist (implies --funding; excludes --oi).",
+)
+@click.option(
     "--interval",
     type=_INTERVALS,
     default=None,
@@ -756,6 +822,7 @@ def signal_edge(
     out: Path | None,
     funding: bool,
     oi: bool,
+    metrics: bool,
     interval: str | None,
     start_day: datetime | None,
     end_day: datetime | None,
@@ -765,6 +832,8 @@ def signal_edge(
     symbols: list[str] | None,
 ) -> None:
     """Measure each confluence signal's R edge on cached candles; no LLM calls."""
+    if oi and metrics:
+        raise click.UsageError("--oi and --metrics are alternative OI sources")
     app_config: AppConfig = ctx.obj["app_config"]
     history = app_config.trading.history_candles
     interval = interval or app_config.trading.interval
@@ -791,15 +860,19 @@ def signal_edge(
     sampler = SignalSampler(
         MarketFeatureBuilder(app_config.risk), history, stride, order_flow, window
     )
-    funding = funding or oi
+    funding = funding or oi or metrics
     max_horizon = max(b.horizon_bars for b in brackets)
     client = ctx.obj.get("exchange_client")
     settlements = _load_funding(client, cache_dir, frames) if funding else {}
     snapshots = _load_oi(client, cache_dir, frames, order_flow.oi_period) if oi else {}
+    archive = _load_metrics(cache_dir, frames) if metrics else {}
+    snapshots = _oi_grids(archive, order_flow) if metrics else snapshots
     parts = [
         sampler.sample(s, f, max_horizon, settlements.get(s), snapshots.get(s))
         for s, f in frames.items()
     ]
+    if metrics:
+        parts = _add_positioning(history, frames, parts, archive)
     if candidates:
         extra = CandidateSignals(history, _leader(cache, frames), htf=interval == "15m")
         parts = [extra.add(s, frames[s], p) for s, p in zip(frames, parts, strict=True)]
@@ -821,8 +894,8 @@ def signal_edge(
     signals: tuple[str, ...] = CANDLE_SIGNALS
     if funding:
         signals = (*signals, FUNDING_SIGNAL)
-    if oi:
-        signals = (*signals, *OI_SIGNALS)
+    if oi or metrics:
+        signals = (*signals, *OI_SIGNALS, *(POSITIONING_SIGNALS if metrics else ()))
     if candidates:
         signals = (*signals, *[c for c in CANDIDATE_SIGNALS if f"LONG_{c}" in samples])
     signals = (*signals, *scout.names)
