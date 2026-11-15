@@ -24,6 +24,10 @@ def _make_system_prompt_context() -> SystemPromptContextDict:
         tier_1_min_confidence="0.65",
         tier_2_min_confidence="0.70",
         tier_3_min_confidence="0.85",
+        analyst_reasoning_max_chars=800,
+        trader_reasoning_max_chars=600,
+        key_level_reason_max_chars=80,
+        max_key_levels=4,
     )
 
 
@@ -74,16 +78,18 @@ def test_analyst_prompt_has_breakout_override() -> None:
     )
 
 
-def test_analyst_prompt_has_short_recovery_veto() -> None:
+def test_analyst_prompt_vetoes_match_backtested_conditions() -> None:
     loader = PromptLoader()
     context = _make_system_prompt_context()
     rendered = loader.render_system_prompt("analyst", context=context)
-    assert "SHORT RECOVERY VETO" in rendered, (
-        "Expected SHORT recovery veto rule in analyst trend assessment."
-    )
-    # Veto must mention both conditions (RSI and recovery from low).
-    assert "RSI_14" in rendered
-    assert "lowest low" in rendered
+    assert "SHORT OVERSOLD VETO" in rendered
+    assert "RSI_14 < 30" in rendered
+    assert "LONG FADING VETO" in rendered
+    assert "RSI_14 < 40" in rendered
+    assert "highest high of the last 16 bars" in rendered
+    # The inverted RSI<50 SHORT veto and the bounce veto hurt in backtests.
+    assert "RECOVERY VETO" not in rendered
+    assert "lowest low" not in rendered
 
 
 def test_prompt_loader_renders_trader_system_prompt() -> None:
@@ -166,3 +172,13 @@ def test_regime_guide_stop_advice_stays_within_stop_cap() -> None:
     assert "1.0-1.4 ATR stops" in rendered
     assert "1.25-1.4 ATR stops" in rendered
     assert "2.0 ATR stops" not in rendered
+
+
+def test_prompts_state_the_output_length_limits() -> None:
+    loader = PromptLoader()
+    context = _make_system_prompt_context()
+    analyst = loader.render_system_prompt("analyst", context=context)
+    trader = loader.render_system_prompt("trader", context=context)
+    assert "reasoning at most 800 characters, so aim for about 600" in analyst
+    assert "at most 4 key levels, each reason at most 80 characters" in analyst
+    assert "reasoning at most 600 characters, so aim for about 450" in trader

@@ -144,3 +144,7 @@ class SystemPromptContextDict(TypedDict):
     tier_1_min_confidence: str
     tier_2_min_confidence: str
     tier_3_min_confidence: str
+    analyst_reasoning_max_chars: int
+    trader_reasoning_max_chars: int
+    key_level_reason_max_chars: int
+    max_key_levels: int

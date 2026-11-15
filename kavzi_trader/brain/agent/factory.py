@@ -32,10 +32,18 @@ from kavzi_trader.brain.schemas.dependencies import (
 )
 from kavzi_trader.commons.llm_provider import AnthropicEffort, LlmProvider
 from kavzi_trader.commons.trading_constants import MAX_TP_ATR
-from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
+from kavzi_trader.domain.analyst_decision import (
+    ANALYST_REASONING_MAX_CHARS,
+    KEY_LEVEL_REASON_MAX_CHARS,
+    MAX_KEY_LEVELS,
+    AnalystDecisionSchema,
+)
 from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
-from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.domain.trade_decision import (
+    TRADER_REASONING_MAX_CHARS,
+    TradeDecisionSchema,
+)
 from kavzi_trader.external.config import SynthesizerConfigSchema
 from kavzi_trader.external.synthesizer import SynthesizerOutputSchema
 
@@ -108,6 +116,10 @@ class AgentFactory:
             tier_3_min_confidence=str(
                 tier_registry.get_config_for_tier(SymbolTier.TIER_3).min_confidence
             ),
+            analyst_reasoning_max_chars=ANALYST_REASONING_MAX_CHARS,
+            trader_reasoning_max_chars=TRADER_REASONING_MAX_CHARS,
+            key_level_reason_max_chars=KEY_LEVEL_REASON_MAX_CHARS,
+            max_key_levels=MAX_KEY_LEVELS,
         )
         self._openrouter_provider: OpenAIProvider | None = None
         self._anthropic_provider: AnthropicProvider | None = None

@@ -13,6 +13,10 @@ from kavzi_trader.domain.trade_structure import (
 __all__ = ["TradeDecisionSchema"]
 
 
+# Structured outputs strip maxLength, so the Trader prompt renders this limit.
+TRADER_REASONING_MAX_CHARS = 600
+
+
 class TradeDecisionSchema(BaseModel):
     """
     Final trading decision expressed as structure, not prices.
@@ -26,7 +30,9 @@ class TradeDecisionSchema(BaseModel):
 
     action: Annotated[Literal["LONG", "SHORT", "WAIT", "CLOSE"], Field(...)]
     confidence: Annotated[float, Field(..., ge=0.0, le=1.0)]
-    reasoning: Annotated[str, Field(..., min_length=40, max_length=600)]
+    reasoning: Annotated[
+        str, Field(..., min_length=40, max_length=TRADER_REASONING_MAX_CHARS)
+    ]
     entry_tactic: Annotated[EntryTactic | None, Field(default=None)]
     entry_level_index: Annotated[int | None, Field(default=None, ge=0)]
     stop_level_index: Annotated[int | None, Field(default=None, ge=0)]
