@@ -1,6 +1,7 @@
 from decimal import Decimal
 
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.order_flow.funding import calculate_funding_zscore
 from kavzi_trader.order_flow.open_interest import (
     calculate_oi_momentum,
@@ -16,7 +17,8 @@ from kavzi_trader.order_flow.schemas import (
 
 
 class OrderFlowCalculator:
-    def __init__(self, interval_minutes: int = 15) -> None:
+    def __init__(self, interval_minutes: int = 15, clock: Clock = SYSTEM_CLOCK) -> None:
+        self._clock = clock
         period_minutes = oi_period_minutes(interval_minutes)
         self._periods_1h, self._periods_24h = periods_for_oi_period(period_minutes)
         self.oi_period = f"{period_minutes}m"
@@ -45,7 +47,7 @@ class OrderFlowCalculator:
 
         return OrderFlowSchema(
             symbol=symbol,
-            timestamp=utc_now(),
+            timestamp=self._clock.now(),
             funding_rate=funding_analysis.funding_rate,
             funding_zscore=funding_analysis.funding_zscore,
             next_funding_time=funding_analysis.next_funding_time,
