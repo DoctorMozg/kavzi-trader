@@ -1,6 +1,8 @@
 import logging
 
 from kavzi_trader.cli.runtime_services_schema import RuntimeServicesSchema
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.config import AppConfig
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
 from kavzi_trader.orchestrator.providers.live_atr_provider import LiveAtrProvider
@@ -45,8 +47,10 @@ class SpineComposer:
         app_config: AppConfig,
         tier_registry: SymbolTierRegistry,
         volatility_detector: VolatilityRegimeDetector,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._config = app_config
+        self._clock = clock
         self._tier_registry = tier_registry
         self._volatility_detector = volatility_detector
 
@@ -67,9 +71,11 @@ class SpineComposer:
                 liquidation_calculator,
                 precision,
             ),
-            staleness_checker=StalenessChecker(config.execution),
+            staleness_checker=StalenessChecker(config.execution, self._clock),
             translator=DecisionTranslator(),
-            monitor=OrderMonitor(services.exchange, config.execution.timeout_s),
+            monitor=OrderMonitor(
+                services.exchange, config.execution.timeout_s, self._clock
+            ),
             event_store=services.event_store,
             leverage=config.futures.default_leverage,
             symbol_leverage=config.futures.symbol_leverage,
@@ -78,6 +84,7 @@ class SpineComposer:
             liquidation_calculator=liquidation_calculator,
             pullback_entry_expiry_ms=config.execution.pullback_entry_expiry_ms,
             precision=precision,
+            clock=self._clock,
         )
 
     def create_filter_chain(
@@ -90,7 +97,7 @@ class SpineComposer:
             funding_filter=FundingRateFilter(filters, self._tier_registry),
             movement_filter=MinimumMovementFilter(filters),
             exposure_limiter=ExposureLimiter(self._config.risk),
-            liquidity_filter=LiquidityFilter(filters),
+            liquidity_filter=LiquidityFilter(filters, self._clock),
             correlation_filter=CorrelationFilter(filters),
             confluence_calculator=ConfluenceCalculator(),
             fear_greed_gate=fgi_gate,
@@ -108,8 +115,8 @@ class SpineComposer:
         return PositionManagementLoop(
             manager=PositionManager(
                 partial_exit=PartialExitChecker(precision),
-                time_exit=TimeExitChecker(),
-                stall_exit=StallExitChecker(),
+                time_exit=TimeExitChecker(self._clock),
+                stall_exit=StallExitChecker(self._clock),
                 liquidation_emergency_percent=(
                     self._config.futures.liquidation_emergency_percent
                 ),
@@ -120,6 +127,7 @@ class SpineComposer:
             action_executor=PositionActionExecutor(
                 exchange=PrecisionExchangeClient(services.exchange, precision),
                 state_manager=services.state_manager,
+                clock=self._clock,
             ),
             fill_detector=ExchangeFillDetector(
                 exchange=services.exchange,
@@ -131,6 +139,7 @@ class SpineComposer:
             drawdown_breaker=DrawdownCircuitBreaker(
                 self._config.risk.drawdown_close_all_percent,
                 services.state_manager,
-                ExecutionEventRecorder(services.event_store),
+                ExecutionEventRecorder(services.event_store, self._clock),
             ),
+            clock=self._clock,
         )

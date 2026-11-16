@@ -22,6 +22,7 @@ from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
 from kavzi_trader.brain.prompts.loader import PromptLoader
+from kavzi_trader.cli.commands.replay import replay_command
 from kavzi_trader.cli.composition import load_tier_registry
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.agent_source import AgentSource
@@ -1061,3 +1062,6 @@ def trend_backtest(
         f"criterion met: {renderer.criterion_met(result)}"
     )
     click.echo(f"Report: {path}")
+
+
+eval_group.add_command(replay_command)

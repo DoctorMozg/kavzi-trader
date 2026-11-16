@@ -1,5 +1,4 @@
 import logging
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import numpy as np
@@ -7,6 +6,7 @@ import pandas as pd
 
 from kavzi_trader.config import AppConfig
 from kavzi_trader.domain.candlestick import CandlestickSchema
+from kavzi_trader.evals.candle_cache import candles_from_frame
 from kavzi_trader.evals.replay_kline_source import ReplayKlineSource
 from kavzi_trader.evals.synthetic_account import EVAL_BALANCE_USDT, SyntheticAccount
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
@@ -23,7 +23,6 @@ from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 logger = logging.getLogger(__name__)
 
 _TREND = "TREND_CONTINUATION"
-_MS_PER_S = 1000
 
 
 class ScoutSignals:
@@ -68,7 +67,7 @@ class ScoutSignals:
         history = self._config.trading.history_candles
         idx = samples["idx"].to_numpy(dtype=np.int64)
         first = max(int(idx.min()) - history + 1, 0)
-        candles = _candles(frame.iloc[first : int(idx.max()) + 1])
+        candles = candles_from_frame(frame.iloc[first : int(idx.max()) + 1])
         fired = {n: np.zeros(len(idx), dtype=bool) for n in self._scouts}
         for row, i in enumerate(idx):
             window = candles[i - history + 1 - first : i + 1 - first]
@@ -109,25 +108,3 @@ class ScoutSignals:
 
 def scout_signal_name(vol_ratio_min: Decimal) -> str:
     return f"scout_trend_{vol_ratio_min}"
-
-
-def _candles(frame: pd.DataFrame) -> list[CandlestickSchema]:
-    def at(ms: int) -> datetime:
-        return datetime.fromtimestamp(ms / _MS_PER_S, UTC)
-
-    return [
-        CandlestickSchema(
-            open_time=at(int(r.open_time_ms)),
-            open_price=Decimal(str(r.open)),
-            high_price=Decimal(str(r.high)),
-            low_price=Decimal(str(r.low)),
-            close_price=Decimal(str(r.close)),
-            volume=Decimal(str(r.volume)),
-            close_time=at(int(r.close_time_ms)),
-            quote_volume=Decimal(str(r.quote_volume)),
-            trades_count=int(r.trades_count),
-            taker_buy_base_volume=Decimal(str(r.taker_buy_base_volume)),
-            taker_buy_quote_volume=Decimal(str(r.taker_buy_quote_volume)),
-        )
-        for r in frame.itertuples()
-    ]

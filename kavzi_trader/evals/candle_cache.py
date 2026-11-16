@@ -1,4 +1,6 @@
 import logging
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -80,3 +82,30 @@ class CandleCache:
             "taker_buy_base_volume": float(c.taker_buy_base_volume),
             "taker_buy_quote_volume": float(c.taker_buy_quote_volume),
         }
+
+
+def candles_from_frame(
+    frame: pd.DataFrame, symbol: str | None = None
+) -> list[CandlestickSchema]:
+    """Rows of a CandleCache frame as candles, tagged with ``symbol`` if given."""
+
+    def at(ms: int) -> datetime:
+        return datetime.fromtimestamp(ms / 1000, UTC)
+
+    return [
+        CandlestickSchema(
+            open_time=at(int(r.open_time_ms)),
+            open_price=Decimal(str(r.open)),
+            high_price=Decimal(str(r.high)),
+            low_price=Decimal(str(r.low)),
+            close_price=Decimal(str(r.close)),
+            volume=Decimal(str(r.volume)),
+            close_time=at(int(r.close_time_ms)),
+            quote_volume=Decimal(str(r.quote_volume)),
+            trades_count=int(r.trades_count),
+            taker_buy_base_volume=Decimal(str(r.taker_buy_base_volume)),
+            taker_buy_quote_volume=Decimal(str(r.taker_buy_quote_volume)),
+            symbol=symbol,
+        )
+        for r in frame.itertuples()
+    ]
