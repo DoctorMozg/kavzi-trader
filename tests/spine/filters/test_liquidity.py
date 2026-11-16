@@ -1,15 +1,20 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from kavzi_trader.commons.sim_clock import SimClock
 from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.liquidity import LiquidityFilter
 from kavzi_trader.spine.filters.liquidity_period import LiquidityPeriod
 
 
+def _ms(moment: datetime) -> int:
+    return int(moment.timestamp() * 1000)
+
+
 def test_weekend_liquidity_multiplier() -> None:
     config = FilterConfigSchema()
     saturday = datetime(2025, 1, 4, 12, 0, tzinfo=UTC)
-    liquidity_filter = LiquidityFilter(config, time_provider=lambda: saturday)
+    liquidity_filter = LiquidityFilter(config, SimClock(_ms(saturday)))
 
     result = liquidity_filter.evaluate()
 
@@ -20,7 +25,7 @@ def test_weekend_liquidity_multiplier() -> None:
 def test_sunday_reopen_multiplier() -> None:
     config = FilterConfigSchema()
     sunday = datetime(2025, 1, 5, 21, 0, tzinfo=UTC)
-    liquidity_filter = LiquidityFilter(config, time_provider=lambda: sunday)
+    liquidity_filter = LiquidityFilter(config, SimClock(_ms(sunday)))
 
     result = liquidity_filter.evaluate()
 
@@ -33,7 +38,7 @@ def test_sunday_reopen_multiplier() -> None:
 def test_high_liquidity_session() -> None:
     config = FilterConfigSchema()
     weekday = datetime(2025, 1, 6, 14, 0, tzinfo=UTC)
-    liquidity_filter = LiquidityFilter(config, time_provider=lambda: weekday)
+    liquidity_filter = LiquidityFilter(config, SimClock(_ms(weekday)))
 
     result = liquidity_filter.evaluate()
 

@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from kavzi_trader.commons.sim_clock import SimClock
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
@@ -377,7 +378,9 @@ def _make_chain(
         funding_filter=FundingRateFilter(filter_config),
         movement_filter=MinimumMovementFilter(filter_config),
         exposure_limiter=ExposureLimiter(),
-        liquidity_filter=LiquidityFilter(filter_config, time_provider=lambda: now),
+        liquidity_filter=LiquidityFilter(
+            filter_config, SimClock(int(now.timestamp() * 1000))
+        ),
         correlation_filter=CorrelationFilter(filter_config),
         confluence_calculator=ConfluenceCalculator(),
         config=filter_config,

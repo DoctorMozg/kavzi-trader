@@ -5,7 +5,8 @@ import logging
 from decimal import Decimal
 from typing import cast
 
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.execution_result import ExecutionResultSchema
 from kavzi_trader.domain.state_schemas import PositionSchema
@@ -47,8 +48,10 @@ class ExecutionLoop:
         engine: ExecutionEngine,
         state_manager: StateManager,
         ui_recorder: UiEventRecorder | None = None,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._redis_client = redis_client
+        self._clock = clock
         self._engine = engine
         self._state_manager = state_manager
         self._ui_recorder = ui_recorder
@@ -234,7 +237,7 @@ class ExecutionLoop:
 
     async def _maybe_sweep_pending_entries(self) -> None:
         """Run the pending-entry sweep at most once per sweep interval."""
-        now_ms = int(utc_now().timestamp() * 1000)
+        now_ms = self._clock.now_ms()
         if now_ms - self._last_pending_sweep_ms < _PENDING_SWEEP_INTERVAL_MS:
             return
         self._last_pending_sweep_ms = now_ms

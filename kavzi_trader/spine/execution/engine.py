@@ -2,6 +2,8 @@ import logging
 from decimal import Decimal
 
 from kavzi_trader.api.exchange_client import ExchangeClient
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.execution_result import ExecutionResultSchema
 from kavzi_trader.domain.order_enums import OrderStatus, OrderType
@@ -48,6 +50,7 @@ class ExecutionEngine:
         pullback_entry_expiry_ms: int = 1_800_000,
         symbol_leverage: dict[str, int] | None = None,
         precision: SymbolPrecision | None = None,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._exchange = exchange
         self._state_manager = state_manager
@@ -63,8 +66,8 @@ class ExecutionEngine:
             self._leverage_for,
             volatility_detector,
         )
-        self._events = ExecutionEventRecorder(event_store)
-        self._linked_orders = LinkedOrderService(exchange, state_manager)
+        self._events = ExecutionEventRecorder(event_store, clock)
+        self._linked_orders = LinkedOrderService(exchange, state_manager, clock)
         self._emergency_closer = EmergencyCloser(
             exchange,
             state_manager,
@@ -77,6 +80,7 @@ class ExecutionEngine:
             self._linked_orders,
             self._emergency_closer,
             self._events,
+            clock,
         )
         self._fill_handler = FillHandler(
             state_manager,
@@ -85,6 +89,7 @@ class ExecutionEngine:
             self._events,
             self._leverage_for,
             liquidation_calculator,
+            clock,
         )
         self._pending_entries = PendingEntryManager(
             exchange,
@@ -110,6 +115,7 @@ class ExecutionEngine:
             leverage_for=self._leverage_for,
             close_recorder=close_recorder,
             precision=precision,
+            clock=clock,
         )
 
     @property

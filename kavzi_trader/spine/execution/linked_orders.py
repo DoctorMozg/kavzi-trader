@@ -5,7 +5,8 @@ from kavzi_trader.api.common.exceptions import (
     ExchangeError,
 )
 from kavzi_trader.api.exchange_client import ExchangeClient
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.order_response import OrderResponseSchema
 from kavzi_trader.domain.state_schemas import OpenOrderSchema, PositionSchema
 from kavzi_trader.spine.state.manager import StateManager
@@ -20,9 +21,11 @@ class LinkedOrderService:
         self,
         exchange: ExchangeClient,
         state_manager: StateManager,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._exchange = exchange
         self._state = state_manager
+        self._clock = clock
 
     async def save(
         self,
@@ -39,7 +42,7 @@ class LinkedOrderService:
             executed_qty=order.executed_qty,
             status=order.status,
             linked_position_id=position_id,
-            created_at=order.time or utc_now(),
+            created_at=order.time or self._clock.now(),
         )
         await self._state.save_order(open_order)
 

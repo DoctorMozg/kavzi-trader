@@ -3,7 +3,8 @@ from collections.abc import Awaitable, Callable
 from decimal import Decimal
 
 from kavzi_trader.api.exchange_client import ExchangeClient
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.order_enums import OrderType
 from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.position_action_type import PositionActionType
@@ -23,10 +24,12 @@ class PositionActionExecutor:
         self,
         exchange: ExchangeClient,
         state_manager: StateManager,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._exchange = exchange
         self._state = state_manager
-        self._linked_orders = LinkedOrderService(exchange, state_manager)
+        self._clock = clock
+        self._linked_orders = LinkedOrderService(exchange, state_manager, clock)
 
     async def execute(
         self,
@@ -135,7 +138,7 @@ class PositionActionExecutor:
             update={
                 "quantity": remaining,
                 "partial_exit_done": True,
-                "updated_at": utc_now(),
+                "updated_at": self._clock.now(),
             },
         )
         try:

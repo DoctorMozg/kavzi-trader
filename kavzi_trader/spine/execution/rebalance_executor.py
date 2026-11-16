@@ -3,7 +3,8 @@ from collections.abc import Callable
 from decimal import ROUND_DOWN, Decimal
 
 from kavzi_trader.api.exchange_client import ExchangeClient
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.execution_result import ExecutionResultSchema
 from kavzi_trader.domain.order_enums import OrderSide, OrderStatus, OrderType
 from kavzi_trader.domain.order_response import OrderResponseSchema
@@ -52,8 +53,10 @@ class RebalanceExecutor:
         leverage_for: Callable[[str], int],
         close_recorder: PositionCloseRecorder | None,
         precision: SymbolPrecision | None = None,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._precision = precision
+        self._clock = clock
         self._exchange = exchange
         self._state = state_manager
         self._risk = risk_validator
@@ -112,7 +115,7 @@ class RebalanceExecutor:
                 leverage=self._leverage_for(intent.symbol),
                 disaster_stop_price=stop_price,
                 expires_at_ms=intent.expires_at_ms,
-                now_ms=int(utc_now().timestamp() * 1000),
+                now_ms=self._clock.now_ms(),
             ),
             self._state,
         )
@@ -205,7 +208,7 @@ class RebalanceExecutor:
         fill_qty: Decimal,
         fill_price: Decimal,
     ) -> PositionSchema:
-        now = utc_now()
+        now = self._clock.now()
         leverage = self._leverage_for(intent.symbol)
         if position is None:
             quantity, entry = fill_qty, fill_price

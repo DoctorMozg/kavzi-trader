@@ -1,7 +1,8 @@
 import logging
 
 from kavzi_trader.api.exchange_client import ExchangeClient
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.order_enums import OrderType
 from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.events.aggregate_type import AggregateType
@@ -23,7 +24,9 @@ class ProtectiveOrderPlacer:
         linked_orders: LinkedOrderService,
         emergency_closer: EmergencyCloser,
         events: ExecutionEventRecorder,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
+        self._clock = clock
         self._exchange = exchange
         self._state = state_manager
         self._linked_orders = linked_orders
@@ -145,7 +148,7 @@ class ProtectiveOrderPlacer:
     async def _flag_take_profit_retry(self, position: PositionSchema) -> None:
         """Persist the half-bracket so the position loop re-places the TP."""
         flagged = position.model_copy(
-            update={"needs_tp_retry": True, "updated_at": utc_now()},
+            update={"needs_tp_retry": True, "updated_at": self._clock.now()},
         )
         try:
             await self._state.update_position(flagged)

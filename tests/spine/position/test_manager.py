@@ -3,6 +3,9 @@ from decimal import Decimal
 
 import pytest
 
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.sim_clock import SimClock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
@@ -12,26 +15,22 @@ from kavzi_trader.spine.position.time_exit import TimeExitChecker
 
 def build_manager(
     liquidation_emergency_percent: Decimal = Decimal("5.0"),
+    clock: Clock = SYSTEM_CLOCK,
 ) -> PositionManager:
     return PositionManager(
         partial_exit=PartialExitChecker(),
-        time_exit=TimeExitChecker(),
-        stall_exit=StallExitChecker(),
+        time_exit=TimeExitChecker(clock),
+        stall_exit=StallExitChecker(clock),
         liquidation_emergency_percent=liquidation_emergency_percent,
     )
 
 
 @pytest.mark.asyncio
-async def test_manager_returns_time_exit_only(position_factory, monkeypatch) -> None:
+async def test_manager_returns_time_exit_only(position_factory) -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     opened_at = now - timedelta(hours=30)
     position = position_factory(opened_at=opened_at, updated_at=opened_at)
-    manager = build_manager()
-
-    monkeypatch.setattr(
-        "kavzi_trader.spine.position.time_exit.utc_now",
-        lambda: now,
-    )
+    manager = build_manager(clock=SimClock(int(now.timestamp() * 1000)))
 
     actions = await manager.evaluate_position(
         position=position,
@@ -153,7 +152,7 @@ async def test_manager_uses_configured_liquidation_emergency_percent(
 
 @pytest.mark.asyncio
 async def test_signal_position_skips_time_stall_and_partial_exits(
-    position_factory, monkeypatch
+    position_factory,
 ) -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     opened_at = now - timedelta(hours=30)
@@ -163,12 +162,10 @@ async def test_signal_position_skips_time_stall_and_partial_exits(
         updated_at=opened_at,
         atr_at_entry=Decimal(1),
     )
-    monkeypatch.setattr(
-        "kavzi_trader.spine.position.time_exit.utc_now",
-        lambda: now,
-    )
 
-    actions = await build_manager().evaluate_position(
+    actions = await build_manager(
+        clock=SimClock(int(now.timestamp() * 1000))
+    ).evaluate_position(
         position=position,
         current_price=Decimal(100),
         current_atr=Decimal(1),

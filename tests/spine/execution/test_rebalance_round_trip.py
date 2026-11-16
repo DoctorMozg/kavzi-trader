@@ -9,7 +9,13 @@ from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
-from tests.spine.execution.rebalance_rig import SYMBOL, Rig, make_intent
+from tests.spine.execution.rebalance_rig import (
+    INTENT_TTL_MS,
+    SIM_START_MS,
+    SYMBOL,
+    Rig,
+    make_intent,
+)
 
 
 @pytest.fixture
@@ -128,3 +134,23 @@ async def test_bracket_position_in_symbol_is_not_resized(rig: Rig) -> None:
     assert pos is not None
     assert pos.exit_policy == "BRACKET"
     assert pos.quantity == Decimal(1)
+
+
+async def test_spine_reads_the_injected_clock(rig: Rig) -> None:
+    await rig.deliver(make_intent("at-start", "0.3").model_dump_json())
+    pos = await rig.position()
+    assert pos is not None
+    assert int(pos.opened_at.timestamp() * 1000) == SIM_START_MS
+
+    # Past its expiry in sim time, though still years before the wall clock.
+    rig.clock.advance_to(SIM_START_MS + INTENT_TTL_MS + 1)
+    await rig.deliver(make_intent("late", "0.6").model_dump_json())
+    pos = await rig.position()
+    assert pos is not None
+    assert pos.quantity == Decimal(3)
+    rejected = [
+        call.args[0]
+        for call in rig.events.append.await_args_list
+        if call.args[0].event_type == "order_rejected"
+    ]
+    assert [e.aggregate_id for e in rejected] == ["late"]

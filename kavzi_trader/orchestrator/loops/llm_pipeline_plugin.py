@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
 from decimal import Decimal
 
 from kavzi_trader.brain.agent.router import (
@@ -11,6 +10,8 @@ from kavzi_trader.brain.agent.router import (
     DependenciesProvider,
     PipelineResult,
 )
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
@@ -32,7 +33,6 @@ from kavzi_trader.spine.filters.filter_chain_result_schema import (
 )
 from kavzi_trader.strategies.bracket_intent_schema import BracketIntentSchema
 from kavzi_trader.strategies.strategy_intent import StrategyIntent
-from kavzi_trader.strategies.strategy_plugin import wall_clock_ms
 from kavzi_trader.strategies.symbol_outcome_schema import SymbolOutcomeSchema
 from kavzi_trader.strategies.tick_result_schema import StrategyTickResultSchema
 from kavzi_trader.strategies.tick_schema import StrategyTickSchema
@@ -59,14 +59,14 @@ class LlmPipelinePlugin:
         *,
         position_management: PositionManagementConfigSchema,
         reasoning_config: ReasoningLoopConfigSchema | None = None,
-        clock_ms: Callable[[], int] = wall_clock_ms,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._symbols = symbols
         self._router = router
         self._deps_provider = deps_provider
         self._interval_s = interval_s
         self._ui_recorder = ui_recorder
-        self._clock_ms = clock_ms
+        self._clock = clock
         self._filter_chain = filter_chain
         self._reasoning_config = reasoning_config or ReasoningLoopConfigSchema()
         self._state = SymbolStateTracker()
@@ -155,7 +155,7 @@ class LlmPipelinePlugin:
             )
         return StrategyTickResultSchema(
             intents=[o.intent for o in outcomes if o.intent is not None],
-            next_tick_at_ms=self._clock_ms() + round(sleep_s * 1000),
+            next_tick_at_ms=self._clock.now_ms() + round(sleep_s * 1000),
         )
 
     def on_enqueued(self, intent: StrategyIntent) -> None:
@@ -300,7 +300,7 @@ class LlmPipelinePlugin:
         intent = self._builder.build(
             result.trader,
             result.trader_deps,
-            self._clock_ms(),
+            self._clock.now_ms(),
             geometry=result.geometry,
             size_multiplier=size_multiplier,
         )

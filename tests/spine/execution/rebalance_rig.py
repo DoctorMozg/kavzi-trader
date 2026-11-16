@@ -2,6 +2,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 from kavzi_trader.api.common.models import TickerSchema
+from kavzi_trader.commons.sim_clock import SimClock
 from kavzi_trader.domain.order_enums import OrderType
 from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.state_schemas import (
@@ -25,13 +26,16 @@ from kavzi_trader.strategies.target_weight_intent_schema import (
 from tests.spine.execution.fake_redis import FakeRedis
 
 SYMBOL = "BTCUSDT"
-NOW_MS = 4_000_000_000_000
+# 2021-01-01T00:00Z: any wall-clock read left in the spine shows up as 2026.
+SIM_START_MS = 1_609_459_200_000
+INTENT_TTL_MS = 3_600_000
 
 
 class Rig:
     """Real loop, engine, state and paper exchange over an in-memory Redis."""
 
     def __init__(self, precision: SymbolPrecision | None = None) -> None:
+        self.clock = SimClock(SIM_START_MS)
         self.redis = FakeRedis()
         self.price = Decimal(100)
         self.events = AsyncMock()
@@ -40,27 +44,30 @@ class Rig:
             self.exchange = PaperExchangeClient(
                 initial_balance_usdt=Decimal(1000),
                 commission_rate=Decimal(0),
+                clock=self.clock,
             )
         self.exchange.get_ticker = AsyncMock(side_effect=self._ticker)  # type: ignore[method-assign]
-        self.state = StateManager(RedisConfigSchema(), self.exchange)
+        self.state = StateManager(RedisConfigSchema(), self.exchange, self.clock)
         self.state._redis_client._client = self.redis  # type: ignore[assignment]
         self.exchange.set_account_store(self.state.account)
         self.engine = ExecutionEngine(
             exchange=self.exchange,
             state_manager=self.state,
             risk_validator=DynamicRiskValidator(RiskConfigSchema()),
-            staleness_checker=StalenessChecker(ExecutionConfigSchema()),
+            staleness_checker=StalenessChecker(ExecutionConfigSchema(), self.clock),
             translator=DecisionTranslator(),
             monitor=OrderMonitor(self.exchange, 1),
             event_store=self.events,
             leverage=1,
             close_recorder=self.close_recorder,
             precision=precision,
+            clock=self.clock,
         )
         self.loop = ExecutionLoop(
             redis_client=self.state._redis_client,
             engine=self.engine,
             state_manager=self.state,
+            clock=self.clock,
         )
 
     async def _ticker(self, symbol: str) -> TickerSchema:
@@ -98,6 +105,6 @@ def make_intent(
         symbol=SYMBOL,
         target_weight=Decimal(weight),
         disaster_stop_pct=Decimal("0.3"),
-        created_at_ms=1,
-        expires_at_ms=expires_at_ms or NOW_MS,
+        created_at_ms=SIM_START_MS,
+        expires_at_ms=expires_at_ms or SIM_START_MS + INTENT_TTL_MS,
     )

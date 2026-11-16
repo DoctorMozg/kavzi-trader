@@ -1,7 +1,8 @@
 import logging
 from datetime import datetime
 
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.domain.state_schemas import PositionSchema
@@ -12,8 +13,11 @@ logger = logging.getLogger(__name__)
 class TimeExitChecker:
     """Flags positions that have been open longer than the allowed window."""
 
+    def __init__(self, clock: Clock = SYSTEM_CLOCK) -> None:
+        self._clock = clock
+
     def evaluate(self, position: PositionSchema) -> PositionActionSchema | None:
-        now = utc_now()
+        now = self._clock.now()
         opened_at = self._normalize_time(position.opened_at, now)
         elapsed = now - opened_at
         max_seconds = position.management_config.max_hold_time_hours * 3600

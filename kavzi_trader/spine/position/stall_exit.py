@@ -1,7 +1,8 @@
 import logging
 from decimal import Decimal
 
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.domain.state_schemas import PositionSchema
@@ -20,6 +21,9 @@ class StallExitChecker:
     cannot artificially suppress the progress signal.
     """
 
+    def __init__(self, clock: Clock = SYSTEM_CLOCK) -> None:
+        self._clock = clock
+
     def evaluate(
         self,
         position: PositionSchema,
@@ -27,7 +31,7 @@ class StallExitChecker:
         current_atr: Decimal,
     ) -> PositionActionSchema | None:
         config = position.management_config
-        elapsed_s = (utc_now() - position.opened_at).total_seconds()
+        elapsed_s = (self._clock.now() - position.opened_at).total_seconds()
         threshold_s = config.stall_check_after_hours * 3600
         if elapsed_s < threshold_s:
             return None

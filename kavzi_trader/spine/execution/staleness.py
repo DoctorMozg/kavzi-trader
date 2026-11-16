@@ -1,6 +1,8 @@
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
 
@@ -10,8 +12,13 @@ logger = logging.getLogger(__name__)
 class StalenessChecker:
     """Evaluates decision staleness using volatility-aware thresholds."""
 
-    def __init__(self, config: ExecutionConfigSchema) -> None:
+    def __init__(
+        self,
+        config: ExecutionConfigSchema,
+        clock: Clock = SYSTEM_CLOCK,
+    ) -> None:
         self._config = config
+        self._clock = clock
 
     def is_stale(
         self,
@@ -19,7 +26,7 @@ class StalenessChecker:
         regime: VolatilityRegime,
         now: datetime | None = None,
     ) -> bool:
-        now_dt = now or datetime.now(UTC)
+        now_dt = now or self._clock.now()
         now_ms = int(now_dt.timestamp() * 1000)
         age_ms = now_ms - created_at_ms
 

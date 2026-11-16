@@ -1,7 +1,8 @@
 import logging
 from uuid import uuid4
 
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.events.store import RedisEventStore
@@ -12,8 +13,13 @@ logger = logging.getLogger(__name__)
 class ExecutionEventRecorder:
     """Writes audit events without letting a store failure break trading."""
 
-    def __init__(self, event_store: RedisEventStore | None) -> None:
+    def __init__(
+        self,
+        event_store: RedisEventStore | None,
+        clock: Clock = SYSTEM_CLOCK,
+    ) -> None:
         self._event_store = event_store
+        self._clock = clock
 
     async def record(
         self,
@@ -32,7 +38,7 @@ class ExecutionEventRecorder:
             aggregate_type=aggregate_type,
             data=data,
             metadata={},
-            timestamp=utc_now(),
+            timestamp=self._clock.now(),
         )
         try:
             await self._event_store.append(event)

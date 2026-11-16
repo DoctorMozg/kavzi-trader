@@ -5,7 +5,8 @@ from decimal import Decimal
 
 from pydantic import ValidationError
 
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.state_schemas import AccountStateSchema
 from kavzi_trader.infra.redis_client import RedisStateClient
 
@@ -21,8 +22,13 @@ SECONDS_PER_DAY = 86400
 
 
 class AccountStore:
-    def __init__(self, redis_client: RedisStateClient) -> None:
+    def __init__(
+        self,
+        redis_client: RedisStateClient,
+        clock: Clock = SYSTEM_CLOCK,
+    ) -> None:
         self._redis = redis_client
+        self._clock = clock
         # Serializes read-compute-write sequences against peak_balance so
         # concurrent reconciler + user-data stream updates cannot clobber
         # each other's peak/drawdown derivations.
@@ -51,7 +57,7 @@ class AccountStore:
     ) -> AccountStateSchema:
         async with self._lock:
             current = await self.get()
-            now = utc_now()
+            now = self._clock.now()
 
             # Decay the stored peak toward the current balance over elapsed
             # whole days so a stale peak cannot keep drawdown elevated

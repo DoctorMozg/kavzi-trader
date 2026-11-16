@@ -12,7 +12,7 @@ from kavzi_trader.strategies.trend.trend_following_config import (
 )
 from kavzi_trader.strategies.trend.trend_following_plugin import TrendFollowingPlugin
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
-from tests.spine.execution.rebalance_rig import NOW_MS, Rig
+from tests.spine.execution.rebalance_rig import Rig
 from tests.strategies.trend.fake_daily_bars import FakeDailyBars
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
@@ -46,7 +46,7 @@ async def test_trend_intents_open_expected_positions(rig: Rig) -> None:
         TrendStateStore(rig.state._redis_client),
     )
     loop = StrategyLoop(
-        plugin, DecisionPublisher(rig.state._redis_client), clock_ms=lambda: NOW_MS
+        plugin, DecisionPublisher(rig.state._redis_client), clock=rig.clock
     )
 
     task = asyncio.create_task(loop.run())

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from decimal import Decimal
 from typing import Protocol
 
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.domain.state_schemas import PositionSchema
@@ -48,7 +48,9 @@ class PositionManagementLoop:
         fill_check_interval_s: int = 15,
         tp_retry_max_attempts: int = 3,
         drawdown_breaker: DrawdownCircuitBreaker | None = None,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
+        self._clock = clock
         self._drawdown_breaker = drawdown_breaker
         self._manager = manager
         self._state_manager = state_manager
@@ -147,7 +149,7 @@ class PositionManagementLoop:
             )
 
     def _fill_check_due(self) -> bool:
-        now_s = time.monotonic()
+        now_s = self._clock.now_ms() / 1000
         if (
             self._last_fill_check_s is not None
             and now_s - self._last_fill_check_s < self._fill_check_interval_s
@@ -303,7 +305,7 @@ class PositionManagementLoop:
             return position
         self._tp_retry_attempts.pop(position.id, None)
         cleared = position.model_copy(
-            update={"needs_tp_retry": False, "updated_at": utc_now()},
+            update={"needs_tp_retry": False, "updated_at": self._clock.now()},
         )
         await self._state_manager.update_position(cleared)
         return cleared

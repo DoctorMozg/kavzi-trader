@@ -1,9 +1,9 @@
 import logging
-from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
 from kavzi_trader.spine.filters.liquidity_period import LiquidityPeriod
@@ -22,13 +22,13 @@ class LiquidityFilter:
     def __init__(
         self,
         config: FilterConfigSchema,
-        time_provider: Callable[[], datetime] = utc_now,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._config = config
-        self._time_provider = time_provider
+        self._clock = clock
 
     def evaluate(self, current_time: datetime | None = None) -> FilterResultSchema:
-        now = current_time or self._time_provider()
+        now = current_time or self._clock.now()
         weekday = now.weekday()
         hour = now.hour
 

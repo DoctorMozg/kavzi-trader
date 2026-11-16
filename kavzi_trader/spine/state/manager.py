@@ -2,7 +2,8 @@ import logging
 from decimal import Decimal
 
 from kavzi_trader.api.exchange_client import ExchangeClient
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.state_schemas import (
     AccountStateSchema,
     OpenOrderSchema,
@@ -28,12 +29,14 @@ class StateManager:
         self,
         redis_config: RedisConfigSchema,
         exchange_client: ExchangeClient,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._exchange = exchange_client
+        self._clock = clock
         self._redis_client = RedisStateClient(redis_config)
         self._position_store = PositionStore(self._redis_client)
         self._order_store = OrderStore(self._redis_client)
-        self._account_store = AccountStore(self._redis_client)
+        self._account_store = AccountStore(self._redis_client, clock)
         self._pending_entry_store = PendingEntryStore(self._redis_client)
         self._protective_order_placer: ProtectiveOrderPlacer | None = None
 
@@ -120,7 +123,7 @@ class StateManager:
             unrealized_pnl=Decimal(0),
             peak_balance=initial_balance,
             current_drawdown_percent=Decimal(0),
-            updated_at=utc_now(),
+            updated_at=self._clock.now(),
         )
         await self._account_store.save(new_state)
         logger.info(

@@ -25,7 +25,8 @@ from kavzi_trader.api.common.exceptions import (
     ExchangeError,
 )
 from kavzi_trader.api.common.models import TickerSchema
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.order_enums import (
     OrderSide,
@@ -86,7 +87,9 @@ class PaperExchangeClient:
         self,
         initial_balance_usdt: Decimal = Decimal(10000),
         commission_rate: Decimal = Decimal("0.001"),
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
+        self._clock = clock
         self._market_data = BinanceClient(api_key="", api_secret="")
         self._balance_usdt = initial_balance_usdt
         self._locked_usdt = Decimal(0)
@@ -269,7 +272,7 @@ class PaperExchangeClient:
 
         order_id = self._next_order_id()
         client_oid = client_order_id or str(uuid4())
-        now = utc_now()
+        now = self._clock.now()
 
         if order_type in _PROTECTIVE_ORDER_TYPES:
             return self._store_protective_order(
@@ -441,7 +444,7 @@ class PaperExchangeClient:
                 "status": OrderStatus.FILLED,
                 "executed_qty": order.orig_qty,
                 "fills": [fill],
-                "update_time": utc_now(),
+                "update_time": self._clock.now(),
                 "is_working": False,
             },
         )
@@ -715,7 +718,7 @@ class PaperExchangeClient:
                 "executed_qty": fill_qty,
                 "avg_price": fill_price,
                 "fills": [fill],
-                "update_time": utc_now(),
+                "update_time": self._clock.now(),
                 "is_working": False,
             },
         )
@@ -736,7 +739,7 @@ class PaperExchangeClient:
         cancelled = order.model_copy(
             update={
                 "status": OrderStatus.CANCELED,
-                "update_time": utc_now(),
+                "update_time": self._clock.now(),
                 "is_working": False,
             },
         )
@@ -768,7 +771,7 @@ class PaperExchangeClient:
         cancelled = existing.model_copy(
             update={
                 "status": OrderStatus.CANCELED,
-                "update_time": utc_now(),
+                "update_time": self._clock.now(),
                 "is_working": False,
             },
         )

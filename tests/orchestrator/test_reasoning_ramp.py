@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kavzi_trader.brain.agent.router import PipelineResult
+from kavzi_trader.commons.sim_clock import SimClock
 from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
 from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
 from kavzi_trader.orchestrator.loops.decision_publisher import DecisionPublisher
@@ -71,17 +72,16 @@ def _build_skip_loop(router: AsyncMock) -> StrategyLoop:
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
     # A frozen clock keeps the computed sleep durations exact.
+    clock = SimClock(1_000_000)
     plugin = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=deps_provider,
         interval_s=10,
-        clock_ms=lambda: 1_000_000,
+        clock=clock,
     )
-    return StrategyLoop(
-        plugin, DecisionPublisher(redis_client), clock_ms=lambda: 1_000_000
-    )
+    return StrategyLoop(plugin, DecisionPublisher(redis_client), clock=clock)
 
 
 @pytest.mark.asyncio

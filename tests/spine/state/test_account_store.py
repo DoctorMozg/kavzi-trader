@@ -13,10 +13,7 @@ from kavzi_trader.spine.state.account_store import AccountStore
 class TestAccountStore:
     @pytest.fixture
     def store(self, mock_redis_client: AsyncMock) -> AccountStore:
-        store = AccountStore.__new__(AccountStore)
-        store._redis = mock_redis_client
-        store._lock = asyncio.Lock()
-        return store
+        return AccountStore(mock_redis_client)
 
     async def test_save_account(
         self,

@@ -3,7 +3,8 @@ from collections.abc import Callable
 from decimal import Decimal
 from typing import Literal
 
-from kavzi_trader.commons.time_utility import utc_now
+from kavzi_trader.commons.clock import Clock
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.order_response import OrderResponseSchema
 from kavzi_trader.domain.state_schemas import PositionSchema
@@ -28,7 +29,9 @@ class FillHandler:
         events: ExecutionEventRecorder,
         leverage_for: Callable[[str], int],
         liquidation_calculator: LiquidationCalculator | None,
+        clock: Clock = SYSTEM_CLOCK,
     ) -> None:
+        self._clock = clock
         self._state = state_manager
         self._placer = placer
         self._emergency_closer = emergency_closer
@@ -41,7 +44,7 @@ class FillHandler:
         decision: DecisionMessageSchema,
         order: OrderResponseSchema,
     ) -> None:
-        now = utc_now()
+        now = self._clock.now()
         leverage = self._leverage_for(decision.symbol)
         initial_margin = (
             (order.price * order.executed_qty) / Decimal(leverage)
