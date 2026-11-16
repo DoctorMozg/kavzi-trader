@@ -1,4 +1,5 @@
 import asyncio
+import unittest.mock
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
@@ -37,7 +38,9 @@ from kavzi_trader.domain.state_schemas import (
 )
 from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.orchestrator.loops.decision_publisher import DecisionPublisher
+from kavzi_trader.orchestrator.loops.llm_pipeline_plugin import LlmPipelinePlugin
+from kavzi_trader.orchestrator.loops.strategy import StrategyLoop
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
@@ -45,6 +48,14 @@ from kavzi_trader.spine.filters.filter_chain_result_schema import (
 from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
 from kavzi_trader.ui.recorder import UiEventRecorder
 from tests.ui.factories import CollectingUiPublisher
+
+
+def _strategy_loop(
+    plugin: LlmPipelinePlugin,
+    redis_client: AsyncMock,
+    state_manager: MagicMock | None = None,
+) -> StrategyLoop:
+    return StrategyLoop(plugin, DecisionPublisher(redis_client), state_manager)
 
 
 def _gates(regime_gate: int, available_signals: int) -> ConfluenceGatesSchema:
@@ -261,16 +272,15 @@ async def test_reasoning_loop_enqueues_decision() -> None:
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=1,
     )
 
-    task = asyncio.create_task(loop.run())
+    task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
     for _ in range(20):
         await asyncio.sleep(0)
         if redis_client.client.lpush.call_count > 0:
@@ -309,16 +319,15 @@ async def test_decision_message_includes_leverage() -> None:
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=1,
     )
 
-    task = asyncio.create_task(loop.run())
+    task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
     for _ in range(20):
         await asyncio.sleep(0)
         if redis_client.client.lpush.call_count > 0:
@@ -358,19 +367,16 @@ async def test_backoff_on_all_skip() -> None:
         sleep_durations.append(duration)
         await original_sleep(0)
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=10,
     )
 
-    import unittest.mock
-
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
-        task = asyncio.create_task(loop.run())
+        task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
         for _ in range(200):
             await original_sleep(0)
             if len(sleep_durations) >= 3:
@@ -424,19 +430,16 @@ async def test_backoff_resets_on_interesting() -> None:
         sleep_durations.append(duration)
         await original_sleep(0)
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=10,
     )
 
-    import unittest.mock
-
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
-        task = asyncio.create_task(loop.run())
+        task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
         for _ in range(200):
             await original_sleep(0)
             if len(sleep_durations) >= 4:
@@ -489,12 +492,11 @@ async def test_cooldown_after_analyst_skips_cycles() -> None:
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=1,
         analyst_cooldown_cycles=2,
     )
@@ -506,10 +508,8 @@ async def test_cooldown_after_analyst_skips_cycles() -> None:
         sleep_durations.append(duration)
         await original_sleep(0)
 
-    import unittest.mock
-
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
-        task = asyncio.create_task(loop.run())
+        task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
         for _ in range(200):
             await original_sleep(0)
             if len(sleep_durations) >= 3:
@@ -535,6 +535,7 @@ async def test_skip_symbol_with_open_position() -> None:
 
     now = datetime.now(UTC)
     mock_state_manager = MagicMock()
+    mock_state_manager.get_account_state = AsyncMock(return_value=None)
     mock_state_manager.get_all_positions = AsyncMock(
         return_value=[
             PositionSchema(
@@ -553,14 +554,12 @@ async def test_skip_symbol_with_open_position() -> None:
         ],
     )
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=1,
-        state_manager=mock_state_manager,
     )
 
     sleep_durations: list[float] = []
@@ -570,10 +569,10 @@ async def test_skip_symbol_with_open_position() -> None:
         sleep_durations.append(duration)
         await original_sleep(0)
 
-    import unittest.mock
-
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
-        task = asyncio.create_task(loop.run())
+        task = asyncio.create_task(
+            _strategy_loop(loop, redis_client, mock_state_manager).run()
+        )
         for _ in range(50):
             await original_sleep(0)
             if len(sleep_durations) >= 2:
@@ -605,12 +604,11 @@ async def test_volatility_gate_reports_as_scout_scan() -> None:
 
     ui_publisher = CollectingUiPublisher()
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=1,
         ui_recorder=_recorder(ui_publisher),
     )
@@ -622,10 +620,8 @@ async def test_volatility_gate_reports_as_scout_scan() -> None:
         sleep_durations.append(duration)
         await original_sleep(0)
 
-    import unittest.mock
-
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
-        task = asyncio.create_task(loop.run())
+        task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
         for _ in range(50):
             await original_sleep(0)
             if len(sleep_durations) >= 1:
@@ -658,12 +654,11 @@ def _make_analyst_result_with_confluence(confluence_score: int) -> PipelineResul
 
 def test_graduated_cooldown_low_confluence() -> None:
     """Confluence <= 2 should produce 3x the base cooldown."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
     assert loop._cooldowns.compute_rejection_cooldown(1, _full_gates(6)) == 9
@@ -672,12 +667,11 @@ def test_graduated_cooldown_low_confluence() -> None:
 
 def test_cooldown_bands_shift_down_with_missing_signals() -> None:
     """With 5/8 signals the reject band tops at 3 and the low band at 1."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
     scaled = _gates(effective_regime_gate(VolatilityRegime.NORMAL, 5), 5)
@@ -702,12 +696,11 @@ def test_cooldown_bands_shift_down_with_missing_signals() -> None:
 
 def test_graduated_cooldown_reject_band_high_side() -> None:
     """Confluence 3 (top of reject band) should produce 2x the base cooldown."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
     assert loop._cooldowns.compute_rejection_cooldown(3, _full_gates(6)) == 6
@@ -730,12 +723,11 @@ def _make_analyst_decision(
 
 def test_analyst_cooldown_reject_band_escalates() -> None:
     """Score <= 3 + invalid increments rejection counter and uses base*multiplier."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
     analyst = _make_analyst_decision(
@@ -763,12 +755,11 @@ def test_analyst_cooldown_reject_band_escalates() -> None:
 
 def test_analyst_cooldown_borderline_band_no_escalation() -> None:
     """Borderline band + invalid gets a light cooldown and does NOT escalate counts."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
 
@@ -792,12 +783,11 @@ def test_analyst_cooldown_borderline_band_no_escalation() -> None:
 
 def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
     """Score >= 6 but setup_valid=False also lands in the light-cooldown branch."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
     analyst = _make_analyst_decision(
@@ -817,12 +807,11 @@ def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
 
 def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
     """A valid setup at/above the entry gate resets rejection counters."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
     loop._state.set_cooldown("BTCUSDT", "LONG", 0)
@@ -846,12 +835,11 @@ def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
 
 def test_should_enqueue_requires_confluence_entry_gate() -> None:
     """_should_enqueue must block scores below the entry gate even if valid."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
     )
     deps = _build_deps()
 
@@ -910,12 +898,11 @@ def test_should_enqueue_gated_by_regime_specific_min(
     expected_enqueue: bool,
 ) -> None:
     """The escalation gate must track the regime-specific minimum score."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
     )
     deps = _build_deps().model_copy(update={"volatility_regime": regime})
 
@@ -953,12 +940,11 @@ def test_analyst_cooldown_borderline_uses_regime_gate(
     """HIGH/EXTREME regimes widen the borderline band: a score of 6 under
     HIGH (gate=7) lands in the borderline band, not the "valid" branch.
     """
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
     # setup_valid=False with a score equal to NORMAL gate (6). Only NORMAL
@@ -980,13 +966,12 @@ def test_analyst_cooldown_borderline_uses_regime_gate(
 
 
 @pytest.fixture
-def scaled_loop() -> ReasoningLoop:
-    return ReasoningLoop(
+def scaled_loop() -> LlmPipelinePlugin:
+    return LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
 
@@ -1007,7 +992,9 @@ def _scaled_gate_result(gates: ConfluenceGatesSchema) -> PipelineResult:
     )
 
 
-def test_should_enqueue_uses_carried_scaled_gate(scaled_loop: ReasoningLoop) -> None:
+def test_should_enqueue_uses_carried_scaled_gate(
+    scaled_loop: LlmPipelinePlugin,
+) -> None:
     scaled = _gates(effective_regime_gate(VolatilityRegime.NORMAL, 5), 5)
     full = _full_gates(confluence_enter_min_for_regime(VolatilityRegime.NORMAL))
 
@@ -1028,7 +1015,7 @@ def test_pipeline_result_requires_gate_with_analyst_decision() -> None:
 
 
 def test_cooldown_treats_carried_scaled_gate_as_valid_entry(
-    scaled_loop: ReasoningLoop,
+    scaled_loop: LlmPipelinePlugin,
 ) -> None:
     scaled = _gates(effective_regime_gate(VolatilityRegime.NORMAL, 5), 5)
     analyst = _make_analyst_decision(
@@ -1090,12 +1077,11 @@ async def test_filter_chain_blocks_trade() -> None:
         ),
     )
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=1,
         ui_recorder=_recorder(ui_publisher),
         filter_chain=mock_filter_chain,
@@ -1108,10 +1094,8 @@ async def test_filter_chain_blocks_trade() -> None:
         sleep_durations.append(duration)
         await original_sleep(0)
 
-    import unittest.mock
-
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
-        task = asyncio.create_task(loop.run())
+        task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
         for _ in range(50):
             await original_sleep(0)
             if len(sleep_durations) >= 1:
@@ -1146,17 +1130,16 @@ async def test_filter_chain_allows_trade() -> None:
         ),
     )
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=1,
         filter_chain=mock_filter_chain,
     )
 
-    task = asyncio.create_task(loop.run())
+    task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
     for _ in range(20):
         await asyncio.sleep(0)
         if redis_client.client.lpush.call_count > 0:
@@ -1177,16 +1160,15 @@ async def test_no_filter_chain_passes_through() -> None:
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=1,
     )
 
-    task = asyncio.create_task(loop.run())
+    task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
     for _ in range(20):
         await asyncio.sleep(0)
         if redis_client.client.lpush.call_count > 0:
@@ -1199,12 +1181,11 @@ async def test_no_filter_chain_passes_through() -> None:
 
 def test_consecutive_rejections_escalate_cooldown() -> None:
     """Repeated analyst rejections for the same symbol+direction increase cooldown."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
         max_consecutive_rejection_multiplier=5,
     )
@@ -1232,12 +1213,11 @@ def test_consecutive_rejections_escalate_cooldown() -> None:
 
 def test_consecutive_rejections_reset_on_valid_analyst() -> None:
     """A valid analyst result resets the rejection counter for that direction."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
 
@@ -1259,12 +1239,11 @@ def test_consecutive_rejections_reset_on_valid_analyst() -> None:
 
 def test_direction_aware_cooldown_allows_opposite_direction() -> None:
     """SHORT cooldown should not block LONG evaluation on the same symbol."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["TAOUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
 
@@ -1278,12 +1257,11 @@ def test_direction_aware_cooldown_allows_opposite_direction() -> None:
 
 def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
     """When both LONG and SHORT are on cooldown, the symbol should be skipped."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["TAOUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
 
@@ -1300,12 +1278,11 @@ def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
 
 def test_neutral_rejection_blocks_both_directions() -> None:
     """A NEUTRAL rejection should set cooldown for both LONG and SHORT."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         analyst_cooldown_cycles=3,
     )
 
@@ -1349,12 +1326,11 @@ def _make_wait_result(
 
 def test_consecutive_waits_apply_cooldown() -> None:
     """After 5 consecutive WAITs, cooldown is set for (symbol, direction)."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
     )
     result = _make_wait_result("LONG")
 
@@ -1368,12 +1344,11 @@ def test_consecutive_waits_apply_cooldown() -> None:
 
 def test_consecutive_waits_reset_on_trade() -> None:
     """Trade enqueue clears WAIT counters for the symbol."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
     )
 
     # Accumulate some WAITs
@@ -1392,12 +1367,11 @@ def test_consecutive_waits_reset_on_trade() -> None:
 
 def test_consecutive_waits_escalate() -> None:
     """6th+ WAITs increase cooldown, capped at max."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
     )
     result = _make_wait_result("LONG")
 
@@ -1420,12 +1394,11 @@ def test_consecutive_waits_escalate() -> None:
 
 def test_consecutive_waits_no_cooldown_below_threshold() -> None:
     """Fewer than 5 WAITs should not set any cooldown."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
     )
     result = _make_wait_result("LONG")
 
@@ -1447,12 +1420,11 @@ async def test_pipeline_complete_event_recorded() -> None:
     redis_client.client.lpush = AsyncMock()
     ui_publisher = CollectingUiPublisher()
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=provider,
-        redis_client=redis_client,
         interval_s=1,
         ui_recorder=_recorder(ui_publisher),
     )
@@ -1464,10 +1436,8 @@ async def test_pipeline_complete_event_recorded() -> None:
         sleep_durations.append(duration)
         await original_sleep(0)
 
-    import unittest.mock
-
     with unittest.mock.patch("asyncio.sleep", side_effect=_capture_sleep):
-        task = asyncio.create_task(loop.run())
+        task = asyncio.create_task(_strategy_loop(loop, redis_client).run())
         for _ in range(50):
             await original_sleep(0)
             if len(sleep_durations) >= 1:
@@ -1515,12 +1485,11 @@ def test_geometry_reject_counter_increments_on_each_reject() -> None:
         ReasoningLoopConfigSchema,
     )
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         reasoning_config=ReasoningLoopConfigSchema(
             geometry_reject_cooldown_threshold=3,
             geometry_reject_cooldown_cycles=4,
@@ -1542,12 +1511,11 @@ def test_geometry_reject_cooldown_applied_at_threshold() -> None:
         ReasoningLoopConfigSchema,
     )
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         reasoning_config=ReasoningLoopConfigSchema(
             geometry_reject_cooldown_threshold=3,
             geometry_reject_cooldown_cycles=4,
@@ -1569,12 +1537,11 @@ def test_geometry_reject_counter_clears_on_successful_trader() -> None:
         ReasoningLoopConfigSchema,
     )
 
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         reasoning_config=ReasoningLoopConfigSchema(
             geometry_reject_cooldown_threshold=3,
             geometry_reject_cooldown_cycles=4,
@@ -1612,12 +1579,11 @@ def test_confluence_thresholds_after_wu6_shift() -> None:
 def test_should_enqueue_blocks_confluence_score_five_after_wu6() -> None:
     """WU-6: score=5 used to pass the old ENTER=5 gate; after the shift
     it lives inside the hysteresis band and must NOT enqueue."""
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
     )
     deps = _build_deps()
     result = PipelineResult(
@@ -1643,13 +1609,12 @@ def _make_loop(
     redis_client: AsyncMock,
     filter_chain: AsyncMock | None = None,
     position_management: PositionManagementConfigSchema | None = None,
-) -> ReasoningLoop:
-    return ReasoningLoop(
+) -> LlmPipelinePlugin:
+    return LlmPipelinePlugin(
         position_management=position_management or PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(run=AsyncMock(return_value=_make_trade_result())),
         deps_provider=DummyDepsProvider(_build_deps()),
-        redis_client=redis_client,
         interval_s=1,
         filter_chain=filter_chain,
     )
@@ -1673,12 +1638,25 @@ def _enqueued_decision(redis_client: AsyncMock) -> DecisionMessageSchema:
     return DecisionMessageSchema.model_validate_json(payload)
 
 
+async def _run_one_tick(plugin: LlmPipelinePlugin, redis_client: AsyncMock) -> None:
+    """Drive the strategy loop through exactly one tick, stopping at its sleep."""
+
+    async def _stop(_duration: float) -> None:
+        raise asyncio.CancelledError
+
+    with (
+        unittest.mock.patch("asyncio.sleep", side_effect=_stop),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _strategy_loop(plugin, redis_client).run()
+
+
 @pytest.mark.asyncio
 async def test_filter_size_multiplier_is_carried_into_decision() -> None:
     redis_client = AsyncMock()
     loop = _make_loop(redis_client, _allowing_chain(Decimal("0.4")))
 
-    await loop._handle_symbol("BTCUSDT", [])
+    await _run_one_tick(loop, redis_client)
 
     assert _enqueued_decision(redis_client).size_multiplier == Decimal("0.4")
 
@@ -1688,7 +1666,7 @@ async def test_decision_without_filter_chain_keeps_full_size() -> None:
     redis_client = AsyncMock()
     loop = _make_loop(redis_client)
 
-    await loop._handle_symbol("BTCUSDT", [])
+    await _run_one_tick(loop, redis_client)
 
     assert _enqueued_decision(redis_client).size_multiplier == Decimal(1)
 
@@ -1704,7 +1682,7 @@ async def test_configured_position_management_reaches_decision() -> None:
     )
     loop = _make_loop(redis_client, position_management=tuned)
 
-    await loop._handle_symbol("BTCUSDT", [])
+    await _run_one_tick(loop, redis_client)
 
     assert _enqueued_decision(redis_client).position_management == tuned
 
@@ -1714,7 +1692,7 @@ async def test_cooldown_set_only_after_successful_enqueue() -> None:
     redis_client = AsyncMock()
     loop = _make_loop(redis_client)
 
-    await loop._handle_symbol("BTCUSDT", [])
+    await _run_one_tick(loop, redis_client)
 
     # post-trade cooldown is analyst_cooldown_cycles (3) x 3
     assert loop._state.cooldown("BTCUSDT", "LONG") == 9
@@ -1727,7 +1705,7 @@ async def test_failed_enqueue_does_not_burn_cooldown() -> None:
     redis_client.client.lpush = AsyncMock(side_effect=RuntimeError("redis down"))
     loop = _make_loop(redis_client)
 
-    await loop._handle_symbol("BTCUSDT", [])
+    await _run_one_tick(loop, redis_client)
 
     assert loop._state.cooldown("BTCUSDT", "LONG") == 0
     assert loop._state.cooldown("BTCUSDT", "SHORT") == 0
@@ -1739,12 +1717,11 @@ async def test_filter_chain_gets_threshold_shift_from_gates(
     available: int, shift: int
 ) -> None:
     mock_filter_chain = AsyncMock()
-    loop = ReasoningLoop(
+    loop = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
         deps_provider=AsyncMock(),
-        redis_client=AsyncMock(),
         filter_chain=mock_filter_chain,
     )
     result = _make_trade_result()

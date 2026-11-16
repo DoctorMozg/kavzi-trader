@@ -1,4 +1,4 @@
-"""Progressive idle-ramp tests for ReasoningLoop.
+"""Progressive idle-ramp tests for LlmPipelinePlugin.
 
 Verifies the staircase (3 -> 240s, 5 -> 480s, 8 -> 720s) where stairs
 exceeding the 450s cap are clamped (480 -> 450, 720 -> 450), and that an
@@ -14,7 +14,9 @@ import pytest
 from kavzi_trader.brain.agent.router import PipelineResult
 from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
 from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.orchestrator.loops.decision_publisher import DecisionPublisher
+from kavzi_trader.orchestrator.loops.llm_pipeline_plugin import LlmPipelinePlugin
+from kavzi_trader.orchestrator.loops.strategy import StrategyLoop
 
 
 @pytest.fixture
@@ -40,7 +42,7 @@ def interesting_result() -> PipelineResult:
 
 
 async def _run_until_sleeps(
-    loop: ReasoningLoop,
+    loop: StrategyLoop,
     sleep_durations: list[float],
     *,
     target_sleep_count: int,
@@ -62,19 +64,23 @@ async def _run_until_sleeps(
         await asyncio.gather(task, return_exceptions=True)
 
 
-def _build_skip_loop(router: AsyncMock) -> ReasoningLoop:
+def _build_skip_loop(router: AsyncMock) -> StrategyLoop:
     deps_provider = AsyncMock()
     deps_provider.clear_cycle_cache = unittest.mock.MagicMock()
     deps_provider.indicators_available = unittest.mock.MagicMock(return_value=True)
     redis_client = AsyncMock()
     redis_client.client.lpush = AsyncMock()
-    return ReasoningLoop(
+    # A frozen clock keeps the computed sleep durations exact.
+    plugin = LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=deps_provider,
-        redis_client=redis_client,
         interval_s=10,
+        clock_ms=lambda: 1_000_000,
+    )
+    return StrategyLoop(
+        plugin, DecisionPublisher(redis_client), clock_ms=lambda: 1_000_000
     )
 
 

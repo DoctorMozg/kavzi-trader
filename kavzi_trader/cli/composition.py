@@ -22,10 +22,12 @@ from kavzi_trader.external.sources import build_enabled_sources
 from kavzi_trader.external.synthesizer import SentimentSynthesizer
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
 from kavzi_trader.infra.redis_client import RedisStateClient
+from kavzi_trader.orchestrator.loops.decision_publisher import DecisionPublisher
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
+from kavzi_trader.orchestrator.loops.llm_pipeline_plugin import LlmPipelinePlugin
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.orchestrator.loops.strategy import StrategyLoop
 from kavzi_trader.orchestrator.loops.ui_snapshot import UiSnapshotLoop
 from kavzi_trader.orchestrator.orchestrator import TradingOrchestrator
 from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
@@ -384,15 +386,18 @@ class OrchestratorComposer:
         router: AgentRouter,
         deps_provider: LiveDependenciesProvider,
         filter_chain: PreTradeFilterChain,
-    ) -> ReasoningLoop:
-        return ReasoningLoop(
+    ) -> StrategyLoop:
+        plugin = LlmPipelinePlugin(
             symbols=self._config.trading.symbols,
             router=router,
             deps_provider=deps_provider,
-            redis_client=services.redis_client,
             interval_s=self._config.orchestrator.reasoning_interval_s,
             ui_recorder=services.ui_recorder,
-            state_manager=services.state_manager,
             filter_chain=filter_chain,
             position_management=self._config.position_management,
+        )
+        return StrategyLoop(
+            plugin=plugin,
+            publisher=DecisionPublisher(services.redis_client),
+            state_manager=services.state_manager,
         )

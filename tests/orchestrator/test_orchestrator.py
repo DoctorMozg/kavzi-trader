@@ -9,7 +9,7 @@ from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.orchestrator.loops.strategy import StrategyLoop
 from kavzi_trader.orchestrator.orchestrator import TradingOrchestrator
 
 
@@ -27,7 +27,7 @@ async def test_orchestrator_start_runs_loops() -> None:
         state_manager=state_manager,
         ingest_loop=cast("DataIngestLoop", DummyLoop()),
         order_flow_loop=cast("OrderFlowLoop", DummyLoop()),
-        reasoning_loop=cast("ReasoningLoop", DummyLoop()),
+        reasoning_loop=cast("StrategyLoop", DummyLoop()),
         execution_loop=cast("ExecutionLoop", DummyLoop()),
         position_loop=cast("PositionManagementLoop", DummyLoop()),
     )

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 from kavzi_trader.brain.geometry.schemas import TradeGeometrySchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
@@ -16,7 +16,7 @@ from kavzi_trader.domain.state_schemas import (
 )
 from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.orchestrator.loops.llm_pipeline_plugin import LlmPipelinePlugin
 from kavzi_trader.order_flow.schemas import OrderFlowSchema
 
 _LONG_GEOMETRY = TradeGeometrySchema(
@@ -142,13 +142,12 @@ def _build_deps() -> TradingDependenciesSchema:
     )
 
 
-def _build_loop(router: MagicMock) -> ReasoningLoop:
-    return ReasoningLoop(
+def _build_loop(router: MagicMock) -> LlmPipelinePlugin:
+    return LlmPipelinePlugin(
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
         deps_provider=MagicMock(),
-        redis_client=AsyncMock(),
         interval_s=1,
     )
 
@@ -159,7 +158,7 @@ def test_build_decision_message_valid_long_returns_schema() -> None:
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._publisher.builder.build(
+    message = loop._builder.build(
         trader, deps, snapshot_at_ms=1_000, geometry=_LONG_GEOMETRY
     )
 
@@ -183,7 +182,7 @@ def test_build_decision_message_rejects_long_without_geometry() -> None:
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._publisher.builder.build(
+    message = loop._builder.build(
         _long_decision(), deps, snapshot_at_ms=1_000, geometry=None
     )
 
@@ -196,7 +195,7 @@ def test_build_decision_message_rejects_short_without_geometry() -> None:
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._publisher.builder.build(
+    message = loop._builder.build(
         _short_decision(), deps, snapshot_at_ms=1_000, geometry=None
     )
 
@@ -221,9 +220,7 @@ def test_build_decision_message_close_allows_missing_geometry() -> None:
     router = MagicMock()
     loop = _build_loop(router)
 
-    message = loop._publisher.builder.build(
-        trader, deps, snapshot_at_ms=1_000, geometry=None
-    )
+    message = loop._builder.build(trader, deps, snapshot_at_ms=1_000, geometry=None)
 
     assert message is not None
     assert message.action == "CLOSE"

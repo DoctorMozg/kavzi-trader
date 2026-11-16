@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from decimal import Decimal
 
 from kavzi_trader.brain.agent.router import (
@@ -14,12 +15,10 @@ from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
-from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.orchestrator.loops.cooldown_policy import CooldownPolicy
 from kavzi_trader.orchestrator.loops.decision_message_builder import (
     DecisionMessageBuilder,
 )
-from kavzi_trader.orchestrator.loops.decision_publisher import DecisionPublisher
 from kavzi_trader.orchestrator.loops.reasoning_config import (
     ReasoningLoopConfigSchema,
 )
@@ -31,37 +30,42 @@ from kavzi_trader.spine.filters.filter_chain_params_schema import (
 from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
 )
-from kavzi_trader.spine.state.manager import StateManager
+from kavzi_trader.strategies.bracket_intent_schema import BracketIntentSchema
+from kavzi_trader.strategies.strategy_plugin import wall_clock_ms
+from kavzi_trader.strategies.symbol_outcome_schema import SymbolOutcomeSchema
+from kavzi_trader.strategies.tick_result_schema import StrategyTickResultSchema
+from kavzi_trader.strategies.tick_schema import StrategyTickSchema
 from kavzi_trader.ui.recorder import UiEventRecorder
 
 logger = logging.getLogger(__name__)
 
 
-class ReasoningLoop:
-    """Runs the agent router and enqueues trade decisions."""
+class LlmPipelinePlugin:
+    """Scout -> Analyst -> Trader pipeline exposed as a strategy plugin."""
+
+    name = "llm_pipeline"
 
     def __init__(
         self,
         symbols: list[str],
         router: AgentRouter,
         deps_provider: DependenciesProvider,
-        redis_client: RedisStateClient,
         interval_s: int = 5,
         ui_recorder: UiEventRecorder | None = None,
-        state_manager: StateManager | None = None,
         analyst_cooldown_cycles: int = 3,
         filter_chain: PreTradeFilterChain | None = None,
         max_consecutive_rejection_multiplier: int = 3,
         *,
         position_management: PositionManagementConfigSchema,
         reasoning_config: ReasoningLoopConfigSchema | None = None,
+        clock_ms: Callable[[], int] = wall_clock_ms,
     ) -> None:
         self._symbols = symbols
         self._router = router
         self._deps_provider = deps_provider
         self._interval_s = interval_s
         self._ui_recorder = ui_recorder
-        self._state_manager = state_manager
+        self._clock_ms = clock_ms
         self._filter_chain = filter_chain
         self._reasoning_config = reasoning_config or ReasoningLoopConfigSchema()
         self._state = SymbolStateTracker()
@@ -71,12 +75,9 @@ class ReasoningLoop:
             analyst_cooldown_cycles,
             max_consecutive_rejection_multiplier,
         )
-        self._publisher = DecisionPublisher(
-            redis_client,
-            DecisionMessageBuilder(
-                position_management,
-                router.record_trader_validation_failure,
-            ),
+        self._builder = DecisionMessageBuilder(
+            position_management,
+            router.record_trader_validation_failure,
         )
         # Tracks the number of consecutive cycles that produced zero
         # INTERESTING scouts. Drives the progressive idle sleep ramp; any
@@ -87,80 +88,77 @@ class ReasoningLoop:
         # Only transitions (active→idle, stair advances, idle→active) log;
         # steady-state idle cycles stay silent to reduce log noise.
         self._last_idle_stair_index: int | None = None
+        self._cycle: int = 0
 
-    async def run(self) -> None:
-        logger.info(
-            "ReasoningLoop started with %d symbols, interval=%ds",
-            len(self._symbols),
-            self._interval_s,
+    async def tick(self, ctx: StrategyTickSchema) -> StrategyTickResultSchema:
+        self._cycle += 1
+        cycle = self._cycle
+        cycle_start = time.monotonic()
+        logger.debug("LlmPipelinePlugin cycle %d starting", cycle)
+        self._deps_provider.clear_cycle_cache()
+        raw_results: list[SymbolOutcomeSchema | BaseException] = await asyncio.gather(
+            *(
+                self._handle_symbol_timed(symbol, ctx.positions)
+                for symbol in self._symbols
+            ),
+            return_exceptions=True,
         )
-        cycle = 0
-        current_interval_s = float(self._interval_s)
-        while True:
-            cycle += 1
-            cycle_start = time.monotonic()
-            logger.debug("ReasoningLoop cycle %d starting", cycle)
-            self._deps_provider.clear_cycle_cache()
-            cached_positions = await self._fetch_cycle_positions()
-            raw_results: list[bool | BaseException] = await asyncio.gather(
-                *(
-                    self._handle_symbol_timed(symbol, cached_positions)
-                    for symbol in self._symbols
-                ),
-                return_exceptions=True,
-            )
-            results: list[bool] = []
-            for symbol, result in zip(self._symbols, raw_results, strict=True):
-                if isinstance(result, BaseException):
-                    logger.error(
-                        "ReasoningLoop symbol %s raised, treating as non-interesting",
-                        symbol,
-                        exc_info=result,
-                        extra={
-                            "loop": "reasoning",
-                            "symbol": symbol,
-                            "cycle": cycle,
-                        },
-                    )
-                    results.append(False)
-                    continue
-                results.append(result)
-            interesting_count = sum(results)
-            current_interval_s, stair_index = self._next_sleep_interval_s(
-                interesting_count
-            )
-            cycle_ms = (time.monotonic() - cycle_start) * 1000
-            if stair_index != self._last_idle_stair_index:
-                logger.info(
-                    "ReasoningLoop cycle %d complete in %.1fms, "
-                    "interesting=%d/%d, sleeping %.0fs",
-                    cycle,
-                    cycle_ms,
-                    interesting_count,
-                    len(results),
-                    current_interval_s,
+        outcomes: list[SymbolOutcomeSchema] = []
+        for symbol, result in zip(self._symbols, raw_results, strict=True):
+            if isinstance(result, BaseException):
+                logger.error(
+                    "LlmPipelinePlugin symbol %s raised, treating as non-interesting",
+                    symbol,
+                    exc_info=result,
                     extra={
+                        "loop": "reasoning",
+                        "symbol": symbol,
                         "cycle": cycle,
-                        "elapsed_ms": round(cycle_ms, 1),
-                        "interesting_count": interesting_count,
-                        "sleep_interval_s": round(current_interval_s, 1),
-                        "consecutive_idle_cycles": self._consecutive_idle_cycles,
-                        "idle_stair_index": stair_index,
-                        "previous_idle_stair_index": self._last_idle_stair_index,
                     },
                 )
-                self._last_idle_stair_index = stair_index
-            else:
-                logger.debug(
-                    "ReasoningLoop cycle %d complete in %.1fms, "
-                    "interesting=%d/%d, sleeping %.0fs",
-                    cycle,
-                    cycle_ms,
-                    interesting_count,
-                    len(results),
-                    current_interval_s,
-                )
-            await asyncio.sleep(current_interval_s)
+                outcomes.append(SymbolOutcomeSchema(interesting=False))
+                continue
+            outcomes.append(result)
+        interesting_count = sum(o.interesting for o in outcomes)
+        sleep_s, stair_index = self._next_sleep_interval_s(interesting_count)
+        cycle_ms = (time.monotonic() - cycle_start) * 1000
+        if stair_index != self._last_idle_stair_index:
+            logger.info(
+                "LlmPipelinePlugin cycle %d complete in %.1fms, "
+                "interesting=%d/%d, sleeping %.0fs",
+                cycle,
+                cycle_ms,
+                interesting_count,
+                len(outcomes),
+                sleep_s,
+                extra={
+                    "cycle": cycle,
+                    "elapsed_ms": round(cycle_ms, 1),
+                    "interesting_count": interesting_count,
+                    "sleep_interval_s": round(sleep_s, 1),
+                    "consecutive_idle_cycles": self._consecutive_idle_cycles,
+                    "idle_stair_index": stair_index,
+                    "previous_idle_stair_index": self._last_idle_stair_index,
+                },
+            )
+            self._last_idle_stair_index = stair_index
+        else:
+            logger.debug(
+                "LlmPipelinePlugin cycle %d complete in %.1fms, "
+                "interesting=%d/%d, sleeping %.0fs",
+                cycle,
+                cycle_ms,
+                interesting_count,
+                len(outcomes),
+                sleep_s,
+            )
+        return StrategyTickResultSchema(
+            intents=[o.intent for o in outcomes if o.intent is not None],
+            next_tick_at_ms=self._clock_ms() + round(sleep_s * 1000),
+        )
+
+    def on_enqueued(self, intent: BracketIntentSchema) -> None:
+        self._cooldowns.start_post_trade_cooldown(intent.symbol)
 
     def _next_sleep_interval_s(
         self, interesting_count: int
@@ -187,41 +185,29 @@ class ReasoningLoop:
                 return float(capped), index
         return float(self._interval_s), None
 
-    async def _fetch_cycle_positions(self) -> list[PositionSchema]:
-        if self._state_manager is None:
-            return []
-        try:
-            return await self._state_manager.get_all_positions()
-        except Exception:
-            logger.exception(
-                "Failed to fetch positions for reasoning cycle",
-                extra={"loop": "reasoning"},
-            )
-            return []
-
     async def _handle_symbol_timed(
         self,
         symbol: str,
         cached_positions: list[PositionSchema],
-    ) -> bool:
+    ) -> SymbolOutcomeSchema:
         sym_start = time.monotonic()
-        interesting = False
+        outcome = SymbolOutcomeSchema(interesting=False)
         try:
-            interesting = await self._handle_symbol(symbol, cached_positions)
+            outcome = await self._handle_symbol(symbol, cached_positions)
         except Exception:
             logger.exception(
-                "ReasoningLoop failed for %s, continuing",
+                "LlmPipelinePlugin failed for %s, continuing",
                 symbol,
                 extra={"loop": "reasoning", "symbol": symbol},
             )
         sym_ms = (time.monotonic() - sym_start) * 1000
         logger.info(
-            "ReasoningLoop symbol=%s elapsed_ms=%.1f",
+            "LlmPipelinePlugin symbol=%s elapsed_ms=%.1f",
             symbol,
             sym_ms,
             extra={"symbol": symbol, "elapsed_ms": round(sym_ms, 1)},
         )
-        return interesting
+        return outcome
 
     def _get_open_position_symbols(
         self,
@@ -247,9 +233,9 @@ class ReasoningLoop:
         self,
         symbol: str,
         cached_positions: list[PositionSchema],
-    ) -> bool:
+    ) -> SymbolOutcomeSchema:
         if self._should_skip_symbol(symbol, cached_positions):
-            return False
+            return SymbolOutcomeSchema(interesting=False)
 
         pipeline_start_s = time.monotonic()
         result = await self._router.run(symbol, self._deps_provider)
@@ -281,7 +267,9 @@ class ReasoningLoop:
 
         if not self._should_enqueue(result):
             self._cooldowns.track_consecutive_waits(symbol, result)
-            return result.scout.verdict == "INTERESTING"
+            return SymbolOutcomeSchema(
+                interesting=result.scout.verdict == "INTERESTING"
+            )
 
         filter_result = await self._run_filter_chain(result, cached_positions)
         if filter_result is not None and not filter_result.is_allowed:
@@ -290,17 +278,39 @@ class ReasoningLoop:
                 result.trader.action if result.trader else "UNKNOWN",
                 filter_result,
             )
-            return True
+            return SymbolOutcomeSchema(interesting=True)
 
         size_multiplier = (
             filter_result.size_multiplier if filter_result is not None else Decimal(1)
         )
-        if not await self._publisher.publish(result, size_multiplier):
-            # No trade went out, so the symbol must stay eligible next cycle.
-            return True
+        # A missing intent means nothing goes out, so the symbol stays eligible.
+        return SymbolOutcomeSchema(
+            interesting=True,
+            intent=self._build_intent(result, size_multiplier),
+        )
 
-        self._cooldowns.start_post_trade_cooldown(symbol)
-        return True
+    def _build_intent(
+        self,
+        result: PipelineResult,
+        size_multiplier: Decimal,
+    ) -> BracketIntentSchema | None:
+        if result.trader is None or result.trader_deps is None:
+            return None
+        intent = self._builder.build(
+            result.trader,
+            result.trader_deps,
+            self._clock_ms(),
+            geometry=result.geometry,
+            size_multiplier=size_multiplier,
+        )
+        if intent is None:
+            logger.warning(
+                "Skipping enqueue for %s: decision message could not be"
+                " built from Trader output (see prior error log)",
+                result.trader_deps.symbol,
+                extra={"symbol": result.trader_deps.symbol},
+            )
+        return intent
 
     def _should_enqueue(self, result: PipelineResult) -> bool:
         if result.scout.verdict != "INTERESTING":

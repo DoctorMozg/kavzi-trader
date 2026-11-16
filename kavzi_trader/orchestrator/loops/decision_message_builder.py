@@ -6,9 +6,9 @@ from uuid import uuid4
 
 from kavzi_trader.brain.geometry.schemas import TradeGeometrySchema
 from kavzi_trader.brain.schemas.dependencies import TradingDependenciesSchema
-from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
 from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.strategies.bracket_intent_schema import BracketIntentSchema
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class DecisionMessageBuilder:
         snapshot_at_ms: int,
         geometry: TradeGeometrySchema | None = None,
         size_multiplier: Decimal = Decimal(1),
-    ) -> DecisionMessageSchema | None:
+    ) -> BracketIntentSchema | None:
         action = trader.action
         # The router computes geometry for every LONG/SHORT, so a missing one
         # is a pipeline defect: fail loudly instead of fabricating prices.
@@ -62,7 +62,7 @@ class DecisionMessageBuilder:
             take_profit = entry_price
         atr = deps.indicators.atr_14 or Decimal(0)
 
-        return DecisionMessageSchema(
+        return BracketIntentSchema(
             decision_id=str(uuid4()),
             symbol=deps.symbol,
             action=typed_action,

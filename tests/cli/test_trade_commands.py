@@ -231,7 +231,7 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         captured["order_flow_interval_s"] = interval_s
         return object()
 
-    def build_reasoning_loop(**kwargs) -> object:
+    def build_reasoning_plugin(**kwargs) -> object:
         captured["reasoning_interval_s"] = kwargs["interval_s"]
         return object()
 
@@ -240,7 +240,8 @@ async def test_start_orchestrator_uses_configured_runtime_values(
         return object()
 
     monkeypatch.setattr(composition, "OrderFlowLoop", build_order_flow_loop)
-    monkeypatch.setattr(composition, "ReasoningLoop", build_reasoning_loop)
+    monkeypatch.setattr(composition, "LlmPipelinePlugin", build_reasoning_plugin)
+    monkeypatch.setattr(composition, "StrategyLoop", lambda **_: object())
     monkeypatch.setattr(composition, "ExecutionLoop", lambda **_: object())
     monkeypatch.setattr(
         spine_composition,

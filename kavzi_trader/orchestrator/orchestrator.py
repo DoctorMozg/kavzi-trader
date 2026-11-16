@@ -14,7 +14,7 @@ from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.orchestrator.loops.strategy import StrategyLoop
 from kavzi_trader.orchestrator.loops.ui_snapshot import UiSnapshotLoop
 from kavzi_trader.spine.state.manager import StateManager
 
@@ -43,7 +43,7 @@ class TradingOrchestrator:
         state_manager: StateManager,
         ingest_loop: DataIngestLoop,
         order_flow_loop: OrderFlowLoop,
-        reasoning_loop: ReasoningLoop,
+        reasoning_loop: StrategyLoop,
         execution_loop: ExecutionLoop,
         position_loop: PositionManagementLoop,
         ui_snapshot_loop: UiSnapshotLoop | None = None,

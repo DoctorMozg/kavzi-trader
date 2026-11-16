@@ -14,7 +14,7 @@ from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.ingest import DataIngestLoop
 from kavzi_trader.orchestrator.loops.order_flow import OrderFlowLoop
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
-from kavzi_trader.orchestrator.loops.reasoning import ReasoningLoop
+from kavzi_trader.orchestrator.loops.strategy import StrategyLoop
 from kavzi_trader.orchestrator.orchestrator import (
     LoopRestartLimitError,
     TradingOrchestrator,
@@ -64,7 +64,7 @@ def _orchestrator(
         state_manager=state_manager or AsyncMock(),
         ingest_loop=cast("DataIngestLoop", ingest),
         order_flow_loop=cast("OrderFlowLoop", _Loop()),
-        reasoning_loop=cast("ReasoningLoop", _Loop()),
+        reasoning_loop=cast("StrategyLoop", _Loop()),
         execution_loop=cast("ExecutionLoop", _Loop()),
         position_loop=cast("PositionManagementLoop", _Loop()),
         shutdown_hooks=shutdown_hooks,
