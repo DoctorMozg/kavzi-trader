@@ -15,7 +15,7 @@ from kavzi_trader.evals.turnover_buffer import TurnoverBuffer
 
 logger = logging.getLogger(__name__)
 
-# Return days scored by the preregistration; earlier days only warm up lookbacks.
+# Return days scored by the 2026-11-16 preregistration; earlier days only warm up.
 FIRST_RETURN_DAY = pd.Timestamp("2022-03-15")
 LAST_RETURN_DAY = pd.Timestamp("2026-11-14")
 
@@ -33,7 +33,13 @@ class TrendBacktest:
         self._buffer = buffer
         self._portfolio = portfolio
 
-    def run(self, data: TrendDataSchema) -> TrendResultSchema:
+    def run(
+        self,
+        data: TrendDataSchema,
+        first_day: pd.Timestamp = FIRST_RETURN_DAY,
+        last_day: pd.Timestamp = LAST_RETURN_DAY,
+    ) -> TrendResultSchema:
+        """Scores return days from ``first_day`` to ``last_day``, both inclusive."""
         closes = data.closes
         n_symbols = closes.shape[1]
         weights = np.column_stack(
@@ -46,11 +52,9 @@ class TrendBacktest:
         returns = closes.pct_change().shift(-1).to_numpy()
         funding = data.funding.shift(-1).to_numpy()
         return_day = closes.index.to_series().shift(-1)
-        scored = (
-            (return_day >= FIRST_RETURN_DAY) & (return_day <= LAST_RETURN_DAY)
-        ).to_numpy()
+        scored = ((return_day >= first_day) & (return_day <= last_day)).to_numpy()
         if not scored.any():
-            msg = "no return days inside the preregistered window"
+            msg = f"no return days between {first_day.date()} and {last_day.date()}"
             raise ValueError(msg)
 
         held = self._buffer.apply(weights[scored])

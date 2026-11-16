@@ -82,7 +82,11 @@ from kavzi_trader.evals.signal_sampler import (
     SIDES,
     SignalSampler,
 )
-from kavzi_trader.evals.trend_backtest import TrendBacktest
+from kavzi_trader.evals.trend_backtest import (
+    FIRST_RETURN_DAY,
+    LAST_RETURN_DAY,
+    TrendBacktest,
+)
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_params_schema import TrendParamsSchema
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
@@ -1005,6 +1009,22 @@ def _parse_lookbacks(
     default=None,
     help="Report path; default results/evals/trend_<UTC time>.md.",
 )
+@click.option(
+    "--from",
+    "start_day",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=FIRST_RETURN_DAY.strftime("%Y-%m-%d"),
+    show_default=True,
+    help="First scored return day (UTC); earlier days only warm up lookbacks.",
+)
+@click.option(
+    "--to",
+    "end_day",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=(LAST_RETURN_DAY + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+    show_default=True,
+    help="End of the scored window (UTC day, exclusive).",
+)
 @_SYMBOLS_OPTION
 @click.pass_context
 def trend_backtest(
@@ -1013,6 +1033,8 @@ def trend_backtest(
     lookbacks: tuple[int, ...],
     cache_dir: Path,
     out: Path | None,
+    start_day: datetime,
+    end_day: datetime,
     symbols: list[str] | None,
 ) -> None:
     """Backtest the daily Donchian trend ensemble on cached candles and funding."""
@@ -1024,7 +1046,11 @@ def trend_backtest(
         TurnoverBuffer(TREND_BUFFER_BAND),
         TrendPortfolio(float(app_config.paper.commission_rate)),
     )
-    result = backtest.run(data)
+    last_day = pd.Timestamp(end_day) - pd.Timedelta(days=1)
+    try:
+        result = backtest.run(data, pd.Timestamp(start_day), last_day)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     renderer = TrendReportRenderer(params)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = out or app_config.system.results_dir / "evals" / f"trend_{stamp}.md"
