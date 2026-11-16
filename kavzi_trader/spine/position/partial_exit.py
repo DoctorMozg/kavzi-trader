@@ -17,7 +17,7 @@ class PartialExitChecker:
         current_price: Decimal,
         current_atr: Decimal,
     ) -> PositionActionSchema | None:
-        if position.partial_exit_done:
+        if position.partial_exit_done or position.take_profit is None:
             return None
 
         if position.side == "LONG":

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Awaitable, Callable
 from decimal import Decimal
 
 from kavzi_trader.api.exchange_client import ExchangeClient
@@ -68,6 +69,8 @@ class PositionActionExecutor:
 
     async def retry_missing_take_profit(self, position: PositionSchema) -> None:
         """Place the TP of a half-bracketed position unless one already exists."""
+        if position.take_profit is None:
+            return
         linked = await self._state.orders.get_by_position(position.id)
         if any(o.order_type in _TAKE_PROFIT_ORDER_TYPES for o in linked):
             return
@@ -158,10 +161,19 @@ class PositionActionExecutor:
 
     async def _replace_protective_orders(self, position: PositionSchema) -> None:
         # Each leg is attempted independently; a missing leg is left for reconciliation.
-        placements = (
+        placements: list[
+            tuple[
+                str,
+                Callable[[PositionSchema, Decimal, Decimal], Awaitable[None]],
+                Decimal,
+            ]
+        ] = [
             ("stop-loss", self._place_stop_order, position.current_stop_loss),
-            ("take-profit", self._place_take_profit_order, position.take_profit),
-        )
+        ]
+        if position.take_profit is not None:
+            placements.append(
+                ("take-profit", self._place_take_profit_order, position.take_profit),
+            )
         for name, place, price in placements:
             try:
                 await place(position, price, position.quantity)

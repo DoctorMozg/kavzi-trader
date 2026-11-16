@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kavzi_trader.domain.order_enums import OrderSide, OrderStatus, OrderType
 
@@ -30,9 +30,12 @@ class PositionSchema(BaseModel):
     quantity: Decimal
     entry_price: Decimal
     stop_loss: Decimal
-    take_profit: Decimal
+    take_profit: Decimal | None = None
     current_stop_loss: Decimal
     management_config: PositionManagementConfigSchema
+    # SIGNAL positions exit on a strategy signal; stop_loss is only a disaster stop.
+    strategy: str = "llm_pipeline"
+    exit_policy: Literal["BRACKET", "SIGNAL"] = "BRACKET"
     leverage: int = 1
     liquidation_price: Decimal | None = None
     initial_margin: Decimal = Decimal(0)
@@ -47,6 +50,12 @@ class PositionSchema(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(frozen=True)
+
+    @model_validator(mode="after")
+    def _bracket_requires_take_profit(self) -> PositionSchema:
+        if self.exit_policy == "BRACKET" and self.take_profit is None:
+            raise ValueError("BRACKET position requires take_profit")
+        return self
 
     @property
     def exit_side(self) -> OrderSide:

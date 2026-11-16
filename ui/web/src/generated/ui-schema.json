@@ -350,8 +350,16 @@
           "type": "string"
         },
         "take_profit": {
-          "title": "Take Profit",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Take Profit"
         },
         "unrealized_pnl_usdt": {
           "title": "Unrealized Pnl Usdt",
@@ -427,8 +435,16 @@
           "type": "string"
         },
         "take_profit": {
-          "title": "Take Profit",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Take Profit"
         },
         "ts_ms": {
           "minimum": 0,

@@ -23,7 +23,7 @@ class UiOpenPositionSchema(BaseModel):
     entry_price: Annotated[Decimal, Field(...)]
     mark_price: Annotated[Decimal, Field(...)]
     stop_loss: Annotated[Decimal, Field(...)]
-    take_profit: Annotated[Decimal, Field(...)]
+    take_profit: Annotated[Decimal | None, Field()] = None
     unrealized_pnl_usdt: Annotated[Decimal, Field(...)]
     leverage: Annotated[int, Field(..., ge=1)]
     opened_at_ms: Annotated[int, Field(..., ge=0)]
@@ -105,7 +105,7 @@ class UiPositionClosedEventSchema(BaseModel):
     entry_price: Annotated[Decimal, Field(...)]
     exit_price: Annotated[Decimal, Field(...)]
     stop_loss: Annotated[Decimal, Field(...)]
-    take_profit: Annotated[Decimal, Field(...)]
+    take_profit: Annotated[Decimal | None, Field()] = None
     pnl_usdt: Annotated[Decimal, Field(...)]
     close_reason: Annotated[str, Field(...)]
     leverage: Annotated[int, Field(..., ge=1)]

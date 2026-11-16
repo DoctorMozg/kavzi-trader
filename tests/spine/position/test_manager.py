@@ -149,3 +149,59 @@ async def test_manager_uses_configured_liquidation_emergency_percent(
 
     emergency = [a for a in actions or [] if "near liquidation" in a.reason]
     assert bool(emergency) is expect_exit
+
+
+@pytest.mark.asyncio
+async def test_signal_position_skips_time_stall_and_partial_exits(
+    position_factory, monkeypatch
+) -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    opened_at = now - timedelta(hours=30)
+    position = position_factory(
+        exit_policy="SIGNAL",
+        opened_at=opened_at,
+        updated_at=opened_at,
+        atr_at_entry=Decimal(1),
+    )
+    monkeypatch.setattr(
+        "kavzi_trader.spine.position.time_exit.utc_now",
+        lambda: now,
+    )
+
+    actions = await build_manager().evaluate_position(
+        position=position,
+        current_price=Decimal(100),
+        current_atr=Decimal(1),
+    )
+
+    assert actions == []
+
+
+@pytest.mark.asyncio
+async def test_signal_position_still_exits_on_stop_loss(position_factory) -> None:
+    position = position_factory(exit_policy="SIGNAL", stop_loss=Decimal(90))
+
+    actions = await build_manager().evaluate_position(
+        position=position,
+        current_price=Decimal(89),
+        current_atr=Decimal(1),
+    )
+
+    assert actions is not None
+    assert [a.reason for a in actions] == ["Stop-loss breached"]
+
+
+@pytest.mark.asyncio
+async def test_signal_position_still_exits_near_liquidation(position_factory) -> None:
+    position = position_factory(exit_policy="SIGNAL").model_copy(
+        update={"liquidation_price": Decimal(80)},
+    )
+
+    actions = await build_manager().evaluate_position(
+        position=position,
+        current_price=Decimal(81),
+        current_atr=Decimal(1),
+    )
+
+    assert actions is not None
+    assert actions[0].reason == "Emergency: near liquidation price"

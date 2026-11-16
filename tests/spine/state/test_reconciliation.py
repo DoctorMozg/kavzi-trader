@@ -240,6 +240,26 @@ class TestReconciliationService:
             for d in result.discrepancies
         )
 
+    async def test_reconcile_does_not_place_tp_for_signal_position(
+        self,
+        service: ReconciliationService,
+        mock_position_store: AsyncMock,
+        mock_order_store: AsyncMock,
+        mock_protective_placer: AsyncMock,
+        sample_position: PositionSchema,
+        sample_sl_order: OpenOrderSchema,
+    ):
+        signal_position = sample_position.model_copy(
+            update={"exit_policy": "SIGNAL", "take_profit": None},
+        )
+        mock_position_store.get_all.return_value = [signal_position]
+        mock_order_store.get_by_position.return_value = [sample_sl_order]
+
+        result = await service.reconcile()
+
+        assert result.success is True
+        mock_protective_placer.place.assert_not_awaited()
+
     async def test_reconcile_recovers_both_legs_with_single_call(
         self,
         service: ReconciliationService,

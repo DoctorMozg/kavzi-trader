@@ -49,6 +49,8 @@ class ProtectiveOrderPlacer:
         )
 
     async def place_take_profit(self, position: PositionSchema) -> None:
+        if position.take_profit is None:
+            return
         take_side = position.exit_side
         take_response = await self._exchange.create_order(
             symbol=position.symbol,

@@ -12,7 +12,7 @@ function PositionRow({ position, now }: { position: OpenPosition; now: number })
   const entry = Number(position.entry_price);
   const mark = Number(position.mark_price);
   const stop = Number(position.stop_loss);
-  const take = Number(position.take_profit);
+  const take = position.take_profit === null ? null : Number(position.take_profit);
   const pnl = Number(position.unrealized_pnl_usdt);
   const notional = Number(position.quantity) * entry;
   return (
@@ -29,8 +29,14 @@ function PositionRow({ position, now }: { position: OpenPosition; now: number })
       <Td>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="text-loss">{fmtPrice(stop)}</span>
-          <SlTpBar stop={stop} take={take} mark={mark} />
-          <span className="text-profit">{fmtPrice(take)}</span>
+          {take === null ? (
+            <span>signal exit</span>
+          ) : (
+            <>
+              <SlTpBar stop={stop} take={take} mark={mark} />
+              <span className="text-profit">{fmtPrice(take)}</span>
+            </>
+          )}
         </div>
       </Td>
       <Td right>{position.leverage}x</Td>

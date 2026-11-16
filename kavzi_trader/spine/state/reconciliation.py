@@ -210,7 +210,7 @@ class ReconciliationService:
             has_sl = any(
                 o.order_type.value in ("STOP", "STOP_MARKET") for o in linked_orders
             )
-            has_tp = any(
+            has_tp = position.take_profit is None or any(
                 o.order_type.value in ("TAKE_PROFIT", "TAKE_PROFIT_MARKET")
                 for o in linked_orders
             )

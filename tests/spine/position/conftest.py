@@ -26,6 +26,7 @@ def position_factory() -> Callable[..., PositionSchema]:
         opened_at: datetime | None = None,
         updated_at: datetime | None = None,
         management_config: PositionManagementConfigSchema | None = None,
+        exit_policy: Literal["BRACKET", "SIGNAL"] = "BRACKET",
     ) -> PositionSchema:
         now = datetime.now(UTC)
         if opened_at is None:
@@ -35,7 +36,7 @@ def position_factory() -> Callable[..., PositionSchema]:
 
         if stop_loss is None:
             stop_loss = Decimal(90) if side == "LONG" else Decimal(110)
-        if take_profit is None:
+        if take_profit is None and exit_policy == "BRACKET":
             take_profit = Decimal(120) if side == "LONG" else Decimal(80)
         if current_stop_loss is None:
             current_stop_loss = stop_loss
@@ -51,6 +52,7 @@ def position_factory() -> Callable[..., PositionSchema]:
             "entry_price": entry_price,
             "stop_loss": stop_loss,
             "take_profit": take_profit,
+            "exit_policy": exit_policy,
             "current_stop_loss": current_stop_loss,
             "management_config": management_config,
             "stop_loss_moved_to_breakeven": stop_loss_moved_to_breakeven,

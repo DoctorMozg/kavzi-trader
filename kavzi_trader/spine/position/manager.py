@@ -94,6 +94,9 @@ class PositionManager:
                 ),
             ]
 
+        if position.exit_policy == "SIGNAL":
+            return []
+
         if current_atr <= 0:
             logger.warning(
                 "ATR is %s for %s, partial exit cannot function",
@@ -101,15 +104,11 @@ class PositionManager:
                 position.symbol,
             )
 
-        time_exit_action = self._time_exit.evaluate(position)
-        if time_exit_action:
-            return [time_exit_action]
-
-        stall_exit_action = self._stall_exit.evaluate(
+        exit_action = self._time_exit.evaluate(position) or self._stall_exit.evaluate(
             position, current_price, current_atr
         )
-        if stall_exit_action:
-            return [stall_exit_action]
+        if exit_action:
+            return [exit_action]
 
         actions: list[PositionActionSchema] = []
 
