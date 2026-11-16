@@ -19,14 +19,14 @@ from kavzi_trader.cli.replay_composition import (
 )
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.agent_source import AgentSource
-from kavzi_trader.evals.trend_backtest import (
-    FIRST_RETURN_DAY,
-    LAST_RETURN_DAY,
-    TrendBacktest,
-)
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_stats_schema import TrendStatsSchema
+from kavzi_trader.evals.weight_backtest import (
+    FIRST_RETURN_DAY,
+    LAST_RETURN_DAY,
+    WeightBacktest,
+)
 from kavzi_trader.replay.llm_tape import LlmTape
 from kavzi_trader.replay.replay_data_loader import ReplayDataLoader
 from kavzi_trader.replay.replay_report_renderer import ReplayReportRenderer
@@ -111,7 +111,7 @@ def _vectorized_trend(
         annual_vol_target=trend.annual_vol_target,
         max_leverage=trend.max_leverage,
     )
-    backtest = TrendBacktest(
+    backtest = WeightBacktest(
         DonchianTrendSignal(params),
         TurnoverBuffer(trend.buffer_band),
         TrendPortfolio(float(app_config.paper.commission_rate)),

@@ -1,16 +1,13 @@
 import logging
 
-import numpy as np
 import pandas as pd
 
 from kavzi_trader.evals.trend_data_schema import TrendDataSchema
 from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_result_schema import TrendResultSchema
-from kavzi_trader.strategies.trend.donchian_trend_signal import (
-    DAYS_PER_YEAR,
-    DonchianTrendSignal,
-)
+from kavzi_trader.evals.weight_signal import WeightSignal
+from kavzi_trader.strategies.trend.donchian_trend_signal import DAYS_PER_YEAR
 from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 
 logger = logging.getLogger(__name__)
@@ -20,12 +17,12 @@ FIRST_RETURN_DAY = pd.Timestamp("2022-03-15")
 LAST_RETURN_DAY = pd.Timestamp("2026-11-14")
 
 
-class TrendBacktest:
-    """Wires signal, turnover buffer and portfolio accounting over daily data."""
+class WeightBacktest:
+    """Scores any daily target-weight signal with turnover buffer and costs."""
 
     def __init__(
         self,
-        signal: DonchianTrendSignal,
+        signal: WeightSignal,
         buffer: TurnoverBuffer,
         portfolio: TrendPortfolio,
     ) -> None:
@@ -42,12 +39,10 @@ class TrendBacktest:
         """Scores return days from ``first_day`` to ``last_day``, both inclusive."""
         closes = data.closes
         n_symbols = closes.shape[1]
-        weights = np.column_stack(
-            [
-                self._signal.compute(closes[s].to_numpy(), n_symbols).weight
-                for s in closes
-            ]
-        )
+        weights = self._signal.weights(closes)
+        if weights.shape != closes.shape:
+            msg = f"signal gave weights {weights.shape} for closes {closes.shape}"
+            raise ValueError(msg)
         # Weights set at close of day d earn day d+1's close-to-close return.
         returns = closes.pct_change().shift(-1).to_numpy()
         funding = data.funding.shift(-1).to_numpy()

@@ -16,6 +16,13 @@ class DonchianTrendSignal:
     def __init__(self, params: TrendParamsSchema) -> None:
         self._params = params
 
+    def weights(self, closes: pd.DataFrame) -> np.ndarray:
+        """Target weights (days, symbols), the book split evenly across columns."""
+        n_symbols = closes.shape[1]
+        return np.column_stack(
+            [self.compute(closes[s].to_numpy(), n_symbols).weight for s in closes]
+        )
+
     def compute(self, close: np.ndarray, n_symbols: int) -> TrendSignalSchema:
         if n_symbols < 1:
             msg = f"n_symbols must be positive, got {n_symbols}"

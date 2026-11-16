@@ -80,14 +80,14 @@ from kavzi_trader.evals.signal_sampler import (
     SIDES,
     SignalSampler,
 )
-from kavzi_trader.evals.trend_backtest import (
-    FIRST_RETURN_DAY,
-    LAST_RETURN_DAY,
-    TrendBacktest,
-)
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_report_renderer import TrendReportRenderer
+from kavzi_trader.evals.weight_backtest import (
+    FIRST_RETURN_DAY,
+    LAST_RETURN_DAY,
+    WeightBacktest,
+)
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
@@ -1020,7 +1020,7 @@ def trend_backtest(
     app_config: AppConfig = ctx.obj["app_config"]
     params = TrendParamsSchema(lookbacks=lookbacks, long_short=variant == "long-short")
     data = TrendDataLoader(cache_dir).load(symbols or TREND_TRADING_SYMBOLS)
-    backtest = TrendBacktest(
+    backtest = WeightBacktest(
         DonchianTrendSignal(params),
         TurnoverBuffer(TREND_BUFFER_BAND),
         TrendPortfolio(float(app_config.paper.commission_rate)),

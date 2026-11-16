@@ -135,11 +135,8 @@ def reference(config: AppConfig, cache_dir: Path) -> pd.Series:
     )
     data = TrendDataLoader(cache_dir).load(SYMBOLS)
     closes = data.closes
-    weights = np.column_stack(
-        [signal.compute(closes[s].to_numpy(), len(SYMBOLS)).weight for s in closes]
-    )
     run = TrendPortfolio(float(TAKER_FEE)).run(
-        TurnoverBuffer(trend.buffer_band).apply(weights),
+        TurnoverBuffer(trend.buffer_band).apply(signal.weights(closes)),
         closes.pct_change().shift(-1).fillna(0.0).to_numpy(),
         data.funding.shift(-1).fillna(0.0).to_numpy(),
     )
