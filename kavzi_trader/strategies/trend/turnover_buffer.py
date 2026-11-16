@@ -15,10 +15,15 @@ class TurnoverBuffer:
         held = np.zeros_like(targets)
         current = np.zeros(targets.shape[1])
         for t in range(targets.shape[0]):
-            trade = self._trade_mask(targets[t], current)
-            current = np.where(trade, targets[t], current)
+            current = self.step(targets[t], current)
             held[t] = current
         return held
+
+    def step(self, target: np.ndarray, held: np.ndarray) -> np.ndarray:
+        """Weights held after one day, given today's targets and yesterday's holds."""
+        trade = self._trade_mask(target, held)
+        stepped: np.ndarray = np.where(trade, target, held)
+        return stepped
 
     def _trade_mask(self, target: np.ndarray, held: np.ndarray) -> np.ndarray:
         flatten = (target == 0) & (held != 0)

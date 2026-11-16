@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from kavzi_trader.evals.turnover_buffer import TurnoverBuffer
+from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 
 
 @pytest.fixture

@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 
-from kavzi_trader.evals.trend_params_schema import TrendParamsSchema
-from kavzi_trader.evals.trend_signal_schema import TrendSignalSchema
+from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
+from kavzi_trader.strategies.trend.trend_signal_schema import TrendSignalSchema
 
 DAYS_PER_YEAR = 365
 

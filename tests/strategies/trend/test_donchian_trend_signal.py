@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from kavzi_trader.evals.donchian_trend_signal import DonchianTrendSignal
-from kavzi_trader.evals.trend_params_schema import TrendParamsSchema
+from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
+from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 
 CLOSES = np.array([10.0, 11, 12, 13, 12, 9, 10, 14])
 # Target so high that the leverage cap (2.0) always binds once vol is defined.

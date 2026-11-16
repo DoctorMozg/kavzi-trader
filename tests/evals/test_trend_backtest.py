@@ -2,12 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from kavzi_trader.evals.donchian_trend_signal import DonchianTrendSignal
 from kavzi_trader.evals.trend_backtest import TrendBacktest
 from kavzi_trader.evals.trend_data_schema import TrendDataSchema
-from kavzi_trader.evals.trend_params_schema import TrendParamsSchema
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
-from kavzi_trader.evals.turnover_buffer import TurnoverBuffer
+from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
+from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
+from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 
 DAYS = pd.date_range("2027-01-01", periods=200, freq="D")
 

@@ -44,7 +44,6 @@ from kavzi_trader.evals.dataset_builder import (
     DatasetBuilder,
 )
 from kavzi_trader.evals.distribution_report_schema import DistributionReportSchema
-from kavzi_trader.evals.donchian_trend_signal import DonchianTrendSignal
 from kavzi_trader.evals.eval_case_schema import EvalCaseSchema
 from kavzi_trader.evals.eval_pipeline_runner import EvalPipelineRunner
 from kavzi_trader.evals.eval_run_orchestrator import EvalRunOrchestrator
@@ -88,14 +87,15 @@ from kavzi_trader.evals.trend_backtest import (
     TrendBacktest,
 )
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
-from kavzi_trader.evals.trend_params_schema import TrendParamsSchema
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_report_renderer import TrendReportRenderer
-from kavzi_trader.evals.turnover_buffer import TurnoverBuffer
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
+from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
+from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
+from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 
 logger = logging.getLogger(__name__)
 

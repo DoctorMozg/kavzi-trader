@@ -3,15 +3,15 @@ import logging
 import numpy as np
 import pandas as pd
 
-from kavzi_trader.evals.donchian_trend_signal import (
-    DAYS_PER_YEAR,
-    DonchianTrendSignal,
-)
 from kavzi_trader.evals.trend_data_schema import TrendDataSchema
 from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_result_schema import TrendResultSchema
-from kavzi_trader.evals.turnover_buffer import TurnoverBuffer
+from kavzi_trader.strategies.trend.donchian_trend_signal import (
+    DAYS_PER_YEAR,
+    DonchianTrendSignal,
+)
+from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 
 logger = logging.getLogger(__name__)
 

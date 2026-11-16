@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 
-from kavzi_trader.evals.donchian_trend_signal import DAYS_PER_YEAR
 from kavzi_trader.evals.trend_stats_schema import TrendStatsSchema
+from kavzi_trader.strategies.trend.donchian_trend_signal import DAYS_PER_YEAR
 
 MIN_DAYS = 2
 

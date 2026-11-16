@@ -70,9 +70,9 @@ No LLM calls. Writes `results/evals/<run_id>.report.md` (override with `--out`) 
 
 No LLM calls. Rules are fixed in `evals/preregistrations/2026_11_16_trend_following.md`. Reads cached 4h candles and funding (`refresh-cache --interval 4h --months 60`) and folds every 6 candles into a UTC day (`trend_data_loader.py`). Days with fewer than 6 candles are dropped, and a gap in the daily series is an error.
 
-Per symbol and lookback L, the Donchian state is 1 when the close is above the highest close of the previous L days, 0 (long/flat) or -1 (long/short) when it is below the lowest, else unchanged (`donchian_trend_signal.py`). The signal is the mean of the lookback states. Target weight is `signal * min(0.25 / vol, 2.0) / N`, where `vol` is the 30-day daily log-return std x sqrt(365) and N is the number of symbols. Weights set at a close earn the next day's return.
+Per symbol and lookback L, the Donchian state is 1 when the close is above the highest close of the previous L days, 0 (long/flat) or -1 (long/short) when it is below the lowest, else unchanged (`strategies/trend/donchian_trend_signal.py`). The signal is the mean of the lookback states. Target weight is `signal * min(0.25 / vol, 2.0) / N`, where `vol` is the 30-day daily log-return std x sqrt(365) and N is the number of symbols. Weights set at a close earn the next day's return.
 
-`turnover_buffer.py` trades a symbol only when its target is zero, flips sign, or differs from the held weight by more than 20% of it. `trend_portfolio.py` charges `paper.commission_rate` on traded weight and funding on held weight (longs pay positive funding). The benchmark is equal-weight, daily-rebalanced buy-and-hold with no costs or funding.
+`strategies/trend/turnover_buffer.py` trades a symbol only when its target is zero, flips sign, or differs from the held weight by more than 20% of it. `trend_portfolio.py` charges `paper.commission_rate` on traded weight and funding on held weight (longs pay positive funding). The benchmark is equal-weight, daily-rebalanced buy-and-hold with no costs or funding.
 
 Options:
 

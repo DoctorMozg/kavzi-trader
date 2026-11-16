@@ -580,3 +580,36 @@ paper:
   #   0.0005  = default (0.05% — Binance USDT-M taker fee)
   #   0.001   = conservative (rough slippage cushion)
   commission_rate: 0.0005
+
+# -----------------------------------------------------------------------------
+# Strategy — which plugin feeds the execution queue
+# -----------------------------------------------------------------------------
+strategy:
+  # llm_pipeline = Scout -> Analyst -> Trader (default).
+  # trend_following = daily Donchian trend rule; paper only, needs
+  # paper.reset_on_start: false and --paper.
+  active: llm_pipeline
+
+  # EXPERIMENTAL: the rule failed its 20/40/80 preregistration; lookback 20
+  # alone is under a paper-only forward test until 2027-11-16.
+  trend_following:
+    # Must all be listed in trading.symbols. Weight per symbol is scaled by 1/N.
+    symbols:
+      - BTCUSDT
+      - ETHUSDT
+      - SOLUSDT
+      - XRPUSDT
+      - BNBUSDT
+      - ADAUSDT
+      - LINKUSDT
+      - AVAXUSDT
+    # Donchian breakout lookbacks in days, and the daily-vol estimation window.
+    lookbacks: [20]
+    vol_window: 30
+    # Annualised vol target per unit weight, capped at max_leverage.
+    annual_vol_target: 0.25
+    max_leverage: 2.0
+    # Trade a symbol only when its target moves more than this share of the held weight.
+    buffer_band: 0.2
+    # Wide protective stop (fraction of entry); the rule itself exits on signal.
+    disaster_stop_pct: 0.3

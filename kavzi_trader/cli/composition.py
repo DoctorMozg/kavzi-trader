@@ -14,6 +14,7 @@ from kavzi_trader.brain.geometry.calculator import TradeGeometryCalculator
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.cli.runtime_services_schema import RuntimeServicesSchema
 from kavzi_trader.cli.spine_composition import SpineComposer
+from kavzi_trader.cli.strategy_wiring_schema import StrategyWiringSchema
 from kavzi_trader.config import CONFIG_DIR, AppConfig
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.external.cache import ExternalDataCache
@@ -40,6 +41,7 @@ from kavzi_trader.orchestrator.providers.live_stream_manager import LiveStreamMa
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.paper.exchange import PaperExchangeClient
+from kavzi_trader.paper.mode import TradingMode
 from kavzi_trader.paper.state_initializer import PaperStateInitializer
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
@@ -49,6 +51,9 @@ from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
+from kavzi_trader.strategies.trend.daily_bar_source import DailyBarSource
+from kavzi_trader.strategies.trend.trend_following_plugin import TrendFollowingPlugin
+from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
 from kavzi_trader.ui.recorder import UiEventRecorder
 from kavzi_trader.ui.redis_publisher import RedisUiPublisher
 
@@ -112,6 +117,7 @@ class OrchestratorComposer:
             config.trading.symbols,
             config.trading.interval,
         )
+        self._validate_strategy()
         if self._is_paper:
             config.validate_for_paper_trading()
         else:
@@ -131,6 +137,112 @@ class OrchestratorComposer:
         )
         ws_client.set_on_error(stream_manager.handle_ws_error)
 
+        engine = self._spine.create_engine(services)
+        services.state_manager.set_protective_order_placer(engine.protective_orders)
+        wiring = self._create_strategy_wiring(exchange, services, cache)
+
+        logger.info("Assembling orchestrator with all loops")
+        return TradingOrchestrator(
+            config=config.orchestrator,
+            state_manager=services.state_manager,
+            ingest_loop=DataIngestLoop(stream_manager),
+            order_flow_loop=self._create_order_flow_loop(exchange, cache),
+            reasoning_loop=wiring.loop,
+            execution_loop=ExecutionLoop(
+                redis_client=services.redis_client,
+                engine=engine,
+                state_manager=services.state_manager,
+                ui_recorder=services.ui_recorder,
+            ),
+            position_loop=self._spine.create_position_loop(services, cache),
+            ui_snapshot_loop=(
+                UiSnapshotLoop(
+                    recorder=services.ui_recorder,
+                    state_manager=services.state_manager,
+                    market_data=cache,
+                    symbols=config.trading.symbols,
+                    config=config.ui,
+                )
+                if services.ui_recorder is not None
+                else None
+            ),
+            is_paper=self._is_paper,
+            external_sentiment_loop=wiring.external_loop,
+            shutdown_hooks={
+                "websocket": ws_client.stop,
+                "exchange": exchange.close,
+                "redis": services.redis_client.close,
+            },
+        )
+
+    def _validate_strategy(self) -> None:
+        """Refuses a trend_following setup that could trade for real or lose state."""
+        config = self._config
+        if config.strategy.active != "trend_following":
+            return
+        trend = config.strategy.trend_following
+        errors: list[str] = []
+        if config.paper.mode != TradingMode.PAPER or not self._is_paper:
+            errors.append(
+                "trend_following is paper-only: set paper.mode to PAPER and "
+                "start with --paper"
+            )
+        if config.paper.reset_on_start:
+            errors.append(
+                "trend_following needs persistence: set paper.reset_on_start to false"
+            )
+        missing = sorted(set(trend.symbols) - set(config.trading.symbols))
+        if missing:
+            errors.append(f"strategy.trend_following.symbols not in trading: {missing}")
+        if errors:
+            raise ValueError(
+                "Strategy configuration errors:\n  - " + "\n  - ".join(errors)
+            )
+        self._warn_small_notional()
+
+    def _warn_small_notional(self) -> None:
+        trend = self._config.strategy.trend_following
+        typical = Decimal(str(trend.annual_vol_target)) / len(trend.symbols)
+        notional = self._paper_balance_usdt() * typical
+        floor = self._config.risk.min_position_notional_usd
+        if notional < floor:
+            logger.warning(
+                "Typical trend leg %s USDT is below min notional %s; "
+                "rebalances will be skipped",
+                notional,
+                floor,
+            )
+
+    def _create_strategy_wiring(
+        self,
+        exchange: ExchangeClient,
+        services: RuntimeServicesSchema,
+        cache: MarketDataCache,
+    ) -> StrategyWiringSchema:
+        if self._config.strategy.active == "trend_following":
+            return StrategyWiringSchema(
+                loop=self._create_trend_loop(exchange, services)
+            )
+        return self._create_llm_wiring(services, cache)
+
+    def _create_trend_loop(
+        self, exchange: ExchangeClient, services: RuntimeServicesSchema
+    ) -> StrategyLoop:
+        plugin = TrendFollowingPlugin(
+            self._config.strategy.trend_following,
+            DailyBarSource(exchange),
+            TrendStateStore(services.redis_client),
+        )
+        return StrategyLoop(
+            plugin=plugin,
+            publisher=DecisionPublisher(services.redis_client),
+            state_manager=services.state_manager,
+        )
+
+    def _create_llm_wiring(
+        self, services: RuntimeServicesSchema, cache: MarketDataCache
+    ) -> StrategyWiringSchema:
+        config = self._config
         prompt_loader = PromptLoader()
         factory = AgentFactory(
             config.brain,
@@ -158,47 +270,13 @@ class OrchestratorComposer:
             tier_registry=self._tier_registry,
         )
         router = self._create_router(factory, prompt_loader, fgi_gate)
-        engine = self._spine.create_engine(services)
-        services.state_manager.set_protective_order_placer(engine.protective_orders)
-
-        logger.info("Assembling orchestrator with all loops")
-        return TradingOrchestrator(
-            config=config.orchestrator,
-            state_manager=services.state_manager,
-            ingest_loop=DataIngestLoop(stream_manager),
-            order_flow_loop=self._create_order_flow_loop(exchange, cache),
-            reasoning_loop=self._create_reasoning_loop(
-                services,
-                router,
-                deps_provider,
-                self._spine.create_filter_chain(fgi_gate),
-            ),
-            execution_loop=ExecutionLoop(
-                redis_client=services.redis_client,
-                engine=engine,
-                state_manager=services.state_manager,
-                ui_recorder=services.ui_recorder,
-            ),
-            position_loop=self._spine.create_position_loop(services, cache),
-            ui_snapshot_loop=(
-                UiSnapshotLoop(
-                    recorder=services.ui_recorder,
-                    state_manager=services.state_manager,
-                    market_data=cache,
-                    symbols=config.trading.symbols,
-                    config=config.ui,
-                )
-                if services.ui_recorder is not None
-                else None
-            ),
-            is_paper=self._is_paper,
-            external_sentiment_loop=external_loop,
-            shutdown_hooks={
-                "websocket": ws_client.stop,
-                "exchange": exchange.close,
-                "redis": services.redis_client.close,
-            },
+        loop = self._create_reasoning_loop(
+            services,
+            router,
+            deps_provider,
+            self._spine.create_filter_chain(fgi_gate),
         )
+        return StrategyWiringSchema(loop=loop, external_loop=external_loop)
 
     def _paper_balance_usdt(self) -> Decimal:
         if self._paper_balance is not None:

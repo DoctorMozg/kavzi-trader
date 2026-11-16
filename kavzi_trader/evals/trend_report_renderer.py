@@ -1,7 +1,7 @@
 from kavzi_trader.evals.markdown_format import NA, Md
-from kavzi_trader.evals.trend_params_schema import TrendParamsSchema
 from kavzi_trader.evals.trend_result_schema import TrendResultSchema
 from kavzi_trader.evals.trend_stats_schema import TrendStatsSchema
+from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 
 PASS_SHARPE = 0.5
 

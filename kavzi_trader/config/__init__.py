@@ -22,6 +22,7 @@ from kavzi_trader.paper.config import PaperTradingConfigSchema
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
 from kavzi_trader.spine.filters.config import FilterConfigSchema
 from kavzi_trader.spine.filters.scout_config import ScoutConfigSchema
+from kavzi_trader.strategies.strategy_config import StrategyConfigSchema
 from kavzi_trader.ui.config import UiConfigSchema
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
@@ -114,6 +115,10 @@ class AppConfig(BaseModel):
         Field(default_factory=ExternalSourcesConfigSchema),
     ]
     paper: Annotated[PaperTradingConfigSchema, Field(...)]
+    strategy: Annotated[
+        StrategyConfigSchema,
+        Field(default_factory=StrategyConfigSchema),
+    ]
 
     model_config = ConfigDict(frozen=True)
 
@@ -152,6 +157,8 @@ class AppConfig(BaseModel):
 
     def llm_providers_in_use(self) -> set[LlmProvider]:
         """Providers of every agent that will actually run."""
+        if self.strategy.active != "llm_pipeline":
+            return set()
         providers = {self.brain.analyst.provider, self.brain.trader.provider}
         external = self.external_sources
         if external.enabled and external.synthesizer.enabled:
