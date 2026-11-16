@@ -26,3 +26,6 @@ test_output/
 # Dashboard frontend
 ui/web/node_modules/
 ui/web/dist/
+
+# Claude Code agent worktrees
+/.claude/worktrees/
