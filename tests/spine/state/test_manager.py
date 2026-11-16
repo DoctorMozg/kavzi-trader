@@ -1,5 +1,5 @@
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -8,7 +8,6 @@ from kavzi_trader.domain.state_schemas import (
     OpenOrderSchema,
     PositionSchema,
 )
-from kavzi_trader.infra.redis_config import RedisConfigSchema
 from kavzi_trader.spine.state.manager import StateManager
 
 
@@ -22,19 +21,8 @@ class TestStateManager:
         return exchange
 
     @pytest.fixture
-    def manager(
-        self,
-        redis_config: RedisConfigSchema,
-        mock_exchange: AsyncMock,
-    ) -> StateManager:
-        with patch(
-            "kavzi_trader.spine.state.manager.RedisStateClient",
-        ) as mock_redis_cls:
-            mock_redis = AsyncMock()
-            mock_redis_cls.return_value = mock_redis
-            manager = StateManager(redis_config, mock_exchange)
-            manager._redis_client = mock_redis
-            return manager
+    def manager(self, mock_exchange: AsyncMock) -> StateManager:
+        return StateManager(AsyncMock(), mock_exchange)
 
     async def test_connect(self, manager: StateManager):
         await manager.connect()

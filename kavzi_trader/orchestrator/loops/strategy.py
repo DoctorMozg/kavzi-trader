@@ -29,15 +29,20 @@ class StrategyLoop:
     async def run(self) -> None:
         logger.info("StrategyLoop started for plugin %s", self._plugin.name)
         while True:
-            ctx = await self._build_tick()
-            result = await self._plugin.tick(ctx)
-            for intent in result.intents:
-                # Only a queued intent counts, so a failed push leaves the
-                # plugin's state (e.g. cooldowns) untouched.
-                if await self._publisher.publish(intent):
-                    self._plugin.on_enqueued(intent)
-            sleep_s = max(0, result.next_tick_at_ms - self._clock.now_ms()) / 1000
+            next_tick_at_ms = await self.step()
+            sleep_s = max(0, next_tick_at_ms - self._clock.now_ms()) / 1000
             await asyncio.sleep(sleep_s)
+
+    async def step(self) -> int:
+        """Run one plugin tick and queue its intents; returns the next tick time."""
+        ctx = await self._build_tick()
+        result = await self._plugin.tick(ctx)
+        for intent in result.intents:
+            # Only a queued intent counts, so a failed push leaves the
+            # plugin's state (e.g. cooldowns) untouched.
+            if await self._publisher.publish(intent):
+                self._plugin.on_enqueued(intent)
+        return result.next_tick_at_ms
 
     async def _build_tick(self) -> StrategyTickSchema:
         if self._state_manager is None:

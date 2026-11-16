@@ -10,7 +10,6 @@ from kavzi_trader.domain.state_schemas import (
     PositionSchema,
 )
 from kavzi_trader.infra.redis_client import RedisStateClient
-from kavzi_trader.infra.redis_config import RedisConfigSchema
 from kavzi_trader.spine.state.account_store import AccountStore
 from kavzi_trader.spine.state.order_store import OrderStore
 from kavzi_trader.spine.state.pending_entry_schema import PendingEntrySchema
@@ -27,13 +26,13 @@ logger = logging.getLogger(__name__)
 class StateManager:
     def __init__(
         self,
-        redis_config: RedisConfigSchema,
+        redis_client: RedisStateClient,
         exchange_client: ExchangeClient,
         clock: Clock = SYSTEM_CLOCK,
     ) -> None:
         self._exchange = exchange_client
         self._clock = clock
-        self._redis_client = RedisStateClient(redis_config)
+        self._redis_client = redis_client
         self._position_store = PositionStore(self._redis_client)
         self._order_store = OrderStore(self._redis_client)
         self._account_store = AccountStore(self._redis_client, clock)

@@ -167,7 +167,7 @@ class _Scenario:
 
     async def run_cycle(self) -> None:
         async with asyncio.timeout(3):
-            await self.loop._manage_positions()
+            await self.loop.step()
 
 
 @pytest.mark.parametrize(

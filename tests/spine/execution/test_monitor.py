@@ -1,7 +1,9 @@
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
 
+from kavzi_trader.commons.sim_clock import SimClock
 from kavzi_trader.domain.order_enums import OrderStatus
 from kavzi_trader.spine.execution import monitor as monitor_module
 from kavzi_trader.spine.execution.monitor import OrderMonitor
@@ -97,3 +99,21 @@ async def test_monitor_backoff_resets_on_successful_non_terminal(
 
     assert result is filled_order_response
     assert sleep_calls == [2, 4, 1]
+
+
+@pytest.mark.asyncio
+async def test_monitor_times_out_in_clock_time_without_real_waiting(
+    filled_order_response,
+) -> None:
+    new_order = filled_order_response.model_copy(update={"status": OrderStatus.NEW})
+    exchange = AsyncMock()
+    exchange.get_order = AsyncMock(return_value=new_order)
+    clock = SimClock(0)
+    monitor = OrderMonitor(exchange=exchange, timeout_s=30, clock=clock)
+
+    result = await asyncio.wait_for(
+        monitor.wait_for_completion("BTCUSDT", 123), timeout=1
+    )
+
+    assert result is None
+    assert clock.now_ms() == 30_000

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 from kavzi_trader.commons.time_utility import milliseconds_to_datetime
@@ -23,3 +24,8 @@ class SimClock:
                 f"SimClock cannot move backwards: {now_ms} < {self._now_ms}",
             )
         self._now_ms = now_ms
+
+    async def sleep(self, seconds: float) -> None:
+        # Waiting is what moves simulated time; yield so other tasks still run.
+        self.advance_to(self._now_ms + round(seconds * 1000))
+        await asyncio.sleep(0)

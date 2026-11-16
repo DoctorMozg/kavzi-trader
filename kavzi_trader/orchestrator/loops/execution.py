@@ -91,6 +91,23 @@ class ExecutionLoop:
                 )
                 await asyncio.sleep(0.1)
 
+    async def step(self) -> int:
+        """Sweep pending entries, then drain the queue without blocking.
+
+        Returns the number of pops; a failing payload is retried within the step.
+        """
+        await self._maybe_sweep_pending_entries()
+        handled = 0
+        while raw := await self._redis_client.client.lmove(
+            DECISION_QUEUE_KEY,
+            _PROCESSING_KEY,
+            "RIGHT",
+            "LEFT",
+        ):
+            await self._handle_payload(cast("str", raw))
+            handled += 1
+        return handled
+
     async def _recover_in_flight(self) -> None:
         """Requeue payloads left in the processing list by a crashed run."""
         client = self._redis_client.client

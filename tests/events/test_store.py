@@ -149,3 +149,27 @@ async def test_store_append_raises_on_redis_error() -> None:
 
     with pytest.raises(ConnectionError, match="redis down"):
         await store.append(event)
+
+
+@pytest.mark.asyncio
+async def test_store_round_trips_events_in_memory() -> None:
+    store = RedisEventStore(RedisStateClient.in_memory(), EventStoreConfigSchema())
+    events = [
+        EventSchema(
+            event_id=f"event-{n}",
+            event_type="order_created",
+            version=1,
+            timestamp=datetime(2021, 1, 1, tzinfo=UTC),
+            aggregate_id="order-1",
+            aggregate_type=AggregateType.ORDERS,
+            data={"n": n},
+            metadata={},
+        )
+        for n in range(3)
+    ]
+    for event in events:
+        await store.append(event)
+
+    stream = EventStoreConfigSchema().streams[AggregateType.ORDERS]
+    assert await store.read(stream) == events
+    assert await store.read(stream, count=2) == events[:2]

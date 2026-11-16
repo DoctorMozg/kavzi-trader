@@ -17,6 +17,7 @@ from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from kavzi_trader.commons.retry import RetryPolicySchema, retry_async
+from kavzi_trader.infra.in_memory_redis import InMemoryRedis
 from kavzi_trader.infra.redis_config import RedisConfigSchema
 
 logger = logging.getLogger(__name__)
@@ -27,13 +28,24 @@ _RETRYABLE = (RedisConnectionError, RedisTimeoutError, ConnectionResetError, OSE
 
 
 class RedisStateClient:
-    def __init__(self, config: RedisConfigSchema) -> None:
+    def __init__(
+        self,
+        config: RedisConfigSchema,
+        client: Redis | None = None,
+    ) -> None:
         self._config = config
-        self._client: Redis | None = None
+        self._client = client
         self._retry_attempts = config.retry_attempts
         self._retry_backoff_s = config.retry_backoff_s
 
+    @classmethod
+    def in_memory(cls) -> RedisStateClient:
+        # InMemoryRedis implements only the commands our stores and queue use.
+        return cls(RedisConfigSchema(), cast("Redis", InMemoryRedis()))
+
     async def connect(self) -> None:
+        if self._client is not None:
+            return
         # retry=0: _retry owns the retry policy; library retries would multiply it.
         self._client = Redis(
             host=self._config.host,

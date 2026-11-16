@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 
 from kavzi_trader.infra.redis_client import RedisStateClient
-from kavzi_trader.infra.redis_config import RedisConfigSchema
 from kavzi_trader.strategies.tick_schema import StrategyTickSchema
 from kavzi_trader.strategies.trend.trend_following_config import (
     TrendFollowingConfigSchema,
@@ -12,7 +11,6 @@ from kavzi_trader.strategies.trend.trend_following_plugin import (
     TrendFollowingPlugin,
 )
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
-from tests.spine.execution.fake_redis import FakeRedis
 from tests.strategies.trend.fake_daily_bars import FakeDailyBars
 
 BASE_MS = 20_000 * DAY_MS
@@ -43,9 +41,7 @@ def bars(closes: dict[str, np.ndarray]) -> FakeDailyBars:
 
 
 def new_store() -> TrendStateStore:
-    client = RedisStateClient(RedisConfigSchema())
-    client._client = FakeRedis()  # type: ignore[assignment]
-    return TrendStateStore(client)
+    return TrendStateStore(RedisStateClient.in_memory())
 
 
 @pytest.fixture

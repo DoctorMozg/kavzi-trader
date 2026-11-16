@@ -99,7 +99,7 @@ async def test_drawdown_past_threshold_closes_every_position_once(
 ) -> None:
     book.drawdown = Decimal(10)
 
-    await loop._manage_positions()
+    await loop.step()
 
     closed = {c.args[0].id: c.args[1] for c in book.executor.execute.await_args_list}
     assert set(closed) == {"p1", "p2"}  # BRACKET and SIGNAL alike
@@ -113,8 +113,8 @@ async def test_second_tick_does_not_close_again(
 ) -> None:
     book.drawdown = Decimal(12)
 
-    await loop._manage_positions()
-    await loop._manage_positions()
+    await loop.step()
+    await loop.step()
 
     assert book.executor.execute.await_count == 2
     events.record.assert_awaited_once()
@@ -134,10 +134,10 @@ async def test_failed_close_is_retried_next_tick(
 
     book.executor.execute.side_effect = flaky_close
 
-    await loop._manage_positions()  # p1 fails, p2 still closes
+    await loop.step()  # p1 fails, p2 still closes
     assert [p.id for p in book.positions] == ["p1"]
 
-    await loop._manage_positions()
+    await loop.step()
 
     assert book.positions == []
 
@@ -147,7 +147,7 @@ async def test_below_threshold_leaves_positions_alone(
 ) -> None:
     book.drawdown = Decimal("9.9")
 
-    await loop._manage_positions()
+    await loop.step()
 
     book.executor.execute.assert_not_awaited()
     assert len(book.positions) == 2

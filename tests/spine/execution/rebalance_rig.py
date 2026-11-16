@@ -1,5 +1,8 @@
 from decimal import Decimal
+from typing import cast
 from unittest.mock import AsyncMock, patch
+
+from redis.asyncio import Redis
 
 from kavzi_trader.api.common.models import TickerSchema
 from kavzi_trader.commons.sim_clock import SimClock
@@ -8,6 +11,8 @@ from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.state_schemas import (
     PositionSchema,
 )
+from kavzi_trader.infra.in_memory_redis import InMemoryRedis
+from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.infra.redis_config import RedisConfigSchema
 from kavzi_trader.orchestrator.loops.decision_queue import DECISION_QUEUE_KEY
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
@@ -23,7 +28,6 @@ from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.strategies.target_weight_intent_schema import (
     TargetWeightIntentSchema,
 )
-from tests.spine.execution.fake_redis import FakeRedis
 
 SYMBOL = "BTCUSDT"
 # 2021-01-01T00:00Z: any wall-clock read left in the spine shows up as 2026.
@@ -34,9 +38,16 @@ INTENT_TTL_MS = 3_600_000
 class Rig:
     """Real loop, engine, state and paper exchange over an in-memory Redis."""
 
-    def __init__(self, precision: SymbolPrecision | None = None) -> None:
+    def __init__(
+        self,
+        precision: SymbolPrecision | None = None,
+        redis: InMemoryRedis | None = None,
+    ) -> None:
         self.clock = SimClock(SIM_START_MS)
-        self.redis = FakeRedis()
+        self.redis = redis or InMemoryRedis()
+        self.redis_client = RedisStateClient(
+            RedisConfigSchema(), cast("Redis", self.redis)
+        )
         self.price = Decimal(100)
         self.events = AsyncMock()
         self.close_recorder = AsyncMock()
@@ -47,8 +58,7 @@ class Rig:
                 clock=self.clock,
             )
         self.exchange.get_ticker = AsyncMock(side_effect=self._ticker)  # type: ignore[method-assign]
-        self.state = StateManager(RedisConfigSchema(), self.exchange, self.clock)
-        self.state._redis_client._client = self.redis  # type: ignore[assignment]
+        self.state = StateManager(self.redis_client, self.exchange, self.clock)
         self.exchange.set_account_store(self.state.account)
         self.engine = ExecutionEngine(
             exchange=self.exchange,
@@ -56,7 +66,7 @@ class Rig:
             risk_validator=DynamicRiskValidator(RiskConfigSchema()),
             staleness_checker=StalenessChecker(ExecutionConfigSchema(), self.clock),
             translator=DecisionTranslator(),
-            monitor=OrderMonitor(self.exchange, 1),
+            monitor=OrderMonitor(self.exchange, 1, self.clock),
             event_store=self.events,
             leverage=1,
             close_recorder=self.close_recorder,
@@ -64,7 +74,7 @@ class Rig:
             clock=self.clock,
         )
         self.loop = ExecutionLoop(
-            redis_client=self.state._redis_client,
+            redis_client=self.redis_client,
             engine=self.engine,
             state_manager=self.state,
             clock=self.clock,
@@ -74,13 +84,8 @@ class Rig:
         return TickerSchema(symbol=symbol, last_price=self.price)
 
     async def deliver(self, raw: str) -> None:
-        self.redis.lists.setdefault(DECISION_QUEUE_KEY, []).append(raw)
-        await self.loop._recover_in_flight()
-        popped = await self.redis.blmove(
-            DECISION_QUEUE_KEY, "kt:decisions:processing", 1
-        )
-        assert popped is not None
-        await self.loop._handle_payload(popped)
+        await self.redis.lpush(DECISION_QUEUE_KEY, raw)
+        assert await self.loop.step() == 1
 
     async def position(self) -> PositionSchema | None:
         return await self.state.get_position(SYMBOL)

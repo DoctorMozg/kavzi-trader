@@ -3,7 +3,9 @@ import logging
 import sys
 
 from kavzi_trader.api.exchange_client import ExchangeClient
+from kavzi_trader.commons.clock import Clock
 from kavzi_trader.commons.retry import RetryPolicySchema, retry_async
+from kavzi_trader.commons.system_clock import SYSTEM_CLOCK
 from kavzi_trader.domain.order_enums import OrderStatus
 from kavzi_trader.domain.order_response import OrderResponseSchema
 
@@ -33,9 +35,15 @@ _POLL_RETRY_POLICY = RetryPolicySchema(
 class OrderMonitor:
     """Polls exchange order status until completion or timeout."""
 
-    def __init__(self, exchange: ExchangeClient, timeout_s: int) -> None:
+    def __init__(
+        self,
+        exchange: ExchangeClient,
+        timeout_s: int,
+        clock: Clock = SYSTEM_CLOCK,
+    ) -> None:
         self._exchange = exchange
         self._timeout_s = timeout_s
+        self._clock = clock
 
     async def wait_for_completion(
         self,
@@ -76,6 +84,9 @@ class OrderMonitor:
         return result
 
     async def _poll_status(self, symbol: str, order_id: int) -> OrderResponseSchema:
+        # wait_for bounds hung I/O in real time; this deadline bounds clock time,
+        # which is the only time that passes in a replay.
+        deadline_ms = self._clock.now_ms() + self._timeout_s * 1000
         while True:
             order = await retry_async(
                 lambda: self._exchange.get_order(symbol=symbol, order_id=order_id),
@@ -84,4 +95,6 @@ class OrderMonitor:
             )
             if order.status in _TERMINAL_STATUSES:
                 return order
-            await asyncio.sleep(_POLL_INTERVAL_S)
+            if self._clock.now_ms() >= deadline_ms:
+                raise TimeoutError
+            await self._clock.sleep(_POLL_INTERVAL_S)

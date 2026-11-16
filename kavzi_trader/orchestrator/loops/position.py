@@ -74,7 +74,7 @@ class PositionManagementLoop:
         )
         while True:
             try:
-                await self._manage_positions()
+                await self.step()
             except Exception:
                 logger.exception(
                     "PositionManagementLoop encountered an error, continuing",
@@ -85,7 +85,8 @@ class PositionManagementLoop:
                 )
             await asyncio.sleep(self._interval_s)
 
-    async def _manage_positions(self) -> None:
+    async def step(self) -> None:
+        """Run one management cycle over every open position."""
         positions = await self._state_manager.get_all_positions()
         if self._drawdown_breaker is not None and await self._drawdown_breaker.check(
             len(positions),

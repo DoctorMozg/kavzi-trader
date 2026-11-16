@@ -10,10 +10,8 @@ START_BALANCE = Decimal(1000)
 
 async def _restart(old: Rig, reset_on_start: bool, balance: Decimal) -> Rig:
     """A fresh exchange and state manager over the old rig's Redis."""
-    new = Rig()
-    new.redis = old.redis
+    new = Rig(redis=old.redis)
     new.price = old.price
-    new.state._redis_client._client = old.redis  # type: ignore[assignment]
     await PaperStateInitializer().initialize(
         new.exchange,
         new.state,

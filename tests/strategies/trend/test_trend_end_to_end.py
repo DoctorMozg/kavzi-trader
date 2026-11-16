@@ -1,4 +1,3 @@
-import asyncio
 from decimal import Decimal
 
 import numpy as np
@@ -43,24 +42,15 @@ async def test_trend_intents_open_expected_positions(rig: Rig) -> None:
     plugin = TrendFollowingPlugin(
         TrendFollowingConfigSchema(symbols=SYMBOLS),
         bars,
-        TrendStateStore(rig.state._redis_client),
+        TrendStateStore(rig.redis_client),
     )
-    loop = StrategyLoop(
-        plugin, DecisionPublisher(rig.state._redis_client), clock=rig.clock
-    )
+    loop = StrategyLoop(plugin, DecisionPublisher(rig.redis_client), clock=rig.clock)
 
-    task = asyncio.create_task(loop.run())
-    # The loop sleeps until tomorrow once it has queued everything.
-    while len(rig.redis.lists.get(DECISION_QUEUE_KEY, [])) < 2:
-        await asyncio.sleep(0)
-    task.cancel()
-    await asyncio.gather(task, return_exceptions=True)
+    await loop.step()
     await plugin.flush()
 
-    queued = list(reversed(rig.redis.lists.pop(DECISION_QUEUE_KEY)))
-    assert len(queued) == 2
-    for raw in queued:
-        await rig.deliver(raw)
+    assert len(rig.redis.lists[DECISION_QUEUE_KEY]) == 2
+    assert await rig.loop.step() == 2
 
     opened = {}
     for symbol in SYMBOLS:
@@ -68,7 +58,7 @@ async def test_trend_intents_open_expected_positions(rig: Rig) -> None:
         if position is not None:
             opened[symbol] = position
     assert set(opened) == {"BTCUSDT", "ETHUSDT"}
-    stored = await TrendStateStore(rig.state._redis_client).load()
+    stored = await TrendStateStore(rig.redis_client).load()
     for symbol, position in opened.items():
         weight = Decimal(repr(stored.weights[symbol]))
         expected = (weight * EQUITY / PRICE).quantize(

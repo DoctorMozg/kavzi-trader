@@ -78,7 +78,7 @@ def build_state_manager(
     exchange_client: ExchangeClient | None = None,
 ) -> StateManager:
     return StateManager(
-        redis_config=app_config.redis,
+        redis_client=RedisStateClient(app_config.redis),
         exchange_client=exchange_client or build_exchange(app_config),
     )
 
