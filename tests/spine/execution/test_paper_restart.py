@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from kavzi_trader.paper.state_initializer import PaperStateInitializer
-from tests.spine.execution.test_rebalance_round_trip import SYMBOL, Rig, _intent
+from tests.spine.execution.rebalance_rig import SYMBOL, Rig, make_intent
 
 START_BALANCE = Decimal(1000)
 
@@ -29,7 +29,7 @@ async def opened() -> Rig:
     await PaperStateInitializer().initialize(
         rig.exchange, rig.state, balance_usdt=START_BALANCE, reset_on_start=True
     )
-    await rig.deliver(_intent("i1", "0.3").model_dump_json())
+    await rig.deliver(make_intent("i1", "0.3").model_dump_json())
     return rig
 
 
@@ -53,7 +53,7 @@ async def test_restart_restores_exchange_and_reconciles_clean(opened: Rig) -> No
     assert result.discrepancies == []
 
     # shrink uses the restored stop id for cancel and replace, then close frees margin
-    await restarted.deliver(_intent("i2", "0.1").model_dump_json())
+    await restarted.deliver(make_intent("i2", "0.1").model_dump_json())
     shrunk = await restarted.position()
     assert shrunk is not None
     assert shrunk.quantity == Decimal(1)
@@ -61,7 +61,7 @@ async def test_restart_restores_exchange_and_reconciles_clean(opened: Rig) -> No
     shrunk_info = await restarted.exchange.get_account_info()
     assert Decimal(shrunk_info["totalInitialMargin"]) == Decimal(100)
 
-    await restarted.deliver(_intent("i3", "0").model_dump_json())
+    await restarted.deliver(make_intent("i3", "0").model_dump_json())
     assert await restarted.position() is None
     assert await restarted.stop_orders() == []
     info = await restarted.exchange.get_account_info()
