@@ -20,6 +20,7 @@ from kavzi_trader.spine.execution.rebalance_executor import RebalanceExecutor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
 from kavzi_trader.spine.execution.unfilled_entry import UnfilledEntryResolver
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -46,6 +47,7 @@ class ExecutionEngine:
         liquidation_calculator: LiquidationCalculator | None = None,
         pullback_entry_expiry_ms: int = 1_800_000,
         symbol_leverage: dict[str, int] | None = None,
+        precision: SymbolPrecision | None = None,
     ) -> None:
         self._exchange = exchange
         self._state_manager = state_manager
@@ -107,6 +109,7 @@ class ExecutionEngine:
             monitor=monitor,
             leverage_for=self._leverage_for,
             close_recorder=close_recorder,
+            precision=precision,
         )
 
     @property

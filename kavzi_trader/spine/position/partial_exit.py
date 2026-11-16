@@ -4,12 +4,16 @@ from decimal import Decimal
 from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.domain.state_schemas import PositionSchema
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 
 logger = logging.getLogger(__name__)
 
 
 class PartialExitChecker:
     """Suggests taking partial profit when price reaches a target level."""
+
+    def __init__(self, precision: SymbolPrecision | None = None) -> None:
+        self._precision = precision
 
     def evaluate(
         self,
@@ -50,6 +54,12 @@ class PartialExitChecker:
                 return None
 
         exit_quantity = position.quantity * position.management_config.partial_exit_size
+        if self._precision is not None:
+            exit_quantity = self._tradable_exit(
+                self._precision,
+                position,
+                exit_quantity,
+            )
         if exit_quantity <= 0:
             return None
 
@@ -64,3 +74,24 @@ class PartialExitChecker:
             exit_quantity=exit_quantity,
             reason="partial_exit",
         )
+
+    @staticmethod
+    def _tradable_exit(
+        precision: SymbolPrecision,
+        position: PositionSchema,
+        quantity: Decimal,
+    ) -> Decimal:
+        """Floor to the lot step; zero when the exit or remainder is untradable."""
+        rounded = precision.round_qty(position.symbol, quantity)
+        remaining = position.quantity - rounded
+        for qty in (rounded, remaining):
+            if precision.check_qty(position.symbol, qty, reduce_only=True):
+                logger.debug(
+                    "Partial exit skipped for %s: exit_qty=%s remaining=%s "
+                    "not tradable at exchange filters",
+                    position.symbol,
+                    rounded,
+                    remaining,
+                )
+                return Decimal(0)
+        return rounded

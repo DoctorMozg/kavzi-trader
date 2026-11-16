@@ -16,6 +16,7 @@ from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.strategies.target_weight_intent_schema import (
@@ -30,7 +31,7 @@ NOW_MS = 4_000_000_000_000
 class Rig:
     """Real loop, engine, state and paper exchange over an in-memory Redis."""
 
-    def __init__(self) -> None:
+    def __init__(self, precision: SymbolPrecision | None = None) -> None:
         self.redis = FakeRedis()
         self.price = Decimal(100)
         self.events = AsyncMock()
@@ -54,6 +55,7 @@ class Rig:
             event_store=self.events,
             leverage=1,
             close_recorder=self.close_recorder,
+            precision=precision,
         )
         self.loop = ExecutionLoop(
             redis_client=self.state._redis_client,

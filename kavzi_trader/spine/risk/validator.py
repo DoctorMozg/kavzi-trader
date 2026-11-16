@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.position_sizer import PositionSizer
@@ -39,11 +40,13 @@ class DynamicRiskValidator:
         config: RiskConfigSchema | None = None,
         tier_registry: SymbolTierRegistry | None = None,
         liquidation_calculator: LiquidationCalculator | None = None,
+        precision: SymbolPrecision | None = None,
     ) -> None:
         self._config = config or RiskConfigSchema()
         self._tier_registry = tier_registry
+        self._precision = precision
         self._volatility_detector = VolatilityRegimeDetector(self._config)
-        self._position_sizer = PositionSizer(self._config, tier_registry)
+        self._position_sizer = PositionSizer(self._config, tier_registry, precision)
         self._exposure_limiter = ExposureLimiter(self._config)
         self._liquidation_calculator = liquidation_calculator
 
@@ -317,6 +320,12 @@ class DynamicRiskValidator:
                     f"{filter_size_multiplier}) — account cannot "
                     f"afford a floor-sized trade",
                 )
+                return Decimal(0)
+
+        if self._precision is not None and recommended_size > 0:
+            reason = self._precision.check_qty(symbol, recommended_size, entry_price)
+            if reason is not None:
+                rejection_reasons.append(f"Position size not tradable: {reason}")
                 return Decimal(0)
 
         return recommended_size

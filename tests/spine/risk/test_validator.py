@@ -10,8 +10,10 @@ from kavzi_trader.domain.state_schemas import (
     PositionManagementConfigSchema,
     PositionSchema,
 )
+from kavzi_trader.domain.symbol_filters import SymbolFiltersSchema
 from kavzi_trader.domain.symbol_tier import SymbolTier, SymbolTierConfigSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.trade_validation_params_schema import (
@@ -1136,3 +1138,70 @@ class TestLiquidationUsesPositionNotional:
         notional = calc.estimate_liquidation_price.await_args.kwargs["notional"]
         assert reduced.recommended_size < full.recommended_size
         assert notional == reduced.recommended_size * Decimal(90000)
+
+
+class TestValidatorExchangeFilters:
+    @pytest.mark.asyncio
+    async def test_rejects_size_below_exchange_min_qty(
+        self, mock_state_manager, precision: SymbolPrecision
+    ) -> None:
+        strict = SymbolPrecision(
+            [
+                SymbolFiltersSchema(
+                    symbol="BTCUSDT",
+                    step_size=Decimal("0.01"),
+                    min_qty=Decimal(5),
+                    max_qty=Decimal(1000),
+                    market_step_size=Decimal("0.01"),
+                    market_min_qty=Decimal(5),
+                    market_max_qty=Decimal(1000),
+                    tick_size=Decimal("0.5"),
+                    min_notional=Decimal(5),
+                )
+            ]
+        )
+        validator = DynamicRiskValidator(precision=strict)
+
+        result = await validator.validate_trade(
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
+        )
+
+        assert result.is_valid is False
+        assert result.recommended_size == 0
+        assert any("minQty" in r for r in result.rejection_reasons)
+
+    @pytest.mark.asyncio
+    async def test_recommended_size_is_step_aligned(
+        self, mock_state_manager, precision: SymbolPrecision
+    ) -> None:
+        validator = DynamicRiskValidator(precision=precision)
+
+        result = await validator.validate_trade(
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
+        )
+
+        assert result.is_valid is True
+        assert result.recommended_size > 0
+        assert result.recommended_size % Decimal("0.01") == 0

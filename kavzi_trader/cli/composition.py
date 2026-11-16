@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
+from kavzi_trader.api.binance.symbol_filters_loader import FuturesSymbolFiltersLoader
 from kavzi_trader.api.binance.websocket.client import BinanceWebsocketClient
 from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.brain.agent.analyst import AnalystAgent
@@ -47,6 +48,7 @@ from kavzi_trader.spine.filters.chain import PreTradeFilterChain
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
 from kavzi_trader.spine.filters.scout import ScoutFilter
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
@@ -125,6 +127,7 @@ class OrchestratorComposer:
 
         exchange = self._create_exchange()
         await self._init_futures(exchange)
+        precision = await self._load_precision()
         services = await self._create_services(exchange)
         cache = await self._create_market_data_cache(exchange)
 
@@ -137,7 +140,7 @@ class OrchestratorComposer:
         )
         ws_client.set_on_error(stream_manager.handle_ws_error)
 
-        engine = self._spine.create_engine(services)
+        engine = self._spine.create_engine(services, precision)
         services.state_manager.set_protective_order_placer(engine.protective_orders)
         wiring = self._create_strategy_wiring(exchange, services, cache)
 
@@ -154,7 +157,7 @@ class OrchestratorComposer:
                 state_manager=services.state_manager,
                 ui_recorder=services.ui_recorder,
             ),
-            position_loop=self._spine.create_position_loop(services, cache),
+            position_loop=self._spine.create_position_loop(services, cache, precision),
             ui_snapshot_loop=(
                 UiSnapshotLoop(
                     recorder=services.ui_recorder,
@@ -306,6 +309,18 @@ class OrchestratorComposer:
             futures.default_leverage,
             futures.margin_type,
         )
+
+    async def _load_precision(self) -> SymbolPrecision:
+        """Fetch symbol filters once; a failure aborts startup, not trading."""
+        # exchangeInfo is public, so paper mode needs no API keys for it.
+        client = BinanceClient()
+        try:
+            filters = await FuturesSymbolFiltersLoader(client).load(
+                self._config.trading.symbols,
+            )
+        finally:
+            await client.close()
+        return SymbolPrecision(filters)
 
     async def _create_services(self, exchange: ExchangeClient) -> RuntimeServicesSchema:
         logger.info("Building state manager and exchange client")

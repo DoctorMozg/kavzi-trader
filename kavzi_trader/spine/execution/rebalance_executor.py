@@ -18,6 +18,7 @@ from kavzi_trader.spine.execution.event_recorder import ExecutionEventRecorder
 from kavzi_trader.spine.execution.linked_orders import LinkedOrderService
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.protective_orders import ProtectiveOrderPlacer
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.spine.risk.rebalance_validation_params_schema import (
     RebalanceValidationParamsSchema,
 )
@@ -50,7 +51,9 @@ class RebalanceExecutor:
         monitor: OrderMonitor,
         leverage_for: Callable[[str], int],
         close_recorder: PositionCloseRecorder | None,
+        precision: SymbolPrecision | None = None,
     ) -> None:
+        self._precision = precision
         self._exchange = exchange
         self._state = state_manager
         self._risk = risk_validator
@@ -80,18 +83,23 @@ class RebalanceExecutor:
         price = await self._state.get_current_price(intent.symbol)
         equity = account.total_balance_usdt + account.unrealized_pnl
         current_qty = position.quantity if position is not None else Decimal(0)
-        target_qty = (intent.target_weight * equity / price).quantize(
-            _QUANTITY_QUANT,
-            rounding=ROUND_DOWN,
+        target_qty = self._floor_qty(
+            intent.symbol,
+            intent.target_weight * equity / price,
         )
         delta = target_qty - current_qty
         # A full close is reduce-only, which the exchange lets under min notional.
         too_small = target_qty > 0 and abs(delta) * price < (
             self._risk.min_position_notional_usd
         )
-        if delta == 0 or too_small:
+        skip_reason = (
+            "within_tolerance"
+            if delta == 0 or too_small
+            else self._untradable_reason(intent.symbol, delta, price)
+        )
+        if skip_reason is not None:
             self._remember(intent)
-            return self._no_order(intent, "within_tolerance")
+            return self._no_order(intent, skip_reason)
 
         stop_price = price * (1 - intent.disaster_stop_pct)
         reasons = await self._risk.validate_rebalance(
@@ -208,7 +216,7 @@ class RebalanceExecutor:
             ) / quantity
         else:
             quantity, entry = position.quantity - fill_qty, position.entry_price
-        stop = entry * (1 - intent.disaster_stop_pct)
+        stop = self._round_stop(intent.symbol, entry * (1 - intent.disaster_stop_pct))
         if position is None:
             return PositionSchema(
                 id=intent.intent_id,
@@ -237,6 +245,34 @@ class RebalanceExecutor:
                 "updated_at": now,
             },
         )
+
+    def _floor_qty(self, symbol: str, qty: Decimal) -> Decimal:
+        if self._precision is None:
+            return qty.quantize(_QUANTITY_QUANT, rounding=ROUND_DOWN)
+        return self._precision.round_qty(symbol, qty, market=True)
+
+    def _round_stop(self, symbol: str, stop: Decimal) -> Decimal:
+        if self._precision is None:
+            return stop
+        return self._precision.round_stop_loss(symbol, stop, is_long=True)
+
+    def _untradable_reason(
+        self,
+        symbol: str,
+        delta: Decimal,
+        price: Decimal,
+    ) -> str | None:
+        """Why the exchange would refuse this resize, e.g. under minQty."""
+        if self._precision is None:
+            return None
+        reason = self._precision.check_qty(
+            symbol,
+            abs(delta),
+            price,
+            market=True,
+            reduce_only=delta < 0,
+        )
+        return None if reason is None else f"order_not_tradable: {reason}"
 
     async def _close(
         self,

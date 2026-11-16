@@ -56,6 +56,12 @@ class MarketDataApi(BinanceClientBase):
         return cast("dict[str, Any]", await self.client.get_exchange_info())
 
     @handle_api_errors
+    # Any: raw exchange info payload; callers read only the keys they need.
+    async def futures_get_exchange_info(self) -> dict[str, Any]:
+        """USDT-M futures exchangeInfo (GET /fapi/v1/exchangeInfo), public."""
+        return cast("dict[str, Any]", await self.client.futures_exchange_info())
+
+    @handle_api_errors
     async def get_symbol_info(self, symbol: str) -> SymbolInfoSchema:
         """
         Get detailed information for a specific symbol.

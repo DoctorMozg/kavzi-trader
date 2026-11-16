@@ -4,6 +4,7 @@ import pytest
 
 from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.volatility_regime import VolatilityRegime
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.spine.risk.position_sizer import PositionSizer
 from kavzi_trader.spine.risk.schemas import VolatilityRegimeSchema
 
@@ -386,3 +387,48 @@ class TestFilterSizeMultiplier:
 
         # 1.5 risk / 10 stop = 0.15 units; halved = 0.075 ($7.50 < $10 floor)
         assert result.adjusted_size == Decimal("0.075")
+
+
+class TestPositionSizerWithExchangeFilters:
+    def test_size_is_floored_to_exchange_step(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+        precision: SymbolPrecision,
+    ) -> None:
+        sizer = PositionSizer(
+            RiskConfigSchema(max_notional_percent=Decimal(999)),
+            precision=precision,
+        )
+        result = sizer.calculate_size(
+            account_balance=Decimal(10000),
+            atr=Decimal(3),
+            stop_loss_atr_multiplier=Decimal(1),
+            regime=normal_regime,
+            entry_price=Decimal(100),
+            symbol="BTCUSDT",
+        )
+
+        # 100 risk / 3 stop = 33.333... units, floored to the 0.01 step
+        assert result.adjusted_size == Decimal("33.33")
+
+    def test_notional_floor_bump_stays_above_floor_after_rounding(
+        self,
+        normal_regime: VolatilityRegimeSchema,
+        precision: SymbolPrecision,
+    ) -> None:
+        config = RiskConfigSchema(
+            max_notional_percent=Decimal(999),
+            min_position_notional_usd=Decimal("10.05"),
+        )
+        sizer = PositionSizer(config, precision=precision)
+        result = sizer.calculate_size(
+            account_balance=Decimal(150),
+            atr=Decimal(2),
+            stop_loss_atr_multiplier=Decimal(5),
+            regime=normal_regime,
+            entry_price=Decimal(100),
+            symbol="BTCUSDT",
+        )
+
+        # 0.1005 units needed; ceil to step gives 0.11, never 0.10 (< floor)
+        assert result.adjusted_size * Decimal(100) >= Decimal("10.05")

@@ -3,6 +3,7 @@ from decimal import Decimal
 from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.domain.state_schemas import PositionManagementConfigSchema
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 
 
 def test_partial_exit_triggers_at_threshold(position_factory) -> None:
@@ -123,6 +124,50 @@ def test_partial_exit_falls_back_to_current_atr_when_no_entry_atr(
         position=position,
         current_price=Decimal(110),
         current_atr=Decimal(15),
+    )
+
+    assert action is None
+
+
+def test_partial_exit_quantity_is_floored_to_exchange_step(
+    position_factory, precision: SymbolPrecision
+) -> None:
+    config = PositionManagementConfigSchema(partial_exit_min_profit_atr=Decimal(0))
+    position = position_factory(
+        entry_price=Decimal(100),
+        take_profit=Decimal(120),
+        quantity=Decimal("1.07"),
+        management_config=config,
+    )
+
+    action = PartialExitChecker(precision).evaluate(
+        position=position,
+        current_price=Decimal(113),
+        current_atr=Decimal(10),
+    )
+
+    assert action is not None
+    assert action.exit_quantity == Decimal("0.32")
+
+
+def test_partial_exit_skipped_when_exit_rounds_below_min_qty(
+    position_factory, precision: SymbolPrecision
+) -> None:
+    config = PositionManagementConfigSchema(
+        partial_exit_min_profit_atr=Decimal(0),
+        partial_exit_size=Decimal("0.3"),
+    )
+    position = position_factory(
+        entry_price=Decimal(100),
+        take_profit=Decimal(120),
+        quantity=Decimal("0.03"),
+        management_config=config,
+    )
+
+    action = PartialExitChecker(precision).evaluate(
+        position=position,
+        current_price=Decimal(113),
+        current_atr=Decimal(10),
     )
 
     assert action is None

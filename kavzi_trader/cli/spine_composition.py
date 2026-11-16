@@ -8,6 +8,7 @@ from kavzi_trader.orchestrator.providers.live_price_provider import LivePricePro
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.execution.monitor import OrderMonitor
+from kavzi_trader.spine.execution.precision_exchange import PrecisionExchangeClient
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
@@ -24,6 +25,7 @@ from kavzi_trader.spine.position.manager import PositionManager
 from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.stall_exit import StallExitChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
@@ -46,17 +48,22 @@ class SpineComposer:
         self._tier_registry = tier_registry
         self._volatility_detector = volatility_detector
 
-    def create_engine(self, services: RuntimeServicesSchema) -> ExecutionEngine:
+    def create_engine(
+        self,
+        services: RuntimeServicesSchema,
+        precision: SymbolPrecision,
+    ) -> ExecutionEngine:
         logger.info("Creating execution engine")
         config = self._config
         liquidation_calculator = LiquidationCalculator(services.exchange)
         return ExecutionEngine(
-            exchange=services.exchange,
+            exchange=PrecisionExchangeClient(services.exchange, precision),
             state_manager=services.state_manager,
             risk_validator=DynamicRiskValidator(
                 config.risk,
                 self._tier_registry,
                 liquidation_calculator,
+                precision,
             ),
             staleness_checker=StalenessChecker(config.execution),
             translator=DecisionTranslator(),
@@ -68,6 +75,7 @@ class SpineComposer:
             volatility_detector=self._volatility_detector,
             liquidation_calculator=liquidation_calculator,
             pullback_entry_expiry_ms=config.execution.pullback_entry_expiry_ms,
+            precision=precision,
         )
 
     def create_filter_chain(
@@ -92,11 +100,12 @@ class SpineComposer:
         self,
         services: RuntimeServicesSchema,
         cache: MarketDataCache,
+        precision: SymbolPrecision,
     ) -> PositionManagementLoop:
         orchestrator_config = self._config.orchestrator
         return PositionManagementLoop(
             manager=PositionManager(
-                partial_exit=PartialExitChecker(),
+                partial_exit=PartialExitChecker(precision),
                 time_exit=TimeExitChecker(),
                 stall_exit=StallExitChecker(),
                 liquidation_emergency_percent=(
@@ -107,7 +116,7 @@ class SpineComposer:
             atr_provider=LiveAtrProvider(cache),
             price_provider=LivePriceProvider(cache),
             action_executor=PositionActionExecutor(
-                exchange=services.exchange,
+                exchange=PrecisionExchangeClient(services.exchange, precision),
                 state_manager=services.state_manager,
             ),
             fill_detector=ExchangeFillDetector(

@@ -2,6 +2,7 @@ import logging
 from decimal import ROUND_DOWN, Decimal
 
 from kavzi_trader.domain.risk_config import RiskConfigSchema
+from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.spine.risk.schemas import (
     PositionSizeResultSchema,
     VolatilityRegimeSchema,
@@ -20,9 +21,17 @@ class PositionSizer:
         self,
         config: RiskConfigSchema | None = None,
         tier_registry: SymbolTierRegistry | None = None,
+        precision: SymbolPrecision | None = None,
     ) -> None:
         self._config = config or RiskConfigSchema()
         self._tier_registry = tier_registry
+        self._precision = precision
+
+    def _floor_qty(self, symbol: str | None, qty: Decimal) -> Decimal:
+        """Floor to the exchange lot step, or to 8 decimals without filters."""
+        if self._precision is not None and symbol is not None:
+            return self._precision.round_qty(symbol, qty)
+        return qty.quantize(_QUANTITY_QUANT, rounding=ROUND_DOWN)
 
     def max_exposure_percent(self, symbol: str | None) -> Decimal:
         """Per-position notional cap as a percent of balance, tier-aware."""
@@ -84,6 +93,12 @@ class PositionSizer:
                     min_notional_floor,
                     entry_price,
                 )
+                if self._precision is not None and symbol is not None:
+                    # Floor rounding below must not drop the bump under the minimum.
+                    min_size_by_notional = self._precision.ceil_qty(
+                        symbol,
+                        min_size_by_notional,
+                    )
                 adjusted_size = min_size_by_notional
 
         # Applied after the floor bump on purpose: a filter reduction that pushes
@@ -107,7 +122,7 @@ class PositionSizer:
                 )
                 adjusted_size = max_size_by_notional
 
-        adjusted_size = adjusted_size.quantize(_QUANTITY_QUANT, rounding=ROUND_DOWN)
+        adjusted_size = self._floor_qty(symbol, adjusted_size)
 
         if leverage > 0 and entry_price > 0:
             balance_for_margin = (
@@ -124,10 +139,7 @@ class PositionSizer:
                     leverage,
                     entry_price,
                 )
-                adjusted_size = max_size_by_margin.quantize(
-                    _QUANTITY_QUANT,
-                    rounding=ROUND_DOWN,
-                )
+                adjusted_size = self._floor_qty(symbol, max_size_by_margin)
 
         # Effective risk is what the FINAL (post-cap) size actually risks to
         # the stop — distinct from the intended risk_amount, which the
