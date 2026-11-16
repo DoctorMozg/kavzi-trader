@@ -238,6 +238,10 @@ class PaperExchangeClient:
             )
 
         fill_price = await self._resolve_fill_price(symbol, price)
+        existing = self._positions.get(symbol)
+        if reduce_only and existing is not None:
+            # A reduce-only order never fills past the open position.
+            quantity = min(quantity, existing.quantity)
         self._apply_balance_change(symbol, side, quantity, fill_price, reduce_only)
 
         commission = quantity * fill_price * self._commission_rate

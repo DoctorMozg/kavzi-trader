@@ -669,3 +669,83 @@ async def test_paper_client_satisfies_exchange_client_without_binance_inheritanc
         assert live is not None
     finally:
         await live.close()
+
+
+class TestResizingAnExistingPosition:
+    """Grow, shrink and close of one LONG position (commission-free, 1x)."""
+
+    @pytest.fixture
+    def client(self, paper_client: PaperExchangeClient) -> PaperExchangeClient:
+        paper_client._commission_rate = Decimal(0)
+        return paper_client
+
+    async def _trade(
+        self,
+        client: PaperExchangeClient,
+        side: OrderSide,
+        quantity: str,
+        price: int,
+        reduce_only: bool = False,
+    ) -> None:
+        client.get_ticker = AsyncMock(  # type: ignore[method-assign]
+            return_value=TickerSchema(symbol="BTCUSDT", last_price=Decimal(price)),
+        )
+        await client.create_order(
+            symbol="BTCUSDT",
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=Decimal(quantity),
+            reduce_only=reduce_only,
+        )
+
+    async def test_grow_averages_entry_and_adds_margin(
+        self, client: PaperExchangeClient
+    ) -> None:
+        await self._trade(client, OrderSide.BUY, "1", 100)
+        await self._trade(client, OrderSide.BUY, "3", 200)
+
+        (info,) = await client.futures_get_position_info("BTCUSDT")
+        assert Decimal(info["positionAmt"]) == 4
+        assert Decimal(info["entryPrice"]) == Decimal(175)
+        assert Decimal(info["isolatedMargin"]) == Decimal(700)
+        assert client.balance_usdt == Decimal(10000) - 700
+
+    async def test_shrink_realizes_pnl_and_keeps_entry(
+        self, client: PaperExchangeClient
+    ) -> None:
+        await self._trade(client, OrderSide.BUY, "1", 100)
+        await self._trade(client, OrderSide.BUY, "3", 200)
+        await self._trade(client, OrderSide.SELL, "1", 250, reduce_only=True)
+
+        (info,) = await client.futures_get_position_info("BTCUSDT")
+        assert Decimal(info["positionAmt"]) == 3
+        assert Decimal(info["entryPrice"]) == Decimal(175)
+        assert Decimal(info["isolatedMargin"]) == Decimal(525)
+        # 700 margin paid, 175 returned plus (250 - 175) profit
+        assert client.balance_usdt == Decimal(10000) - 700 + 175 + 75
+
+    async def test_full_close_flattens_and_returns_all_margin(
+        self, client: PaperExchangeClient
+    ) -> None:
+        await self._trade(client, OrderSide.BUY, "1", 100)
+        await self._trade(client, OrderSide.BUY, "3", 200)
+        await self._trade(client, OrderSide.SELL, "4", 150, reduce_only=True)
+
+        assert await client.futures_get_position_info("BTCUSDT") == []
+        # (150 - 175) * 4 = -100 on 700 margin
+        assert client.balance_usdt == Decimal(10000) - 100
+
+    async def test_reduce_only_never_fills_past_the_position(
+        self, client: PaperExchangeClient
+    ) -> None:
+        await self._trade(client, OrderSide.BUY, "1", 100)
+        order = await client.create_order(
+            symbol="BTCUSDT",
+            side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            quantity=Decimal(5),
+            reduce_only=True,
+        )
+
+        assert order.executed_qty == Decimal(1)
+        assert await client.futures_get_position_info("BTCUSDT") == []

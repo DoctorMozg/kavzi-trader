@@ -16,6 +16,14 @@ from kavzi_trader.orchestrator.loops.position_close_reporter import (
 )
 from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.state.manager import StateManager
+from kavzi_trader.strategies.bracket_intent_schema import BracketIntentSchema
+from kavzi_trader.strategies.strategy_intent import (
+    STRATEGY_INTENT_ADAPTER,
+    intent_id,
+)
+from kavzi_trader.strategies.target_weight_intent_schema import (
+    TargetWeightIntentSchema,
+)
 from kavzi_trader.ui.recorder import UiEventRecorder
 
 logger = logging.getLogger(__name__)
@@ -95,7 +103,7 @@ class ExecutionLoop:
 
     async def _handle_payload(self, raw: str) -> None:
         try:
-            decision = DecisionMessageSchema.model_validate_json(raw)
+            intent = STRATEGY_INTENT_ADAPTER.validate_json(raw)
         except Exception:
             logger.exception(
                 "Failed to parse decision payload from queue %s",
@@ -104,24 +112,26 @@ class ExecutionLoop:
             )
             await self._dead_letter(raw)
             return
+        key = intent_id(intent)
         try:
-            await self._execute_decision(decision)
+            await self._route(intent)
         except Exception:
-            attempts = self._attempts.get(decision.decision_id, 0) + 1
-            self._attempts[decision.decision_id] = attempts
+            attempts = self._attempts.get(key, 0) + 1
+            self._attempts[key] = attempts
             logger.exception(
-                "Execution of decision %s failed (attempt %d/%d)",
-                decision.decision_id,
+                "Execution of %s intent %s failed (attempt %d/%d)",
+                intent.kind,
+                key,
                 attempts,
                 _MAX_DECISION_ATTEMPTS,
                 extra={
                     "loop": "execution",
-                    "decision_id": decision.decision_id,
-                    "symbol": decision.symbol,
+                    "decision_id": key,
+                    "symbol": intent.symbol,
                 },
             )
             if attempts >= _MAX_DECISION_ATTEMPTS:
-                self._attempts.pop(decision.decision_id, None)
+                self._attempts.pop(key, None)
                 await self._dead_letter(raw)
                 return
             # Push back before removing so a crash in between duplicates
@@ -130,8 +140,35 @@ class ExecutionLoop:
             await client.rpush(DECISION_QUEUE_KEY, raw)
             await client.lrem(_PROCESSING_KEY, 1, raw)
             return
-        self._attempts.pop(decision.decision_id, None)
+        self._attempts.pop(key, None)
         await self._redis_client.client.lrem(_PROCESSING_KEY, 1, raw)
+
+    async def _route(
+        self, intent: BracketIntentSchema | TargetWeightIntentSchema
+    ) -> None:
+        if isinstance(intent, TargetWeightIntentSchema):
+            await self._execute_rebalance(intent)
+        else:
+            await self._execute_decision(intent)
+
+    async def _execute_rebalance(self, intent: TargetWeightIntentSchema) -> None:
+        logger.info(
+            "Target-weight intent dequeued: id=%s symbol=%s weight=%s",
+            intent.intent_id,
+            intent.symbol,
+            intent.target_weight,
+            extra={"intent_id": intent.intent_id, "symbol": intent.symbol},
+        )
+        result = await self._engine.rebalance.execute(intent)
+        logger.info(
+            "Rebalance result: id=%s status=%s qty=%s price=%s reason=%s",
+            intent.intent_id,
+            result.status,
+            result.executed_qty,
+            result.executed_price,
+            result.error_message,
+            extra={"intent_id": intent.intent_id, "status": result.status},
+        )
 
     async def _dead_letter(self, raw: str) -> None:
         client = self._redis_client.client

@@ -16,6 +16,7 @@ from kavzi_trader.spine.execution.linked_orders import LinkedOrderService
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.pending_entries import PendingEntryManager
 from kavzi_trader.spine.execution.protective_orders import ProtectiveOrderPlacer
+from kavzi_trader.spine.execution.rebalance_executor import RebalanceExecutor
 from kavzi_trader.spine.execution.staleness import StalenessChecker
 from kavzi_trader.spine.execution.translator import DecisionTranslator
 from kavzi_trader.spine.execution.unfilled_entry import UnfilledEntryResolver
@@ -95,6 +96,23 @@ class ExecutionEngine:
             self._fill_handler,
             self._pending_entries,
         )
+        self._rebalance = RebalanceExecutor(
+            exchange=exchange,
+            state_manager=state_manager,
+            risk_validator=risk_validator,
+            placer=self._placer,
+            linked_orders=self._linked_orders,
+            emergency_closer=self._emergency_closer,
+            events=self._events,
+            monitor=monitor,
+            leverage_for=self._leverage_for,
+            close_recorder=close_recorder,
+        )
+
+    @property
+    def rebalance(self) -> RebalanceExecutor:
+        """Executor for target-weight intents; the bracket path never uses it."""
+        return self._rebalance
 
     @property
     def protective_orders(self) -> ProtectiveOrderPlacer:
@@ -350,7 +368,11 @@ class ExecutionEngine:
             aggregate_id=position.id,
             aggregate_type=AggregateType.POSITIONS,
             event_type="position_closed",
-            data={"symbol": position.symbol, "reason": "close_action"},
+            data={
+                "symbol": position.symbol,
+                "reason": "close_action",
+                "strategy": position.strategy,
+            },
         )
 
         return ExecutionResultSchema(

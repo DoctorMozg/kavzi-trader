@@ -110,6 +110,7 @@ class FillHandler:
             data={
                 "symbol": position.symbol,
                 "side": position.side,
+                "strategy": position.strategy,
                 "decision_id": decision.decision_id,
                 "entry_price": float(order.price),
                 "stop_loss": float(position.stop_loss),
