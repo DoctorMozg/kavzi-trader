@@ -564,9 +564,13 @@ paper:
   #   "DISABLED" = disable all execution (analysis-only / dry-run mode)
   mode: "PAPER"
 
-  # Paper trading initial USDT balance — matches real account for realistic
-  # position sizing and commission impact.
-  initial_balance_usdt: 100
+  # Paper trading initial USDT balance. Not tied to the real account; sized so
+  # the trend plugin's per-symbol legs clear minimum notional.
+  initial_balance_usdt: 10000
+
+  # true  = wipe Redis positions/orders/account on every start (fresh session).
+  # false = keep them and restore the paper exchange from Redis (multi-day runs).
+  reset_on_start: true
 
   # Simulated commission rate per trade. Binance USDT-M futures VIP0 is
   # 0.05% taker / 0.02% maker; 0.0005 (taker) is the realistic single-rate

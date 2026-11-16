@@ -136,7 +136,7 @@ Main configuration lives in `config/config.yaml`, loaded through `kavzi_trader.c
 
 Top-level sections: `system`, `api`, `brain`, `scout`, `trading`, `futures`, `risk`, `position_management`, `filters`, `redis`, `execution`, `events`, `orchestrator`, `monitoring`, `ui`, `external_sources`, `paper`.
 
-`paper.mode` is `PAPER`, `LIVE` or `DISABLED`. It also sets the initial balance and commission rate.
+`paper.mode` is `PAPER`, `LIVE` or `DISABLED`. It also sets the initial balance, commission rate and `reset_on_start` (set it to `false` to keep paper positions across restarts).
 
 Environment variables:
 

@@ -40,6 +40,7 @@ from kavzi_trader.orchestrator.providers.live_stream_manager import LiveStreamMa
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.paper.exchange import PaperExchangeClient
+from kavzi_trader.paper.state_initializer import PaperStateInitializer
 from kavzi_trader.spine.filters.chain import PreTradeFilterChain
 from kavzi_trader.spine.filters.confluence import ConfluenceCalculator
 from kavzi_trader.spine.filters.fear_greed_gate import FearGreedGateFilter
@@ -237,11 +238,13 @@ class OrchestratorComposer:
         await redis_client.connect()
 
         if isinstance(exchange, PaperExchangeClient):
-            balance = self._paper_balance_usdt()
             await state_manager.connect()
-            await state_manager.reset_for_paper(balance)
-            exchange.set_account_store(state_manager.account)
-            logger.info("Paper state reset in Redis: %s USDT", balance)
+            await PaperStateInitializer().initialize(
+                exchange,
+                state_manager,
+                balance_usdt=self._paper_balance_usdt(),
+                reset_on_start=self._config.paper.reset_on_start,
+            )
 
         ui_recorder = await self._create_ui_recorder(state_manager, redis_client)
         return RuntimeServicesSchema.model_validate(

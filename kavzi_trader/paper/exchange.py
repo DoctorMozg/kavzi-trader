@@ -34,6 +34,11 @@ from kavzi_trader.domain.order_enums import (
     TimeInForce,
 )
 from kavzi_trader.domain.order_response import OrderFillSchema, OrderResponseSchema
+from kavzi_trader.domain.state_schemas import (
+    AccountStateSchema,
+    OpenOrderSchema,
+    PositionSchema,
+)
 from kavzi_trader.spine.state.account_store import AccountStore
 
 logger = logging.getLogger(__name__)
@@ -102,6 +107,69 @@ class PaperExchangeClient:
     def set_account_store(self, account_store: AccountStore) -> None:
         """Wire the Redis account store for balance sync after each fill."""
         self._account_store = account_store
+
+    def restore_from_state(
+        self,
+        account: AccountStateSchema,
+        positions: list[PositionSchema],
+        open_orders: list[OpenOrderSchema],
+    ) -> None:
+        """Rebuild the in-memory book from persisted state after a restart."""
+        self._balance_usdt = account.available_balance_usdt
+        self._locked_usdt = account.locked_balance_usdt
+        self._positions = {p.symbol: self._tracker_from_position(p) for p in positions}
+        self._orders = {}
+        for stored in open_orders:
+            if stored.order_type not in _PROTECTIVE_ORDER_TYPES:
+                logger.warning(
+                    "Paper restore skipped non-protective order %s (%s)",
+                    stored.order_id,
+                    stored.order_type.value,
+                )
+                continue
+            order_id = int(stored.order_id)
+            self._orders[order_id] = OrderResponseSchema(
+                symbol=stored.symbol,
+                order_id=order_id,
+                client_order_id=f"restored-{order_id}",
+                transact_time=stored.created_at,
+                price=stored.price,
+                orig_qty=stored.quantity,
+                executed_qty=stored.executed_qty,
+                status=OrderStatus.NEW,
+                time_in_force=TimeInForce.GTC,
+                type=stored.order_type,
+                side=stored.side,
+                # Protective orders keep their trigger in the stored price.
+                stop_price=stored.price,
+                time=stored.created_at,
+                update_time=stored.created_at,
+                is_working=False,
+                reduce_only=True,
+            )
+        if self._orders:
+            self._order_counter = max(self._order_counter, *self._orders)
+        logger.info(
+            "Paper state restored: balance=%s locked=%s positions=%d orders=%d",
+            self._balance_usdt,
+            self._locked_usdt,
+            len(self._positions),
+            len(self._orders),
+        )
+
+    @staticmethod
+    def _tracker_from_position(position: PositionSchema) -> _PaperPositionTrackerSchema:
+        margin = position.initial_margin or (
+            position.quantity * position.entry_price / Decimal(position.leverage)
+        )
+        return _PaperPositionTrackerSchema(
+            symbol=position.symbol,
+            side=position.side,
+            quantity=position.quantity,
+            entry_price=position.entry_price,
+            leverage=position.leverage,
+            margin=margin,
+        )
 
     @property
     def balance_usdt(self) -> Decimal:
