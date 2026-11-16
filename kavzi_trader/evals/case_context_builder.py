@@ -5,7 +5,7 @@ from kavzi_trader.domain.symbol_tier import SymbolTier
 from kavzi_trader.evals.anonymized_case_schema import AnonymizedCaseSchema
 from kavzi_trader.evals.eval_case_schema import EvalCaseSchema
 from kavzi_trader.evals.replay_kline_source import ReplayKlineSource
-from kavzi_trader.evals.synthetic_account import SyntheticAccount
+from kavzi_trader.evals.synthetic_account import EVAL_BALANCE_USDT, SyntheticAccount
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
 from kavzi_trader.orchestrator.futures_config import FuturesConfigSchema
 from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
@@ -51,7 +51,7 @@ class CaseContextBuilder:
             confluence_calculator=ConfluenceCalculator(),
             volatility_detector=self._volatility,
             state_manager=SyntheticAccount(
-                self._config.paper.initial_balance_usdt,
+                EVAL_BALANCE_USDT,
                 anonymized.candles[-1].close_time,
             ),
             timeframe=case.interval,

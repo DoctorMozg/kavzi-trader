@@ -3,6 +3,10 @@ from decimal import Decimal
 
 from kavzi_trader.domain.state_schemas import AccountStateSchema, PositionSchema
 
+# Fixed rather than read from paper config, so eval runs stay comparable with
+# run_20261115T010229Z and size positions like the real ~$100 account.
+EVAL_BALANCE_USDT = Decimal(100)
+
 
 class SyntheticAccount:
     """Flat account with no positions, standing in for the Redis state store."""

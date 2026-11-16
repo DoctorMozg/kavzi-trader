@@ -8,7 +8,7 @@ import pandas as pd
 from kavzi_trader.config import AppConfig
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.evals.replay_kline_source import ReplayKlineSource
-from kavzi_trader.evals.synthetic_account import SyntheticAccount
+from kavzi_trader.evals.synthetic_account import EVAL_BALANCE_USDT, SyntheticAccount
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
 from kavzi_trader.orchestrator.providers.live_dependencies_provider import (
     LiveDependenciesProvider,
@@ -100,9 +100,7 @@ class ScoutSignals:
             cache=cache,
             confluence_calculator=ConfluenceCalculator(),
             volatility_detector=self._detector,
-            state_manager=SyntheticAccount(
-                self._config.paper.initial_balance_usdt, window[-1].close_time
-            ),
+            state_manager=SyntheticAccount(EVAL_BALANCE_USDT, window[-1].close_time),
             timeframe=self._interval,
             futures_config=self._config.futures,
             tier_registry=self._tiers,
