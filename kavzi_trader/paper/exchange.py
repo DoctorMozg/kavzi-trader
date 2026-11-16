@@ -40,6 +40,15 @@ from kavzi_trader.domain.state_schemas import (
     OpenOrderSchema,
     PositionSchema,
 )
+from kavzi_trader.paper.bar_fills import (
+    adverse_extreme,
+    is_beyond,
+    limit_touched,
+    liquidation_price,
+    triggered_fill_price,
+)
+from kavzi_trader.paper.costs_schema import PaperCostsSchema
+from kavzi_trader.paper.market_feed import MarketFeed
 from kavzi_trader.spine.state.account_store import AccountStore
 
 logger = logging.getLogger(__name__)
@@ -75,8 +84,8 @@ class _PaperPositionTrackerSchema(BaseModel):
 class PaperExchangeClient:
     """ExchangeClient that simulates USDT-M futures order execution.
 
-    Market data methods delegate to a keyless BinanceClient hitting real Binance
-    public endpoints. Order and account methods simulate fills locally.
+    Market data comes from a MarketFeed: by default a keyless BinanceClient on
+    real public endpoints, or a replay feed driven bar by bar through on_bar.
 
     Tracks positions with margin-based accounting. Both LONG and SHORT
     positions are supported. Opening deducts initial margin from balance;
@@ -86,14 +95,15 @@ class PaperExchangeClient:
     def __init__(
         self,
         initial_balance_usdt: Decimal = Decimal(10000),
-        commission_rate: Decimal = Decimal("0.001"),
+        costs: PaperCostsSchema | None = None,
         clock: Clock = SYSTEM_CLOCK,
+        market_feed: MarketFeed | None = None,
     ) -> None:
         self._clock = clock
-        self._market_data = BinanceClient(api_key="", api_secret="")
+        self._market_data = market_feed or BinanceClient(api_key="", api_secret="")
         self._balance_usdt = initial_balance_usdt
         self._locked_usdt = Decimal(0)
-        self._commission_rate = commission_rate
+        self._costs = costs or PaperCostsSchema()
         self._order_counter = 900_000_000
         self._orders: dict[int, OrderResponseSchema] = {}
         self._positions: dict[str, _PaperPositionTrackerSchema] = {}
@@ -102,9 +112,9 @@ class PaperExchangeClient:
         self._margin_type_settings: dict[str, str] = {}
         self._account_store: AccountStore | None = None
         logger.info(
-            "Paper futures exchange initialised: balance=%s USDT, commission=%s",
+            "Paper futures exchange initialised: balance=%s USDT, costs=%s",
             initial_balance_usdt,
-            commission_rate,
+            self._costs,
         )
 
     def set_account_store(self, account_store: AccountStore) -> None:
@@ -250,6 +260,7 @@ class PaperExchangeClient:
                 total_balance=self._balance_usdt + self._locked_usdt,
                 available_balance=self._balance_usdt,
                 locked_balance=self._locked_usdt,
+                unrealized_pnl=self._calculate_total_unrealized_pnl(),
             )
         except Exception:
             logger.exception("Failed to sync paper balance to Redis")
@@ -308,14 +319,17 @@ class PaperExchangeClient:
                 now=now,
             )
 
-        fill_price = await self._resolve_fill_price(symbol, price)
+        fill_price = self._slipped(await self._resolve_fill_price(symbol, price), side)
         existing = self._positions.get(symbol)
         if reduce_only and existing is not None:
             # A reduce-only order never fills past the open position.
             quantity = min(quantity, existing.quantity)
-        self._apply_balance_change(symbol, side, quantity, fill_price, reduce_only)
+        fee_rate = self._costs.taker_fee_rate
+        self._apply_balance_change(
+            symbol, side, quantity, fill_price, fee_rate, reduce_only
+        )
 
-        commission = quantity * fill_price * self._commission_rate
+        commission = quantity * fill_price * fee_rate
         fill = OrderFillSchema(
             price=fill_price,
             qty=quantity,
@@ -354,6 +368,131 @@ class PaperExchangeClient:
 
         await self._sync_balance_to_store()
         return order
+
+    async def on_bar(self, bar: CandlestickSchema) -> None:
+        """Settle one closed bar against the book, then mark to its close.
+
+        Order of events inside the bar: liquidation when it is reached before any
+        stop, then stops, take-profits (a bar hitting both fills the stop) and
+        resting limits on the bar's range, then liquidation of any remainder.
+        """
+        symbol = bar.symbol
+        if symbol is None:
+            raise ValueError(f"Bar at {bar.open_time} has no symbol")
+        if self._liquidation_comes_first(symbol, bar):
+            self._liquidate(symbol, bar)
+        for order in self._bar_orders(symbol):
+            await self._settle_on_bar(order, bar)
+        position = self._positions.get(symbol)
+        if position is not None and is_beyond(
+            position.side,
+            adverse_extreme(position.side, bar),
+            self._liquidation_price(position),
+        ):
+            self._liquidate(symbol, bar)
+        self._last_prices[symbol] = bar.close_price
+        await self._sync_balance_to_store()
+
+    async def apply_funding(
+        self,
+        symbol: str,
+        funding_rate: Decimal,
+        mark_price: Decimal,
+    ) -> Decimal:
+        """Settle one funding payment; positive rates make longs pay shorts.
+
+        Returns what the position received, negative when it paid.
+        """
+        position = self._positions.get(symbol)
+        if position is None:
+            return Decimal(0)
+        payment = position.quantity * mark_price * funding_rate
+        received = -payment if position.side == "LONG" else payment
+        self._balance_usdt += received
+        logger.info(
+            "Paper funding %s %s: rate=%s received=%s",
+            position.side,
+            symbol,
+            funding_rate,
+            received,
+        )
+        await self._sync_balance_to_store()
+        return received
+
+    def _bar_orders(self, symbol: str) -> list[OrderResponseSchema]:
+        rank = {OrderType.STOP_MARKET: 0, OrderType.TAKE_PROFIT_MARKET: 1}
+        live = [
+            o
+            for o in self._orders.values()
+            if o.symbol == symbol and o.status == OrderStatus.NEW
+        ]
+        return sorted(live, key=lambda o: rank.get(o.type, 2))
+
+    async def _settle_on_bar(
+        self,
+        order: OrderResponseSchema,
+        bar: CandlestickSchema,
+    ) -> None:
+        # Re-read: an earlier fill in this bar may have changed the order or book.
+        current = self._orders[order.order_id]
+        if current.status != OrderStatus.NEW:
+            return
+        if current.type in _TRIGGERED_ORDER_TYPES:
+            if current.symbol not in self._positions:
+                self._cancel_orphaned_order(current)
+                return
+            fill_price = triggered_fill_price(current, bar)
+            if fill_price is not None:
+                await self._fill_triggered(current, fill_price)
+        elif (
+            current.type == OrderType.LIMIT
+            and not current.reduce_only
+            and limit_touched(current, bar)
+        ):
+            await self._fill_resting_limit(current)
+
+    def _liquidation_price(self, position: _PaperPositionTrackerSchema) -> Decimal:
+        return liquidation_price(
+            position.side,
+            position.entry_price,
+            position.leverage,
+            self._costs.maintenance_margin_rate,
+        )
+
+    def _liquidation_comes_first(self, symbol: str, bar: CandlestickSchema) -> bool:
+        """True when the bar reaches liquidation before any stop could fill."""
+        position = self._positions.get(symbol)
+        if position is None:
+            return False
+        liq = self._liquidation_price(position)
+        if not is_beyond(position.side, adverse_extreme(position.side, bar), liq):
+            return False
+        if is_beyond(position.side, bar.open_price, liq):
+            return True
+        stops = [
+            o.stop_price
+            for o in self._orders.values()
+            if o.symbol == symbol
+            and o.status == OrderStatus.NEW
+            and o.type == OrderType.STOP_MARKET
+            and o.stop_price is not None
+        ]
+        # A stop between the open and the liquidation price is reached first.
+        return not any(not is_beyond(position.side, stop, liq) for stop in stops)
+
+    def _liquidate(self, symbol: str, bar: CandlestickSchema) -> None:
+        """Close at the liquidation price; the isolated margin is lost."""
+        position = self._positions.pop(symbol)
+        self._locked_usdt -= position.margin
+        logger.warning(
+            "Paper %s %s liquidated at %s in bar %s: margin lost=%s",
+            position.side,
+            symbol,
+            self._liquidation_price(position),
+            bar.open_time,
+            position.margin,
+            extra={"symbol": symbol},
+        )
 
     async def _limit_is_marketable(
         self,
@@ -427,12 +566,18 @@ class PaperExchangeClient:
             return order
         if not await self._limit_is_marketable(order.symbol, order.side, order.price):
             return order
+        return await self._fill_resting_limit(order)
 
+    async def _fill_resting_limit(
+        self,
+        order: OrderResponseSchema,
+    ) -> OrderResponseSchema:
         fill_price = order.price
+        fee_rate = self._costs.maker_fee_rate
         self._apply_balance_change(
-            order.symbol, order.side, order.orig_qty, fill_price, reduce_only=False
+            order.symbol, order.side, order.orig_qty, fill_price, fee_rate
         )
-        commission = order.orig_qty * fill_price * self._commission_rate
+        commission = order.orig_qty * fill_price * fee_rate
         fill = OrderFillSchema(
             price=fill_price,
             qty=order.orig_qty,
@@ -480,16 +625,21 @@ class PaperExchangeClient:
             )
         return fill_price
 
+    def _slipped(self, price: Decimal, side: OrderSide) -> Decimal:
+        slip = self._costs.slippage_bps / Decimal(10_000)
+        return price * (1 + slip) if side == OrderSide.BUY else price * (1 - slip)
+
     def _apply_balance_change(
         self,
         symbol: str,
         side: OrderSide,
         quantity: Decimal,
         fill_price: Decimal,
+        fee_rate: Decimal,
         reduce_only: bool = False,
     ) -> None:
         existing = self._positions.get(symbol)
-        commission = quantity * fill_price * self._commission_rate
+        commission = quantity * fill_price * fee_rate
 
         is_closing = existing is not None and (
             (existing.side == "LONG" and side == OrderSide.SELL)
@@ -695,21 +845,37 @@ class PaperExchangeClient:
             return order
 
         if not is_stop:
-            fill_price = order.stop_price
+            trigger_fill = order.stop_price
         elif order.side == OrderSide.SELL:
-            fill_price = min(order.stop_price, last_price)
+            trigger_fill = min(order.stop_price, last_price)
         else:
-            fill_price = max(order.stop_price, last_price)
+            trigger_fill = max(order.stop_price, last_price)
+        logger.debug(
+            "Paper %s %s crossed for %s: trigger=%s last=%s",
+            order.type.value,
+            order.order_id,
+            order.symbol,
+            order.stop_price,
+            last_price,
+        )
+        return await self._fill_triggered(order, trigger_fill)
 
+    async def _fill_triggered(
+        self,
+        order: OrderResponseSchema,
+        trigger_fill: Decimal,
+    ) -> OrderResponseSchema:
+        fill_price = self._slipped(trigger_fill, order.side)
         position = self._positions[order.symbol]
         fill_qty = min(order.orig_qty, position.quantity)
+        fee_rate = self._costs.taker_fee_rate
         self._apply_balance_change(
-            order.symbol, order.side, fill_qty, fill_price, reduce_only=True
+            order.symbol, order.side, fill_qty, fill_price, fee_rate, reduce_only=True
         )
         fill = OrderFillSchema(
             price=fill_price,
             qty=fill_qty,
-            commission=fill_qty * fill_price * self._commission_rate,
+            commission=fill_qty * fill_price * fee_rate,
             commission_asset="USDT",
         )
         filled = order.model_copy(
@@ -724,12 +890,11 @@ class PaperExchangeClient:
         )
         self._orders[order.order_id] = filled
         logger.info(
-            "Paper %s %s triggered for %s: trigger=%s last=%s fill=%s",
+            "Paper %s %s triggered for %s: trigger=%s fill=%s",
             order.type.value,
             order.order_id,
             order.symbol,
             order.stop_price,
-            last_price,
             fill_price,
         )
         await self._sync_balance_to_store()
@@ -803,7 +968,7 @@ class PaperExchangeClient:
                 ),
                 entryPrice=str(pos.entry_price),
                 leverage=str(pos.leverage),
-                unrealizedProfit="0",
+                unrealizedProfit=str(self._unrealized_pnl(pos)),
                 marginType=self._margin_type_settings.get(
                     pos.symbol,
                     "isolated",
@@ -818,7 +983,16 @@ class PaperExchangeClient:
             availableBalance=str(self._balance_usdt),
             totalUnrealizedProfit=str(unrealized_pnl),
             totalInitialMargin=str(self._locked_usdt),
-            totalMaintMargin="0",
+            totalMaintMargin=str(
+                sum(
+                    (
+                        p.quantity * self._mark_price(p)
+                        for p in self._positions.values()
+                    ),
+                    Decimal(0),
+                )
+                * self._costs.maintenance_margin_rate
+            ),
             positions=positions_list,
         )
 
@@ -857,10 +1031,7 @@ class PaperExchangeClient:
             all_positions = [p for p in all_positions if p.symbol == symbol]
         for pos in all_positions:
             leverage = pos.leverage
-            if pos.side == "LONG":
-                liq = pos.entry_price * (Decimal(1) - Decimal(1) / Decimal(leverage))
-            else:
-                liq = pos.entry_price * (Decimal(1) + Decimal(1) / Decimal(leverage))
+            liq = self._liquidation_price(pos)
             result.append(
                 PositionInfoDict(
                     symbol=pos.symbol,
@@ -868,8 +1039,8 @@ class PaperExchangeClient:
                         pos.quantity if pos.side == "LONG" else -pos.quantity,
                     ),
                     entryPrice=str(pos.entry_price),
-                    markPrice=str(pos.entry_price),
-                    unRealizedProfit="0",
+                    markPrice=str(self._mark_price(pos)),
+                    unRealizedProfit=str(self._unrealized_pnl(pos)),
                     liquidationPrice=str(liq),
                     leverage=str(leverage),
                     marginType=self._margin_type_settings.get(
@@ -903,14 +1074,16 @@ class PaperExchangeClient:
             ),
         ]
 
+    def _mark_price(self, pos: _PaperPositionTrackerSchema) -> Decimal:
+        # The last traded price stands in for the mark; entry until one is seen.
+        return self._last_prices.get(pos.symbol, pos.entry_price)
+
+    def _unrealized_pnl(self, pos: _PaperPositionTrackerSchema) -> Decimal:
+        move = self._mark_price(pos) - pos.entry_price
+        return move * pos.quantity if pos.side == "LONG" else -move * pos.quantity
+
     def _calculate_total_unrealized_pnl(self) -> Decimal:
-        total = Decimal(0)
-        for pos in self._positions.values():
-            current_price = self._last_prices.get(pos.symbol)
-            if current_price is None:
-                continue
-            if pos.side == "LONG":
-                total += (current_price - pos.entry_price) * pos.quantity
-            else:
-                total += (pos.entry_price - current_price) * pos.quantity
-        return total
+        return sum(
+            (self._unrealized_pnl(p) for p in self._positions.values()),
+            Decimal(0),
+        )

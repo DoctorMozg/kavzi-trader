@@ -36,7 +36,7 @@ async def test_open_grow_shrink_close_round_trip(rig: Rig) -> None:
     assert await rig.stop_orders() == [(Decimal(3), Decimal(70))]
     position_id = pos.id
 
-    # grow at 110; unrealised pnl is not in paper account state, so equity stays 1000
+    # grow at 110; equity is still 1000, synced at the 100 open with no unrealised pnl
     rig.price = Decimal(110)
     await rig.deliver(make_intent("i2", "0.5").model_dump_json())
     pos = await rig.position()
@@ -50,11 +50,12 @@ async def test_open_grow_shrink_close_round_trip(rig: Rig) -> None:
     )
     assert await rig.stop_orders() == [(grown_qty, pos.stop_loss)]
 
-    # shrink at 110 to 0.1 weight
+    # shrink at 110 to 0.1 weight of equity that now includes unrealised pnl
     await rig.deliver(make_intent("i3", "0.1").model_dump_json())
     shrunk = await rig.position()
     assert shrunk is not None
-    shrunk_qty = (Decimal("0.1") * Decimal(1000) / Decimal(110)).quantize(
+    equity = Decimal(1000) + (Decimal(110) - pos.entry_price) * grown_qty
+    shrunk_qty = (Decimal("0.1") * equity / Decimal(110)).quantize(
         Decimal("0.00000001"), rounding="ROUND_DOWN"
     )
     assert shrunk.id == position_id

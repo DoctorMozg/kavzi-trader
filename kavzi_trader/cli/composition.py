@@ -41,6 +41,7 @@ from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
 from kavzi_trader.orchestrator.providers.live_stream_manager import LiveStreamManager
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
+from kavzi_trader.paper.costs_schema import PaperCostsSchema
 from kavzi_trader.paper.exchange import PaperExchangeClient
 from kavzi_trader.paper.mode import TradingMode
 from kavzi_trader.paper.state_initializer import PaperStateInitializer
@@ -292,7 +293,11 @@ class OrchestratorComposer:
         balance = self._paper_balance_usdt()
         exchange = PaperExchangeClient(
             initial_balance_usdt=balance,
-            commission_rate=self._config.paper.commission_rate,
+            # Live paper charges the configured rate on every fill, maker or taker.
+            costs=PaperCostsSchema(
+                taker_fee_rate=self._config.paper.commission_rate,
+                maker_fee_rate=self._config.paper.commission_rate,
+            ),
         )
         logger.info("Paper exchange created: balance=%s USDT", balance)
         return exchange

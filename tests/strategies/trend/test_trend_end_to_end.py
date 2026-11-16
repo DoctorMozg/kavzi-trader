@@ -31,7 +31,7 @@ def _closes() -> dict[str, np.ndarray]:
 
 @pytest.fixture
 async def rig() -> Rig:
-    rig = Rig()
+    rig = Rig(symbols=tuple(SYMBOLS))
     await rig.state.reset_for_paper(EQUITY)
     return rig
 

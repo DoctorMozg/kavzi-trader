@@ -1,10 +1,9 @@
 from decimal import Decimal
 from typing import cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from redis.asyncio import Redis
 
-from kavzi_trader.api.common.models import TickerSchema
 from kavzi_trader.commons.sim_clock import SimClock
 from kavzi_trader.domain.order_enums import OrderType
 from kavzi_trader.domain.risk_config import RiskConfigSchema
@@ -16,7 +15,9 @@ from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.infra.redis_config import RedisConfigSchema
 from kavzi_trader.orchestrator.loops.decision_queue import DECISION_QUEUE_KEY
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
+from kavzi_trader.paper.costs_schema import PaperCostsSchema
 from kavzi_trader.paper.exchange import PaperExchangeClient
+from kavzi_trader.paper.sim_market_feed import SimMarketFeed
 from kavzi_trader.spine.execution.config import ExecutionConfigSchema
 from kavzi_trader.spine.execution.engine import ExecutionEngine
 from kavzi_trader.spine.execution.monitor import OrderMonitor
@@ -42,8 +43,11 @@ class Rig:
         self,
         precision: SymbolPrecision | None = None,
         redis: InMemoryRedis | None = None,
+        symbols: tuple[str, ...] = (SYMBOL,),
     ) -> None:
         self.clock = SimClock(SIM_START_MS)
+        self.feed = SimMarketFeed()
+        self._symbols = symbols
         self.redis = redis or InMemoryRedis()
         self.redis_client = RedisStateClient(
             RedisConfigSchema(), cast("Redis", self.redis)
@@ -51,13 +55,14 @@ class Rig:
         self.price = Decimal(100)
         self.events = AsyncMock()
         self.close_recorder = AsyncMock()
-        with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
-            self.exchange = PaperExchangeClient(
-                initial_balance_usdt=Decimal(1000),
-                commission_rate=Decimal(0),
-                clock=self.clock,
-            )
-        self.exchange.get_ticker = AsyncMock(side_effect=self._ticker)  # type: ignore[method-assign]
+        self.exchange = PaperExchangeClient(
+            initial_balance_usdt=Decimal(1000),
+            costs=PaperCostsSchema(
+                taker_fee_rate=Decimal(0), maker_fee_rate=Decimal(0)
+            ),
+            clock=self.clock,
+            market_feed=self.feed,
+        )
         self.state = StateManager(self.redis_client, self.exchange, self.clock)
         self.exchange.set_account_store(self.state.account)
         self.engine = ExecutionEngine(
@@ -80,8 +85,15 @@ class Rig:
             clock=self.clock,
         )
 
-    async def _ticker(self, symbol: str) -> TickerSchema:
-        return TickerSchema(symbol=symbol, last_price=self.price)
+    @property
+    def price(self) -> Decimal:
+        return self._price
+
+    @price.setter
+    def price(self, value: Decimal) -> None:
+        self._price = value
+        for symbol in self._symbols:
+            self.feed.set_price(symbol, value)
 
     async def deliver(self, raw: str) -> None:
         await self.redis.lpush(DECISION_QUEUE_KEY, raw)

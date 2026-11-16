@@ -20,6 +20,7 @@ from kavzi_trader.brain.schemas.dependencies import (
     AnalystDependenciesSchema,
     TradingDependenciesSchema,
 )
+from kavzi_trader.commons.sim_clock import SimClock
 from kavzi_trader.domain.algorithm_confluence import (
     ALGO_SIGNAL_COUNT,
     AlgorithmConfluenceSchema,
@@ -49,13 +50,18 @@ from kavzi_trader.spine.filters.filter_result_schema import FilterResultSchema
 from kavzi_trader.ui.recorder import UiEventRecorder
 from tests.ui.factories import CollectingUiPublisher
 
+# A frozen clock keeps the plugin's and the loop's reads of now identical.
+_FROZEN_CLOCK = SimClock(1_000_000)
+
 
 def _strategy_loop(
     plugin: LlmPipelinePlugin,
     redis_client: AsyncMock,
     state_manager: MagicMock | None = None,
 ) -> StrategyLoop:
-    return StrategyLoop(plugin, DecisionPublisher(redis_client), state_manager)
+    return StrategyLoop(
+        plugin, DecisionPublisher(redis_client), state_manager, clock=_FROZEN_CLOCK
+    )
 
 
 def _gates(regime_gate: int, available_signals: int) -> ConfluenceGatesSchema:
@@ -273,6 +279,7 @@ async def test_reasoning_loop_enqueues_decision() -> None:
     redis_client.client.lpush = AsyncMock()
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -320,6 +327,7 @@ async def test_decision_message_includes_leverage() -> None:
     redis_client.client.lpush = AsyncMock()
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -368,6 +376,7 @@ async def test_backoff_on_all_skip() -> None:
         await original_sleep(0)
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -431,6 +440,7 @@ async def test_backoff_resets_on_interesting() -> None:
         await original_sleep(0)
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -493,6 +503,7 @@ async def test_cooldown_after_analyst_skips_cycles() -> None:
     redis_client.client.lpush = AsyncMock()
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -555,6 +566,7 @@ async def test_skip_symbol_with_open_position() -> None:
     )
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -605,6 +617,7 @@ async def test_volatility_gate_reports_as_scout_scan() -> None:
     ui_publisher = CollectingUiPublisher()
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -655,6 +668,7 @@ def _make_analyst_result_with_confluence(confluence_score: int) -> PipelineResul
 def test_graduated_cooldown_low_confluence() -> None:
     """Confluence <= 2 should produce 3x the base cooldown."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -668,6 +682,7 @@ def test_graduated_cooldown_low_confluence() -> None:
 def test_cooldown_bands_shift_down_with_missing_signals() -> None:
     """With 5/8 signals the reject band tops at 3 and the low band at 1."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -697,6 +712,7 @@ def test_cooldown_bands_shift_down_with_missing_signals() -> None:
 def test_graduated_cooldown_reject_band_high_side() -> None:
     """Confluence 3 (top of reject band) should produce 2x the base cooldown."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -724,6 +740,7 @@ def _make_analyst_decision(
 def test_analyst_cooldown_reject_band_escalates() -> None:
     """Score <= 3 + invalid increments rejection counter and uses base*multiplier."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -756,6 +773,7 @@ def test_analyst_cooldown_reject_band_escalates() -> None:
 def test_analyst_cooldown_borderline_band_no_escalation() -> None:
     """Borderline band + invalid gets a light cooldown and does NOT escalate counts."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -784,6 +802,7 @@ def test_analyst_cooldown_borderline_band_no_escalation() -> None:
 def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
     """Score >= 6 but setup_valid=False also lands in the light-cooldown branch."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -808,6 +827,7 @@ def test_analyst_cooldown_llm_rejects_high_confluence() -> None:
 def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
     """A valid setup at/above the entry gate resets rejection counters."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -836,6 +856,7 @@ def test_analyst_cooldown_valid_setup_clears_rejection_counter() -> None:
 def test_should_enqueue_requires_confluence_entry_gate() -> None:
     """_should_enqueue must block scores below the entry gate even if valid."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -899,6 +920,7 @@ def test_should_enqueue_gated_by_regime_specific_min(
 ) -> None:
     """The escalation gate must track the regime-specific minimum score."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -941,6 +963,7 @@ def test_analyst_cooldown_borderline_uses_regime_gate(
     HIGH (gate=7) lands in the borderline band, not the "valid" branch.
     """
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -968,6 +991,7 @@ def test_analyst_cooldown_borderline_uses_regime_gate(
 @pytest.fixture
 def scaled_loop() -> LlmPipelinePlugin:
     return LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -1078,6 +1102,7 @@ async def test_filter_chain_blocks_trade() -> None:
     )
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -1131,6 +1156,7 @@ async def test_filter_chain_allows_trade() -> None:
     )
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -1161,6 +1187,7 @@ async def test_no_filter_chain_passes_through() -> None:
     redis_client.client.lpush = AsyncMock()
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -1182,6 +1209,7 @@ async def test_no_filter_chain_passes_through() -> None:
 def test_consecutive_rejections_escalate_cooldown() -> None:
     """Repeated analyst rejections for the same symbol+direction increase cooldown."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -1214,6 +1242,7 @@ def test_consecutive_rejections_escalate_cooldown() -> None:
 def test_consecutive_rejections_reset_on_valid_analyst() -> None:
     """A valid analyst result resets the rejection counter for that direction."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -1240,6 +1269,7 @@ def test_consecutive_rejections_reset_on_valid_analyst() -> None:
 def test_direction_aware_cooldown_allows_opposite_direction() -> None:
     """SHORT cooldown should not block LONG evaluation on the same symbol."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["TAOUSDT"],
         router=AsyncMock(),
@@ -1258,6 +1288,7 @@ def test_direction_aware_cooldown_allows_opposite_direction() -> None:
 def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
     """When both LONG and SHORT are on cooldown, the symbol should be skipped."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["TAOUSDT"],
         router=AsyncMock(),
@@ -1279,6 +1310,7 @@ def test_direction_aware_cooldown_blocks_when_both_blocked() -> None:
 def test_neutral_rejection_blocks_both_directions() -> None:
     """A NEUTRAL rejection should set cooldown for both LONG and SHORT."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -1327,6 +1359,7 @@ def _make_wait_result(
 def test_consecutive_waits_apply_cooldown() -> None:
     """After 5 consecutive WAITs, cooldown is set for (symbol, direction)."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
@@ -1345,6 +1378,7 @@ def test_consecutive_waits_apply_cooldown() -> None:
 def test_consecutive_waits_reset_on_trade() -> None:
     """Trade enqueue clears WAIT counters for the symbol."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
@@ -1368,6 +1402,7 @@ def test_consecutive_waits_reset_on_trade() -> None:
 def test_consecutive_waits_escalate() -> None:
     """6th+ WAITs increase cooldown, capped at max."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
@@ -1395,6 +1430,7 @@ def test_consecutive_waits_escalate() -> None:
 def test_consecutive_waits_no_cooldown_below_threshold() -> None:
     """Fewer than 5 WAITs should not set any cooldown."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["TONUSDT"],
         router=AsyncMock(),
@@ -1421,6 +1457,7 @@ async def test_pipeline_complete_event_recorded() -> None:
     ui_publisher = CollectingUiPublisher()
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=router,
@@ -1486,6 +1523,7 @@ def test_geometry_reject_counter_increments_on_each_reject() -> None:
     )
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -1512,6 +1550,7 @@ def test_geometry_reject_cooldown_applied_at_threshold() -> None:
     )
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -1538,6 +1577,7 @@ def test_geometry_reject_counter_clears_on_successful_trader() -> None:
     )
 
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -1580,6 +1620,7 @@ def test_should_enqueue_blocks_confluence_score_five_after_wu6() -> None:
     """WU-6: score=5 used to pass the old ENTER=5 gate; after the shift
     it lives inside the hysteresis band and must NOT enqueue."""
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),
@@ -1611,6 +1652,7 @@ def _make_loop(
     position_management: PositionManagementConfigSchema | None = None,
 ) -> LlmPipelinePlugin:
     return LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=position_management or PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(run=AsyncMock(return_value=_make_trade_result())),
@@ -1718,6 +1760,7 @@ async def test_filter_chain_gets_threshold_shift_from_gates(
 ) -> None:
     mock_filter_chain = AsyncMock()
     loop = LlmPipelinePlugin(
+        clock=_FROZEN_CLOCK,
         position_management=PositionManagementConfigSchema(),
         symbols=["BTCUSDT"],
         router=AsyncMock(),

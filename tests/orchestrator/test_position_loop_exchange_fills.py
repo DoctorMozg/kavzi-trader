@@ -15,6 +15,7 @@ from kavzi_trader.domain.state_schemas import (
     PositionSchema,
 )
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
+from kavzi_trader.paper.costs_schema import PaperCostsSchema
 from kavzi_trader.paper.exchange import PaperExchangeClient
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.exchange_fill_detector import ExchangeFillDetector
@@ -72,7 +73,9 @@ class _Scenario:
         with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
             self.exchange = PaperExchangeClient(
                 initial_balance_usdt=Decimal(10000),
-                commission_rate=Decimal("0.001"),
+                costs=PaperCostsSchema(
+                    taker_fee_rate=Decimal("0.001"), maker_fee_rate=Decimal("0.001")
+                ),
             )
         self.set_price(100)
         state = cast("StateManager", self.state)

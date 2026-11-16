@@ -14,6 +14,7 @@ from kavzi_trader.domain.order_enums import (
     OrderType,
     TimeInForce,
 )
+from kavzi_trader.paper.costs_schema import PaperCostsSchema
 from kavzi_trader.paper.exchange import PaperExchangeClient, _PaperPositionTrackerSchema
 
 
@@ -22,7 +23,9 @@ def paper_client() -> PaperExchangeClient:
     with patch("kavzi_trader.api.binance.client.BinanceAPIClient"):
         client = PaperExchangeClient(
             initial_balance_usdt=Decimal(10000),
-            commission_rate=Decimal("0.001"),
+            costs=PaperCostsSchema(
+                taker_fee_rate=Decimal("0.001"), maker_fee_rate=Decimal("0.001")
+            ),
         )
         mock_ticker = TickerSchema(
             symbol="BTCUSDT",
@@ -676,7 +679,9 @@ class TestResizingAnExistingPosition:
 
     @pytest.fixture
     def client(self, paper_client: PaperExchangeClient) -> PaperExchangeClient:
-        paper_client._commission_rate = Decimal(0)
+        paper_client._costs = PaperCostsSchema(
+            taker_fee_rate=Decimal(0), maker_fee_rate=Decimal(0)
+        )
         return paper_client
 
     async def _trade(
