@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReplayNeedsSchema(BaseModel):
-    """What a strategy's replay reads from the eval cache."""
+    """What a strategy's replay reads from the archive."""
 
     model_config = ConfigDict(frozen=True)
 

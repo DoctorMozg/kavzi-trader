@@ -129,7 +129,7 @@ class ReplayRunner:
                 close_ms = int(bar.open_time.timestamp() * 1000) + self._bar_ms
                 bars[close_ms].append(bar)
         if not bars:
-            msg = f"no cached bars close between {from_ms} and {end_ms}"
+            msg = f"no archived bars close between {from_ms} and {end_ms}"
             raise ValueError(msg)
         return bars
 

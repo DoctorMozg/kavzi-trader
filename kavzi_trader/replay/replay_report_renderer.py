@@ -14,7 +14,7 @@ class ReplayReportRenderer:
         last = result.equity.index[-1].date().isoformat()
         intro = (
             f"Strategy `{result.strategy}` replayed through the live spine on "
-            f"cached {result.interval} bars: {', '.join(result.symbols)}; "
+            f"archived {result.interval} bars: {', '.join(result.symbols)}; "
             f"{first} to {last}. "
             f"Equity {result.initial_equity:.2f} -> {result.final_equity:.2f} USDT, "
             f"funding received {result.funding_received:.2f} USDT."

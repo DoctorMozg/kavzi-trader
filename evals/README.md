@@ -12,7 +12,7 @@ Seven commands under `kavzitrader eval` (`kavzi_trader/cli/commands/evals.py`):
 | `trend` | no | Backtest the daily Donchian trend ensemble against buy-and-hold |
 | `funding-xs` | no | Backtest the market-neutral cross-sectional funding rank |
 
-They share the gitignored cache `data/eval_cache/` (`--cache-dir`): `build-dataset` and `refresh-cache` download into it, the other commands read from it. Candle and funding history can always be re-downloaded from Binance. Open interest older than about 30 days cannot (the `metrics` archive below can), so don't delete the OI files.
+They share the gitignored cache `data/eval_cache/` (`--cache-dir`): `build-dataset` and `refresh-cache` download into it, the other commands read from it. `trend` and `replay` read the gitignored `data/archive/` mirror instead (`--archive-dir`), which `eval archive` fills from data.binance.vision monthly files and which lags by up to a month. Candle and funding history can always be re-downloaded from Binance. Open interest older than about 30 days cannot (the `metrics` archive below can), so don't delete the OI files.
 
 ## Dataset
 
@@ -68,7 +68,7 @@ No LLM calls. Writes `results/evals/<run_id>.report.md` (override with `--out`) 
     uv run kavzitrader eval trend --variant long-short --lookbacks 20
     uv run kavzitrader eval trend --symbols DOGEUSDT,LTCUSDT,DOTUSDT,BCHUSDT,ATOMUSDT,TRXUSDT,ETCUSDT,FILUSDT
 
-No LLM calls. Rules are fixed in `evals/preregistrations/2026_11_16_trend_following.md`. Reads cached 4h candles and funding (`refresh-cache --interval 4h --months 60`) and folds every 6 candles into a UTC day (`trend_data_loader.py`). Days with fewer than 6 candles are dropped, and a gap in the daily series is an error.
+No LLM calls. Rules are fixed in `evals/preregistrations/2026_11_16_trend_following.md`. Reads 1m klines and funding from the archive (`eval archive`, or `eval archive --symbols ...` for symbols outside `trading.symbols`), rolls them into 4h candles (`archive_series.py`) and folds every 6 candles into a UTC day (`trend_data_loader.py`). Days with fewer than 6 candles are dropped, and a gap in the daily series is an error.
 
 Per symbol and lookback L, the Donchian state is 1 when the close is above the highest close of the previous L days, 0 (long/flat) or -1 (long/short) when it is below the lowest, else unchanged (`strategies/trend/donchian_trend_signal.py`). The signal is the mean of the lookback states. Target weight is `signal * min(0.25 / vol, 2.0) / N`, where `vol` is the 30-day daily log-return std x sqrt(365) and N is the number of symbols. Weights set at a close earn the next day's return.
 
@@ -80,7 +80,7 @@ Options:
 - `--lookbacks 20,40,80`: days, comma-separated. The pre-registered rule uses all three.
 - `--symbols`: default is the 8 trading symbols. Score the 8 HOLDOUT symbols (DOGE LTC DOT BCH ATOM TRX ETC FIL) with a second run.
 - `--from` / `--to` (default 2022-03-15 to 2026-11-15, `--to` exclusive): days outside the window only warm up the lookbacks.
-- `--cache-dir`, `--out` (default `results/evals/trend_<UTC time>.md`).
+- `--archive-dir` (default `data/archive`), `--out` (default `results/evals/trend_<UTC time>.md`).
 
 It prints net Sharpe, benchmark Sharpe and `criterion met` (net Sharpe >= 0.5 and above the benchmark's). The pre-registered PASS needs that on both symbol sets. The report has return, volatility, Sharpe, max drawdown, turnover, cost and funding drag, and Sharpe per year, for the strategy and the benchmark.
 

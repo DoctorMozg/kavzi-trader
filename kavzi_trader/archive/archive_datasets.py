@@ -1,13 +1,19 @@
 from kavzi_trader.archive.archive_dataset_schema import ArchiveDatasetSchema
-from kavzi_trader.evals.candle_cache import COLUMNS as KLINE_COLUMNS
-from kavzi_trader.evals.metrics_cache import (
-    GLOBAL_RATIO,
-    OPEN_INTEREST,
-    TIME,
-    TOP_POSITION_RATIO,
-)
 
-_KLINE = list(KLINE_COLUMNS)
+# Stored column names are the on-disk Parquet format; renaming one orphans the mirror.
+_KLINE = [
+    "open_time_ms",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "close_time_ms",
+    "quote_volume",
+    "trades_count",
+    "taker_buy_base_volume",
+    "taker_buy_quote_volume",
+]
 
 ARCHIVE_DATASETS = {
     "klines": ArchiveDatasetSchema(name="klines", interval="1m", columns=_KLINE),
@@ -23,12 +29,12 @@ ARCHIVE_DATASETS = {
         name="metrics",
         daily=True,
         columns=[
-            TIME,
-            OPEN_INTEREST,
+            "time_ms",
+            "open_interest",
             "open_interest_value",
             "top_account_ratio",
-            TOP_POSITION_RATIO,
-            GLOBAL_RATIO,
+            "top_position_ratio",
+            "global_ratio",
             "taker_volume_ratio",
         ],
         source_columns=[

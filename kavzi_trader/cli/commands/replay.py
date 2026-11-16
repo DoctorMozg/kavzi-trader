@@ -19,6 +19,7 @@ from kavzi_trader.cli.replay_composition import (
 )
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.agent_source import AgentSource
+from kavzi_trader.evals.archive_series import ArchiveSeries
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_stats_schema import TrendStatsSchema
@@ -53,13 +54,13 @@ async def _load_precision(symbols: list[str]) -> SymbolPrecision:
 async def _replay(
     app_config: AppConfig,
     strategy: str,
-    cache_dir: Path,
+    archive: ArchiveSeries,
     window: pd.DatetimeIndex,
     slippage_bps: Decimal,
     agents: TapedAgentSource | None,
 ) -> ReplayResultSchema:
     needs = replay_needs(app_config, strategy)
-    data = ReplayDataLoader(cache_dir).load(needs)
+    data = ReplayDataLoader(archive).load(needs)
     costs = replay_costs(app_config.paper.commission_rate, slippage_bps)
     precision = await _load_precision(needs.symbols)
     composer = ReplayComposer(app_config, precision, costs, agents)
@@ -102,7 +103,7 @@ def _taped_agents(
 
 
 def _vectorized_trend(
-    app_config: AppConfig, cache_dir: Path, window: pd.DatetimeIndex
+    app_config: AppConfig, archive: ArchiveSeries, window: pd.DatetimeIndex
 ) -> TrendStatsSchema:
     trend = app_config.strategy.trend_following
     params = TrendParamsSchema(
@@ -116,7 +117,7 @@ def _vectorized_trend(
         TurnoverBuffer(trend.buffer_band),
         TrendPortfolio(float(app_config.paper.commission_rate)),
     )
-    data = TrendDataLoader(cache_dir).load(trend.symbols)
+    data = TrendDataLoader(archive).load(trend.symbols)
     return backtest.run(data, window[0], window[1] - pd.Timedelta(days=1)).net
 
 
@@ -128,10 +129,11 @@ def _vectorized_trend(
     show_default=True,
 )
 @click.option(
-    "--cache-dir",
+    "--archive-dir",
     type=click.Path(path_type=Path, file_okay=False),
-    default=Path("data/eval_cache"),
+    default=Path("data/archive"),
     show_default=True,
+    help="Mirror that `eval archive` fills.",
 )
 @click.option(
     "--from",
@@ -139,7 +141,7 @@ def _vectorized_trend(
     type=click.DateTime(formats=["%Y-%m-%d"]),
     default=FIRST_RETURN_DAY.strftime("%Y-%m-%d"),
     show_default=True,
-    help="First traded UTC day; earlier cached bars only warm up indicators.",
+    help="First traded UTC day; earlier bars only warm up indicators.",
 )
 @click.option(
     "--to",
@@ -179,7 +181,7 @@ def _vectorized_trend(
 def replay_command(
     ctx: click.Context,
     strategy: str,
-    cache_dir: Path,
+    archive_dir: Path,
     start_day: datetime,
     end_day: datetime,
     slippage_bps: float,
@@ -187,8 +189,9 @@ def replay_command(
     record: bool,
     out: Path | None,
 ) -> None:
-    """Replay a strategy through the live loops and spine on cached history."""
+    """Replay a strategy through the live loops and spine on archived history."""
     app_config: AppConfig = ctx.obj["app_config"]
+    archive = ArchiveSeries(archive_dir)
     window = pd.DatetimeIndex([pd.Timestamp(start_day), pd.Timestamp(end_day)])
     agents = None
     if strategy == "llm_pipeline":
@@ -200,14 +203,14 @@ def replay_command(
             _replay(
                 app_config,
                 strategy,
-                cache_dir,
+                archive,
                 window,
                 Decimal(str(slippage_bps)),
                 agents,
             )
         )
         reference = (
-            _vectorized_trend(app_config, cache_dir, window)
+            _vectorized_trend(app_config, archive, window)
             if strategy == "trend_following"
             else None
         )

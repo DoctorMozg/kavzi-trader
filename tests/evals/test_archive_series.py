@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 
 from kavzi_trader.archive.archive_datasets import ARCHIVE_DATASETS
-from kavzi_trader.archive.archive_series import ArchiveSeries
 from kavzi_trader.archive.archive_store import ArchiveStore
+from kavzi_trader.evals.archive_series import ArchiveSeries
 from kavzi_trader.evals.candle_cache import COLUMNS
 from tests.archive.conftest import (
     MINUTE_MS,

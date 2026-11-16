@@ -9,8 +9,8 @@ import pytest_asyncio
 from kavzi_trader.cli.replay_composition import ReplayComposer, replay_costs
 from kavzi_trader.config import AppConfig
 from kavzi_trader.domain.symbol_filters import SymbolFiltersSchema
-from kavzi_trader.evals.candle_cache import COLUMNS, CandleCache
-from kavzi_trader.evals.series_cache import SeriesCache
+from kavzi_trader.evals.archive_series import ArchiveSeries
+from kavzi_trader.evals.candle_cache import COLUMNS
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
@@ -23,6 +23,7 @@ from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
+from tests.archive.conftest import write_bars, write_funding
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 NEEDS = ReplayNeedsSchema(symbols=SYMBOLS, interval="4h", daily_closes=True)
@@ -48,7 +49,7 @@ def _regime_closes() -> dict[str, np.ndarray]:
     }
 
 
-def _write_cache(cache_dir: Path, closes: dict[str, np.ndarray]) -> None:
+def _write_archive(root: Path, closes: dict[str, np.ndarray]) -> ArchiveSeries:
     for symbol, close in closes.items():
         open_ms = FIRST_BAR_MS + np.arange(len(close)) * BAR_MS
         open_ = np.concatenate([[close[0]], close[:-1]])
@@ -68,13 +69,10 @@ def _write_cache(cache_dir: Path, closes: dict[str, np.ndarray]) -> None:
             },
             columns=list(COLUMNS),
         )
-        frame.to_csv(CandleCache(cache_dir, "4h").path(symbol), compression="gzip")
+        write_bars(root, symbol, frame, BAR_MS)
         settle_ms = FIRST_BAR_MS + np.arange(len(close) // 2) * 8 * 3_600_000
-        pd.DataFrame({"time_ms": settle_ms + 2, "value": FUNDING_RATE}).to_csv(
-            SeriesCache(cache_dir, "funding").path(symbol),
-            index=False,
-            compression="gzip",
-        )
+        write_funding(root, symbol, (settle_ms + 2).tolist(), FUNDING_RATE)
+    return ArchiveSeries(root)
 
 
 def _precision() -> SymbolPrecision:
@@ -106,15 +104,13 @@ def config(app_config: AppConfig) -> AppConfig:
 
 
 @pytest.fixture(scope="module")
-def cache_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    path = tmp_path_factory.mktemp("replay_cache")
-    _write_cache(path, _regime_closes())
-    return path
+def archive(tmp_path_factory: pytest.TempPathFactory) -> ArchiveSeries:
+    return _write_archive(tmp_path_factory.mktemp("replay_archive"), _regime_closes())
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def replay(config: AppConfig, cache_dir: Path) -> ReplayResultSchema:
-    data = ReplayDataLoader(cache_dir).load(NEEDS)
+async def replay(config: AppConfig, archive: ArchiveSeries) -> ReplayResultSchema:
+    data = ReplayDataLoader(archive).load(NEEDS)
     composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
     rig = await composer.compose("trend_following", data, _ms(START))
     runner = ReplayRunner(rig, data)
@@ -122,7 +118,7 @@ async def replay(config: AppConfig, cache_dir: Path) -> ReplayResultSchema:
 
 
 @pytest.fixture(scope="module")
-def reference(config: AppConfig, cache_dir: Path) -> pd.Series:
+def reference(config: AppConfig, archive: ArchiveSeries) -> pd.Series:
     """Daily net returns of the vectorized rule, labelled by the day they span."""
     trend = config.strategy.trend_following
     signal = DonchianTrendSignal(
@@ -133,7 +129,7 @@ def reference(config: AppConfig, cache_dir: Path) -> pd.Series:
             max_leverage=trend.max_leverage,
         )
     )
-    data = TrendDataLoader(cache_dir).load(SYMBOLS)
+    data = TrendDataLoader(archive).load(SYMBOLS)
     closes = data.closes
     run = TrendPortfolio(float(TAKER_FEE)).run(
         TurnoverBuffer(trend.buffer_band).apply(signal.weights(closes)),
@@ -177,12 +173,12 @@ class TestTrendReplayMatchesTheVectorizedRule:
 
 
 async def test_rejections_are_tallied_by_reason(
-    app_config: AppConfig, cache_dir: Path
+    app_config: AppConfig, archive: ArchiveSeries
 ) -> None:
     # 5x puts liquidation about 20% away, inside the 30% disaster stop.
     futures = app_config.futures.model_copy(update={"default_leverage": 5})
     config = app_config.model_copy(update={"futures": futures})
-    data = ReplayDataLoader(cache_dir).load(NEEDS)
+    data = ReplayDataLoader(archive).load(NEEDS)
     composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
     rig = await composer.compose("trend_following", data, _ms(START))
     end = START + pd.Timedelta(days=30)
@@ -202,8 +198,10 @@ async def test_stop_filled_in_the_bar_is_seen_before_the_rebalance(
     rng = np.random.default_rng(11)
     steps = 0.002 + rng.normal(0, 0.01, 102 * 6)
     steps[100 * 6 - 1] = np.log(0.3)
-    _write_cache(tmp_path, {s: 100 * np.exp(np.cumsum(steps)) for s in SYMBOLS})
-    data = ReplayDataLoader(tmp_path).load(NEEDS)
+    archive = _write_archive(
+        tmp_path, {s: 100 * np.exp(np.cumsum(steps)) for s in SYMBOLS}
+    )
+    data = ReplayDataLoader(archive).load(NEEDS)
     composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
     start = pd.Timestamp("2021-03-01")
     rig = await composer.compose("trend_following", data, _ms(start))
@@ -225,9 +223,9 @@ async def test_daily_closes_hide_days_that_have_not_closed() -> None:
 
 
 async def test_runner_rejects_a_start_off_midnight(
-    config: AppConfig, cache_dir: Path
+    config: AppConfig, archive: ArchiveSeries
 ) -> None:
-    data = ReplayDataLoader(cache_dir).load(NEEDS)
+    data = ReplayDataLoader(archive).load(NEEDS)
     composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
     rig = await composer.compose("trend_following", data, _ms(START))
 

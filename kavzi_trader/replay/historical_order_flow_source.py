@@ -16,7 +16,7 @@ _MS_PER_MINUTE = 60_000
 
 
 class HistoricalOrderFlowSource:
-    """Serves cached funding and 5m metrics rows as Binance did at clock time.
+    """Serves archived funding and 5m metrics rows as Binance did at clock time.
 
     Each call returns the latest ``limit`` rows stamped at or before now; the
     time arguments are ignored, as the live fetcher never passes them.

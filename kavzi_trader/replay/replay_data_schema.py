@@ -10,7 +10,7 @@ class ReplayDataSchema(BaseModel):
     interval: str
     # CandleCache columns, sorted by open_time_ms.
     candles: dict[str, pd.DataFrame]
-    # SeriesCache columns: settlement time_ms and the funding rate value.
+    # Settlement time_ms and the funding rate value.
     funding: dict[str, pd.DataFrame]
     # MetricsCache columns; empty unless the strategy reads order flow.
     metrics: dict[str, pd.DataFrame] = {}

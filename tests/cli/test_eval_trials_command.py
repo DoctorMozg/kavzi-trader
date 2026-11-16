@@ -6,7 +6,7 @@ from click.testing import CliRunner, Result
 from kavzi_trader.cli.commands.evals import eval_group
 from kavzi_trader.config import AppConfig
 from tests.cli.test_eval_run_command import _silenced_live_logs
-from tests.replay.test_replay_runner import _regime_closes, _write_cache
+from tests.replay.test_replay_runner import _regime_closes, _write_archive
 
 WINDOW = ["--from", "2021-04-01", "--to", "2021-12-20"]
 
@@ -18,10 +18,9 @@ def config(app_config: AppConfig, tmp_path: Path) -> AppConfig:
 
 
 @pytest.fixture
-def cache(tmp_path: Path) -> Path:
-    path = tmp_path / "cache"
-    path.mkdir()
-    _write_cache(path, _regime_closes())
+def archive(tmp_path: Path) -> Path:
+    path = tmp_path / "archive"
+    _write_archive(path, _regime_closes())
     return path
 
 
@@ -32,21 +31,23 @@ def _invoke(config: AppConfig, *args: str) -> Result:
         )
 
 
-def _trend(config: AppConfig, cache: Path, lookbacks: str) -> Result:
+def _trend(config: AppConfig, archive: Path, lookbacks: str) -> Result:
     return _invoke(
         config,
         "trend",
-        "--cache-dir", str(cache),
+        "--archive-dir", str(archive),
         "--symbols", "BTCUSDT,ETHUSDT",
         "--lookbacks", lookbacks,
         *WINDOW,
     )  # fmt: skip
 
 
-def test_trend_runs_register_each_variant_once(config: AppConfig, cache: Path) -> None:
-    first = _trend(config, cache, "20")
-    again = _trend(config, cache, "20")
-    other = _trend(config, cache, "40")
+def test_trend_runs_register_each_variant_once(
+    config: AppConfig, archive: Path
+) -> None:
+    first = _trend(config, archive, "20")
+    again = _trend(config, archive, "20")
+    other = _trend(config, archive, "40")
 
     assert first.exception is None
     assert "1 trend trials so far" in first.output
@@ -54,9 +55,11 @@ def test_trend_runs_register_each_variant_once(config: AppConfig, cache: Path) -
     assert "2 trend trials so far" in other.output
 
 
-def test_trials_reports_deflated_sharpe_and_pbo(config: AppConfig, cache: Path) -> None:
+def test_trials_reports_deflated_sharpe_and_pbo(
+    config: AppConfig, archive: Path
+) -> None:
     for lookbacks in ("20", "40", "80"):
-        _trend(config, cache, lookbacks)
+        _trend(config, archive, lookbacks)
 
     result = _invoke(config, "trials", "--blocks", "8")
 

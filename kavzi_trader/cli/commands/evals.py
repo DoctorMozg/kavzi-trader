@@ -26,6 +26,7 @@ from kavzi_trader.cli.commands.trials import trials_command, trials_path
 from kavzi_trader.cli.composition import build_agent_source, load_tier_registry
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.agent_source import AgentSource
+from kavzi_trader.evals.archive_series import ArchiveSeries
 from kavzi_trader.evals.candidate_signals import (
     CANDIDATE_SIGNALS,
     LEADER_SYMBOL,
@@ -981,10 +982,11 @@ def _parse_lookbacks(
     help="Donchian lookbacks in days; the preregistered rule uses all three.",
 )
 @click.option(
-    "--cache-dir",
+    "--archive-dir",
     type=click.Path(path_type=Path, file_okay=False),
-    default=Path("data/eval_cache"),
+    default=Path("data/archive"),
     show_default=True,
+    help="Mirror that `eval archive` fills.",
 )
 @click.option(
     "--out",
@@ -1014,16 +1016,20 @@ def trend_backtest(
     ctx: click.Context,
     variant: str,
     lookbacks: tuple[int, ...],
-    cache_dir: Path,
+    archive_dir: Path,
     out: Path | None,
     start_day: datetime,
     end_day: datetime,
     symbols: list[str] | None,
 ) -> None:
-    """Backtest the daily Donchian trend ensemble on cached candles and funding."""
+    """Backtest the daily Donchian trend ensemble on archived candles and funding."""
     app_config: AppConfig = ctx.obj["app_config"]
     params = TrendParamsSchema(lookbacks=lookbacks, long_short=variant == "long-short")
-    data = TrendDataLoader(cache_dir).load(symbols or TREND_TRADING_SYMBOLS)
+    archive = ArchiveSeries(archive_dir)
+    try:
+        data = TrendDataLoader(archive).load(symbols or TREND_TRADING_SYMBOLS)
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
     backtest = WeightBacktest(
         DonchianTrendSignal(params),
         TurnoverBuffer(TREND_BUFFER_BAND),

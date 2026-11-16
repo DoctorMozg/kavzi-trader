@@ -13,15 +13,14 @@ from kavzi_trader.cli.replay_composition import (
 )
 from kavzi_trader.config import AppConfig
 from kavzi_trader.domain.symbol_filters import SymbolFiltersSchema
-from kavzi_trader.evals.candle_cache import COLUMNS, CandleCache
+from kavzi_trader.evals.archive_series import ArchiveSeries
+from kavzi_trader.evals.candle_cache import COLUMNS
 from kavzi_trader.evals.metrics_cache import (
     GLOBAL_RATIO,
     OPEN_INTEREST,
     TIME,
     TOP_POSITION_RATIO,
-    MetricsCache,
 )
-from kavzi_trader.evals.series_cache import SeriesCache
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.replay.llm_tape import LlmTape
 from kavzi_trader.replay.replay_data_loader import ReplayDataLoader
@@ -30,6 +29,7 @@ from kavzi_trader.replay.replay_runner import ReplayRunner
 from kavzi_trader.replay.taped_agent_source import TapedAgentSource
 from kavzi_trader.replay.training_cutoff import is_contaminated
 from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
+from tests.archive.conftest import write_bars, write_funding, write_metrics
 from tests.evals.eval_fixtures import FakeLlmAgents
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
@@ -43,7 +43,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 
 class ReplayRun:
-    """One llm_pipeline replay over the synthetic cache, with its decision log."""
+    """One llm_pipeline replay over the synthetic archive, with its decision log."""
 
     def __init__(self, result: ReplayResultSchema, events: list[EventSchema]) -> None:
         self.result = result
@@ -57,7 +57,7 @@ class ReplayRun:
         ]
 
 
-def _write_cache(cache_dir: Path) -> None:
+def _write_archive(root: Path) -> None:
     rng = np.random.default_rng(5)
     n_bars = DAYS * 96
     open_ms = FIRST_BAR_MS + np.arange(n_bars) * BAR_MS
@@ -68,7 +68,7 @@ def _write_cache(cache_dir: Path) -> None:
         close = np.round(100 * (i + 1) * walk, 2)
         open_ = np.concatenate([[close[0]], close[:-1]])
         volume = rng.lognormal(4, 0.5, n_bars)
-        pd.DataFrame(
+        bars = pd.DataFrame(
             {
                 "open_time_ms": open_ms,
                 "open": open_,
@@ -83,13 +83,13 @@ def _write_cache(cache_dir: Path) -> None:
                 "taker_buy_quote_volume": volume * close / 2,
             },
             columns=list(COLUMNS),
-        ).to_csv(CandleCache(cache_dir, "15m").path(symbol), index=False)
-        settle_ms = FIRST_BAR_MS + np.arange(DAYS * 3) * 8 * 3_600_000
-        SeriesCache(cache_dir, "funding").merge(
-            symbol, settle_ms.tolist(), [0.0001] * len(settle_ms)
         )
+        write_bars(root, symbol, bars, BAR_MS)
+        settle_ms = FIRST_BAR_MS + np.arange(DAYS * 3) * 8 * 3_600_000
+        write_funding(root, symbol, settle_ms.tolist(), 0.0001)
         snaps = FIRST_BAR_MS + np.arange(DAYS * 288) * 300_000
-        MetricsCache(cache_dir).merge(
+        write_metrics(
+            root,
             symbol,
             pd.DataFrame(
                 {
@@ -130,10 +130,10 @@ def config(app_config: AppConfig) -> AppConfig:
 
 
 @pytest.fixture(scope="module")
-def cache_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    path = tmp_path_factory.mktemp("llm_replay_cache")
-    _write_cache(path)
-    return path
+def archive(tmp_path_factory: pytest.TempPathFactory) -> ArchiveSeries:
+    path = tmp_path_factory.mktemp("llm_replay_archive")
+    _write_archive(path)
+    return ArchiveSeries(path)
 
 
 @pytest.fixture(scope="module")
@@ -142,9 +142,9 @@ def tape_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 async def _run(
-    config: AppConfig, cache_dir: Path, agents: TapedAgentSource
+    config: AppConfig, archive: ArchiveSeries, agents: TapedAgentSource
 ) -> ReplayRun:
-    data = ReplayDataLoader(cache_dir).load(replay_needs(config, "llm_pipeline"))
+    data = ReplayDataLoader(archive).load(replay_needs(config, "llm_pipeline"))
     costs = replay_costs(Decimal("0.0005"), Decimal(0))
     composer = ReplayComposer(config, _precision(), costs, agents)
     rig = await composer.compose("llm_pipeline", data, _ms(START))
@@ -159,22 +159,22 @@ def fake(config: AppConfig) -> FakeLlmAgents:
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def recorded(
-    config: AppConfig, cache_dir: Path, tape_path: Path, fake: FakeLlmAgents
+    config: AppConfig, archive: ArchiveSeries, tape_path: Path, fake: FakeLlmAgents
 ) -> ReplayRun:
     agents = TapedAgentSource(fake, LlmTape(tape_path), record=True)
-    return await _run(config, cache_dir, agents)
+    return await _run(config, archive, agents)
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def replayed(
     config: AppConfig,
-    cache_dir: Path,
+    archive: ArchiveSeries,
     tape_path: Path,
     fake: FakeLlmAgents,
     recorded: ReplayRun,
 ) -> ReplayRun:
     agents = TapedAgentSource(fake, LlmTape(tape_path), record=False)
-    return await _run(config, cache_dir, agents)
+    return await _run(config, archive, agents)
 
 
 class TestTapedReplayIsDeterministic:
@@ -214,12 +214,12 @@ class TestTapedReplayIsDeterministic:
 
 
 async def test_replay_only_run_counts_requests_missing_from_the_tape(
-    config: AppConfig, cache_dir: Path, tmp_path: Path, fake: FakeLlmAgents
+    config: AppConfig, archive: ArchiveSeries, tmp_path: Path, fake: FakeLlmAgents
 ) -> None:
     calls_before = sum(fake.calls.values())
     agents = TapedAgentSource(fake, LlmTape(tmp_path / "empty.jsonl"), record=False)
 
-    run = await _run(config, cache_dir, agents)
+    run = await _run(config, archive, agents)
 
     assert run.result.llm is not None
     assert run.result.llm.tape_misses > 0

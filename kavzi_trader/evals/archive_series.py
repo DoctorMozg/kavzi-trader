@@ -39,7 +39,10 @@ class ArchiveSeries:
             raise ValueError(msg)
         minutes = self._store.load(ARCHIVE_DATASETS["klines"], symbol)
         if minutes.empty:
-            msg = f"no archived 1m klines for {symbol} under {self._root}"
+            msg = (
+                f"no archived 1m klines for {symbol} under {self._root}; run "
+                f"`kavzitrader eval archive --symbols {symbol} --root {self._root}`"
+            )
             raise FileNotFoundError(msg)
         bar_ms = seconds * _MS_PER_S
         start = minutes["open_time_ms"] // bar_ms * bar_ms
