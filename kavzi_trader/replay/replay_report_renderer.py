@@ -41,7 +41,10 @@ class ReplayReportRenderer:
         return Md.section("Summary", table, note)
 
     def _decisions(self, result: ReplayResultSchema) -> str:
-        text = f"Orders placed: {result.orders}."
+        text = (
+            f"Orders placed: {result.orders}. "
+            f"Intents that failed in execution: {result.failed_decisions}."
+        )
         if not result.rejections:
             return Md.section("Intents", text)
         rows = [[reason, str(n)] for reason, n in result.rejections.items()]

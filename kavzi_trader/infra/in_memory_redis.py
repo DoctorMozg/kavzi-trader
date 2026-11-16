@@ -93,6 +93,9 @@ class InMemoryRedis:
     async def rpush(self, key: str, value: str) -> None:
         self.lists.setdefault(key, []).append(value)
 
+    async def llen(self, key: str) -> int:
+        return len(self.lists.get(key, []))
+
     async def lmove(
         self,
         first_list: str,

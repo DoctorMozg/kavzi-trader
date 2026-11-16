@@ -11,7 +11,10 @@ from kavzi_trader.domain.decision_message import DecisionMessageSchema
 from kavzi_trader.domain.execution_result import ExecutionResultSchema
 from kavzi_trader.domain.state_schemas import PositionSchema
 from kavzi_trader.infra.redis_client import RedisStateClient
-from kavzi_trader.orchestrator.loops.decision_queue import DECISION_QUEUE_KEY
+from kavzi_trader.orchestrator.loops.decision_queue import (
+    DECISION_QUEUE_KEY,
+    FAILED_DECISION_QUEUE_KEY,
+)
 from kavzi_trader.orchestrator.loops.position_close_reporter import (
     PositionCloseReporter,
 )
@@ -35,7 +38,6 @@ logger = logging.getLogger(__name__)
 _PENDING_SWEEP_INTERVAL_MS = 5_000
 
 _PROCESSING_KEY = "kt:decisions:processing"
-_FAILED_KEY = "kt:decisions:failed"
 _MAX_DECISION_ATTEMPTS = 3
 
 
@@ -192,11 +194,11 @@ class ExecutionLoop:
 
     async def _dead_letter(self, raw: str) -> None:
         client = self._redis_client.client
-        await client.lpush(_FAILED_KEY, raw)
+        await client.lpush(FAILED_DECISION_QUEUE_KEY, raw)
         await client.lrem(_PROCESSING_KEY, 1, raw)
         logger.error(
             "Decision moved to %s",
-            _FAILED_KEY,
+            FAILED_DECISION_QUEUE_KEY,
             extra={"loop": "execution", "payload_preview": raw[:200]},
         )
 

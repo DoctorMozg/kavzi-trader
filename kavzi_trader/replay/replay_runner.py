@@ -9,6 +9,7 @@ from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.evals.candle_cache import candles_from_frame
 from kavzi_trader.evals.series_cache import TIME, VALUE
 from kavzi_trader.evals.trend_metrics import TrendMetrics
+from kavzi_trader.orchestrator.loops.decision_queue import FAILED_DECISION_QUEUE_KEY
 from kavzi_trader.replay.replay_data_loader import BAR_INTERVAL
 from kavzi_trader.replay.replay_data_schema import ReplayDataSchema
 from kavzi_trader.replay.replay_result_schema import ReplayResultSchema
@@ -60,13 +61,15 @@ class ReplayRunner:
         return await self._result(samples, received)
 
     async def _trade(self, next_tick_ms: int, close_ms: int) -> int:
-        """Runs the strategy ticks due before the next bar closes, then the spine."""
+        """Runs the strategy ticks due before the next bar closes."""
         rig = self._rig
+        # Live polls fills every few seconds, so a stop filled inside the bar
+        # is booked before any strategy tick that follows it.
+        await rig.position_loop.step()
         while next_tick_ms < close_ms + BAR_MS:
             rig.clock.advance_to(max(next_tick_ms, close_ms))
             next_tick_ms = await rig.strategy_loop.step()
             await rig.execution_loop.step()
-        await rig.position_loop.step()
         return next_tick_ms
 
     async def _warm_up(self, start_ms: int) -> None:
@@ -155,6 +158,7 @@ class ReplayRunner:
             if e.event_type == "order_rejected"
             for reason in str(e.data.get("reason", "")).split("; ")
         )
+        failed = await self._rig.redis_client.client.llen(FAILED_DECISION_QUEUE_KEY)
         if tally and not orders:
             logger.warning("Replay placed no orders; every intent was rejected")
         logger.info(
@@ -173,6 +177,7 @@ class ReplayRunner:
             final_equity=values[-1],
             funding_received=received,
             orders=orders,
+            failed_decisions=failed,
             rejections=dict(tally.most_common()),
         )
 

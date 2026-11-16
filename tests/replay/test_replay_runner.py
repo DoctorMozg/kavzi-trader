@@ -34,15 +34,20 @@ TAKER_FEE = Decimal("0.0005")
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 
-def _write_cache(cache_dir: Path) -> None:
+def _regime_closes() -> dict[str, np.ndarray]:
     rng = np.random.default_rng(7)
     n_bars = DAYS * 6
-    open_ms = FIRST_BAR_MS + np.arange(n_bars) * BAR_MS
-    for i, symbol in enumerate(SYMBOLS):
-        # Regime drifts so the trend rule goes in and out of the market.
-        drift = np.where((np.arange(n_bars) // 300) % 2 == 0, 0.003, -0.002)
-        steps = drift + rng.normal(0, 0.012, n_bars)
-        close = 100 * (i + 1) * np.exp(np.cumsum(steps))
+    # Regime drifts so the trend rule goes in and out of the market.
+    drift = np.where((np.arange(n_bars) // 300) % 2 == 0, 0.003, -0.002)
+    return {
+        symbol: 100 * (i + 1) * np.exp(np.cumsum(drift + rng.normal(0, 0.012, n_bars)))
+        for i, symbol in enumerate(SYMBOLS)
+    }
+
+
+def _write_cache(cache_dir: Path, closes: dict[str, np.ndarray]) -> None:
+    for symbol, close in closes.items():
+        open_ms = FIRST_BAR_MS + np.arange(len(close)) * BAR_MS
         open_ = np.concatenate([[close[0]], close[:-1]])
         frame = pd.DataFrame(
             {
@@ -61,7 +66,7 @@ def _write_cache(cache_dir: Path) -> None:
             columns=list(COLUMNS),
         )
         frame.to_csv(CandleCache(cache_dir, "4h").path(symbol), compression="gzip")
-        settle_ms = FIRST_BAR_MS + np.arange(DAYS * 3) * 8 * 3_600_000
+        settle_ms = FIRST_BAR_MS + np.arange(len(close) // 2) * 8 * 3_600_000
         pd.DataFrame({"time_ms": settle_ms + 2, "value": FUNDING_RATE}).to_csv(
             SeriesCache(cache_dir, "funding").path(symbol),
             index=False,
@@ -100,7 +105,7 @@ def config(app_config: AppConfig) -> AppConfig:
 @pytest.fixture(scope="module")
 def cache_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("replay_cache")
-    _write_cache(path)
+    _write_cache(path, _regime_closes())
     return path
 
 
@@ -168,6 +173,7 @@ class TestTrendReplayMatchesTheVectorizedRule:
     ) -> None:
         assert replay.orders > 0
         assert replay.rejections == {}
+        assert replay.failed_decisions == 0
 
 
 async def test_rejections_are_tallied_by_reason(
@@ -186,6 +192,26 @@ async def test_rejections_are_tallied_by_reason(
     assert result.orders == 0
     assert list(result.rejections) == ["Stop loss at or beyond liquidation price"]
     assert result.final_equity == result.initial_equity
+
+
+async def test_stop_filled_in_the_bar_is_seen_before_the_rebalance(
+    config: AppConfig, tmp_path: Path
+) -> None:
+    # 100 calm up days, then the day's last bar drops 70%: the 30%
+    # disaster stop fills inside that bar and the 00:01 rebalance flattens.
+    rng = np.random.default_rng(11)
+    steps = 0.002 + rng.normal(0, 0.01, 102 * 6)
+    steps[100 * 6 - 1] = np.log(0.3)
+    _write_cache(tmp_path, {s: 100 * np.exp(np.cumsum(steps)) for s in SYMBOLS})
+    data = ReplayDataLoader(tmp_path).load(SYMBOLS)
+    composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
+    start = pd.Timestamp("2021-03-01")
+    rig = await composer.compose("trend_following", data, _ms(start))
+
+    result = await ReplayRunner(rig, data).run(_ms(start), _ms(start) + 42 * 86_400_000)
+
+    assert result.orders > 0
+    assert result.failed_decisions == 0
 
 
 async def test_daily_closes_hide_days_that_have_not_closed() -> None:

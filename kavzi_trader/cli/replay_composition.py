@@ -99,6 +99,7 @@ class ReplayComposer:
             exchange=exchange,
             market_cache=cache,
             event_store=services.event_store,
+            redis_client=redis_client,
             strategy_loop=StrategyLoop(
                 plugin, DecisionPublisher(redis_client), state, clock
             ),

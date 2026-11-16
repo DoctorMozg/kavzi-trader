@@ -21,4 +21,6 @@ class ReplayResultSchema(BaseModel):
     funding_received: Decimal
     # Orders the spine placed, and rejected intents grouped by reason.
     orders: int
+    # Intents the execution loop gave up on after retries.
+    failed_decisions: int
     rejections: dict[str, int]

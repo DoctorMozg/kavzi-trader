@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, SkipValidation
 
 from kavzi_trader.commons.sim_clock import SimClock
 from kavzi_trader.events.store import RedisEventStore
+from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
 from kavzi_trader.orchestrator.loops.strategy import StrategyLoop
@@ -21,6 +22,7 @@ class ReplayRigSchema(BaseModel):
     exchange: Annotated[PaperExchangeClient, SkipValidation]
     market_cache: Annotated[MarketDataCache, SkipValidation]
     event_store: Annotated[RedisEventStore, SkipValidation]
+    redis_client: Annotated[RedisStateClient, SkipValidation]
     strategy_loop: Annotated[StrategyLoop, SkipValidation]
     execution_loop: Annotated[ExecutionLoop, SkipValidation]
     position_loop: Annotated[PositionManagementLoop, SkipValidation]

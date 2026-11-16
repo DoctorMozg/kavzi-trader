@@ -25,3 +25,12 @@ async def test_xadd_trims_to_maxlen_and_keeps_ids_unique() -> None:
 
     assert len(set(ids)) == 3
     assert [fields["n"] for _, fields in entries] == ["1", "2"]
+
+
+async def test_llen_counts_items_and_reads_a_missing_list_as_empty() -> None:
+    redis = InMemoryRedis()
+    await redis.lpush("queue", "a")
+    await redis.rpush("queue", "b")
+
+    assert await redis.llen("queue") == 2
+    assert await redis.llen("missing") == 0
