@@ -17,3 +17,5 @@ class TrendResultSchema(BaseModel):
     turnover_per_year: float
     cost_drag: float
     funding_drag: float
+    # Net return of each scored day, oldest first; trial statistics read it.
+    daily_net: list[float]

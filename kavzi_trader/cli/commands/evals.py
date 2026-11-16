@@ -21,6 +21,7 @@ from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
 from kavzi_trader.cli.commands.replay import replay_command
+from kavzi_trader.cli.commands.trials import trials_command, trials_path
 from kavzi_trader.cli.composition import build_agent_source, load_tier_registry
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.agent_source import AgentSource
@@ -83,6 +84,8 @@ from kavzi_trader.evals.signal_sampler import (
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_report_renderer import TrendReportRenderer
+from kavzi_trader.evals.validation.trial_registry import TrialRegistry
+from kavzi_trader.evals.validation.trial_schema import TrialSchema
 from kavzi_trader.evals.weight_backtest import (
     FIRST_RETURN_DAY,
     LAST_RETURN_DAY,
@@ -1040,6 +1043,22 @@ def trend_backtest(
         f"criterion met: {renderer.criterion_met(result)}"
     )
     click.echo(f"Report: {path}")
+    trial = TrialSchema(
+        family="trend",
+        variant=(
+            f"{variant} lookbacks={','.join(map(str, lookbacks))} "
+            f"symbols={','.join(result.symbols)} "
+            f"fee={app_config.paper.commission_rate} band={TREND_BUFFER_BAND}"
+        ),
+        first_day=result.first_day,
+        last_day=result.last_day,
+        daily_net=result.daily_net,
+    )
+    registry = TrialRegistry(trials_path(app_config))
+    if registry.record(trial):
+        count = len(registry.trials("trend"))
+        click.echo(f"Trial registered; {count} trend trials so far")
 
 
 eval_group.add_command(replay_command)
+eval_group.add_command(trials_command)

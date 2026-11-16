@@ -69,4 +69,5 @@ class WeightBacktest:
             turnover_per_year=float(run.traded.mean() * DAYS_PER_YEAR),
             cost_drag=float(run.cost.mean() * DAYS_PER_YEAR),
             funding_drag=float(run.funding.mean() * DAYS_PER_YEAR),
+            daily_net=run.net.tolist(),
         )
