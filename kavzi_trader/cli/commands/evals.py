@@ -20,6 +20,7 @@ from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
+from kavzi_trader.cli.commands.archive import archive_command
 from kavzi_trader.cli.commands.replay import replay_command
 from kavzi_trader.cli.commands.trials import trials_command, trials_path
 from kavzi_trader.cli.composition import build_agent_source, load_tier_registry
@@ -1062,3 +1063,4 @@ def trend_backtest(
 
 eval_group.add_command(replay_command)
 eval_group.add_command(trials_command)
+eval_group.add_command(archive_command)
