@@ -27,6 +27,8 @@ class ArchiveDownloader:
 
     Months already stored are skipped, so an interrupted sync resumes. The
     current month is left out until it ends: a stored month counts as done.
+    Some monthly kline files lack days (SOLUSDT 2022-02 stops on the 25th), so
+    days a monthly file lacks are filled from the daily files.
     """
 
     def __init__(
@@ -51,8 +53,12 @@ class ArchiveDownloader:
             if from_month <= period[:7] < self._current_month:
                 by_month[period[:7]].append(period)
         missing = [m for m in by_month if not self._store.has(dataset, symbol, m)]
+        daily = await self._daily_by_month(dataset, symbol) if missing else {}
         await asyncio.gather(
-            *(self._fetch_month(dataset, symbol, m, by_month[m]) for m in missing)
+            *(
+                self._fetch_month(dataset, symbol, m, by_month[m], daily.get(m, []))
+                for m in missing
+            )
         )
         logger.info(
             "%s %s: %d months fetched, %d already stored",
@@ -68,18 +74,53 @@ class ArchiveDownloader:
             skipped=len(by_month) - len(missing),
         )
 
+    async def _daily_by_month(
+        self, dataset: ArchiveDatasetSchema, symbol: str
+    ) -> dict[str, list[str]]:
+        """Daily files that can fill gaps in a monthly kline-shaped dataset."""
+        if dataset.daily or dataset.interval is None:
+            return {}
+        days: dict[str, list[str]] = defaultdict(list)
+        for day in await self._listing.periods(_as_daily(dataset), symbol):
+            days[day[:7]].append(day)
+        return days
+
     async def _fetch_month(
         self,
         dataset: ArchiveDatasetSchema,
         symbol: str,
         month: str,
         periods: list[str],
+        daily: list[str],
     ) -> None:
         parts = await asyncio.gather(
             *(self._fetch(dataset, symbol, p) for p in periods)
         )
-        rows = pd.concat(parts, ignore_index=True).drop_duplicates(ignore_index=True)
-        self._store.write(dataset, symbol, month, rows)
+        rows = pd.concat(parts, ignore_index=True)
+        if daily:
+            time_column = dataset.columns[0]
+            stored = set(
+                pd.to_datetime(rows[time_column], unit="ms").dt.strftime("%Y-%m-%d")
+            )
+            gaps = [d for d in daily if d not in stored]
+            if gaps:
+                logger.warning(
+                    "%s %s %s lacks %d days; filling from daily files",
+                    symbol,
+                    dataset.name,
+                    month,
+                    len(gaps),
+                    extra={"days": gaps},
+                )
+                fills = await asyncio.gather(
+                    *(self._fetch(_as_daily(dataset), symbol, d) for d in gaps)
+                )
+                rows = pd.concat([rows, *fills], ignore_index=True).sort_values(
+                    time_column, ignore_index=True
+                )
+        self._store.write(
+            dataset, symbol, month, rows.drop_duplicates(ignore_index=True)
+        )
 
     async def _fetch(
         self, dataset: ArchiveDatasetSchema, symbol: str, period: str
@@ -97,6 +138,10 @@ class ArchiveDownloader:
             msg = f"{stem}.zip sha256 {actual} but Binance publishes {expected}"
             raise ChecksumMismatchError(msg)
         return parse_archive_csv(dataset, archive.content, f"{stem}.csv")
+
+
+def _as_daily(dataset: ArchiveDatasetSchema) -> ArchiveDatasetSchema:
+    return dataset.model_copy(update={"daily": True})
 
 
 def parse_archive_csv(

@@ -91,6 +91,12 @@ def kline_key(symbol: str, month: str) -> str:
     return f"{klines.prefix}{klines.symbol_dir(symbol)}/{stem}.zip"
 
 
+def daily_kline_key(symbol: str, day: str) -> str:
+    klines = ARCHIVE_DATASETS["klines"]
+    stem = klines.file_stem(symbol, day)
+    return f"data/futures/um/daily/{klines.symbol_dir(symbol)}/{stem}.zip"
+
+
 def metrics_key(symbol: str, day: str) -> str:
     metrics = ARCHIVE_DATASETS["metrics"]
     stem = metrics.file_stem(symbol, day)

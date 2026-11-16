@@ -15,6 +15,7 @@ from kavzi_trader.archive.checksum_mismatch_error import ChecksumMismatchError
 from tests.archive.conftest import (
     METRICS_HEADER,
     FakeVision,
+    daily_kline_key,
     kline_csv,
     kline_key,
     metrics_key,
@@ -24,6 +25,7 @@ KLINES = ARCHIVE_DATASETS["klines"]
 FUNDING = ARCHIVE_DATASETS["funding"]
 METRICS = ARCHIVE_DATASETS["metrics"]
 JAN_MS = 1_577_836_800_000  # 2020-01-01
+DAY_MS = 86_400_000
 FEB_MS = 1_580_515_200_000  # 2020-02-01
 
 
@@ -112,6 +114,28 @@ class TestMonthlyArchives:
             await _sync(downloader, "SRMUSDT", "2020-01")
 
         assert "2020-01" not in store.months(KLINES, "SRMUSDT")
+
+    async def test_days_a_monthly_file_lacks_come_from_daily_files(
+        self, downloader: ArchiveDownloader, delisted: FakeVision, store: ArchiveStore
+    ) -> None:
+        # The monthly file stops after Jan 1; Binance still has the Jan 2 daily file.
+        for day, first_ms in (("2020-01-01", JAN_MS), ("2020-01-02", JAN_MS + DAY_MS)):
+            delisted.add(
+                daily_kline_key("SRMUSDT", day),
+                f"SRMUSDT-1m-{day}.csv",
+                kline_csv(first_ms, header=True),
+            )
+
+        await _sync(downloader, "SRMUSDT", "2020-01")
+
+        times = store.load(KLINES, "SRMUSDT")["open_time_ms"]
+        assert times.tolist() == [
+            *(JAN_MS + i * 60_000 for i in range(3)),
+            *(JAN_MS + DAY_MS + i * 60_000 for i in range(3)),
+            *(FEB_MS + i * 60_000 for i in range(3)),
+        ]
+        daily = [d for d in delisted.downloads if "/daily/" in d]
+        assert daily == [daily_kline_key("SRMUSDT", "2020-01-02")]
 
     async def test_funding_columns_are_renamed(
         self, downloader: ArchiveDownloader, delisted: FakeVision, store: ArchiveStore
