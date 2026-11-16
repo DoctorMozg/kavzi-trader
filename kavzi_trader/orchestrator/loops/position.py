@@ -16,6 +16,7 @@ from kavzi_trader.orchestrator.loops.position_close_reporter import (
 from kavzi_trader.spine.position.action_executor import PositionActionExecutor
 from kavzi_trader.spine.position.exchange_fill_detector import ExchangeFillDetector
 from kavzi_trader.spine.position.manager import PositionManager
+from kavzi_trader.spine.risk.drawdown_circuit_breaker import DrawdownCircuitBreaker
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.ui.recorder import UiEventRecorder
 
@@ -46,7 +47,9 @@ class PositionManagementLoop:
         cycle_timeout_s: int = 30,
         fill_check_interval_s: int = 15,
         tp_retry_max_attempts: int = 3,
+        drawdown_breaker: DrawdownCircuitBreaker | None = None,
     ) -> None:
+        self._drawdown_breaker = drawdown_breaker
         self._manager = manager
         self._state_manager = state_manager
         self._atr_provider = atr_provider
@@ -82,6 +85,11 @@ class PositionManagementLoop:
 
     async def _manage_positions(self) -> None:
         positions = await self._state_manager.get_all_positions()
+        if self._drawdown_breaker is not None and await self._drawdown_breaker.check(
+            len(positions),
+        ):
+            await self._close_all(positions)
+            return
         open_ids = {p.id for p in positions}
         self._tp_retry_attempts = {
             pid: n for pid, n in self._tp_retry_attempts.items() if pid in open_ids
@@ -112,6 +120,22 @@ class PositionManagementLoop:
                     "position_count": len(positions),
                 },
             )
+
+    async def _close_all(self, positions: list[PositionSchema]) -> None:
+        """Full-exit every position; each failure is isolated and retried next tick."""
+        action = PositionActionSchema(
+            action=PositionActionType.FULL_EXIT,
+            reason="Drawdown circuit breaker",
+        )
+        for position in positions:
+            try:
+                await self._apply_action(position, action)
+            except Exception:
+                logger.exception(
+                    "Drawdown close-all failed for %s",
+                    position.symbol,
+                    extra={"loop": "position", "position_id": position.id},
+                )
 
     async def _sweep_orphaned_orders(self) -> None:
         try:

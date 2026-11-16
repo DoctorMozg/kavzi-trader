@@ -7,6 +7,7 @@ from kavzi_trader.orchestrator.providers.live_atr_provider import LiveAtrProvide
 from kavzi_trader.orchestrator.providers.live_price_provider import LivePriceProvider
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.spine.execution.engine import ExecutionEngine
+from kavzi_trader.spine.execution.event_recorder import ExecutionEventRecorder
 from kavzi_trader.spine.execution.monitor import OrderMonitor
 from kavzi_trader.spine.execution.precision_exchange import PrecisionExchangeClient
 from kavzi_trader.spine.execution.staleness import StalenessChecker
@@ -26,6 +27,7 @@ from kavzi_trader.spine.position.partial_exit import PartialExitChecker
 from kavzi_trader.spine.position.stall_exit import StallExitChecker
 from kavzi_trader.spine.position.time_exit import TimeExitChecker
 from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
+from kavzi_trader.spine.risk.drawdown_circuit_breaker import DrawdownCircuitBreaker
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
@@ -126,4 +128,9 @@ class SpineComposer:
             interval_s=orchestrator_config.position_check_interval_s,
             ui_recorder=services.ui_recorder,
             cycle_timeout_s=orchestrator_config.position_cycle_timeout_s,
+            drawdown_breaker=DrawdownCircuitBreaker(
+                self._config.risk.drawdown_close_all_percent,
+                services.state_manager,
+                ExecutionEventRecorder(services.event_store),
+            ),
         )
