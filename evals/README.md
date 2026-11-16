@@ -1,6 +1,6 @@
 # Evaluation suite
 
-Five commands under `kavzitrader eval` (`kavzi_trader/cli/commands/evals.py`):
+Seven commands under `kavzitrader eval` (`kavzi_trader/cli/commands/evals.py`):
 
 | Command | Calls an LLM? | Purpose |
 | --- | --- | --- |
@@ -8,9 +8,11 @@ Five commands under `kavzitrader eval` (`kavzi_trader/cli/commands/evals.py`):
 | `run` | **yes, paid** | Push cases through Scout, Analyst and Trader |
 | `report` | no | Score a finished run |
 | `signals` | no | Measure whether each live confluence signal predicts outcomes |
-| `refresh-cache` | no | Fill cached candles, funding and OI up to today 00:00 UTC, leave `cases_v1.jsonl` alone |
+| `refresh-cache` | no | Fill cached candles, funding and OI (optionally the 5m metrics archive) up to today 00:00 UTC, leave `cases_v1.jsonl` alone |
+| `trend` | no | Backtest the daily Donchian trend ensemble against buy-and-hold |
+| `funding-xs` | no | Backtest the market-neutral cross-sectional funding rank |
 
-They share the gitignored cache `data/eval_cache/` (`--cache-dir`): `build-dataset` and `refresh-cache` download into it, the other commands read from it. Candle and funding history can always be re-downloaded from Binance. Open interest older than about 30 days cannot, so don't delete the OI files.
+They share the gitignored cache `data/eval_cache/` (`--cache-dir`): `build-dataset` and `refresh-cache` download into it, the other commands read from it. Candle and funding history can always be re-downloaded from Binance. Open interest older than about 30 days cannot (the `metrics` archive below can), so don't delete the OI files.
 
 ## Dataset
 
@@ -60,6 +62,43 @@ Finished cases are skipped, so you don't pay for them again. Cases that errored 
 
 No LLM calls. Writes `results/evals/<run_id>.report.md` (override with `--out`) and prints a short summary. The report covers the stage funnel, decision-vs-label matrices, per-stage stats, simulated R against baselines, and ops/cost.
 
+## Trend backtest
+
+    uv run kavzitrader eval trend
+    uv run kavzitrader eval trend --variant long-short --lookbacks 20
+    uv run kavzitrader eval trend --symbols DOGEUSDT,LTCUSDT,DOTUSDT,BCHUSDT,ATOMUSDT,TRXUSDT,ETCUSDT,FILUSDT
+
+No LLM calls. Rules are fixed in `evals/preregistrations/2026_11_16_trend_following.md`. Reads cached 4h candles and funding (`refresh-cache --interval 4h --months 60`) and folds every 6 candles into a UTC day (`trend_data_loader.py`). Days with fewer than 6 candles are dropped, and a gap in the daily series is an error.
+
+Per symbol and lookback L, the Donchian state is 1 when the close is above the highest close of the previous L days, 0 (long/flat) or -1 (long/short) when it is below the lowest, else unchanged (`donchian_trend_signal.py`). The signal is the mean of the lookback states. Target weight is `signal * min(0.25 / vol, 2.0) / N`, where `vol` is the 30-day daily log-return std x sqrt(365) and N is the number of symbols. Weights set at a close earn the next day's return.
+
+`turnover_buffer.py` trades a symbol only when its target is zero, flips sign, or differs from the held weight by more than 20% of it. `trend_portfolio.py` charges `paper.commission_rate` on traded weight and funding on held weight (longs pay positive funding). The benchmark is equal-weight, daily-rebalanced buy-and-hold with no costs or funding.
+
+Options:
+
+- `--variant long-flat|long-short` (default `long-flat`, the pre-registered rule).
+- `--lookbacks 20,40,80`: days, comma-separated. The pre-registered rule uses all three.
+- `--symbols`: default is the 8 trading symbols. Score the 8 HOLDOUT symbols (DOGE LTC DOT BCH ATOM TRX ETC FIL) with a second run.
+- `--from` / `--to` (default 2022-03-15 to 2026-11-15, `--to` exclusive): days outside the window only warm up the lookbacks.
+- `--cache-dir`, `--out` (default `results/evals/trend_<UTC time>.md`).
+
+It prints net Sharpe, benchmark Sharpe and `criterion met` (net Sharpe >= 0.5 and above the benchmark's). The pre-registered PASS needs that on both symbol sets. The report has return, volatility, Sharpe, max drawdown, turnover, cost and funding drag, and Sharpe per year, for the strategy and the benchmark.
+
+## Funding cross-section backtest
+
+    uv run kavzitrader eval funding-xs
+    uv run kavzitrader eval funding-xs --hold-days 1 --legs 2
+
+No LLM calls. Rules are fixed in `evals/preregistrations/2026_11_16_funding_cross_section.md`. Needs 4h candles and funding for the symbols (`refresh-cache --interval 4h`). Every `--hold-days` days at 00:00 UTC, counted from 2022-03-15, each symbol is scored by the mean of its last 9 funding settlements. The top `--legs` scores are shorted and the bottom `--legs` longed, each at 1/(2 x legs) of equity, so gross is 1.0 and net 0. P&L is the legs' price move plus funding settled during the hold (a short receives positive funding). Cost is `paper.commission_rate` x the weight change at each rebalance (`funding_xs_backtester.py`, `funding_xs_leg_picker.py`).
+
+Options:
+
+- `--symbols`: default is all 16 cached symbols as one cross-section.
+- `--hold-days` (default 3) and `--legs` (default 3): the pre-registered values. Other values are exploratory.
+- `--cache-dir`, `--out` (default `results/evals/funding_xs_<time>.md`).
+
+It prints net Sharpe, annual return and PASS or FAIL (net Sharpe >= 0.5, net return > 0, and positive net return in at least 3 calendar years). The report splits return into price, funding and cost, gross against net.
+
 ## Signal edge
 
     uv run kavzitrader eval signals
@@ -67,6 +106,8 @@ No LLM calls. Writes `results/evals/<run_id>.report.md` (override with `--out`) 
     uv run kavzitrader eval signals --oi --stride 5
     uv run kavzitrader eval refresh-cache --interval 4h --months 60
     uv run kavzitrader eval signals --interval 4h --stride 1 --candidates --bracket 1:2:6 --bracket 1.5:3:12
+    uv run kavzitrader eval refresh-cache --interval 4h --months 60 --metrics
+    uv run kavzitrader eval signals --interval 4h --stride 1 --metrics --bracket 1.5:3:12
 
 No LLM calls. Asks whether each live confluence signal predicts outcomes, before any LLM sees the setup. It samples every Nth cached bar of the chosen interval, computes indicators with the live calculator over the trailing history window, and gets flags from the live `ConfluenceCalculator`. Each bar is labelled with every `--bracket SL_ATR:TP_ATR:HORIZON_BARS` (repeatable, default `1.5:3:96`). Horizons are in bars of the interval.
 
@@ -90,12 +131,15 @@ Options:
   - `htf_trend`: the live 1h trend (EMA20/EMA50 plus RSI from `indicators/htf.py`) agrees with the side. 15m only.
   - `btc_lead`: BTCUSDT's return over the last 4 bars, ranked the same way, applied to every other symbol.
 - `--oi` (implies `--funding`): downloads open interest (15m at the 15m interval, see below) and scores `oi_supports_direction` and `oi_funding_divergence` through the live `OrderFlowCalculator`. Binance serves only about the last 30 days of OI, so only bars inside that window, with a full 24h of OI history, are sampled. Use a small stride such as 5. The cache keeps old rows, so running `eval refresh-cache` weekly grows the OI history past Binance's ~30-day limit and adds the new candles, without which new bars won't be sampled.
+- `--metrics` (implies `--funding`, excludes `--oi`): scores the same two OI signals from the data.binance.vision `data/futures/um/daily/metrics/` archive instead of `openInterestHist`, plus two positioning signals. The archive has 5-minute rows of OI, the global long/short account ratio and the top-trader long/short position ratio, so OI history is about 5 years instead of about 30 days and `--oi`'s window limit does not apply. Each bar uses the latest row at or before its close. Missing days are downloaded into the cache on demand. Start dates: BTC 2021-11-14, the other 15 symbols 2021-12-01. The top-trader ratio is missing for most of 2022. Rows without a positive ratio are skipped, so in that stretch `smart_vs_crowd` reads the last valid value, which is stale. Treat 2022 results for it with care.
+  - `ls_crowding`: global account ratio, ranked within the trailing history window. Bottom third (crowd short) fires LONG, top third fires SHORT.
+  - `smart_vs_crowd`: log(top-trader position ratio) - log(global account ratio), ranked the same way. Top third fires LONG, bottom third SHORT.
 
 ### Refreshing the cache
 
     uv run kavzitrader eval refresh-cache --interval 4h --months 60
 
-No LLM calls. Options: `--interval` (default: trading interval), `--months` (default 12), `--cache-dir`. Fills candles, funding and OI up to today 00:00 UTC and never touches `cases_v1.jsonl`. Reruns fetch only the missing head or tail. OI uses the largest openInterestHist period that doesn't exceed the interval, capped at 30m, so 1h and 4h use `oi_30m`. It prints one line per symbol with candle count, date range, funding rows and OI rows.
+No LLM calls. Options: `--interval` (default: trading interval), `--months` (default 12), `--cache-dir`, `--symbols` (default the trading symbols), `--metrics` (also download the 5-minute metrics archive and print its row count per symbol). Fills candles, funding and OI up to today 00:00 UTC and never touches `cases_v1.jsonl`. Reruns fetch only the missing head or tail. OI uses the largest openInterestHist period that doesn't exceed the interval, capped at 30m, so 1h and 4h use `oi_30m`. It prints one line per symbol with candle count, date range, funding rows and OI rows.
 
 `scripts/refresh_eval_cache.sh` refreshes 15m, 1h and 4h for the trading symbols, then 4h only for 8 extra symbols (DOGE LTC DOT BCH ATOM TRX ETC FIL) that the forward test needs. It logs to `results/logs/refresh_eval_cache_<date>.log`. Run it weekly: Binance serves about the last 30 days of OI, so a monthly run in a 31-day month can lose a day.
 
@@ -133,9 +177,9 @@ Cron alternative, Mondays at 03:00:
 
     0 3 * * 1 /path/to/kavzitrader/scripts/refresh_eval_cache.sh
 
-Cache files in `data/eval_cache/`: `<SYMBOL>_15m.csv.gz` (and `<SYMBOL>_<interval>.csv.gz` for other intervals), `<SYMBOL>_funding.csv.gz`, `<SYMBOL>_oi_15m.csv.gz`, `<SYMBOL>_oi_30m.csv.gz`.
+Cache files in `data/eval_cache/`: `<SYMBOL>_15m.csv.gz` (and `<SYMBOL>_<interval>.csv.gz` for other intervals), `<SYMBOL>_funding.csv.gz`, `<SYMBOL>_oi_15m.csv.gz`, `<SYMBOL>_oi_30m.csv.gz`, `<SYMBOL>_metrics_5m.csv.gz` (metrics archive, from `--metrics`).
 
-### What we found (snapshot, 2026-11-15)
+### What we found (snapshot, 2026-11-16)
 
 - 12 months x 8 symbols, six brackets: no candle or funding signal showed lift above chance. 3 of 60 candle tests passed, about what chance gives at 95%.
 - The largest lifts (+0.05 to +0.07 R) were far below the 0.15 to 0.30 R round-trip fee.
@@ -150,5 +194,8 @@ Cache files in `data/eval_cache/`: `<SYMBOL>_15m.csv.gz` (and `<SYMBOL>_<interva
 - Combinations on 4h (`--combo`, rules fixed before scoring): 16 pairs of `taker_flow` with another signal, trained on the 8 trading symbols 2022 to 2025. The best, LONG `taker_flow+rsi_exhausted` (+0.18 R on 1.8k bars), failed on 8 never-analysed symbols (DOGE LTC DOT BCH ATOM TRX ETC FIL, `--symbols`): +0.011 R against a 0.035 R fee. Unselected but worth a fresh test: SHORT `taker_flow+funding_favorable` cleared the fee on both sets (+0.055 and +0.079 R), with intervals that still reach below it.
 - That SHORT rule is now frozen in `evals/preregistrations/2026_11_16_short_taker_funding.md`: bracket `1.5:3:12`, 16 symbols, bars from 2026-11-15 to 2027-11-15. It is scored once, after the 48h outcomes are complete (on or after 2027-11-17), with no early looks.
 - Implication: loosening the Scout or Analyst gates would trade noise. A new feature should show lift above the fee in `eval signals` first.
+- Trend 20/40/80, long/flat (`eval trend`, pre-registered): **FAIL.** Net Sharpe 0.446 on TRADING and 0.496 on HOLDOUT against a 0.5 bar. It beat equal-weight buy-and-hold on both (Sharpe 0.31 on TRADING, 0.05 on HOLDOUT). Max drawdown was -19% vs -73%. Moving the daily close by 4h shifts the Sharpe by about 0.1 either way, so the result is within noise of the bar. Lookback 20 alone scored 0.64 on TRADING and 0.65 on HOLDOUT, but that was seen after the fact. It is frozen as a forward test in `evals/preregistrations/2026_11_16_trend_lookback20_forward.md` and scored once, on or after 2027-11-16.
+- Funding cross-section (`eval funding-xs`, pre-registered): **FAIL.** Net Sharpe 0.425, +7.6%/yr. Funding carry was +9.0%/yr, price +6.8%/yr, costs -5.6%/yr.
+- Metrics archive (`eval signals --metrics`, 4h, bracket `1.5:3:12`, both symbol sets, rules in `evals/preregistrations/2026_11_16_positioning_metrics.md`): `oi_supports_direction` and `oi_funding_divergence` over 5 years FAIL. SHORT `ls_crowding` (fired +0.083 / +0.065 R against a ~0.035 R fee) and SHORT `smart_vs_crowd` (+0.057 / +0.072 R) PASS, but not STRONG, since their lower bounds are below the fee. They are the first pre-registered passes. All LONG versions failed.
 
 Rerun the command before relying on these numbers, since they describe one data window.
