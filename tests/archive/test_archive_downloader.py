@@ -1,19 +1,29 @@
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx2
 import pandas as pd
 import pytest
+import pytest_asyncio
 
+from kavzi_trader.archive.archive_dataset_schema import ArchiveDatasetSchema
 from kavzi_trader.archive.archive_datasets import ARCHIVE_DATASETS
 from kavzi_trader.archive.archive_downloader import ArchiveDownloader
-from kavzi_trader.archive.archive_listing import MONTHLY_PREFIX, ArchiveListing
+from kavzi_trader.archive.archive_listing import ArchiveListing
 from kavzi_trader.archive.archive_store import ArchiveStore
 from kavzi_trader.archive.checksum_mismatch_error import ChecksumMismatchError
 from kavzi_trader.cli.commands.archive import is_usdt_perpetual
-from tests.archive.conftest import FakeVision, kline_csv, kline_key
+from tests.archive.conftest import (
+    METRICS_HEADER,
+    FakeVision,
+    kline_csv,
+    kline_key,
+    metrics_key,
+)
 
 KLINES = ARCHIVE_DATASETS["klines"]
 FUNDING = ARCHIVE_DATASETS["funding"]
+METRICS = ARCHIVE_DATASETS["metrics"]
 JAN_MS = 1_577_836_800_000  # 2020-01-01
 FEB_MS = 1_580_515_200_000  # 2020-02-01
 
@@ -44,22 +54,33 @@ def delisted(vision: FakeVision) -> FakeVision:
     return vision
 
 
+@pytest_asyncio.fixture
+async def http(delisted: FakeVision) -> AsyncIterator[httpx2.AsyncClient]:
+    transport = httpx2.MockTransport(delisted.handler)
+    async with httpx2.AsyncClient(transport=transport) as client:
+        yield client
+
+
+@pytest.fixture
+def downloader(http: httpx2.AsyncClient, store: ArchiveStore) -> ArchiveDownloader:
+    return ArchiveDownloader(http, ArchiveListing(http), store, current_month="2099-01")
+
+
 async def _sync(
-    vision: FakeVision, store: ArchiveStore, symbol: str, from_month: str = "2020-01"
+    downloader: ArchiveDownloader,
+    symbol: str,
+    from_month: str = "2020-01",
+    dataset: ArchiveDatasetSchema = KLINES,
 ) -> tuple[int, int]:
-    async with httpx2.AsyncClient(
-        transport=httpx2.MockTransport(vision.handler)
-    ) as http:
-        downloader = ArchiveDownloader(http, ArchiveListing(http), store)
-        done = await downloader.sync(KLINES, symbol, from_month)
+    done = await downloader.sync(dataset, symbol, from_month)
     return done.fetched, done.skipped
 
 
-class TestArchiveDownloader:
+class TestMonthlyArchives:
     async def test_months_with_and_without_a_header_load_as_one_series(
-        self, delisted: FakeVision, store: ArchiveStore
+        self, downloader: ArchiveDownloader, store: ArchiveStore
     ) -> None:
-        assert await _sync(delisted, store, "SRMUSDT") == (2, 0)
+        assert await _sync(downloader, "SRMUSDT") == (2, 0)
 
         rows = store.load(KLINES, "SRMUSDT")
         assert list(rows.columns) == KLINES.columns
@@ -68,69 +89,106 @@ class TestArchiveDownloader:
         assert rows["close"].eq(1.5).all()
 
     async def test_a_rerun_fetches_only_new_months(
-        self, delisted: FakeVision, store: ArchiveStore
+        self, downloader: ArchiveDownloader, delisted: FakeVision
     ) -> None:
-        await _sync(delisted, store, "SRMUSDT")
+        await _sync(downloader, "SRMUSDT")
         delisted.downloads.clear()
 
-        assert await _sync(delisted, store, "SRMUSDT") == (0, 2)
+        assert await _sync(downloader, "SRMUSDT") == (0, 2)
         assert delisted.downloads == []
 
     async def test_months_before_the_start_are_left_out(
-        self, delisted: FakeVision, store: ArchiveStore
+        self, downloader: ArchiveDownloader, store: ArchiveStore
     ) -> None:
-        assert await _sync(delisted, store, "SRMUSDT", "2020-02") == (1, 0)
-        assert not store.has(KLINES, "SRMUSDT", "2020-01")
+        assert await _sync(downloader, "SRMUSDT", "2020-02") == (1, 0)
+        assert store.months(KLINES, "SRMUSDT") == ["2020-02"]
 
     async def test_a_checksum_mismatch_stores_nothing(
-        self, delisted: FakeVision, store: ArchiveStore
+        self, downloader: ArchiveDownloader, delisted: FakeVision, store: ArchiveStore
     ) -> None:
         key = kline_key("SRMUSDT", "2020-01")
         delisted.checksums[key] = "0" * 64 + "  SRMUSDT-1m-2020-01.zip"
 
         with pytest.raises(ChecksumMismatchError, match=r"SRMUSDT-1m-2020-01\.zip"):
-            await _sync(delisted, store, "SRMUSDT", "2020-01")
+            await _sync(downloader, "SRMUSDT", "2020-01")
 
-        assert not store.has(KLINES, "SRMUSDT", "2020-01")
+        assert "2020-01" not in store.months(KLINES, "SRMUSDT")
 
     async def test_funding_columns_are_renamed(
-        self, vision: FakeVision, store: ArchiveStore
+        self, downloader: ArchiveDownloader, delisted: FakeVision, store: ArchiveStore
     ) -> None:
-        key = f"{MONTHLY_PREFIX}fundingRate/BTCUSDT/BTCUSDT-fundingRate-2020-01.zip"
+        stem = FUNDING.file_stem("BTCUSDT", "2020-01")
+        key = f"{FUNDING.prefix}{FUNDING.symbol_dir('BTCUSDT')}/{stem}.zip"
         text = f"calc_time,funding_interval_hours,last_funding_rate\n{JAN_MS},8,-0.0001"
-        vision.add(key, "BTCUSDT-fundingRate-2020-01.csv", text)
-        async with httpx2.AsyncClient(
-            transport=httpx2.MockTransport(vision.handler)
-        ) as http:
-            await ArchiveDownloader(http, ArchiveListing(http), store).sync(
-                FUNDING, "BTCUSDT", "2020-01"
-            )
+        delisted.add(key, f"{stem}.csv", text)
 
-        rows = store.load(FUNDING, "BTCUSDT")
-        assert rows.to_dict("records") == [
+        await _sync(downloader, "BTCUSDT", dataset=FUNDING)
+
+        assert store.load(FUNDING, "BTCUSDT").to_dict("records") == [
             {"time_ms": JAN_MS, "interval_hours": 8, "rate": -0.0001}
         ]
 
 
+class TestDailyArchives:
+    @pytest.fixture
+    def metrics(self, delisted: FakeVision) -> FakeVision:
+        for day in ("2020-01-01", "2020-01-02", "2020-02-01"):
+            row = f"{day} 00:05:00,BTCUSDT,100,1000,1.1,1.2,1.3,0.9"
+            # The archive repeats rows at times.
+            text = f"{METRICS_HEADER}\n{row}\n{row}"
+            delisted.add(
+                metrics_key("BTCUSDT", day), f"BTCUSDT-metrics-{day}.csv", text
+            )
+        return delisted
+
+    async def test_days_are_stored_as_one_file_per_month(
+        self, metrics: FakeVision, downloader: ArchiveDownloader, store: ArchiveStore
+    ) -> None:
+        assert await _sync(downloader, "BTCUSDT", dataset=METRICS) == (2, 0)
+
+        rows = store.load(METRICS, "BTCUSDT")
+        assert store.months(METRICS, "BTCUSDT") == ["2020-01", "2020-02"]
+        assert rows["time_ms"].tolist() == [
+            JAN_MS + 300_000,
+            JAN_MS + 86_400_000 + 300_000,
+            FEB_MS + 300_000,
+        ]
+        assert rows.iloc[0].to_dict() == {
+            "time_ms": JAN_MS + 300_000,
+            "open_interest": 100,
+            "open_interest_value": 1000,
+            "top_account_ratio": 1.1,
+            "top_position_ratio": 1.2,
+            "global_ratio": 1.3,
+            "taker_volume_ratio": 0.9,
+        }
+
+    async def test_the_month_in_progress_waits_until_it_ends(
+        self, metrics: FakeVision, http: httpx2.AsyncClient, store: ArchiveStore
+    ) -> None:
+        downloader = ArchiveDownloader(
+            http, ArchiveListing(http), store, current_month="2020-02"
+        )
+
+        assert await _sync(downloader, "BTCUSDT", dataset=METRICS) == (1, 0)
+        assert store.months(METRICS, "BTCUSDT") == ["2020-01"]
+
+
 class TestArchiveListing:
     async def test_symbols_follow_every_listing_page(
-        self, delisted: FakeVision
+        self, delisted: FakeVision, http: httpx2.AsyncClient
     ) -> None:
         delisted.add(kline_key("ETHUSDT", "2020-01"), "x.csv", "")
-        async with httpx2.AsyncClient(
-            transport=httpx2.MockTransport(delisted.handler)
-        ) as http:
-            symbols = await ArchiveListing(http).symbols("klines")
+
+        symbols = await ArchiveListing(http).symbols(KLINES)
 
         assert symbols == ["BTCUSDT", "ETHUSDT", "SRMUSDT"]
 
-    async def test_months_skip_checksum_keys(self, delisted: FakeVision) -> None:
-        async with httpx2.AsyncClient(
-            transport=httpx2.MockTransport(delisted.handler)
-        ) as http:
-            months = await ArchiveListing(http).months("klines/SRMUSDT/1m")
-
-        assert months == ["2020-01", "2020-02"]
+    async def test_periods_skip_checksum_keys(self, http: httpx2.AsyncClient) -> None:
+        assert await ArchiveListing(http).periods(KLINES, "SRMUSDT") == [
+            "2020-01",
+            "2020-02",
+        ]
 
 
 def test_an_empty_symbol_loads_as_an_empty_frame(store: ArchiveStore) -> None:
@@ -155,14 +213,11 @@ def test_only_usdt_perpetuals_are_mirrored_by_default(
     assert is_usdt_perpetual(symbol) is perpetual
 
 
-def test_rows_are_typed_like_the_archive(tmp_path: Path) -> None:
+def test_a_month_is_written_whole_or_not_at_all(tmp_path: Path) -> None:
     store = ArchiveStore(tmp_path)
-    store.write(
-        FUNDING,
-        "X",
-        "2020-01",
-        pd.DataFrame({"time_ms": [1], "interval_hours": [8], "rate": [0.1]}),
-    )
+    rows = pd.DataFrame({"time_ms": [1], "interval_hours": [8], "rate": [0.1]})
+
+    store.write(FUNDING, "X", "2020-01", rows)
 
     assert not list(tmp_path.rglob("*.partial"))
     assert store.load(FUNDING, "X")["time_ms"].dtype == "int64"

@@ -5,11 +5,17 @@ import zipfile
 import httpx2
 import pytest
 
-from kavzi_trader.archive.archive_listing import MONTHLY_PREFIX
+from kavzi_trader.archive.archive_datasets import ARCHIVE_DATASETS
 
 KLINE_HEADER = (
     "open_time,open,high,low,close,volume,close_time,quote_volume,count,"
     "taker_buy_volume,taker_buy_quote_volume,ignore"
+)
+
+METRICS_HEADER = (
+    "create_time,symbol,sum_open_interest,sum_open_interest_value,"
+    "count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,"
+    "count_long_short_ratio,sum_taker_long_short_vol_ratio"
 )
 
 
@@ -83,7 +89,15 @@ class FakeVision:
 
 
 def kline_key(symbol: str, month: str) -> str:
-    return f"{MONTHLY_PREFIX}klines/{symbol}/1m/{symbol}-1m-{month}.zip"
+    klines = ARCHIVE_DATASETS["klines"]
+    stem = klines.file_stem(symbol, month)
+    return f"{klines.prefix}{klines.symbol_dir(symbol)}/{stem}.zip"
+
+
+def metrics_key(symbol: str, day: str) -> str:
+    metrics = ARCHIVE_DATASETS["metrics"]
+    stem = metrics.file_stem(symbol, day)
+    return f"{metrics.prefix}{metrics.symbol_dir(symbol)}/{stem}.zip"
 
 
 @pytest.fixture

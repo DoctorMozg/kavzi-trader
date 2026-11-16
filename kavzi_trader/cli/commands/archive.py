@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -9,8 +9,10 @@ from kavzi_trader.archive.archive_datasets import ARCHIVE_DATASETS
 from kavzi_trader.archive.archive_downloader import ArchiveDownloader
 from kavzi_trader.archive.archive_listing import ArchiveListing
 from kavzi_trader.archive.archive_store import ArchiveStore
+from kavzi_trader.archive.point_in_time_universe import PointInTimeUniverse
 
 _TIMEOUT_S = 120.0
+UNIVERSE_FILE = "universe.parquet"
 
 
 def is_usdt_perpetual(symbol: str) -> bool:
@@ -49,7 +51,7 @@ def archive_command(
     from_month: datetime,
     root: Path,
 ) -> None:
-    """Mirror data.binance.vision monthly USD-M archives into Parquet.
+    """Mirror data.binance.vision USD-M archives into monthly Parquet files.
 
     Delisted symbols are included. Months already stored are skipped, so a
     rerun resumes an interrupted mirror and picks up newly published months.
@@ -58,7 +60,7 @@ def archive_command(
     store = ArchiveStore(root)
     first_month = from_month.strftime("%Y-%m")
 
-    async def _job() -> tuple[int, int]:
+    async def _job() -> None:
         async with httpx2.AsyncClient(timeout=_TIMEOUT_S) as http:
             listing = ArchiveListing(http)
             names = (
@@ -66,19 +68,25 @@ def archive_command(
                 if symbols
                 else [
                     s
-                    for s in await listing.symbols(ARCHIVE_DATASETS["klines"].name)
+                    for s in await listing.symbols(ARCHIVE_DATASETS["klines"])
                     if is_usdt_perpetual(s)
                 ]
             )
-            downloader = ArchiveDownloader(http, listing, store)
+            current_month = datetime.now(UTC).strftime("%Y-%m")
+            downloader = ArchiveDownloader(http, listing, store, current_month)
             fetched = skipped = 0
             for symbol in names:
                 for dataset in chosen:
                     done = await downloader.sync(dataset, symbol, first_month)
                     fetched += done.fetched
                     skipped += done.skipped
-            click.echo(f"{len(names)} symbols")
-            return fetched, skipped
+        click.echo(
+            f"{len(names)} symbols: {fetched} months fetched, "
+            f"{skipped} already stored, under {root}"
+        )
 
-    fetched, skipped = asyncio.run(_job())
-    click.echo(f"{fetched} months fetched, {skipped} already stored, under {root}")
+    asyncio.run(_job())
+    if ARCHIVE_DATASETS["klines"] in chosen:
+        universe = PointInTimeUniverse.from_store(store)
+        universe.save(root / UNIVERSE_FILE)
+        click.echo(f"Universe of {len(universe)} symbols: {root / UNIVERSE_FILE}")

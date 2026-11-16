@@ -3,10 +3,11 @@ import xml.etree.ElementTree as ET
 
 import httpx2
 
+from kavzi_trader.archive.archive_dataset_schema import ArchiveDatasetSchema
+
 logger = logging.getLogger(__name__)
 
 LISTING_URL = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
-MONTHLY_PREFIX = "data/futures/um/monthly/"
 _NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
 
 
@@ -16,18 +17,22 @@ class ArchiveListing:
     def __init__(self, http: httpx2.AsyncClient) -> None:
         self._http = http
 
-    async def symbols(self, dataset_name: str) -> list[str]:
-        """Every symbol the monthly archive has, delisted ones included."""
-        prefix = f"{MONTHLY_PREFIX}{dataset_name}/"
+    async def symbols(self, dataset: ArchiveDatasetSchema) -> list[str]:
+        """Every symbol the archive has for the dataset, delisted ones included."""
+        prefix = f"{dataset.prefix}{dataset.name}/"
         entries = await self._list(prefix, delimiter="/")
         return sorted(e.removeprefix(prefix).rstrip("/") for e in entries)
 
-    async def months(self, symbol_dir: str) -> list[str]:
-        """YYYY-MM months with a monthly zip under the dataset's symbol dir."""
-        prefix = f"{MONTHLY_PREFIX}{symbol_dir}/"
+    async def periods(self, dataset: ArchiveDatasetSchema, symbol: str) -> list[str]:
+        """YYYY-MM months, or YYYY-MM-DD days for a daily dataset, with a zip."""
+        prefix = f"{dataset.prefix}{dataset.symbol_dir(symbol)}/"
+        head = prefix + dataset.file_stem(symbol, "")
         keys = await self._list(prefix, delimiter=None)
-        # Keys end like BTCUSDT-1m-2020-01.zip; the month is the last 7 chars.
-        return sorted(k[-11:-4] for k in keys if k.endswith(".zip"))
+        return sorted(
+            k.removeprefix(head).removesuffix(".zip")
+            for k in keys
+            if k.startswith(head) and k.endswith(".zip")
+        )
 
     async def _list(self, prefix: str, delimiter: str | None) -> list[str]:
         found: list[str] = []
