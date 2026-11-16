@@ -1,11 +1,16 @@
 import hashlib
 import io
 import zipfile
+from pathlib import Path
 
 import httpx2
+import numpy as np
+import pandas as pd
 import pytest
 
 from kavzi_trader.archive.archive_datasets import ARCHIVE_DATASETS
+from kavzi_trader.archive.archive_store import ArchiveStore
+from kavzi_trader.evals.candle_cache import COLUMNS
 
 KLINE_HEADER = (
     "open_time,open,high,low,close,volume,close_time,quote_volume,count,"
@@ -95,3 +100,50 @@ def metrics_key(symbol: str, day: str) -> str:
 @pytest.fixture
 def vision() -> FakeVision:
     return FakeVision(page_size=2)
+
+
+MINUTE_MS = 60_000
+_SUMMED = [
+    "volume",
+    "quote_volume",
+    "trades_count",
+    "taker_buy_base_volume",
+    "taker_buy_quote_volume",
+]
+
+
+def _by_month(rows: pd.DataFrame, time_column: str) -> dict[str, pd.DataFrame]:
+    months = pd.to_datetime(rows[time_column], unit="ms").dt.strftime("%Y-%m")
+    return {m: part.reset_index(drop=True) for m, part in rows.groupby(months)}
+
+
+def write_bars(root: Path, symbol: str, bars: pd.DataFrame, bar_ms: int) -> None:
+    """Archives each bar as 1m klines that roll back up to exactly that bar."""
+    per_bar = bar_ms // MINUTE_MS
+    first = np.arange(len(bars) * per_bar) % per_bar == 0
+    minutes = bars.loc[bars.index.repeat(per_bar), list(COLUMNS)].reset_index(drop=True)
+    minutes["open_time_ms"] += np.tile(np.arange(per_bar) * MINUTE_MS, len(bars))
+    minutes["close_time_ms"] = minutes["open_time_ms"] + MINUTE_MS - 1
+    # The first minute carries the bar's range and volume; the rest sit at its close.
+    for column in ("open", "high", "low"):
+        minutes.loc[~first, column] = minutes.loc[~first, "close"]
+    minutes.loc[~first, _SUMMED] = 0
+    store = ArchiveStore(root)
+    for month, rows in _by_month(minutes, "open_time_ms").items():
+        store.write(ARCHIVE_DATASETS["klines"], symbol, month, rows)
+
+
+def write_funding(root: Path, symbol: str, times_ms: list[int], rate: float) -> None:
+    rows = pd.DataFrame({"time_ms": times_ms, "interval_hours": 8, "rate": rate})
+    store = ArchiveStore(root)
+    for month, part in _by_month(rows, "time_ms").items():
+        store.write(ARCHIVE_DATASETS["funding"], symbol, month, part)
+
+
+def write_metrics(root: Path, symbol: str, rows: pd.DataFrame) -> None:
+    """Archives rows of the MetricsCache columns; the other archive columns are 0."""
+    metrics = ARCHIVE_DATASETS["metrics"]
+    full = rows.reindex(columns=metrics.columns, fill_value=0.0)
+    store = ArchiveStore(root)
+    for month, part in _by_month(full, "time_ms").items():
+        store.write(metrics, symbol, month, part)
