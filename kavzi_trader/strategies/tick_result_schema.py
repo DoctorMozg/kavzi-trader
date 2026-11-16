@@ -2,10 +2,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.strategies.bracket_intent_schema import BracketIntentSchema
-
-# Becomes a union discriminated on `kind` once a second intent type exists.
-StrategyIntent = BracketIntentSchema
+from kavzi_trader.strategies.strategy_intent import StrategyIntent
 
 
 class StrategyTickResultSchema(BaseModel):

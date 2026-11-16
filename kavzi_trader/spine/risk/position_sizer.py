@@ -24,6 +24,12 @@ class PositionSizer:
         self._config = config or RiskConfigSchema()
         self._tier_registry = tier_registry
 
+    def max_exposure_percent(self, symbol: str | None) -> Decimal:
+        """Per-position notional cap as a percent of balance, tier-aware."""
+        if self._tier_registry is not None and symbol is not None:
+            return self._tier_registry.get_config(symbol).max_exposure_percent
+        return self._config.max_notional_percent
+
     def calculate_size(
         self,
         account_balance: Decimal,
@@ -51,11 +57,9 @@ class PositionSizer:
 
         # Tier-aware risk % and exposure cap
         risk_pct = self._config.risk_per_trade_percent
-        max_exposure_pct = self._config.max_notional_percent
+        max_exposure_pct = self.max_exposure_percent(symbol)
         if self._tier_registry is not None and symbol is not None:
-            tier_config = self._tier_registry.get_config(symbol)
-            risk_pct = tier_config.risk_per_trade_percent
-            max_exposure_pct = tier_config.max_exposure_percent
+            risk_pct = self._tier_registry.get_config(symbol).risk_per_trade_percent
 
         risk_amount = account_balance * (risk_pct / 100)
         stop_distance = atr * stop_loss_atr_multiplier

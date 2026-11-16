@@ -9,6 +9,9 @@ from kavzi_trader.domain.volatility_regime import VolatilityRegime
 from kavzi_trader.spine.risk.exposure import ExposureLimiter
 from kavzi_trader.spine.risk.liquidation_calculator import LiquidationCalculator
 from kavzi_trader.spine.risk.position_sizer import PositionSizer
+from kavzi_trader.spine.risk.rebalance_validation_params_schema import (
+    RebalanceValidationParamsSchema,
+)
 from kavzi_trader.spine.risk.schemas import (
     RiskValidationResultSchema,
     VolatilityRegimeSchema,
@@ -198,6 +201,55 @@ class DynamicRiskValidator:
             warnings=warnings,
             should_close_all=should_close_all,
         )
+
+    @property
+    def min_position_notional_usd(self) -> Decimal:
+        return self._config.min_position_notional_usd
+
+    async def validate_rebalance(
+        self,
+        params: RebalanceValidationParamsSchema,
+        state_manager: StateManager,
+    ) -> list[str]:
+        """Shared checks for a target-weight resize; empty list means accepted.
+
+        Max-positions is deliberately not checked: a resize is not a new
+        position, and the book size is the strategy's own choice.
+        """
+        reasons: list[str] = []
+        if params.now_ms > params.expires_at_ms:
+            reasons.append(
+                f"Intent expired {params.now_ms - params.expires_at_ms}ms ago",
+            )
+        # Reducing exposure must stay possible while paused or over a cap.
+        if params.target_qty <= params.current_qty:
+            return reasons
+
+        reasons.extend((await self._check_drawdown(state_manager)).rejections)
+        margin_result = await self._check_margin_ratio(state_manager)
+        if margin_result:
+            reasons.append(margin_result)
+
+        target_notional = params.target_qty * params.mark_price
+        max_percent = self._position_sizer.max_exposure_percent(params.symbol)
+        max_notional = params.equity * max_percent / 100
+        if target_notional > max_notional:
+            reasons.append(
+                f"Target notional {target_notional:.2f} exceeds cap "
+                f"{max_notional:.2f} ({max_percent}% of equity)",
+            )
+
+        liq_result = await self._check_liquidation_distance(
+            symbol=params.symbol,
+            entry_price=params.mark_price,
+            stop_loss=params.disaster_stop_price,
+            side="LONG",
+            leverage=params.leverage,
+            quantity=params.target_qty,
+        )
+        if liq_result:
+            reasons.append(liq_result)
+        return reasons
 
     async def _compute_recommended_size(
         self,

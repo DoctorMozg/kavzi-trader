@@ -2,7 +2,7 @@ import logging
 
 from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.orchestrator.loops.decision_queue import DECISION_QUEUE_KEY
-from kavzi_trader.strategies.tick_result_schema import StrategyIntent
+from kavzi_trader.strategies.strategy_intent import StrategyIntent, intent_id
 
 logger = logging.getLogger(__name__)
 
@@ -22,27 +22,27 @@ class DecisionPublisher:
             )
         except Exception:
             logger.exception(
-                "Failed to enqueue decision for %s",
+                "Failed to enqueue %s intent for %s",
+                intent.kind,
                 intent.symbol,
                 extra={
-                    "loop": "reasoning",
+                    "loop": "strategy",
                     "symbol": intent.symbol,
-                    "decision_id": intent.decision_id,
-                    "action": intent.action,
+                    "kind": intent.kind,
+                    "intent_id": intent_id(intent),
                     "queue_key": DECISION_QUEUE_KEY,
                 },
             )
             return False
         logger.info(
-            "Enqueuing decision for %s: action=%s confidence=%.2f decision_id=%s",
+            "Enqueued %s intent for %s: id=%s",
+            intent.kind,
             intent.symbol,
-            intent.action,
-            intent.raw_confidence,
-            intent.decision_id,
+            intent_id(intent),
             extra={
                 "symbol": intent.symbol,
-                "decision_id": intent.decision_id,
-                "action": intent.action,
+                "kind": intent.kind,
+                "intent_id": intent_id(intent),
             },
         )
         return True

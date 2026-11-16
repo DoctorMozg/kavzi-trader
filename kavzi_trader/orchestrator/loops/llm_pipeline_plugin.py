@@ -31,6 +31,7 @@ from kavzi_trader.spine.filters.filter_chain_result_schema import (
     FilterChainResultSchema,
 )
 from kavzi_trader.strategies.bracket_intent_schema import BracketIntentSchema
+from kavzi_trader.strategies.strategy_intent import StrategyIntent
 from kavzi_trader.strategies.strategy_plugin import wall_clock_ms
 from kavzi_trader.strategies.symbol_outcome_schema import SymbolOutcomeSchema
 from kavzi_trader.strategies.tick_result_schema import StrategyTickResultSchema
@@ -157,7 +158,7 @@ class LlmPipelinePlugin:
             next_tick_at_ms=self._clock_ms() + round(sleep_s * 1000),
         )
 
-    def on_enqueued(self, intent: BracketIntentSchema) -> None:
+    def on_enqueued(self, intent: StrategyIntent) -> None:
         self._cooldowns.start_post_trade_cooldown(intent.symbol)
 
     def _next_sleep_interval_s(
