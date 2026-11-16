@@ -12,7 +12,6 @@ from kavzi_trader.archive.archive_downloader import ArchiveDownloader
 from kavzi_trader.archive.archive_listing import ArchiveListing
 from kavzi_trader.archive.archive_store import ArchiveStore
 from kavzi_trader.archive.checksum_mismatch_error import ChecksumMismatchError
-from kavzi_trader.cli.commands.archive import is_usdt_perpetual
 from tests.archive.conftest import (
     METRICS_HEADER,
     FakeVision,
@@ -175,16 +174,9 @@ class TestDailyArchives:
 
 
 class TestArchiveListing:
-    async def test_symbols_follow_every_listing_page(
-        self, delisted: FakeVision, http: httpx2.AsyncClient
+    async def test_periods_follow_every_page_and_skip_checksum_keys(
+        self, http: httpx2.AsyncClient
     ) -> None:
-        delisted.add(kline_key("ETHUSDT", "2020-01"), "x.csv", "")
-
-        symbols = await ArchiveListing(http).symbols(KLINES)
-
-        assert symbols == ["BTCUSDT", "ETHUSDT", "SRMUSDT"]
-
-    async def test_periods_skip_checksum_keys(self, http: httpx2.AsyncClient) -> None:
         assert await ArchiveListing(http).periods(KLINES, "SRMUSDT") == [
             "2020-01",
             "2020-02",
@@ -196,21 +188,6 @@ def test_an_empty_symbol_loads_as_an_empty_frame(store: ArchiveStore) -> None:
 
     assert rows.empty
     assert list(rows.columns) == KLINES.columns
-
-
-@pytest.mark.parametrize(
-    ("symbol", "perpetual"),
-    [
-        ("BTCUSDT", True),
-        ("SRMUSDT", True),
-        ("BTCUSDT_230331", False),
-        ("BTCUSDC", False),
-    ],
-)
-def test_only_usdt_perpetuals_are_mirrored_by_default(
-    symbol: str, perpetual: bool
-) -> None:
-    assert is_usdt_perpetual(symbol) is perpetual
 
 
 def test_a_month_is_written_whole_or_not_at_all(tmp_path: Path) -> None:

@@ -64,25 +64,17 @@ class FakeVision:
     def _listing(self, request: httpx2.Request) -> httpx2.Response:
         prefix = request.url.params["prefix"]
         marker = request.url.params.get("marker", "")
-        delimiter = request.url.params.get("delimiter")
         keys = sorted(k for k in self.files if k.startswith(prefix))
-        if delimiter:
-            entries = sorted(
-                {prefix + k.removeprefix(prefix).split("/")[0] + "/" for k in keys}
-            )
-            tag = "<CommonPrefixes><Prefix>{}</Prefix></CommonPrefixes>"
-        else:
-            entries = [e for k in keys for e in (k, k + ".CHECKSUM")]
-            tag = "<Contents><Key>{}</Key></Contents>"
+        entries = [e for k in keys for e in (k, k + ".CHECKSUM")]
+        tag = "<Contents><Key>{}</Key></Contents>"
         rest = [e for e in entries if e > marker]
         page = rest[: self._page_size]
         truncated = len(rest) > len(page)
         body = "".join(tag.format(e) for e in page)
-        nxt = f"<NextMarker>{page[-1]}</NextMarker>" if truncated and delimiter else ""
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
-            f"<IsTruncated>{str(truncated).lower()}</IsTruncated>{nxt}{body}"
+            f"<IsTruncated>{str(truncated).lower()}</IsTruncated>{body}"
             "</ListBucketResult>"
         )
         return httpx2.Response(200, content=xml.encode())

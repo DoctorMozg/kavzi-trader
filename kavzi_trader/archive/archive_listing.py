@@ -17,35 +17,26 @@ class ArchiveListing:
     def __init__(self, http: httpx2.AsyncClient) -> None:
         self._http = http
 
-    async def symbols(self, dataset: ArchiveDatasetSchema) -> list[str]:
-        """Every symbol the archive has for the dataset, delisted ones included."""
-        prefix = f"{dataset.prefix}{dataset.name}/"
-        entries = await self._list(prefix, delimiter="/")
-        return sorted(e.removeprefix(prefix).rstrip("/") for e in entries)
-
     async def periods(self, dataset: ArchiveDatasetSchema, symbol: str) -> list[str]:
         """YYYY-MM months, or YYYY-MM-DD days for a daily dataset, with a zip."""
         prefix = f"{dataset.prefix}{dataset.symbol_dir(symbol)}/"
         head = prefix + dataset.file_stem(symbol, "")
-        keys = await self._list(prefix, delimiter=None)
+        keys = await self._list(prefix)
         return sorted(
             k.removeprefix(head).removesuffix(".zip")
             for k in keys
             if k.startswith(head) and k.endswith(".zip")
         )
 
-    async def _list(self, prefix: str, delimiter: str | None) -> list[str]:
+    async def _list(self, prefix: str) -> list[str]:
         found: list[str] = []
         marker = ""
         while True:
             params = {"prefix": prefix, "marker": marker}
-            if delimiter is not None:
-                params["delimiter"] = delimiter
             response = await self._http.get(LISTING_URL, params=params)
             response.raise_for_status()
             root = ET.fromstring(response.content)  # noqa: S314 - S3 listing XML
-            tag = "s3:CommonPrefixes/s3:Prefix" if delimiter else "s3:Contents/s3:Key"
-            page = [e.text for e in root.findall(tag, _NS) if e.text]
+            page = [e.text for e in root.findall("s3:Contents/s3:Key", _NS) if e.text]
             found.extend(page)
             if root.findtext("s3:IsTruncated", namespaces=_NS) != "true" or not page:
                 break
