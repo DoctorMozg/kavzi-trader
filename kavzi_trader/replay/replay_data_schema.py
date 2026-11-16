@@ -3,13 +3,16 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ReplayDataSchema(BaseModel):
-    """Per-symbol 4h candles and funding settlements, plus daily closes."""
+    """Per-symbol bars, funding and 5m metrics, plus daily closes for trend."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
+    interval: str
     # CandleCache columns, sorted by open_time_ms.
     candles: dict[str, pd.DataFrame]
     # SeriesCache columns: settlement time_ms and the funding rate value.
     funding: dict[str, pd.DataFrame]
+    # MetricsCache columns; empty unless the strategy reads order flow.
+    metrics: dict[str, pd.DataFrame] = {}
     # One column per symbol, indexed by UTC day, as TrendDataLoader builds them.
-    daily_closes: pd.DataFrame
+    daily_closes: pd.DataFrame | None = None

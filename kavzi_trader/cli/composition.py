@@ -1,6 +1,8 @@
 import logging
 from decimal import Decimal
 
+import click
+
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.binance.symbol_filters_loader import FuturesSymbolFiltersLoader
@@ -65,6 +67,26 @@ logger = logging.getLogger(__name__)
 
 def load_tier_registry() -> SymbolTierRegistry:
     return SymbolTierRegistry.from_yaml(CONFIG_DIR / "tiers.yaml")
+
+
+def build_agent_source(app_config: AppConfig) -> AgentFactory:
+    missing = [
+        provider.value
+        for provider in app_config.llm_providers_in_use()
+        if not app_config.brain.api_key_for(provider).get_secret_value()
+    ]
+    if missing:
+        raise click.UsageError(
+            f"No API key for provider(s) {', '.join(missing)}; "
+            "set KT_ANTHROPIC_API_KEY (or KT_OPENROUTER_API_KEY)"
+        )
+    registry = load_tier_registry()
+    return AgentFactory(
+        app_config.brain,
+        PromptLoader(),
+        risk_config=app_config.risk,
+        tier_registry=registry,
+    )
 
 
 def build_exchange(app_config: AppConfig) -> BinanceClient:

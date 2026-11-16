@@ -5,32 +5,34 @@ from decimal import Decimal
 
 import pandas as pd
 
+from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.evals.candle_cache import candles_from_frame
 from kavzi_trader.evals.series_cache import TIME, VALUE
 from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.orchestrator.loops.decision_queue import FAILED_DECISION_QUEUE_KEY
-from kavzi_trader.replay.replay_data_loader import BAR_INTERVAL
 from kavzi_trader.replay.replay_data_schema import ReplayDataSchema
+from kavzi_trader.replay.replay_llm_usage_schema import ReplayLlmUsageSchema
 from kavzi_trader.replay.replay_result_schema import ReplayResultSchema
 from kavzi_trader.replay.replay_rig_schema import ReplayRigSchema
+from kavzi_trader.replay.training_cutoff import is_contaminated
 from kavzi_trader.replay.warmup_kline_source import WarmupKlineSource
 from kavzi_trader.strategies.trend.trend_following_plugin import DAY_MS
 
 logger = logging.getLogger(__name__)
 
-BAR_MS = 4 * 3_600_000
 # Two midnights make one daily return.
 _MIN_SAMPLES = 2
 
 
 class ReplayRunner:
-    """Feeds stored 4h bars and funding through the live loops on simulated time."""
+    """Feeds stored bars and funding through the live loops on simulated time."""
 
     def __init__(self, rig: ReplayRigSchema, data: ReplayDataSchema) -> None:
         self._rig = rig
         self._data = data
         self._prices: dict[str, Decimal] = {}
+        self._bar_ms = KLINE_INTERVALS[data.interval] * 1000
 
     async def run(self, start_ms: int, end_ms: int) -> ReplayResultSchema:
         """Trades from the UTC midnight ``start_ms`` up to ``end_ms``, exclusive."""
@@ -38,6 +40,7 @@ class ReplayRunner:
             msg = f"need UTC midnights with start < end, got {start_ms}, {end_ms}"
             raise ValueError(msg)
         await self._warm_up(start_ms)
+        await self._fetch_order_flow()
         bars = self._bars_by_close(start_ms, end_ms)
         funding = self._funding(start_ms, end_ms)
         rig = self._rig
@@ -51,6 +54,7 @@ class ReplayRunner:
             rig.clock.advance_to(close_ms)
             for bar in bars[close_ms]:
                 await self._settle(bar)
+            await self._fetch_order_flow()
             while funding_at < len(settle_ms) and settle_ms[funding_at] <= close_ms:
                 received += await self._pay_funding(funding.iloc[funding_at])
                 funding_at += 1
@@ -58,7 +62,7 @@ class ReplayRunner:
                 samples[close_ms] = await self._equity()
             if close_ms < end_ms:
                 next_tick_ms = await self._trade(next_tick_ms, close_ms)
-        return await self._result(samples, received)
+        return await self._result(samples, received, start_ms)
 
     async def _trade(self, next_tick_ms: int, close_ms: int) -> int:
         """Runs the strategy ticks due before the next bar closes."""
@@ -66,7 +70,7 @@ class ReplayRunner:
         # Live polls fills every few seconds, so a stop filled inside the bar
         # is booked before any strategy tick that follows it.
         await rig.position_loop.step()
-        while next_tick_ms < close_ms + BAR_MS:
+        while next_tick_ms < close_ms + self._bar_ms:
             rig.clock.advance_to(max(next_tick_ms, close_ms))
             next_tick_ms = await rig.strategy_loop.step()
             await rig.execution_loop.step()
@@ -76,7 +80,7 @@ class ReplayRunner:
         """Seeds the indicator cache the way a live start backfills it over REST."""
         history = {}
         for symbol, frame in self._data.candles.items():
-            closed = frame[frame["open_time_ms"] + BAR_MS <= start_ms]
+            closed = frame[frame["open_time_ms"] + self._bar_ms <= start_ms]
             if closed.empty:
                 continue
             history[symbol] = candles_from_frame(closed, symbol)
@@ -84,8 +88,13 @@ class ReplayRunner:
             self._prices[symbol] = price
             self._rig.feed.set_price(symbol, price)
         await self._rig.market_cache.initialize(
-            WarmupKlineSource(history), BAR_INTERVAL
+            WarmupKlineSource(history), self._data.interval
         )
+
+    async def _fetch_order_flow(self) -> None:
+        # Live polls every few minutes; once per bar sees every closed bar.
+        if self._rig.order_flow is not None:
+            await self._rig.order_flow.fetch()
 
     async def _settle(self, bar: CandlestickSchema) -> None:
         symbol = bar.symbol
@@ -114,10 +123,11 @@ class ReplayRunner:
     ) -> dict[int, list[CandlestickSchema]]:
         bars: dict[int, list[CandlestickSchema]] = defaultdict(list)
         for symbol, frame in self._data.candles.items():
-            close_ms = frame["open_time_ms"] + BAR_MS
+            close_ms = frame["open_time_ms"] + self._bar_ms
             window = frame[(close_ms > from_ms) & (close_ms <= end_ms)]
             for bar in candles_from_frame(window, symbol):
-                bars[int(bar.open_time.timestamp() * 1000) + BAR_MS].append(bar)
+                close_ms = int(bar.open_time.timestamp() * 1000) + self._bar_ms
+                bars[close_ms].append(bar)
         if not bars:
             msg = f"no cached bars close between {from_ms} and {end_ms}"
             raise ValueError(msg)
@@ -139,7 +149,7 @@ class ReplayRunner:
         return merged.sort_values(TIME, ignore_index=True)
 
     async def _result(
-        self, samples: dict[int, Decimal], received: Decimal
+        self, samples: dict[int, Decimal], received: Decimal, start_ms: int
     ) -> ReplayResultSchema:
         if len(samples) < _MIN_SAMPLES:
             msg = f"replay needs two UTC midnights of equity, got {len(samples)}"
@@ -170,6 +180,7 @@ class ReplayRunner:
         )
         return ReplayResultSchema(
             strategy=self._rig.strategy,
+            interval=self._data.interval,
             symbols=self._rig.symbols,
             equity=equity,
             stats=TrendMetrics().stats(returns),
@@ -179,6 +190,24 @@ class ReplayRunner:
             orders=orders,
             failed_decisions=failed,
             rejections=dict(tally.most_common()),
+            llm=self._llm_usage(start_ms),
+        )
+
+    def _llm_usage(self, start_ms: int) -> ReplayLlmUsageSchema | None:
+        agents = self._rig.agents
+        if agents is None:
+            return None
+        if agents.tape_misses:
+            logger.error(
+                "Replay met %d LLM requests missing from the tape; "
+                "those symbols were treated as errors",
+                agents.tape_misses,
+            )
+        return ReplayLlmUsageSchema(
+            models=agents.model_names,
+            provider_calls=agents.provider_calls,
+            tape_misses=agents.tape_misses,
+            contaminated=is_contaminated(agents.model_names, start_ms),
         )
 
 

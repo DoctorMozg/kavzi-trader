@@ -6,15 +6,19 @@ from pathlib import Path
 
 import click
 import pandas as pd
+from pydantic import SecretStr
 
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.symbol_filters_loader import FuturesSymbolFiltersLoader
+from kavzi_trader.cli.composition import build_agent_source
 from kavzi_trader.cli.replay_composition import (
     REPLAY_STRATEGIES,
     ReplayComposer,
     replay_costs,
+    replay_needs,
 )
 from kavzi_trader.config import AppConfig
+from kavzi_trader.evals.agent_source import AgentSource
 from kavzi_trader.evals.trend_backtest import (
     FIRST_RETURN_DAY,
     LAST_RETURN_DAY,
@@ -23,10 +27,12 @@ from kavzi_trader.evals.trend_backtest import (
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_stats_schema import TrendStatsSchema
+from kavzi_trader.replay.llm_tape import LlmTape
 from kavzi_trader.replay.replay_data_loader import ReplayDataLoader
 from kavzi_trader.replay.replay_report_renderer import ReplayReportRenderer
 from kavzi_trader.replay.replay_result_schema import ReplayResultSchema
 from kavzi_trader.replay.replay_runner import ReplayRunner
+from kavzi_trader.replay.taped_agent_source import TapedAgentSource
 from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
@@ -50,15 +56,49 @@ async def _replay(
     cache_dir: Path,
     window: pd.DatetimeIndex,
     slippage_bps: Decimal,
+    agents: TapedAgentSource | None,
 ) -> ReplayResultSchema:
-    symbols = app_config.strategy.trend_following.symbols
-    data = ReplayDataLoader(cache_dir).load(symbols)
+    needs = replay_needs(app_config, strategy)
+    data = ReplayDataLoader(cache_dir).load(needs)
     costs = replay_costs(app_config.paper.commission_rate, slippage_bps)
-    composer = ReplayComposer(app_config, await _load_precision(symbols), costs)
+    precision = await _load_precision(needs.symbols)
+    composer = ReplayComposer(app_config, precision, costs, agents)
     start_ms, end_ms = (int(day.value // 1_000_000) for day in window)
     rig = await composer.compose(strategy, data, start_ms)
     runner = ReplayRunner(rig, data)
     return await runner.run(start_ms, end_ms)
+
+
+def _taped_agents(
+    ctx: click.Context, app_config: AppConfig, tape_path: Path, *, record: bool
+) -> TapedAgentSource:
+    injected: AgentSource | None = ctx.obj.get("agent_source")
+    if injected is not None:
+        agents = injected
+    elif record:
+        agents = build_agent_source(app_config)
+    else:
+        # A replay-only run answers from the tape and never reaches a provider,
+        # so a placeholder stands in for a missing key.
+        brain = app_config.brain
+        placeholder = SecretStr("replay-only")
+        agents = build_agent_source(
+            app_config.model_copy(
+                update={
+                    "brain": brain.model_copy(
+                        update={
+                            "anthropic_api_key": brain.anthropic_api_key
+                            if brain.anthropic_api_key.get_secret_value()
+                            else placeholder,
+                            "openrouter_api_key": brain.openrouter_api_key
+                            if brain.openrouter_api_key.get_secret_value()
+                            else placeholder,
+                        }
+                    )
+                }
+            )
+        )
+    return TapedAgentSource(agents, LlmTape(tape_path), record=record)
 
 
 def _vectorized_trend(
@@ -117,6 +157,19 @@ def _vectorized_trend(
     help="Adverse move on every taker fill.",
 )
 @click.option(
+    "--tape",
+    "tape_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=Path("data/replay_tape.jsonl"),
+    show_default=True,
+    help="LLM response tape the llm_pipeline replay reads and records into.",
+)
+@click.option(
+    "--record",
+    is_flag=True,
+    help="Call the LLM for requests missing from the tape (paid API calls).",
+)
+@click.option(
     "--out",
     type=click.Path(path_type=Path, dir_okay=False),
     default=None,
@@ -130,24 +183,49 @@ def replay_command(
     start_day: datetime,
     end_day: datetime,
     slippage_bps: float,
+    tape_path: Path,
+    record: bool,
     out: Path | None,
 ) -> None:
     """Replay a strategy through the live loops and spine on cached history."""
     app_config: AppConfig = ctx.obj["app_config"]
     window = pd.DatetimeIndex([pd.Timestamp(start_day), pd.Timestamp(end_day)])
+    agents = None
+    if strategy == "llm_pipeline":
+        agents = _taped_agents(ctx, app_config, tape_path, record=record)
+        if record:
+            click.echo("Recording: tape misses call the LLM API and cost money.")
     try:
         result = asyncio.run(
-            _replay(app_config, strategy, cache_dir, window, Decimal(str(slippage_bps)))
+            _replay(
+                app_config,
+                strategy,
+                cache_dir,
+                window,
+                Decimal(str(slippage_bps)),
+                agents,
+            )
         )
-        reference = _vectorized_trend(app_config, cache_dir, window)
+        reference = (
+            _vectorized_trend(app_config, cache_dir, window)
+            if strategy == "trend_following"
+            else None
+        )
     except (ValueError, FileNotFoundError) as exc:
         raise click.ClickException(str(exc)) from exc
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = out or app_config.system.results_dir / "evals" / f"replay_{stamp}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(ReplayReportRenderer().render(result, reference), encoding="utf-8")
+    vectorized = f", vectorized {reference.sharpe}" if reference else ""
     click.echo(
-        f"replay Sharpe {result.stats.sharpe}, vectorized {reference.sharpe}, "
+        f"replay Sharpe {result.stats.sharpe}{vectorized}, "
         f"equity {result.initial_equity:.2f} -> {result.final_equity:.2f}"
     )
     click.echo(f"Report: {path}")
+    if result.llm is not None and result.llm.tape_misses:
+        msg = (
+            f"{result.llm.tape_misses} LLM requests were not on the tape {tape_path}; "
+            "rerun with --record to fill it"
+        )
+        raise click.ClickException(msg)

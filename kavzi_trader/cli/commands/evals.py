@@ -19,11 +19,9 @@ from pydantic import ValidationError
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.exchange_client import ExchangeClient
-from kavzi_trader.brain.agent.factory import AgentFactory
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
-from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.cli.commands.replay import replay_command
-from kavzi_trader.cli.composition import load_tier_registry
+from kavzi_trader.cli.composition import build_agent_source, load_tier_registry
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.agent_source import AgentSource
 from kavzi_trader.evals.candidate_signals import (
@@ -277,26 +275,6 @@ def _select_cases(
     return cases
 
 
-def _build_agent_source(app_config: AppConfig) -> AgentFactory:
-    missing = [
-        provider.value
-        for provider in app_config.llm_providers_in_use()
-        if not app_config.brain.api_key_for(provider).get_secret_value()
-    ]
-    if missing:
-        raise click.UsageError(
-            f"No API key for provider(s) {', '.join(missing)}; "
-            "set KT_ANTHROPIC_API_KEY (or KT_OPENROUTER_API_KEY)"
-        )
-    registry = load_tier_registry()
-    return AgentFactory(
-        app_config.brain,
-        PromptLoader(),
-        risk_config=app_config.risk,
-        tier_registry=registry,
-    )
-
-
 def _build_runner(
     app_config: AppConfig,
     agents: AgentSource,
@@ -413,7 +391,7 @@ def run_eval(
 ) -> None:
     """Run eval cases through Scout, Analyst and Trader; paid LLM calls."""
     app_config: AppConfig = ctx.obj["app_config"]
-    agents: AgentSource = ctx.obj.get("agent_source") or _build_agent_source(app_config)
+    agents: AgentSource = ctx.obj.get("agent_source") or build_agent_source(app_config)
     cases = _select_cases(CaseDatasetFile(dataset).read(), case_ids, limit)
     run_id = resume_id or datetime.now(UTC).strftime("run_%Y%m%dT%H%M%SZ")
     store = ResultStore(app_config.system.results_dir / "evals", run_id)

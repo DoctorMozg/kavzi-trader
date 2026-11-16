@@ -25,6 +25,8 @@ class ReplayModel(WrapperModel):
         self._tape = tape
         self._record = record
         self.provider_calls = 0
+        # The pipeline logs and swallows agent errors, so misses are counted.
+        self.tape_misses = 0
 
     async def request(
         self,
@@ -39,6 +41,7 @@ class ReplayModel(WrapperModel):
         if taped is not None:
             return taped
         if not self._record:
+            self.tape_misses += 1
             msg = f"no taped response for {self.model_name} request {key[:12]}"
             raise TapeMissError(msg)
         logger.debug("Tape miss for %s, calling the provider", self.model_name)

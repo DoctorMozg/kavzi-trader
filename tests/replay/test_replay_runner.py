@@ -16,14 +16,17 @@ from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.replay.historical_daily_closes import HistoricalDailyCloses
 from kavzi_trader.replay.replay_data_loader import ReplayDataLoader
+from kavzi_trader.replay.replay_needs_schema import ReplayNeedsSchema
 from kavzi_trader.replay.replay_result_schema import ReplayResultSchema
-from kavzi_trader.replay.replay_runner import BAR_MS, ReplayRunner
+from kavzi_trader.replay.replay_runner import ReplayRunner
 from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
+NEEDS = ReplayNeedsSchema(symbols=SYMBOLS, interval="4h", daily_closes=True)
+BAR_MS = 4 * 3_600_000
 FIRST_BAR_MS = 1_609_459_200_000  # 2021-01-01
 DAYS = 360
 START = pd.Timestamp("2021-04-01")
@@ -111,7 +114,7 @@ def cache_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def replay(config: AppConfig, cache_dir: Path) -> ReplayResultSchema:
-    data = ReplayDataLoader(cache_dir).load(SYMBOLS)
+    data = ReplayDataLoader(cache_dir).load(NEEDS)
     composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
     rig = await composer.compose("trend_following", data, _ms(START))
     runner = ReplayRunner(rig, data)
@@ -182,7 +185,7 @@ async def test_rejections_are_tallied_by_reason(
     # 5x puts liquidation about 20% away, inside the 30% disaster stop.
     futures = app_config.futures.model_copy(update={"default_leverage": 5})
     config = app_config.model_copy(update={"futures": futures})
-    data = ReplayDataLoader(cache_dir).load(SYMBOLS)
+    data = ReplayDataLoader(cache_dir).load(NEEDS)
     composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
     rig = await composer.compose("trend_following", data, _ms(START))
     end = START + pd.Timedelta(days=30)
@@ -203,7 +206,7 @@ async def test_stop_filled_in_the_bar_is_seen_before_the_rebalance(
     steps = 0.002 + rng.normal(0, 0.01, 102 * 6)
     steps[100 * 6 - 1] = np.log(0.3)
     _write_cache(tmp_path, {s: 100 * np.exp(np.cumsum(steps)) for s in SYMBOLS})
-    data = ReplayDataLoader(tmp_path).load(SYMBOLS)
+    data = ReplayDataLoader(tmp_path).load(NEEDS)
     composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
     start = pd.Timestamp("2021-03-01")
     rig = await composer.compose("trend_following", data, _ms(start))
@@ -227,7 +230,7 @@ async def test_daily_closes_hide_days_that_have_not_closed() -> None:
 async def test_runner_rejects_a_start_off_midnight(
     config: AppConfig, cache_dir: Path
 ) -> None:
-    data = ReplayDataLoader(cache_dir).load(SYMBOLS)
+    data = ReplayDataLoader(cache_dir).load(NEEDS)
     composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
     rig = await composer.compose("trend_following", data, _ms(START))
 

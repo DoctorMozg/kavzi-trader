@@ -8,9 +8,13 @@ from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.orchestrator.loops.execution import ExecutionLoop
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
 from kavzi_trader.orchestrator.loops.strategy import StrategyLoop
+from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
+    LiveOrderFlowFetcher,
+)
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.paper.exchange import PaperExchangeClient
 from kavzi_trader.paper.sim_market_feed import SimMarketFeed
+from kavzi_trader.replay.taped_agent_source import TapedAgentSource
 
 
 class ReplayRigSchema(BaseModel):
@@ -26,6 +30,9 @@ class ReplayRigSchema(BaseModel):
     strategy_loop: Annotated[StrategyLoop, SkipValidation]
     execution_loop: Annotated[ExecutionLoop, SkipValidation]
     position_loop: Annotated[PositionManagementLoop, SkipValidation]
+    # Set for the LLM pipeline only.
+    order_flow: Annotated[LiveOrderFlowFetcher | None, SkipValidation] = None
+    agents: Annotated[TapedAgentSource | None, SkipValidation] = None
     decision_stream: str
     strategy: str
     symbols: list[str]

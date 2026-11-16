@@ -9,14 +9,14 @@ from kavzi_trader.api.binance.schemas.data_dicts import (
     OpenInterestHistDict,
 )
 from kavzi_trader.commons.clock import Clock
-from kavzi_trader.evals.metrics_cache import GLOBAL_RATIO
+from kavzi_trader.evals.metrics_cache import GLOBAL_RATIO, OPEN_INTEREST
 from kavzi_trader.evals.series_cache import TIME, VALUE
 
 _MS_PER_MINUTE = 60_000
 
 
 class HistoricalOrderFlowSource:
-    """Serves cached funding, OI and long/short rows as Binance did at clock time.
+    """Serves cached funding and 5m metrics rows as Binance did at clock time.
 
     Each call returns the latest ``limit`` rows stamped at or before now; the
     time arguments are ignored, as the live fetcher never passes them.
@@ -26,12 +26,12 @@ class HistoricalOrderFlowSource:
         self,
         clock: Clock,
         funding: dict[str, pd.DataFrame],
-        open_interest: dict[str, pd.DataFrame],
         metrics: dict[str, pd.DataFrame],
     ) -> None:
         self._clock = clock
         self._funding = funding
-        self._open_interest = open_interest
+        # The metrics dump carries open interest for years; the OI endpoint
+        # keeps only 30 days.
         self._metrics = metrics
 
     async def get_funding_rate(
@@ -55,7 +55,7 @@ class HistoricalOrderFlowSource:
         start_time: int | datetime | None = None,  # noqa: ARG002
         end_time: int | datetime | None = None,  # noqa: ARG002
     ) -> list[OpenInterestHistDict]:
-        rows = self._known(self._open_interest, symbol, limit, period)
+        rows = self._known(self._metrics, symbol, limit, period)
         return [
             # The fetcher reads only sumOpenInterest; the cache has no USD value.
             OpenInterestHistDict(
@@ -64,7 +64,7 @@ class HistoricalOrderFlowSource:
                 sumOpenInterestValue="0",
                 timestamp=int(t),
             )
-            for t, v in zip(rows[TIME], rows[VALUE], strict=True)
+            for t, v in zip(rows[TIME], rows[OPEN_INTEREST], strict=True)
         ]
 
     async def get_long_short_ratio(
@@ -96,7 +96,9 @@ class HistoricalOrderFlowSource:
     ) -> pd.DataFrame:
         frame = frames.get(symbol)
         if frame is None or frame.empty:
-            return pd.DataFrame({TIME: [], VALUE: [], GLOBAL_RATIO: []})
+            return pd.DataFrame(
+                {TIME: [], VALUE: [], OPEN_INTEREST: [], GLOBAL_RATIO: []}
+            )
         times = frame[TIME].to_numpy(dtype=np.int64)
         known = times <= self._clock.now_ms()
         if period is not None:

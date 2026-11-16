@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from kavzi_trader.commons.sim_clock import SimClock
-from kavzi_trader.evals.metrics_cache import GLOBAL_RATIO
+from kavzi_trader.evals.metrics_cache import GLOBAL_RATIO, OPEN_INTEREST
 from kavzi_trader.evals.series_cache import TIME, VALUE
 from kavzi_trader.indicators.calculator import TechnicalIndicatorCalculator
 from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
@@ -38,8 +38,9 @@ def source(clock: SimClock) -> HistoricalOrderFlowSource:
         funding={
             SYMBOL: pd.DataFrame({TIME: settle, VALUE: 0.0001 * (1 + np.arange(6))})
         },
-        open_interest={SYMBOL: pd.DataFrame({TIME: snaps, VALUE: oi})},
-        metrics={SYMBOL: pd.DataFrame({TIME: snaps, GLOBAL_RATIO: 3.0})},
+        metrics={
+            SYMBOL: pd.DataFrame({TIME: snaps, OPEN_INTEREST: oi, GLOBAL_RATIO: 3.0})
+        },
     )
 
 
