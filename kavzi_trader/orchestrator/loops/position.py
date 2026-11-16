@@ -88,6 +88,12 @@ class PositionManagementLoop:
     async def step(self) -> None:
         """Run one management cycle over every open position."""
         positions = await self._state_manager.get_all_positions()
+        # Book exchange-side SL/TP fills first: the stop that caused a drawdown
+        # must not be re-sold by the close-all below.
+        if self._fill_check_due():
+            if positions:
+                positions = await self._drop_exchange_closed(positions)
+            await self._sweep_orphaned_orders()
         if self._drawdown_breaker is not None and await self._drawdown_breaker.check(
             len(positions),
         ):
@@ -97,10 +103,6 @@ class PositionManagementLoop:
         self._tp_retry_attempts = {
             pid: n for pid, n in self._tp_retry_attempts.items() if pid in open_ids
         }
-        if self._fill_check_due():
-            if positions:
-                positions = await self._drop_exchange_closed(positions)
-            await self._sweep_orphaned_orders()
         if positions:
             logger.debug(
                 "Position management cycle: %d open positions",

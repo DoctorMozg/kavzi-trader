@@ -11,6 +11,7 @@ from kavzi_trader.domain.state_schemas import (
     PositionSchema,
 )
 from kavzi_trader.orchestrator.loops.position import PositionManagementLoop
+from kavzi_trader.spine.position.exchange_close_schema import ExchangeCloseSchema
 from kavzi_trader.spine.risk.drawdown_circuit_breaker import DrawdownCircuitBreaker
 
 CLOSE_ALL_PERCENT = Decimal(10)
@@ -51,10 +52,27 @@ class FakeBook:
         self.state.get_current_drawdown = AsyncMock(side_effect=lambda: self.drawdown)
         self.executor = AsyncMock()
         self.executor.execute = AsyncMock(side_effect=self._close)
+        self.executor.close_after_exchange_fill = AsyncMock(
+            side_effect=self._close_after_fill
+        )
+        # Positions whose protective stop the exchange already filled.
+        self.stopped_out: set[str] = set()
+        self.detector = AsyncMock()
+        self.detector.detect = AsyncMock(side_effect=self._detect)
+
+    async def _detect(self, position: PositionSchema) -> ExchangeCloseSchema | None:
+        if position.id not in self.stopped_out:
+            return None
+        return ExchangeCloseSchema(
+            close_reason="stop_loss_filled", exit_price=Decimal(90)
+        )
 
     async def _close(self, position: PositionSchema, action: object) -> Decimal:
         self.positions = [p for p in self.positions if p.id != position.id]
         return Decimal(95)
+
+    async def _close_after_fill(self, position: PositionSchema) -> None:
+        await self._close(position, None)
 
 
 @pytest.fixture
@@ -84,7 +102,7 @@ def loop(book: FakeBook, events: AsyncMock) -> PositionManagementLoop:
             get_current_price=AsyncMock(return_value=Decimal(100)),
         ),
         action_executor=book.executor,
-        fill_detector=AsyncMock(detect=AsyncMock(return_value=None)),
+        fill_detector=book.detector,
         interval_s=5,
         drawdown_breaker=DrawdownCircuitBreaker(
             CLOSE_ALL_PERCENT,
@@ -139,6 +157,21 @@ async def test_failed_close_is_retried_next_tick(
 
     await loop.step()
 
+    assert book.positions == []
+
+
+async def test_exchange_stop_fill_is_booked_before_closing_all(
+    loop: PositionManagementLoop, book: FakeBook
+) -> None:
+    # The stop fill that caused the drawdown must not be re-sold as a FULL_EXIT.
+    book.drawdown = Decimal(12)
+    book.stopped_out = {"p1"}
+
+    await loop.step()
+
+    book.executor.close_after_exchange_fill.assert_awaited_once()
+    exited = [c.args[0].id for c in book.executor.execute.await_args_list]
+    assert exited == ["p2"]
     assert book.positions == []
 
 
