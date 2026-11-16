@@ -10,6 +10,7 @@ class StrategyTickSchema(BaseModel):
 
     now_ms: Annotated[int, Field(ge=0)]
     account: Annotated[AccountStateSchema | None, Field()] = None
-    positions: Annotated[list[PositionSchema], Field(default_factory=list)]
+    # Pydantic copies mutable defaults per instance, so [] is safe here.
+    positions: Annotated[list[PositionSchema], Field()] = []
 
     model_config = ConfigDict(frozen=True)

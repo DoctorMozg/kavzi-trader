@@ -11,7 +11,7 @@ StrategyIntent = BracketIntentSchema
 class StrategyTickResultSchema(BaseModel):
     """What a strategy wants queued and when it wants to be called again."""
 
-    intents: Annotated[list[StrategyIntent], Field(default_factory=list)]
+    intents: Annotated[list[StrategyIntent], Field()] = []
     next_tick_at_ms: Annotated[int, Field(ge=0)]
 
     model_config = ConfigDict(frozen=True)
