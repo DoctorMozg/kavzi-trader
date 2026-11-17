@@ -175,6 +175,18 @@ uv run kavzitrader model status
 
 `trade start --dry-run` only prints a message and exits without starting the orchestrator.
 
+### Headlines
+
+```bash
+# Archive headlines from CoinDesk, Cointelegraph, The Block, Decrypt and Bitcoin Magazine RSS
+uv run kavzitrader news collect
+
+# Fill past months from Cointelegraph and The Block sitemaps (slow: one request every 2 s)
+uv run kavzitrader news backfill --from 2026-07 --to 2026-10
+```
+
+Headlines land in `data/news/<YYYY-MM>.jsonl`, keyed by URL with the title as first seen. The feeds hold only 1–4 days, so run `scripts/collect_news.sh` hourly (cron or a systemd timer). Backfilled titles are the pages as they read today, and The Block entries have day precision only. `NewsStore.query` hides items newer than the lag it is given, and date-only items for a further 30 h.
+
 ### Dashboard
 
 ```bash
