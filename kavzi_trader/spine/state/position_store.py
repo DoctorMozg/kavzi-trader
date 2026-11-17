@@ -70,6 +70,8 @@ class PositionStore:
             )
             await self._redis.srem(POSITION_INDEX_KEY, *stale_ids)
 
+        # The index is a Redis set with arbitrary order; prompts list these.
+        positions.sort(key=lambda p: (p.opened_at, p.symbol))
         return positions
 
     async def save(self, position: PositionSchema) -> None:

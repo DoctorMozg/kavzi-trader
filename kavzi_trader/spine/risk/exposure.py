@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Collection
 
 from kavzi_trader.domain.risk_config import RiskConfigSchema
 from kavzi_trader.domain.state_schemas import PositionSchema
@@ -15,8 +16,13 @@ class ExposureLimiter:
         self,
         symbol: str,
         current_positions: list[PositionSchema],
+        *,
+        pending_symbols: Collection[str],
     ) -> ExposureCheckSchema:
-        position_count = len(current_positions)
+        """Resting entry limits hold a slot: they can fill without another check."""
+        open_symbols = {position.symbol for position in current_positions}
+        resting = set(pending_symbols) - open_symbols
+        position_count = len(current_positions) + len(resting)
         max_positions = self._config.max_positions
 
         logger.debug(
@@ -42,6 +48,14 @@ class ExposureLimiter:
                     max_positions=max_positions,
                     rejection_reason=f"Already have position in {symbol}",
                 )
+
+        if symbol in resting:
+            return ExposureCheckSchema(
+                is_allowed=False,
+                current_position_count=position_count,
+                max_positions=max_positions,
+                rejection_reason=f"Pending entry already resting for {symbol}",
+            )
 
         return ExposureCheckSchema(
             is_allowed=True,

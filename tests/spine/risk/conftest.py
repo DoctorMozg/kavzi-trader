@@ -28,6 +28,7 @@ def mock_state_manager() -> MagicMock:
     manager = MagicMock()
     manager.get_current_drawdown = AsyncMock(return_value=Decimal(0))
     manager.get_all_positions = AsyncMock(return_value=[])
+    manager.list_pending_entries = AsyncMock(return_value=[])
     manager.get_account_state = AsyncMock(
         return_value=AccountStateSchema(
             total_balance_usdt=Decimal(10000),

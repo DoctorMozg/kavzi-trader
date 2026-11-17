@@ -28,7 +28,7 @@ def make_position(symbol: str, position_id: str = "pos-1") -> PositionSchema:
 class TestExposureLimiter:
     def test_allows_first_position(self, risk_config: RiskConfigSchema) -> None:
         limiter = ExposureLimiter(risk_config)
-        result = limiter.check_exposure("BTCUSDT", [])
+        result = limiter.check_exposure("BTCUSDT", [], pending_symbols=[])
 
         assert result.is_allowed is True
         assert result.current_position_count == 0
@@ -41,7 +41,7 @@ class TestExposureLimiter:
         limiter = ExposureLimiter(risk_config)
         positions = [make_position("BTCUSDT")]
 
-        result = limiter.check_exposure("ETHUSDT", positions)
+        result = limiter.check_exposure("ETHUSDT", positions, pending_symbols=[])
 
         assert result.is_allowed is True
         assert result.current_position_count == 1
@@ -53,7 +53,7 @@ class TestExposureLimiter:
             make_position("ETHUSDT", "pos-2"),
         ]
 
-        result = limiter.check_exposure("SOLUSDT", positions)
+        result = limiter.check_exposure("SOLUSDT", positions, pending_symbols=[])
 
         assert result.is_allowed is False
         assert result.current_position_count == 2
@@ -63,7 +63,7 @@ class TestExposureLimiter:
         limiter = ExposureLimiter(risk_config)
         positions = [make_position("BTCUSDT")]
 
-        result = limiter.check_exposure("BTCUSDT", positions)
+        result = limiter.check_exposure("BTCUSDT", positions, pending_symbols=[])
 
         assert result.is_allowed is False
         assert "Already have position in BTCUSDT" in str(result.rejection_reason)
@@ -76,7 +76,7 @@ class TestExposureLimiter:
             make_position("ETHUSDT", "pos-2"),
         ]
 
-        result = limiter.check_exposure("SOLUSDT", positions)
+        result = limiter.check_exposure("SOLUSDT", positions, pending_symbols=[])
 
         assert result.is_allowed is True
         assert result.max_positions == 3
@@ -86,7 +86,35 @@ class TestExposureLimiter:
         limiter = ExposureLimiter(config)
         positions = [make_position("BTCUSDT")]
 
-        result = limiter.check_exposure("ETHUSDT", positions)
+        result = limiter.check_exposure("ETHUSDT", positions, pending_symbols=[])
 
         assert result.is_allowed is False
         assert result.max_positions == 1
+
+    def test_resting_entries_count_toward_max_positions(
+        self,
+        risk_config: RiskConfigSchema,
+    ) -> None:
+        limiter = ExposureLimiter(risk_config)
+        positions = [make_position("BTCUSDT")]
+
+        result = limiter.check_exposure(
+            "SOLUSDT", positions, pending_symbols=["XRPUSDT"]
+        )
+
+        assert result.is_allowed is False
+        assert result.current_position_count == 2
+        assert "Max positions reached" in str(result.rejection_reason)
+
+    def test_rejects_symbol_with_resting_entry(
+        self,
+        risk_config: RiskConfigSchema,
+    ) -> None:
+        limiter = ExposureLimiter(risk_config)
+
+        result = limiter.check_exposure("XRPUSDT", [], pending_symbols=["XRPUSDT"])
+
+        assert result.is_allowed is False
+        assert "Pending entry already resting for XRPUSDT" in str(
+            result.rejection_reason
+        )

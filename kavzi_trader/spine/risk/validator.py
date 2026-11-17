@@ -372,6 +372,7 @@ class DynamicRiskValidator:
     ) -> str | None:
         try:
             positions = await state_manager.get_all_positions()
+            pending = await state_manager.list_pending_entries()
         except Exception:
             logger.exception(
                 "Failed to check exposure for %s, rejecting as safety measure",
@@ -383,7 +384,11 @@ class DynamicRiskValidator:
                 },
             )
             return "Exposure check failed — state unavailable"
-        exposure_check = self._exposure_limiter.check_exposure(symbol, positions)
+        exposure_check = self._exposure_limiter.check_exposure(
+            symbol,
+            positions,
+            pending_symbols=[entry.symbol for entry in pending],
+        )
 
         if not exposure_check.is_allowed:
             return exposure_check.rejection_reason

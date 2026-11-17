@@ -20,6 +20,7 @@ from kavzi_trader.spine.risk.trade_validation_params_schema import (
     TradeValidationParamsSchema,
 )
 from kavzi_trader.spine.risk.validator import DynamicRiskValidator
+from kavzi_trader.spine.state.pending_entry_schema import PendingEntrySchema
 
 _EXTREME_ATR_HISTORY = [
     Decimal(str(i)) for i in [95, 100, 105, 98, 102, 97, 103, 99, 101, 100]
@@ -149,6 +150,44 @@ class TestDynamicRiskValidator:
         validator = DynamicRiskValidator()
         mock_state_manager.get_all_positions = AsyncMock(
             return_value=[make_position("BTCUSDT"), make_position("ETHUSDT")],
+        )
+
+        result = await validator.validate_trade(
+            TradeValidationParamsSchema.model_validate(
+                {
+                    "symbol": "SOLUSDT",
+                    "side": "LONG",
+                    "entry_price": Decimal(50000),
+                    "stop_loss": Decimal(49900),
+                    "take_profit": Decimal(50200),
+                    "current_atr": Decimal(100),
+                    "atr_history": [Decimal(100)] * 10,
+                }
+            ),
+            mock_state_manager,
+        )
+
+        assert result.is_valid is False
+        assert any("max positions" in r.lower() for r in result.rejection_reasons)
+
+    @pytest.mark.asyncio
+    async def test_resting_entries_count_toward_max_positions(
+        self, mock_state_manager
+    ) -> None:
+        # One filled position plus one resting pullback limit fill both slots.
+        validator = DynamicRiskValidator()
+        mock_state_manager.get_all_positions = AsyncMock(
+            return_value=[make_position("BTCUSDT")],
+        )
+        mock_state_manager.list_pending_entries = AsyncMock(
+            return_value=[
+                PendingEntrySchema(
+                    order_id="900000002",
+                    symbol="XRPUSDT",
+                    decision_json="{}",
+                    expires_at_ms=0,
+                )
+            ],
         )
 
         result = await validator.validate_trade(

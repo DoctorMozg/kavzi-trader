@@ -272,7 +272,11 @@ class PreTradeFilterChain:
                     volatility_zscore=regime.atr_zscore,
                 )
 
-        exposure_check = self._exposure_limiter.check_exposure(symbol, positions)
+        # Resting entries are counted by the spine's risk validation, which
+        # sees the pending-entry store; this pre-trade chain does not.
+        exposure_check = self._exposure_limiter.check_exposure(
+            symbol, positions, pending_symbols=()
+        )
         exposure_result = FilterResultSchema(
             name="position",
             is_allowed=exposure_check.is_allowed,

@@ -1,3 +1,4 @@
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -120,6 +121,35 @@ class TestPositionStore:
         assert len(result) == 2
         symbols = {p.symbol for p in result}
         assert symbols == {"BTCUSDT", "ETHUSDT"}
+
+    async def test_get_all_orders_by_open_time_not_index_order(
+        self,
+        store: PositionStore,
+        sample_position: PositionSchema,
+    ):
+        # The index is a Redis set: its order is arbitrary, and prompts that
+        # list positions must not change with it.
+        later = sample_position.model_copy(
+            update={
+                "id": "pos_789",
+                "symbol": "AAAUSDT",
+                "opened_at": sample_position.opened_at + timedelta(minutes=15),
+            }
+        )
+        mock_pipe = MagicMock()
+        mock_pipe.hgetall = MagicMock()
+        mock_pipe.execute = AsyncMock(
+            return_value=[
+                {"data": later.model_dump_json()},
+                {"data": sample_position.model_dump_json()},
+            ],
+        )
+        store._redis.smembers = AsyncMock(return_value=["pos_789", "pos_123"])
+        store._redis.pipeline = MagicMock(return_value=mock_pipe)
+
+        result = await store.get_all()
+
+        assert [p.symbol for p in result] == ["BTCUSDT", "AAAUSDT"]
 
     async def test_get_all_empty(self, store: PositionStore):
         store._redis.smembers = AsyncMock(return_value=set())
