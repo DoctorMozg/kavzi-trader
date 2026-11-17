@@ -32,7 +32,7 @@ class DonchianTrendSignal:
             raise ValueError(msg)
         states = np.array([self._state(close, lb) for lb in self._params.lookbacks])
         signal = states.mean(axis=0)
-        scale = self._vol_scale(close)
+        scale = self.vol_scale(close)
         return TrendSignalSchema(signal=signal, weight=signal * scale / n_symbols)
 
     def _state(self, close: np.ndarray, lookback: int) -> np.ndarray:
@@ -48,7 +48,7 @@ class DonchianTrendSignal:
             state[t] = current
         return state
 
-    def _vol_scale(self, close: np.ndarray) -> np.ndarray:
+    def vol_scale(self, close: np.ndarray) -> np.ndarray:
         """min(target / vol, cap); zero while the vol window is still warming up."""
         log_ret = pd.Series(np.log(close)).diff()
         vol = log_ret.rolling(self._params.vol_window).std().to_numpy() * np.sqrt(

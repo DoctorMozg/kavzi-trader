@@ -1,7 +1,6 @@
 from kavzi_trader.evals.markdown_format import NA, Md
 from kavzi_trader.evals.trend_result_schema import TrendResultSchema
 from kavzi_trader.evals.trend_stats_schema import TrendStatsSchema
-from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 
 PASS_SHARPE = 0.5
 
@@ -9,19 +8,18 @@ PASS_SHARPE = 0.5
 class TrendReportRenderer:
     """Markdown report of one trend backtest, with the preregistered criterion."""
 
-    def __init__(self, params: TrendParamsSchema) -> None:
-        self._params = params
+    def __init__(self, rule: str, preregistration: str) -> None:
+        self._rule = rule
+        self._preregistration = preregistration
 
     def render(self, result: TrendResultSchema) -> str:
-        variant = "long/short" if self._params.long_short else "long/flat"
         intro = (
-            f"Donchian ensemble {variant}, lookbacks {list(self._params.lookbacks)}, "
-            f"{', '.join(result.symbols)}; {result.first_day} to {result.last_day} "
-            f"({result.days} days). Rules: "
-            "evals/preregistrations/2026_11_16_trend_following.md."
+            f"{self._rule}, {', '.join(result.symbols)}; {result.first_day} to "
+            f"{result.last_day} ({result.days} days). Rules: "
+            f"evals/preregistrations/{self._preregistration}."
         )
         blocks = [
-            "# Trend following backtest",
+            "# Daily weight backtest",
             intro,
             self._summary(result),
             self._years(result),

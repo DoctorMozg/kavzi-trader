@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -74,3 +75,23 @@ def test_trials_without_any_registered_is_an_error(config: AppConfig) -> None:
 
     assert result.exception is not None
     assert "no 'trend' trials" in str(result.exception)
+
+
+@pytest.mark.parametrize("variant", ["vol-hold", "sma200"])
+def test_benchmark_variants_register_as_their_own_trials(
+    config: AppConfig, archive: Path, variant: str
+) -> None:
+    result = _invoke(
+        config,
+        "trend",
+        "--archive-dir", str(archive),
+        "--symbols", "BTCUSDT,ETHUSDT",
+        "--variant", variant,
+        *WINDOW,
+    )  # fmt: skip
+
+    assert result.exception is None
+    assert "1 trend trials so far" in result.output
+    lines = (config.system.results_dir / "evals" / "trials.jsonl").read_text()
+    [trial] = [json.loads(line) for line in lines.splitlines()]
+    assert trial["variant"].startswith(f"{variant} symbols=BTCUSDT,ETHUSDT ")

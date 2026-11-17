@@ -83,16 +83,19 @@ from kavzi_trader.evals.signal_sampler import (
     SIDES,
     SignalSampler,
 )
+from kavzi_trader.evals.sma_filter_signal import SmaFilterSignal
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_report_renderer import TrendReportRenderer
 from kavzi_trader.evals.validation.trial_registry import TrialRegistry
 from kavzi_trader.evals.validation.trial_schema import TrialSchema
+from kavzi_trader.evals.vol_managed_hold_signal import VolManagedHoldSignal
 from kavzi_trader.evals.weight_backtest import (
     FIRST_RETURN_DAY,
     LAST_RETURN_DAY,
     WeightBacktest,
 )
+from kavzi_trader.evals.weight_signal import WeightSignal
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
 from kavzi_trader.spine.filters.scout import ScoutFilter
 from kavzi_trader.spine.risk.regime_policy import RegimePolicy
@@ -967,12 +970,36 @@ def _parse_lookbacks(
         raise click.BadParameter("use comma-separated integers") from exc
 
 
+_BENCHMARK_VARIANTS = ("vol-hold", "sma200")
+
+
+def _trend_rule(
+    variant: str, params: TrendParamsSchema
+) -> tuple[WeightSignal, str, str]:
+    """Signal, report description and trial label of one ``eval trend`` variant."""
+    if variant == "vol-hold":
+        return VolManagedHoldSignal(params), "Vol-managed hold", variant
+    if variant == "sma200":
+        return SmaFilterSignal(200), "Long above the 200-day SMA", variant
+    lookbacks = ",".join(map(str, params.lookbacks))
+    direction = "long/short" if params.long_short else "long/flat"
+    return (
+        DonchianTrendSignal(params),
+        f"Donchian ensemble {direction}, lookbacks [{lookbacks}]",
+        f"{variant} lookbacks={lookbacks}",
+    )
+
+
 @eval_group.command("trend")
 @click.option(
     "--variant",
-    type=click.Choice(["long-flat", "long-short"]),
+    type=click.Choice(["long-flat", "long-short", "vol-hold", "sma200"]),
     default="long-flat",
     show_default=True,
+    help=(
+        "Donchian long-flat or long-short; vol-hold is always long with the "
+        "same sizing; sma200 is unlevered long above the 200-day average."
+    ),
 )
 @click.option(
     "--lookbacks",
@@ -1025,13 +1052,14 @@ def trend_backtest(
     """Backtest the daily Donchian trend ensemble on archived candles and funding."""
     app_config: AppConfig = ctx.obj["app_config"]
     params = TrendParamsSchema(lookbacks=lookbacks, long_short=variant == "long-short")
+    signal, rule, label = _trend_rule(variant, params)
     archive = ArchiveSeries(archive_dir)
     try:
         data = TrendDataLoader(archive).load(symbols or TREND_TRADING_SYMBOLS)
     except FileNotFoundError as exc:
         raise click.ClickException(str(exc)) from exc
     backtest = WeightBacktest(
-        DonchianTrendSignal(params),
+        signal,
         TurnoverBuffer(TREND_BUFFER_BAND),
         TrendPortfolio(float(app_config.paper.commission_rate)),
     )
@@ -1040,7 +1068,12 @@ def trend_backtest(
         result = backtest.run(data, pd.Timestamp(start_day), last_day)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    renderer = TrendReportRenderer(params)
+    prereg = (
+        "2026_11_17_trend_vs_simple_benchmarks.md"
+        if variant in _BENCHMARK_VARIANTS
+        else "2026_11_16_trend_following.md"
+    )
+    renderer = TrendReportRenderer(rule, prereg)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = out or app_config.system.results_dir / "evals" / f"trend_{stamp}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1053,7 +1086,7 @@ def trend_backtest(
     trial = TrialSchema(
         family="trend",
         variant=(
-            f"{variant} lookbacks={','.join(map(str, lookbacks))} "
+            f"{label} "
             f"symbols={','.join(result.symbols)} "
             f"fee={app_config.paper.commission_rate} band={TREND_BUFFER_BAND}"
         ),
