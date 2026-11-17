@@ -57,7 +57,10 @@ from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.strategies.trend.daily_bar_source import DailyBarSource
+from kavzi_trader.strategies.trend.shadow_gate_runner import ShadowGateRunner
+from kavzi_trader.strategies.trend.trend_entry_gate import TrendEntryGate
 from kavzi_trader.strategies.trend.trend_following_plugin import TrendFollowingPlugin
+from kavzi_trader.strategies.trend.trend_gate_log import TrendGateLog
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
 from kavzi_trader.ui.recorder import UiEventRecorder
 from kavzi_trader.ui.redis_publisher import RedisUiPublisher
@@ -254,16 +257,36 @@ class OrchestratorComposer:
     def _create_trend_loop(
         self, exchange: ExchangeClient, services: RuntimeServicesSchema
     ) -> StrategyLoop:
+        trend = self._config.strategy.trend_following
         plugin = TrendFollowingPlugin(
-            self._config.strategy.trend_following,
+            trend,
             DailyBarSource(exchange),
             TrendStateStore(services.redis_client),
+            reviewer=self._create_shadow_gate() if trend.gate.enabled else None,
         )
         return StrategyLoop(
             plugin=plugin,
             publisher=DecisionPublisher(services.redis_client),
             state_manager=services.state_manager,
         )
+
+    def _create_shadow_gate(self) -> ShadowGateRunner:
+        gate_config = self._config.strategy.trend_following.gate
+        prompt_loader = PromptLoader()
+        factory = AgentFactory(
+            self._config.brain,
+            prompt_loader,
+            risk_config=self._config.risk,
+            tier_registry=self._tier_registry,
+        )
+        logger.info("Shadow trend gate on, logging to %s", gate_config.log_path)
+        gate = TrendEntryGate(
+            factory.create_trend_gate_agent(),
+            prompt_loader,
+            gate_config,
+            factory.trend_gate_system_prompt(),
+        )
+        return ShadowGateRunner(gate, TrendGateLog(gate_config.log_path))
 
     def _create_llm_wiring(
         self, services: RuntimeServicesSchema, cache: MarketDataCache

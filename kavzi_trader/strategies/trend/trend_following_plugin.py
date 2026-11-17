@@ -1,7 +1,9 @@
 import asyncio
 import logging
+from collections.abc import Coroutine
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Any, Protocol
 
 import numpy as np
 
@@ -31,6 +33,10 @@ INTENT_TTL_MS = 3_600_000
 HISTORY_DAYS = 250
 
 
+class EntryReviewer(Protocol):
+    async def review_entry(self, symbol: str, as_of_ms: int) -> None: ...
+
+
 class TrendFollowingPlugin:
     """Daily long/flat Donchian trend rule, rebalanced once per UTC day."""
 
@@ -41,7 +47,9 @@ class TrendFollowingPlugin:
         config: TrendFollowingConfigSchema,
         bars: DailyCloseProvider,
         store: TrendStateStore,
+        reviewer: EntryReviewer | None = None,
     ) -> None:
+        self._reviewer = reviewer
         self._symbols = config.symbols
         self._disaster_stop_pct = config.disaster_stop_pct
         self._signal = DonchianTrendSignal(
@@ -93,15 +101,23 @@ class TrendFollowingPlugin:
         if intent.strategy != self.name:
             return
         weight = float(intent.target_weight)
+        is_entry = self._weights.get(intent.symbol, 0.0) == 0.0 and weight > 0.0
         self._weights[intent.symbol] = weight
         # on_enqueued is sync; a failed save only costs a stale buffer baseline.
-        task = asyncio.create_task(self._save_weight(intent.symbol, weight))
-        self._saves.add(task)
-        task.add_done_callback(self._saves.discard)
+        self._spawn(self._save_weight(intent.symbol, weight))
+        if is_entry and self._reviewer is not None:
+            self._spawn(
+                self._reviewer.review_entry(intent.symbol, intent.created_at_ms)
+            )
 
     async def flush(self) -> None:
-        """Waits for pending weight saves."""
+        """Waits for pending weight saves and shadow reviews."""
         await asyncio.gather(*self._saves)
+
+    def _spawn(self, job: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.create_task(job)
+        self._saves.add(task)
+        task.add_done_callback(self._saves.discard)
 
     async def _save_weight(self, symbol: str, weight: float) -> None:
         try:

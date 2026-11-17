@@ -187,6 +187,8 @@ uv run kavzitrader news backfill --from 2026-07 --to 2026-10
 
 Headlines land in `data/news/<YYYY-MM>.jsonl`, keyed by URL with the title as first seen. The feeds hold only 1–4 days, so run `scripts/collect_news.sh` hourly (cron or a systemd timer). Backfilled titles are the pages as they read today, and The Block entries have day precision only. `NewsStore.query` hides items newer than the lag it is given, and date-only items for a further 30 h.
 
+With `strategy.trend_following.gate.enabled`, each new trend entry also gets a shadow news check: Sonnet reads the last 72 h of headlines three times and votes KEEP or VETO, and the majority goes to `results/trend_gate/shadow.jsonl`. It never changes a trade and needs `KT_ANTHROPIC_API_KEY`. `uv run kavzitrader eval gate-replay --from 2026-07-01 --to 2026-10-31` runs the same check on past entries (paid). Scoring rules are in `evals/preregistrations/2026_11_17_trend_news_gate.md`.
+
 ### Dashboard
 
 ```bash

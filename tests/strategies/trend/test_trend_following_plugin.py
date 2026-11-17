@@ -184,3 +184,38 @@ class TestPersistence:
         stored = await store.load()
         assert stored.weights
         assert stored.last_rebalance_day is not None
+
+
+class RecordingReviewer:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    async def review_entry(self, symbol: str, as_of_ms: int) -> None:
+        self.calls.append((symbol, as_of_ms))
+
+
+class TestShadowReview:
+    async def test_reviews_only_flat_to_long_and_leaves_intents_unchanged(
+        self,
+        plugin: TrendFollowingPlugin,
+        bars: FakeDailyBars,
+        config: TrendFollowingConfigSchema,
+    ) -> None:
+        reviewer = RecordingReviewer()
+        reviewed_bars = FakeDailyBars(bars._closes)
+        reviewed = TrendFollowingPlugin(config, reviewed_bars, new_store(), reviewer)
+        held: dict[str, float] = {}
+        entries: list[tuple[str, int]] = []
+        for day in range(FIRST_DAY, FIRST_DAY + 60):
+            plain = await run_day(plugin, bars, day)
+            shadowed = await run_day(reviewed, reviewed_bars, day)
+            assert [(i.symbol, i.target_weight) for i in shadowed] == [
+                (i.symbol, i.target_weight) for i in plain
+            ]
+            for intent in plain:
+                if held.get(intent.symbol, 0.0) == 0.0 and intent.target_weight > 0:
+                    entries.append((intent.symbol, intent.created_at_ms))
+                held[intent.symbol] = float(intent.target_weight)
+
+        assert entries
+        assert reviewer.calls == entries

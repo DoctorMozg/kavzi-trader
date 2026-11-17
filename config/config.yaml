@@ -74,6 +74,13 @@ brain:
     model_id: "claude-opus-5-5"
     retries: 3
 
+  gate:
+    # Shadow news check on trend entries (strategy.trend_following.gate).
+    provider: "anthropic"
+    model_id: "claude-sonnet-5-5"
+    retries: 1
+    timeout_s: 60
+
 # -----------------------------------------------------------------------------
 # Scout — deterministic pattern filter (replaces former LLM Scout tier)
 # Runs before the Brain agents. Checks six technical criteria against
@@ -608,3 +615,14 @@ strategy:
     buffer_band: 0.2
     # Wide protective stop (fraction of entry); the rule itself exits on signal.
     disaster_stop_pct: 0.3
+    # Shadow LLM news check on each new entry (flat -> long). It only logs
+    # KEEP/VETO to log_path and never changes a trade; scoring is preregistered
+    # in evals/preregistrations/2026_11_17_trend_news_gate.md.
+    gate:
+      enabled: true
+      samples: 3
+      window_h: 72
+      lag_h: 2.0
+      max_headlines: 30
+      news_root: data/news
+      log_path: results/trend_gate/shadow.jsonl

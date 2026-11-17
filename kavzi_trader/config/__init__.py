@@ -157,9 +157,11 @@ class AppConfig(BaseModel):
 
     def llm_providers_in_use(self) -> set[LlmProvider]:
         """Providers of every agent the configured strategy will run."""
-        if self.strategy.active != "llm_pipeline":
-            return set()
-        return self.brain_providers()
+        if self.strategy.active == "llm_pipeline":
+            return self.brain_providers()
+        if self.strategy.trend_following.gate.enabled:
+            return {self.brain.gate.provider}
+        return set()
 
     def brain_providers(self) -> set[LlmProvider]:
         """Providers the LLM pipeline needs, whichever strategy is active."""

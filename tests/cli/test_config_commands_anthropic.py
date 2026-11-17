@@ -52,3 +52,29 @@ def test_validate_fails_clearly_without_anthropic_key(
 
     assert result.exit_code != 0
     assert "KT_ANTHROPIC_API_KEY" in str(result.exception)
+
+
+def _trend_config(app_config: AppConfig, *, gate_enabled: bool) -> AppConfig:
+    trend = app_config.strategy.trend_following
+    gate = trend.gate.model_copy(update={"enabled": gate_enabled})
+    strategy = app_config.strategy.model_copy(
+        update={
+            "active": "trend_following",
+            "trend_following": trend.model_copy(update={"gate": gate}),
+        }
+    )
+    brain = app_config.brain.model_copy(update={"anthropic_api_key": SecretStr("")})
+    return app_config.model_copy(update={"strategy": strategy, "brain": brain})
+
+
+def test_trend_with_shadow_gate_needs_the_anthropic_key(app_config: AppConfig) -> None:
+    result = _run(_trend_config(app_config, gate_enabled=True))
+
+    assert result.exit_code != 0
+    assert "KT_ANTHROPIC_API_KEY" in str(result.exception)
+
+
+def test_trend_without_gate_needs_no_llm_key(app_config: AppConfig) -> None:
+    result = _run(_trend_config(app_config, gate_enabled=False))
+
+    assert result.exit_code == 0

@@ -32,7 +32,7 @@ class TrendEntryGate:
         self._prompts = prompts
         self._config = config
         # Every prompt change is a new trial; the hash ties a review to its prompt.
-        self._prompt_sha = hashlib.sha256(system_prompt.encode()).hexdigest()[:12]
+        self.prompt_sha = hashlib.sha256(system_prompt.encode()).hexdigest()[:12]
 
     async def review(self, symbol: str, as_of: datetime) -> TrendGateReviewSchema:
         coin = symbol.removesuffix("USDT")
@@ -85,7 +85,7 @@ class TrendEntryGate:
             samples=samples,
             coin_headlines=len(mentions),
             other_headlines=len(others),
-            prompt_sha=self._prompt_sha,
+            prompt_sha=self.prompt_sha,
         )
 
     @staticmethod
