@@ -24,6 +24,18 @@ class TestNewsStore:
         [item] = NewsStore(tmp_path).query(AS_OF, WINDOW, LAG)
         assert item.title == "first"
 
+    def test_a_url_repeated_in_one_batch_is_stored_once(
+        self, tmp_path: Path, make_item
+    ) -> None:
+        published = AS_OF - timedelta(hours=5)
+
+        added = NewsStore(tmp_path).add(
+            [make_item("u1", published), make_item("u1", published)]
+        )
+
+        assert added == 1
+        assert len(NewsStore(tmp_path)) == 1
+
     def test_hides_items_inside_the_lag_and_outside_the_window(
         self, tmp_path: Path, make_item
     ) -> None:

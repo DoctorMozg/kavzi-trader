@@ -18,11 +18,17 @@ class NewsStore:
     def __len__(self) -> int:
         return len(self._items)
 
+    def __contains__(self, url: object) -> bool:
+        return url in self._items
+
     def add(self, items: Iterable[NewsItemSchema]) -> int:
         """Stores unseen URLs only, so the first-seen title is never overwritten."""
-        fresh = [item for item in items if item.url not in self._items]
+        fresh: dict[str, NewsItemSchema] = {}
+        for item in items:
+            if item.url not in self._items and item.url not in fresh:
+                fresh[item.url] = item
         self._root.mkdir(parents=True, exist_ok=True)
-        for item in fresh:
+        for item in fresh.values():
             self._items[item.url] = item
             path = self._root / f"{item.published_at:%Y-%m}.jsonl"
             with path.open("a", encoding="utf-8") as out:
