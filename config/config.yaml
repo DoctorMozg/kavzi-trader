@@ -570,7 +570,8 @@ paper:
 
   # true  = wipe Redis positions/orders/account on every start (fresh session).
   # false = keep them and restore the paper exchange from Redis (multi-day runs).
-  reset_on_start: true
+  # trend_following requires false.
+  reset_on_start: false
 
   # Simulated commission rate per trade. Binance USDT-M futures VIP0 is
   # 0.05% taker / 0.02% maker; 0.0005 (taker) is the realistic single-rate
@@ -585,10 +586,11 @@ paper:
 # Strategy — which plugin feeds the execution queue
 # -----------------------------------------------------------------------------
 strategy:
-  # llm_pipeline = Scout -> Analyst -> Trader (default).
-  # trend_following = daily Donchian trend rule; paper only, needs
+  # trend_following = daily Donchian trend rule (default); paper only, needs
   # paper.reset_on_start: false and --paper.
-  active: llm_pipeline
+  # llm_pipeline = Scout -> Analyst -> Trader. Its July 2026 replay lost 4% vs
+  # +7.8% buy-and-hold, with direction worse than random (evals/README.md).
+  active: trend_following
 
   # EXPERIMENTAL: the rule failed its 20/40/80 preregistration; lookback 20
   # alone is under a paper-only forward test until 2027-11-16.

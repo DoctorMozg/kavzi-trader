@@ -13,9 +13,9 @@ _ANTHROPIC_KEY = "anthropic-key-VALUE-9"
 
 
 @pytest.fixture
-def make_config() -> Callable[[str], AppConfig]:
+def make_config(llm_app_config: AppConfig) -> Callable[[str], AppConfig]:
     def _make(anthropic_key: str) -> AppConfig:
-        base = AppConfig.from_env()
+        base = llm_app_config
         brain = base.brain.model_copy(
             update={
                 "openrouter_api_key": SecretStr("openrouter-key"),

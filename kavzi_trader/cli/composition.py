@@ -72,7 +72,7 @@ def load_tier_registry() -> SymbolTierRegistry:
 def build_agent_source(app_config: AppConfig) -> AgentFactory:
     missing = [
         provider.value
-        for provider in app_config.llm_providers_in_use()
+        for provider in app_config.brain_providers()
         if not app_config.brain.api_key_for(provider).get_secret_value()
     ]
     if missing:

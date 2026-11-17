@@ -14,12 +14,12 @@ _ANTHROPIC_KEY = "anthropic-key-VALUE-4"
 
 
 @pytest.fixture
-def make_config() -> Callable[..., AppConfig]:
+def make_config(llm_app_config: AppConfig) -> Callable[..., AppConfig]:
     def _make(
         binance_key: str = _BINANCE_KEY,
         openrouter_key: str = _OPENROUTER_KEY,
     ) -> AppConfig:
-        base = AppConfig.from_env()
+        base = llm_app_config
         return base.model_copy(
             update={
                 "api": base.api.model_copy(

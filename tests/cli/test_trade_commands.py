@@ -108,11 +108,11 @@ def test_history_uses_one_event_loop_and_closes(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_start_orchestrator_uses_configured_runtime_values(
-    monkeypatch,
+    monkeypatch, llm_app_config: AppConfig
 ) -> None:
     captured: dict[str, Any] = {}
 
-    app_config = AppConfig.from_env()
+    app_config = llm_app_config
     app_config = app_config.model_copy(
         update={
             "api": app_config.api.model_copy(

@@ -90,11 +90,20 @@ class TestStrategySelection:
         assert isinstance(wiring.loop._plugin, TrendFollowingPlugin)
         assert wiring.external_loop is None
 
-    def test_default_still_builds_the_llm_plugin(self, app_config: AppConfig) -> None:
-        assert app_config.strategy.active == "llm_pipeline"
-        base = app_config.model_copy(
+    def test_shipped_config_runs_trend_and_passes_its_guards(
+        self, app_config: AppConfig
+    ) -> None:
+        composer = OrchestratorComposer(app_config, paper=True)
+
+        composer._validate_strategy()
+
+        assert app_config.strategy.active == "trend_following"
+
+    def test_llm_pipeline_builds_the_llm_plugin(self, app_config: AppConfig) -> None:
+        configured = _config(app_config, active="llm_pipeline")
+        base = configured.model_copy(
             update={
-                "brain": app_config.brain.model_copy(
+                "brain": configured.brain.model_copy(
                     update={"openrouter_api_key": SecretStr("test")}
                 )
             }

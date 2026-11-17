@@ -301,8 +301,8 @@ class TestRefusalAndUsage:
 
 class TestApiKeyValidation:
     @pytest.fixture
-    def app_config(self) -> AppConfig:
-        base = AppConfig.from_env()
+    def app_config(self, llm_app_config: AppConfig) -> AppConfig:
+        base = llm_app_config
         openrouter_only = {
             "analyst": AgentModelConfigSchema.model_validate(
                 {"provider": "openrouter", "model_id": "anthropic/claude-haiku-4.5"}
