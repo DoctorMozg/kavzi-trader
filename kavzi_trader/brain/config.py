@@ -63,6 +63,15 @@ class BrainConfigSchema(BaseModel):
             ),
         ),
     ]
+    # Shadow news check on trend entries (strategy.trend_following.gate).
+    gate: Annotated[
+        AgentModelConfigSchema,
+        Field(
+            default_factory=lambda: AgentModelConfigSchema(
+                provider=LlmProvider.ANTHROPIC
+            ),
+        ),
+    ]
     # Hard cap on concurrent Analyst LLM calls launched from a single
     # ReasoningLoop cycle. Prevents OpenRouter burst saturation when many
     # symbols escalate at once. Session 2026-04-14 observed 54% Analyst
@@ -98,4 +107,5 @@ ANTHROPIC_AGENT_DEFAULTS: dict[str, AnthropicAgentDefaultsSchema] = {
     "synthesizer": AnthropicAgentDefaultsSchema(
         model_id="claude-sonnet-5-5", effort="low"
     ),
+    "gate": AnthropicAgentDefaultsSchema(model_id="claude-sonnet-5-5", effort="medium"),
 }

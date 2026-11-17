@@ -45,6 +45,11 @@ from kavzi_trader.domain.trade_decision import (
     TRADER_REASONING_MAX_CHARS,
     TradeDecisionSchema,
 )
+from kavzi_trader.domain.trend_gate_decision import (
+    GATE_CATALYST_MAX_CHARS,
+    GATE_REASONING_MAX_CHARS,
+    TrendGateDecisionSchema,
+)
 from kavzi_trader.external.config import SynthesizerConfigSchema
 from kavzi_trader.external.synthesizer import SynthesizerOutputSchema
 
@@ -243,6 +248,32 @@ class AgentFactory:
             instructions=self._prompt_loader.render_system_prompt("synthesizer"),
             model_settings=settings,
             retries=config.retries,
+        )
+
+    def trend_gate_system_prompt(self) -> str:
+        return self._prompt_loader.render_system_prompt(
+            "trend_gate",
+            context={
+                "catalyst_max_chars": GATE_CATALYST_MAX_CHARS,
+                "reasoning_max_chars": GATE_REASONING_MAX_CHARS,
+            },
+        )
+
+    def create_trend_gate_agent(self) -> Agent[None, TrendGateDecisionSchema]:
+        source = self._config.gate
+        model, model_id = self._build_model("gate", source)
+        system_prompt = self.trend_gate_system_prompt()
+        logger.info(
+            "Creating trend gate agent with %s model %s", source.provider, model_id
+        )
+        return Agent(
+            model,
+            output_type=self._output_spec(source.provider, TrendGateDecisionSchema),
+            instructions=system_prompt,
+            model_settings=self._build_tier_settings(
+                "gate", source, self._config.request_timeout_s
+            ),
+            retries=source.retries,
         )
 
     @staticmethod

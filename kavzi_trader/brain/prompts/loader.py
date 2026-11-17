@@ -30,17 +30,19 @@ class PromptLoader:
                 "analyst": "system/agents/analyst.j2",
                 "trader": "system/agents/trader.j2",
                 "synthesizer": "system/agents/synthesizer.j2",
+                "trend_gate": "system/agents/trend_gate.j2",
             },
             user={
                 "analyze_setup": "user/requests/analyze_setup.j2",
                 "make_decision": "user/requests/make_decision.j2",
                 "synthesize_sentiment": "user/requests/synthesize_sentiment.j2",
+                "review_trend_entry": "user/requests/review_trend_entry.j2",
             },
         )
 
     def render_system_prompt(
         self,
-        agent: Literal["analyst", "trader", "synthesizer"],
+        agent: Literal["analyst", "trader", "synthesizer", "trend_gate"],
         context: Mapping[str, Any] | None = None,
     ) -> str:
         template_path = self._paths.system[agent]
@@ -50,7 +52,12 @@ class PromptLoader:
 
     def render_user_prompt(
         self,
-        request: Literal["analyze_setup", "make_decision", "synthesize_sentiment"],
+        request: Literal[
+            "analyze_setup",
+            "make_decision",
+            "synthesize_sentiment",
+            "review_trend_entry",
+        ],
         context: Mapping[str, Any],
     ) -> str:
         template_path = self._paths.user[request]

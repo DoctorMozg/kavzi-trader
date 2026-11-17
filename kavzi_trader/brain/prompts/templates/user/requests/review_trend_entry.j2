@@ -1,0 +1,11 @@
+Review time: {{ as_of }} UTC
+Entry: long {{ coin }} ({{ symbol }}), 20-day breakout on the last daily close.
+
+Headlines mentioning {{ coin }} (last {{ window_h }}h, newest first):
+{% for line in coin_headlines %}- {{ line }}
+{% else %}- none
+{% endfor %}
+Other crypto headlines (last {{ window_h }}h, newest first):
+{% for line in other_headlines %}- {{ line }}
+{% else %}- none
+{% endfor %}

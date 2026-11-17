@@ -3,6 +3,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from kavzi_trader.strategies.trend.trend_gate_config import TrendGateConfigSchema
+
 DEFAULT_TREND_SYMBOLS = [
     "BTCUSDT",
     "ETHUSDT",
@@ -25,5 +27,6 @@ class TrendFollowingConfigSchema(BaseModel):
     max_leverage: Annotated[float, Field(gt=0)] = 2.0
     buffer_band: Annotated[float, Field(ge=0)] = 0.2
     disaster_stop_pct: Annotated[Decimal, Field(gt=0, lt=1)] = Decimal("0.3")
+    gate: Annotated[TrendGateConfigSchema, Field(default_factory=TrendGateConfigSchema)]
 
     model_config = ConfigDict(frozen=True)

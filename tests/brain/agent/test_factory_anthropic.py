@@ -81,6 +81,17 @@ class TestProviderSelection:
         synth = _create_agent(factory, "synthesizer")
         assert _model(synth).model_name == "claude-sonnet-5-5"
 
+    def test_trend_gate_defaults_to_sonnet_with_native_output(
+        self, make_factory: MakeFactory
+    ) -> None:
+        factory = make_factory({})
+
+        agent = factory.create_trend_gate_agent()
+
+        assert _model(agent).model_name == "claude-sonnet-5-5"
+        assert isinstance(agent.output_type, NativeOutput)
+        assert "VETO only when" in factory.trend_gate_system_prompt()
+
     def test_configured_model_wins_over_default(
         self, make_factory: MakeFactory
     ) -> None:
