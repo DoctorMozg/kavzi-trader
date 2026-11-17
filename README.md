@@ -23,7 +23,7 @@ KavziTrader uses a **Brain-Spine** split. The Brain is a tiered pipeline that de
 
 - **The Brain**: a rule-based Scout, then an Analyst LLM, then a Trader LLM. Both LLMs run through OpenRouter via PydanticAI.
 - **The Spine**: pre-trade filters (funding, liquidity, correlation, volatility, Fear & Greed, spike cooldown), ATR-based risk validation, an execution engine and position management.
-- **Order flow and external data**: funding rate and open interest per symbol, plus market-wide sentiment (DVOL, put/call ratio, Fear & Greed, news).
+- **Order flow and external data**: funding rate and open interest per symbol, plus market-wide sentiment (DVOL, put/call ratio, Fear & Greed).
 - **Event sourcing**: decisions and orders go to Redis Streams as an audit trail.
 
 ## Features
@@ -32,7 +32,7 @@ KavziTrader uses a **Brain-Spine** split. The Brain is a tiered pipeline that de
 - **Risk**: ATR-based sizing, a leverage liquidation-price calculator used by the risk validator, drawdown limits.
 - **Position management**: partial exits, time exits and stall exits.
 - **Paper trading**: local simulated orders against live market data.
-- **External sources**: Deribit DVOL and put/call ratio, Fear & Greed index and CCData news.
+- **External sources**: Deribit DVOL and put/call ratio, and the Fear & Greed index.
 - **Realtime dashboard**: React UI fed by Redis streams over WebSocket.
 - **Structured logging**: JSON logs and decision audit records.
 
@@ -60,7 +60,7 @@ flowchart LR
     E --> ES[(Redis Streams<br/>event store)]
     ES --> PM[Position management<br/>partial time stall exits]
     PM --> E
-    EXT[External sources<br/>DVOL F&G news] -.-> A
+    EXT[External sources<br/>DVOL F&G] -.-> A
     EXT -.-> T
 ```
 

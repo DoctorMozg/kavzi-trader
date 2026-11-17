@@ -69,24 +69,6 @@ def _format_snapshot_for_prompt(
     else:
         parts.append("FEAR & GREED INDEX: unavailable")
 
-    if snapshot.ccdata_news is not None:
-        cn = snapshot.ccdata_news
-        headlines_text = ""
-        if cn.top_headlines:
-            headlines_text = "\n  Headlines:\n" + "\n".join(
-                f"    - {h}" for h in cn.top_headlines[:10]
-            )
-        parts.append(
-            f"NEWS SENTIMENT (CCData):\n"
-            f"  Bullish: {cn.bullish_count}, Bearish: {cn.bearish_count},"
-            f" Neutral: {cn.neutral_count}\n"
-            f"  Aggregate score: {float(cn.sentiment_score):+.2f}"
-            f" (-1=bearish, +1=bullish)"
-            f"{headlines_text}"
-        )
-    else:
-        parts.append("NEWS SENTIMENT: unavailable")
-
     return "\n\n".join(parts)
 
 

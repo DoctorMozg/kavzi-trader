@@ -536,13 +536,6 @@ external_sources:
   fear_greed:
     enabled: true
 
-  # CCData News Sentiment (CryptoCompare successor)
-  # Free, no API key required.
-  ccdata_news:
-    enabled: true
-    max_results: 20
-    max_headlines: 5
-
   # Sentiment Synthesizer — cheap LLM that pre-digests raw external data
   # into a compact summary for Analyst/Trader consumption.
   # Uses OpenRouter (same KT_OPENROUTER_API_KEY as brain agents) unless

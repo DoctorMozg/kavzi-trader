@@ -49,14 +49,13 @@ def test_format_snapshot_with_deribit_and_fgi() -> None:
     assert "FEAR & GREED INDEX:" in text
     assert "25/100" in text
     assert "Extreme Fear" in text
-    assert "NEWS SENTIMENT: unavailable" in text
+    assert "NEWS" not in text
 
 
 def test_format_snapshot_all_unavailable() -> None:
     text = _format_snapshot_for_prompt(ExternalDataSnapshotSchema())
     assert "DERIBIT OPTIONS: unavailable" in text
     assert "FEAR & GREED INDEX: unavailable" in text
-    assert "NEWS SENTIMENT: unavailable" in text
 
 
 @pytest.mark.asyncio

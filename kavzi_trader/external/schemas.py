@@ -38,25 +38,6 @@ class FearGreedDataSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-class CCDataNewsDataSchema(BaseModel):
-    """Aggregated news sentiment from CCData (CryptoCompare successor)."""
-
-    bullish_count: Annotated[int, Field(default=0)]
-    bearish_count: Annotated[int, Field(default=0)]
-    neutral_count: Annotated[int, Field(default=0)]
-    top_headlines: Annotated[list[str], Field(default_factory=list)]
-    sentiment_score: Annotated[
-        Decimal,
-        Field(
-            ...,
-            description="-1.0 (bearish) to +1.0 (bullish)",
-        ),
-    ]
-    fetched_at: Annotated[datetime, Field(...)]
-
-    model_config = ConfigDict(frozen=True)
-
-
 class ExternalDataSnapshotSchema(BaseModel):
     """Aggregated snapshot of all external data sources.
 
@@ -66,17 +47,12 @@ class ExternalDataSnapshotSchema(BaseModel):
 
     deribit_dvol: Annotated[DeribitDvolDataSchema | None, Field(default=None)]
     fear_greed: Annotated[FearGreedDataSchema | None, Field(default=None)]
-    ccdata_news: Annotated[CCDataNewsDataSchema | None, Field(default=None)]
 
     model_config = ConfigDict(frozen=True)
 
     def is_empty(self) -> bool:
         """Return True if all sources are unavailable."""
-        return (
-            self.deribit_dvol is None
-            and self.fear_greed is None
-            and self.ccdata_news is None
-        )
+        return self.deribit_dvol is None and self.fear_greed is None
 
 
 class SentimentSummarySchema(BaseModel):

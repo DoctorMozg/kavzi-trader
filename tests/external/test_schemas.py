@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from kavzi_trader.external.schemas import (
-    CCDataNewsDataSchema,
     DeribitDvolDataSchema,
     ExternalDataSnapshotSchema,
     FearGreedDataSchema,
@@ -31,19 +30,6 @@ def test_snapshot_not_empty_with_fear_greed() -> None:
         fear_greed=FearGreedDataSchema(
             value=42,
             classification="Fear",
-            fetched_at=datetime.now(UTC),
-        ),
-    )
-    assert snapshot.is_empty() is False
-
-
-def test_snapshot_not_empty_with_ccdata_news() -> None:
-    snapshot = ExternalDataSnapshotSchema(
-        ccdata_news=CCDataNewsDataSchema(
-            bullish_count=5,
-            bearish_count=3,
-            neutral_count=2,
-            sentiment_score=Decimal("0.2"),
             fetched_at=datetime.now(UTC),
         ),
     )

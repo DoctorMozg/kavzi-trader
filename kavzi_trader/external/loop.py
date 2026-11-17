@@ -11,7 +11,6 @@ from kavzi_trader.external.cache import ExternalDataCache
 from kavzi_trader.external.circuit_breaker import CircuitBreaker
 from kavzi_trader.external.config import CircuitBreakerConfigSchema
 from kavzi_trader.external.schemas import (
-    CCDataNewsDataSchema,
     DeribitDvolDataSchema,
     ExternalDataSnapshotSchema,
     FearGreedDataSchema,
@@ -172,9 +171,6 @@ class ExternalSentimentLoop:
                 fear_greed=self._typed_get(
                     source_data, "fear_greed", FearGreedDataSchema
                 ),
-                ccdata_news=self._typed_get(
-                    source_data, "ccdata_news", CCDataNewsDataSchema
-                ),
             ),
             sources_degraded,
         )
@@ -207,7 +203,7 @@ class ExternalSentimentLoop:
     def _fresh_enough(name: str, stale: BaseModel | None) -> BaseModel | None:
         if not isinstance(
             stale,
-            DeribitDvolDataSchema | FearGreedDataSchema | CCDataNewsDataSchema,
+            DeribitDvolDataSchema | FearGreedDataSchema,
         ):
             return stale
         age_s = (datetime.now(UTC) - stale.fetched_at).total_seconds()

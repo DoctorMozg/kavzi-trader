@@ -1,5 +1,4 @@
 from kavzi_trader.external.config import (
-    CCDataNewsConfigSchema,
     DeribitDvolConfigSchema,
     ExternalSourcesConfigSchema,
     FearGreedConfigSchema,
@@ -13,7 +12,6 @@ def test_defaults() -> None:
     assert config.run_interval_s == 300
     assert config.deribit_dvol.enabled is True
     assert config.fear_greed.enabled is True
-    assert config.ccdata_news.enabled is True
     assert config.synthesizer.enabled is True
 
 
@@ -25,13 +23,6 @@ def test_deribit_dvol_defaults() -> None:
 def test_fear_greed_defaults() -> None:
     config = FearGreedConfigSchema()
     assert config.enabled is True
-
-
-def test_ccdata_news_defaults() -> None:
-    config = CCDataNewsConfigSchema()
-    assert config.enabled is True
-    assert config.max_results == 20
-    assert config.max_headlines == 5
 
 
 def test_synthesizer_defaults() -> None:
@@ -47,14 +38,13 @@ def test_custom_values() -> None:
         {
             "enabled": False,
             "run_interval_s": 600,
-            "ccdata_news": {"enabled": False, "max_results": 10},
+            "fear_greed": {"enabled": False},
             "synthesizer": {"model_id": "custom/model", "retries": 3},
         },
     )
     assert config.enabled is False
     assert config.run_interval_s == 600
-    assert config.ccdata_news.enabled is False
-    assert config.ccdata_news.max_results == 10
+    assert config.fear_greed.enabled is False
     assert config.synthesizer.model_id == "custom/model"
     assert config.synthesizer.retries == 3
 
