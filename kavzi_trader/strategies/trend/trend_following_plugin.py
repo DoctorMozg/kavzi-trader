@@ -69,6 +69,7 @@ class TrendFollowingPlugin:
             )
         )
         self._buffer = TurnoverBuffer(config.buffer_band)
+        self._config = config
         self._min_bars = max(config.lookbacks) + config.vol_window + 1
         self._lookback = min(config.lookbacks)
         self._views = TrendViewBuilder(self._signal, self._lookback, VIEW_DAYS)
@@ -208,6 +209,11 @@ class TrendFollowingPlugin:
             ],
             target_weights={s: self._target_weight(closes[s]) for s in self._symbols},
             held_weights=held,
+            annual_vol_target=self._config.annual_vol_target,
+            max_leverage=self._config.max_leverage,
+            vol_window=self._config.vol_window,
+            buffer_band=self._config.buffer_band,
+            disaster_stop_pct=float(self._disaster_stop_pct),
         )
 
     async def _report(self, view: TrendViewSchema) -> None:

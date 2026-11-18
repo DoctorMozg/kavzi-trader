@@ -207,7 +207,8 @@
             "filter",
             "position",
             "trend",
-            "gate"
+            "gate",
+            "execution"
           ],
           "title": "Stage",
           "type": "string"
@@ -258,6 +259,7 @@
           "account": "#/$defs/UiAccountEventSchema",
           "candles": "#/$defs/UiCandlesEventSchema",
           "decision": "#/$defs/UiDecisionEventSchema",
+          "gate_inputs": "#/$defs/UiGateInputsEventSchema",
           "position_closed": "#/$defs/UiPositionClosedEventSchema",
           "trade": "#/$defs/UiTradeEventSchema",
           "trend_state": "#/$defs/UiTrendStateEventSchema"
@@ -282,6 +284,9 @@
         },
         {
           "$ref": "#/$defs/UiTrendStateEventSchema"
+        },
+        {
+          "$ref": "#/$defs/UiGateInputsEventSchema"
         }
       ]
     },
@@ -309,6 +314,83 @@
         "event"
       ],
       "title": "UiEventMessageSchema",
+      "type": "object"
+    },
+    "UiGateInputsEventSchema": {
+      "description": "The headline window the shadow gate would review an entry against now.",
+      "properties": {
+        "coin_headlines": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Coin Headlines",
+          "type": "object"
+        },
+        "headlines": {
+          "minimum": 0,
+          "title": "Headlines",
+          "type": "integer"
+        },
+        "lag_h": {
+          "minimum": 0,
+          "title": "Lag H",
+          "type": "number"
+        },
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "newest_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Newest Ms"
+        },
+        "prompt_sha": {
+          "title": "Prompt Sha",
+          "type": "string"
+        },
+        "samples": {
+          "minimum": 1,
+          "title": "Samples",
+          "type": "integer"
+        },
+        "ts_ms": {
+          "minimum": 0,
+          "title": "Ts Ms",
+          "type": "integer"
+        },
+        "type": {
+          "const": "gate_inputs",
+          "default": "gate_inputs",
+          "title": "Type",
+          "type": "string"
+        },
+        "window_h": {
+          "minimum": 1,
+          "title": "Window H",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "ts_ms",
+        "model_id",
+        "samples",
+        "prompt_sha",
+        "window_h",
+        "lag_h",
+        "headlines",
+        "newest_ms",
+        "coin_headlines"
+      ],
+      "title": "UiGateInputsEventSchema",
       "type": "object"
     },
     "UiOpenPositionSchema": {
@@ -558,6 +640,17 @@
           "title": "Decisions",
           "type": "array"
         },
+        "gate_inputs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UiGateInputsEventSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "trades": {
           "items": {
             "$ref": "#/$defs/UiTradeEventSchema"
@@ -584,7 +677,8 @@
         "closed_positions",
         "candles",
         "candle_interval",
-        "trend"
+        "trend",
+        "gate_inputs"
       ],
       "title": "UiSnapshotSchema",
       "type": "object"
@@ -761,15 +855,31 @@
     "UiTrendStateEventSchema": {
       "description": "The trend rule's full per-symbol state; each one replaces the last.",
       "properties": {
+        "annual_vol_target": {
+          "title": "Annual Vol Target",
+          "type": "number"
+        },
+        "buffer_band": {
+          "title": "Buffer Band",
+          "type": "number"
+        },
         "day": {
           "format": "date",
           "title": "Day",
           "type": "string"
         },
+        "disaster_stop_pct": {
+          "title": "Disaster Stop Pct",
+          "type": "number"
+        },
         "lookback": {
           "minimum": 1,
           "title": "Lookback",
           "type": "integer"
+        },
+        "max_leverage": {
+          "title": "Max Leverage",
+          "type": "number"
         },
         "next_rebalance_ms": {
           "minimum": 0,
@@ -793,6 +903,10 @@
           "default": "trend_state",
           "title": "Type",
           "type": "string"
+        },
+        "vol_window": {
+          "title": "Vol Window",
+          "type": "integer"
         }
       },
       "required": [
@@ -801,7 +915,12 @@
         "day",
         "lookback",
         "next_rebalance_ms",
-        "symbols"
+        "symbols",
+        "annual_vol_target",
+        "max_leverage",
+        "vol_window",
+        "buffer_band",
+        "disaster_stop_pct"
       ],
       "title": "UiTrendStateEventSchema",
       "type": "object"

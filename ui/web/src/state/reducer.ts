@@ -7,6 +7,7 @@ import type {
   ServerMessage,
   UiEventPayload,
   Trade,
+  GateInputs,
   TrendState,
 } from "@/lib/protocol";
 
@@ -21,6 +22,7 @@ export interface DashboardState {
   candles: Record<string, Candle[]>;
   candleInterval: string | null;
   trend: TrendState | null;
+  gateInputs: GateInputs | null;
 }
 
 export const initialState: DashboardState = {
@@ -32,6 +34,7 @@ export const initialState: DashboardState = {
   candles: {},
   candleInterval: null,
   trend: null,
+  gateInputs: null,
 };
 
 function capTail<T>(items: T[], cap: number): T[] {
@@ -73,6 +76,8 @@ function applyEvent(state: DashboardState, event: UiEventPayload): DashboardStat
       return applyCandles(state, event);
     case "trend_state":
       return { ...state, trend: event };
+    case "gate_inputs":
+      return { ...state, gateInputs: event };
   }
 }
 
@@ -93,6 +98,7 @@ export function applyMessage(state: DashboardState, msg: ServerMessage): Dashboa
       ),
       candleInterval: snapshot.candle_interval,
       trend: snapshot.trend,
+      gateInputs: snapshot.gate_inputs,
     };
   }
   return { ...applyEvent(state, msg.event), seq: msg.seq };

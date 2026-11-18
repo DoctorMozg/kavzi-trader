@@ -222,6 +222,11 @@ def _trend_view(rebalanced: bool) -> TrendViewSchema:
         ],
         target_weights={"BTCUSDT": 0.06, "ETHUSDT": 0.0},
         held_weights={"BTCUSDT": 0.05, "ETHUSDT": 0.0},
+        annual_vol_target=0.25,
+        max_leverage=2.0,
+        vol_window=30,
+        buffer_band=0.2,
+        disaster_stop_pct=0.3,
     )
 
 
@@ -239,6 +244,7 @@ class TestRecordTrend:
             ("BTCUSDT", 0.06, 0.05),
             ("ETHUSDT", 0.0, 0.0),
         ]
+        assert (state.annual_vol_target, state.buffer_band) == (0.25, 0.2)
         assert isinstance(btc, UiDecisionEventSchema)
         assert isinstance(eth, UiDecisionEventSchema)
         assert (btc.stage, btc.verdict) == ("trend", "LONG")

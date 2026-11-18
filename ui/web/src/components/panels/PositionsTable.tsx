@@ -58,14 +58,16 @@ export function PositionsTable() {
           <thead>
             <tr>
               <Th>Symbol</Th>
-              <Th>Side</Th>
-              <Th right>Qty</Th>
-              <Th right>Entry</Th>
-              <Th right>Mark</Th>
-              <Th right>uPnL</Th>
-              <Th>SL / TP</Th>
-              <Th right>Lev</Th>
-              <Th right>Age</Th>
+              <Th hint="LONG profits when price rises. The trend rule only goes long.">Side</Th>
+              <Th right hint="Coins held">Qty</Th>
+              <Th right hint="Average fill price">Entry</Th>
+              <Th right hint="Live mark price used for unrealised PnL">Mark</Th>
+              <Th right hint="Unrealised PnL in USDT, and as % of the entry notional">uPnL</Th>
+              <Th hint="Stop loss and take profit. Trend positions carry only the disaster stop; the rule exits on a daily close below the channel low ('signal exit').">
+                SL / TP
+              </Th>
+              <Th right hint="Exchange leverage setting. Exposure is set by the target weight, not by this number.">Lev</Th>
+              <Th right hint="Time since the position opened">Age</Th>
             </tr>
           </thead>
           <tbody>

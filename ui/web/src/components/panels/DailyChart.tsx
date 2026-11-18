@@ -11,6 +11,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef } from "react";
+import { Hint } from "@/components/ui/hint";
 import { EmptyState } from "@/components/ui/panel";
 import { CHART_COLORS, chartOptions, toChartTime } from "@/lib/chartTheme";
 import type { TrendSymbol } from "@/lib/protocol";
@@ -122,16 +123,16 @@ export function DailyChart({ symbol }: { symbol: string }) {
     <div className="relative h-full min-h-0">
       <div ref={containerRef} className="absolute inset-0" />
       {series ? (
-        <div className="pointer-events-none absolute left-2 top-1 z-10 flex gap-3 text-[11px] text-muted-foreground">
-          <span>
+        <div className="absolute left-2 top-1 z-10 flex gap-3 text-[11px] text-muted-foreground">
+          <Hint plain content={`Highest close of the previous ${lookback} days. A daily close above this line turns the symbol LONG.`}>
             <span className="text-profit">- -</span> {lookback}d high: entry
-          </span>
-          <span>
+          </Hint>
+          <Hint plain content={`Lowest close of the previous ${lookback} days. A daily close below this line turns the symbol FLAT.`}>
             <span className="text-loss">- -</span> {lookback}d low: exit
-          </span>
-          <span>
+          </Hint>
+          <Hint plain content="Daily close line, green on days the rule was LONG and grey when FLAT. The last point is the live price. Arrows mark actual entries and exits.">
             <span className="text-profit">━</span> long <span className="ml-1">━</span> flat
-          </span>
+          </Hint>
         </div>
       ) : (
         <div className="absolute inset-0">

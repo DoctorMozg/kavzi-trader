@@ -20,5 +20,11 @@ class TrendViewSchema(BaseModel):
     # Raw rule target and the buffered weight actually held, per symbol.
     target_weights: Annotated[dict[str, float], Field()]
     held_weights: Annotated[dict[str, float], Field()]
+    # Sizing rule: weight = signal * min(vol_target / vol, max_leverage) / N.
+    annual_vol_target: Annotated[float, Field(gt=0)]
+    max_leverage: Annotated[float, Field(gt=0)]
+    vol_window: Annotated[int, Field(ge=2)]
+    buffer_band: Annotated[float, Field(ge=0)]
+    disaster_stop_pct: Annotated[float, Field(gt=0, lt=1)]
 
     model_config = ConfigDict(frozen=True)

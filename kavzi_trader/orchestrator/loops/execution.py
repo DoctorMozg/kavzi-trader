@@ -191,11 +191,14 @@ class ExecutionLoop:
             result.error_message,
             extra={"intent_id": intent.intent_id, "status": result.status},
         )
-        # Skips such as within_tolerance send no order and would only add noise.
-        if self._ui_recorder is None or result.order_id is None:
+        if self._ui_recorder is None:
             return
         try:
-            await self._ui_recorder.record_rebalance(intent, result)
+            # No order means skipped or rejected; the feed says why instead.
+            if result.order_id is None:
+                await self._ui_recorder.record_rebalance_skip(intent, result)
+            else:
+                await self._ui_recorder.record_rebalance(intent, result)
         except Exception:
             logger.exception(
                 "Failed to report rebalance for %s",

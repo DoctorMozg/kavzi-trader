@@ -5,6 +5,7 @@ import type {
   UiDecisionEventSchema,
   UiEvent,
   UiEventMessageSchema,
+  UiGateInputsEventSchema,
   UiOpenPositionSchema,
   UiPositionClosedEventSchema,
   UiServerMessage,
@@ -32,3 +33,4 @@ export type Stage = Decision["stage"];
 export type TrendState = UiTrendStateEventSchema;
 export type TrendSymbol = UiTrendSymbolSchema;
 export type TrendDay = UiTrendDaySchema;
+export type GateInputs = UiGateInputsEventSchema;

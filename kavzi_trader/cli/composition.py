@@ -57,6 +57,7 @@ from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.strategies.trend.daily_bar_source import DailyBarSource
+from kavzi_trader.strategies.trend.gate_inputs_reader import GateInputsReader
 from kavzi_trader.strategies.trend.shadow_gate_runner import ShadowGateRunner
 from kavzi_trader.strategies.trend.trend_entry_gate import TrendEntryGate
 from kavzi_trader.strategies.trend.trend_following_plugin import TrendFollowingPlugin
@@ -191,6 +192,7 @@ class OrchestratorComposer:
                     market_data=cache,
                     symbols=config.trading.symbols,
                     config=config.ui,
+                    gate_inputs=wiring.gate_inputs,
                 )
                 if services.ui_recorder is not None
                 else None
@@ -249,31 +251,42 @@ class OrchestratorComposer:
         cache: MarketDataCache,
     ) -> StrategyWiringSchema:
         if self._config.strategy.active == "trend_following":
-            return StrategyWiringSchema(
-                loop=self._create_trend_loop(exchange, services)
-            )
+            return self._create_trend_wiring(exchange, services)
         return self._create_llm_wiring(services, cache)
 
-    def _create_trend_loop(
+    def _create_trend_wiring(
         self, exchange: ExchangeClient, services: RuntimeServicesSchema
-    ) -> StrategyLoop:
+    ) -> StrategyWiringSchema:
         trend = self._config.strategy.trend_following
+        gate = self._create_shadow_gate() if trend.gate.enabled else None
         plugin = TrendFollowingPlugin(
             trend,
             DailyBarSource(exchange),
             TrendStateStore(services.redis_client),
             reviewer=(
-                self._create_shadow_gate(services) if trend.gate.enabled else None
+                None
+                if gate is None
+                else ShadowGateRunner(
+                    gate, TrendGateLog(trend.gate.log_path), services.ui_recorder
+                )
             ),
             reporter=services.ui_recorder,
         )
-        return StrategyLoop(
+        loop = StrategyLoop(
             plugin=plugin,
             publisher=DecisionPublisher(services.redis_client),
             state_manager=services.state_manager,
         )
+        return StrategyWiringSchema(
+            loop=loop,
+            gate_inputs=(
+                None
+                if gate is None
+                else GateInputsReader(trend.gate, gate.model_id, gate.prompt_sha)
+            ),
+        )
 
-    def _create_shadow_gate(self, services: RuntimeServicesSchema) -> ShadowGateRunner:
+    def _create_shadow_gate(self) -> TrendEntryGate:
         gate_config = self._config.strategy.trend_following.gate
         prompt_loader = PromptLoader()
         factory = AgentFactory(
@@ -283,14 +296,11 @@ class OrchestratorComposer:
             tier_registry=self._tier_registry,
         )
         logger.info("Shadow trend gate on, logging to %s", gate_config.log_path)
-        gate = TrendEntryGate(
+        return TrendEntryGate(
             factory.create_trend_gate_agent(),
             prompt_loader,
             gate_config,
             factory.trend_gate_system_prompt(),
-        )
-        return ShadowGateRunner(
-            gate, TrendGateLog(gate_config.log_path), services.ui_recorder
         )
 
     def _create_llm_wiring(

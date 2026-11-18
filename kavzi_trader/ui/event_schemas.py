@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 PositionSide = Literal["LONG", "SHORT"]
 DecisionStage = Literal[
-    "scout", "analyst", "trader", "filter", "position", "trend", "gate"
+    "scout", "analyst", "trader", "filter", "position", "trend", "gate", "execution"
 ]
 
 # Defaults are always serialized, so the TS types must not mark them optional.
@@ -163,6 +163,28 @@ class UiTrendStateEventSchema(BaseModel):
     lookback: Annotated[int, Field(..., ge=1)]
     next_rebalance_ms: Annotated[int, Field(..., ge=0)]
     symbols: Annotated[list[UiTrendSymbolSchema], Field(...)]
+    annual_vol_target: Annotated[float, Field(...)]
+    max_leverage: Annotated[float, Field(...)]
+    vol_window: Annotated[int, Field(...)]
+    buffer_band: Annotated[float, Field(...)]
+    disaster_stop_pct: Annotated[float, Field(...)]
+
+    model_config = UI_MODEL_CONFIG
+
+
+class UiGateInputsEventSchema(BaseModel):
+    """The headline window the shadow gate would review an entry against now."""
+
+    type: Annotated[Literal["gate_inputs"], Field()] = "gate_inputs"
+    ts_ms: Annotated[int, Field(..., ge=0)]
+    model_id: Annotated[str, Field(...)]
+    samples: Annotated[int, Field(..., ge=1)]
+    prompt_sha: Annotated[str, Field(...)]
+    window_h: Annotated[int, Field(..., ge=1)]
+    lag_h: Annotated[float, Field(..., ge=0)]
+    headlines: Annotated[int, Field(..., ge=0)]
+    newest_ms: Annotated[int | None, Field()] = None
+    coin_headlines: Annotated[dict[str, int], Field(...)]
 
     model_config = UI_MODEL_CONFIG
 
@@ -173,7 +195,8 @@ type UiEvent = Annotated[
     | UiTradeEventSchema
     | UiPositionClosedEventSchema
     | UiCandlesEventSchema
-    | UiTrendStateEventSchema,
+    | UiTrendStateEventSchema
+    | UiGateInputsEventSchema,
     Field(discriminator="type"),
 ]
 

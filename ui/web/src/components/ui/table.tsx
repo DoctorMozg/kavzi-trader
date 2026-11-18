@@ -1,4 +1,5 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { Hint } from "@/components/ui/hint";
 import { cn } from "@/lib/utils";
 
 export function Table({ className, ...props }: ComponentProps<"table">) {
@@ -11,7 +12,13 @@ export function Table({ className, ...props }: ComponentProps<"table">) {
 
 type CellProps = ComponentProps<"td"> & { right?: boolean };
 
-export function Th({ right, className, ...props }: ComponentProps<"th"> & { right?: boolean }) {
+export function Th({
+  right,
+  hint,
+  className,
+  children,
+  ...props
+}: ComponentProps<"th"> & { right?: boolean; hint?: ReactNode }) {
   return (
     <th
       className={cn(
@@ -20,7 +27,9 @@ export function Th({ right, className, ...props }: ComponentProps<"th"> & { righ
         className,
       )}
       {...props}
-    />
+    >
+      {hint ? <Hint content={hint}>{children}</Hint> : children}
+    </th>
   );
 }
 

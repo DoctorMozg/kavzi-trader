@@ -13,6 +13,7 @@ from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 from kavzi_trader.strategies.target_weight_intent_schema import (
     TargetWeightIntentSchema,
 )
+from kavzi_trader.strategies.trend.gate_inputs_schema import GateInputsSchema
 from kavzi_trader.strategies.trend.trend_gate_review_schema import (
     TrendGateReviewSchema,
 )
@@ -25,6 +26,7 @@ from kavzi_trader.ui.event_schemas import (
     UiCandleSchema,
     UiCandlesEventSchema,
     UiDecisionEventSchema,
+    UiGateInputsEventSchema,
     UiOpenPositionSchema,
     UiPositionClosedEventSchema,
     UiTradeEventSchema,
@@ -306,6 +308,11 @@ class UiEventRecorder:
                     )
                     for s in view.symbols
                 ],
+                annual_vol_target=view.annual_vol_target,
+                max_leverage=view.max_leverage,
+                vol_window=view.vol_window,
+                buffer_band=view.buffer_band,
+                disaster_stop_pct=view.disaster_stop_pct,
             ),
         )
         if not view.rebalanced:
@@ -354,5 +361,42 @@ class UiEventRecorder:
                 entry_price=result.executed_price,
                 quantity=result.executed_qty,
                 reasoning=result.error_message or intent.reason,
+            ),
+        )
+
+    async def record_rebalance_skip(
+        self,
+        intent: TargetWeightIntentSchema,
+        result: ExecutionResultSchema,
+    ) -> None:
+        """A target change the executor did not trade, with its reason."""
+        await self._publisher.publish(
+            UiDecisionEventSchema(
+                ts_ms=_now_ms(),
+                symbol=intent.symbol,
+                stage="execution",
+                verdict="NOT TRADED",
+                summary=(
+                    f"Target weight {float(intent.target_weight):.4f} not traded: "
+                    f"{result.error_message or result.status}"
+                ),
+                reasoning=intent.reason or None,
+            ),
+        )
+
+    async def record_gate_inputs(self, inputs: GateInputsSchema) -> None:
+        await self._publisher.publish(
+            UiGateInputsEventSchema(
+                ts_ms=_now_ms(),
+                model_id=inputs.model_id,
+                samples=inputs.samples,
+                prompt_sha=inputs.prompt_sha,
+                window_h=inputs.window_h,
+                lag_h=inputs.lag_h,
+                headlines=inputs.headlines,
+                newest_ms=None
+                if inputs.newest_at is None
+                else _to_ms(inputs.newest_at),
+                coin_headlines=inputs.coin_headlines,
             ),
         )

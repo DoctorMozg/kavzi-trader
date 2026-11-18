@@ -137,4 +137,9 @@ def make_trend_state(
                 days=[UiTrendDaySchema(day_ms=0, close=close, signal=0.0)],
             ),
         ],
+        annual_vol_target=0.25,
+        max_leverage=2.0,
+        vol_window=30,
+        buffer_band=0.2,
+        disaster_stop_pct=0.3,
     )

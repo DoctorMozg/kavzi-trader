@@ -254,6 +254,11 @@ class TestTrendReporting:
         sent = {i.symbol: float(i.target_weight) for i in intents}
         assert view.held_weights == {s: sent.get(s, 0.0) for s in SYMBOLS}
         assert any(view.target_weights[s] > 0 for s in SYMBOLS)
+        assert (view.annual_vol_target, view.max_leverage, view.buffer_band) == (
+            config.annual_vol_target,
+            config.max_leverage,
+            config.buffer_band,
+        )
 
     async def test_same_day_restart_reports_held_state_once_without_trading(
         self,

@@ -14,12 +14,12 @@ export function ClosedTable() {
           <Th>Closed</Th>
           <Th>Symbol</Th>
           <Th>Side</Th>
-          <Th right>Qty</Th>
-          <Th right>Entry</Th>
-          <Th right>Exit</Th>
-          <Th right>PnL</Th>
-          <Th>Reason</Th>
-          <Th right>Held</Th>
+          <Th right hint="Quantity closed">Qty</Th>
+          <Th right hint="Average entry fill price">Entry</Th>
+          <Th right hint="Exit fill price">Exit</Th>
+          <Th right hint="Realised PnL in USDT after fees">PnL</Th>
+          <Th hint="What closed it: the daily signal, the disaster stop, or a position-management exit">Reason</Th>
+          <Th right hint="Time the position was open">Held</Th>
         </tr>
       </thead>
       <tbody>

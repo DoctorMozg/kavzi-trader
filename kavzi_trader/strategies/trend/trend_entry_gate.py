@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic_ai import Agent
+from pydantic_ai.models import Model
 
 from kavzi_trader.brain.prompts.loader import PromptLoader
 from kavzi_trader.domain.trend_gate_decision import TrendGateDecisionSchema
@@ -33,6 +34,8 @@ class TrendEntryGate:
         self._config = config
         # Every prompt change is a new trial; the hash ties a review to its prompt.
         self.prompt_sha = hashlib.sha256(system_prompt.encode()).hexdigest()[:12]
+        model = agent.model
+        self.model_id = model.model_name if isinstance(model, Model) else str(model)
 
     async def review(self, symbol: str, as_of: datetime) -> TrendGateReviewSchema:
         coin = symbol.removesuffix("USDT")

@@ -7,6 +7,7 @@ from kavzi_trader.ui.event_schemas import (
     UiCandlesEventSchema,
     UiDecisionEventSchema,
     UiEvent,
+    UiGateInputsEventSchema,
     UiPositionClosedEventSchema,
     UiTradeEventSchema,
     UiTrendStateEventSchema,
@@ -31,6 +32,7 @@ class UiStateProjection:
         self._candles: dict[str, dict[int, UiCandleSchema]] = {}
         self._candle_interval: str | None = None
         self._trend: UiTrendStateEventSchema | None = None
+        self._gate_inputs: UiGateInputsEventSchema | None = None
 
     @property
     def seq(self) -> int:
@@ -51,6 +53,8 @@ class UiStateProjection:
                 self._merge_candles(event)
             case UiTrendStateEventSchema():
                 self._trend = event
+            case UiGateInputsEventSchema():
+                self._gate_inputs = event
         self._seq += 1
         return self._seq
 
@@ -66,6 +70,7 @@ class UiStateProjection:
             },
             candle_interval=self._candle_interval,
             trend=self._trend,
+            gate_inputs=self._gate_inputs,
         )
         return UiSnapshotMessageSchema(seq=self._seq, snapshot=snapshot)
 

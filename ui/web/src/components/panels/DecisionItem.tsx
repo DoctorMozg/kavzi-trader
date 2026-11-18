@@ -1,7 +1,8 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { STAGE_TONE } from "@/components/panels/decisionStyle";
+import { STAGE_HINT, STAGE_TONE } from "@/components/panels/decisionStyle";
 import { Badge } from "@/components/ui/badge";
+import { Hint } from "@/components/ui/hint";
 import { fmtTime } from "@/lib/format";
 import type { Decision } from "@/lib/protocol";
 import { cn } from "@/lib/utils";
@@ -14,10 +15,14 @@ export function DecisionItem({ decision }: { decision: Decision }) {
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="tabular-nums text-muted-foreground">{fmtTime(decision.ts_ms)}</span>
         <span className="font-medium">{decision.symbol}</span>
-        <Badge tone={STAGE_TONE[decision.stage]}>{decision.stage}</Badge>
+        <Hint content={STAGE_HINT[decision.stage]} plain>
+          <Badge tone={STAGE_TONE[decision.stage]}>{decision.stage}</Badge>
+        </Hint>
         <span className="font-semibold uppercase tracking-wide">{decision.verdict}</span>
         {latencyMs !== null && (
-          <span className="ml-auto tabular-nums text-muted-foreground">{latencyMs} ms</span>
+          <Hint content="Model response time for this step" className="ml-auto tabular-nums text-muted-foreground" plain>
+            {latencyMs} ms
+          </Hint>
         )}
       </div>
       <p className="mt-1 text-[13px] leading-snug text-foreground/90">{decision.summary}</p>
@@ -26,7 +31,9 @@ export function DecisionItem({ decision }: { decision: Decision }) {
           <div className="h-1 w-24 overflow-hidden rounded-full bg-muted">
             <div className="h-full bg-sky-400" style={{ width: `${confidence * 100}%` }} />
           </div>
-          <span className="tabular-nums">{Math.round(confidence * 100)}%</span>
+          <Hint content="The model's own confidence in this verdict, 0 to 100%" className="tabular-nums">
+            {Math.round(confidence * 100)}%
+          </Hint>
         </div>
       )}
       {reasoning && (

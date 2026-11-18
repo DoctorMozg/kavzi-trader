@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { Hint } from "@/components/ui/hint";
 import { fmtDuration } from "@/lib/format";
 import { useNow } from "@/lib/useNow";
 import { cn } from "@/lib/utils";
@@ -17,9 +18,13 @@ function ConnectionIndicator() {
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <span className={cn("size-2 rounded-full", STATUS_DOT[status])} />
-      <span className="capitalize">{status}</span>
+      <Hint className="capitalize" content="WebSocket link to the dashboard server. The trader keeps running if this drops.">
+        {status}
+      </Hint>
       {lastMessageMs !== null && (
-        <span className="tabular-nums">{fmtDuration(now - lastMessageMs)} ago</span>
+        <Hint plain className="tabular-nums" content="Time since the last message from the server">
+          {fmtDuration(now - lastMessageMs)} ago
+        </Hint>
       )}
     </div>
   );
@@ -30,9 +35,9 @@ function Uptime() {
   const now = useNow();
   if (startedMs === undefined) return null;
   return (
-    <span className="text-xs text-muted-foreground">
+    <Hint plain className="text-xs text-muted-foreground" content="Time since the trader process started">
       Uptime <span className="tabular-nums text-foreground">{fmtDuration(now - startedMs)}</span>
-    </span>
+    </Hint>
   );
 }
 
@@ -42,7 +47,16 @@ export function TopBar() {
     <header className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b bg-card px-4 py-2">
       <h1 className="text-sm font-semibold tracking-tight">KavziTrader</h1>
       {isPaper !== undefined && (
-        <Badge tone={isPaper ? "blue" : "amber"}>{isPaper ? "Paper" : "Live"}</Badge>
+        <Hint
+          plain
+          content={
+            isPaper
+              ? "Paper mode: orders fill against live Binance prices on a simulated account. No real money moves."
+              : "Live mode: orders go to Binance with real funds."
+          }
+        >
+          <Badge tone={isPaper ? "blue" : "amber"}>{isPaper ? "Paper" : "Live"}</Badge>
+        </Hint>
       )}
       <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1">
         <Uptime />

@@ -10,6 +10,7 @@ from kavzi_trader.ui.event_schemas import (
     UiCandleSchema,
     UiDecisionEventSchema,
     UiEvent,
+    UiGateInputsEventSchema,
     UiPositionClosedEventSchema,
     UiTradeEventSchema,
     UiTrendStateEventSchema,
@@ -32,6 +33,7 @@ class UiSnapshotSchema(BaseModel):
     )
     candle_interval: Annotated[str | None, Field()] = None
     trend: Annotated[UiTrendStateEventSchema | None, Field()] = None
+    gate_inputs: Annotated[UiGateInputsEventSchema | None, Field()] = None
 
     model_config = UI_MODEL_CONFIG
 

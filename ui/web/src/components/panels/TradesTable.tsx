@@ -15,13 +15,13 @@ export function TradesTable() {
         <tr>
           <Th>Time</Th>
           <Th>Symbol</Th>
-          <Th>Side</Th>
-          <Th>Status</Th>
-          <Th right>Qty</Th>
-          <Th right>Entry</Th>
-          <Th right>SL</Th>
-          <Th right>TP</Th>
-          <Th right>Conf</Th>
+          <Th hint="LONG opens or resizes a position; CLOSE takes the target weight to zero.">Side</Th>
+          <Th hint="Order outcome reported by the executor">Status</Th>
+          <Th right hint="Quantity filled">Qty</Th>
+          <Th right hint="Fill price">Entry</Th>
+          <Th right hint="Stop loss; for trend entries, the disaster stop">SL</Th>
+          <Th right hint="Take profit; trend entries have none and exit on the daily signal">TP</Th>
+          <Th right hint="LLM confidence for LLM-pipeline trades; '-' for rule-based trend trades">Conf</Th>
         </tr>
       </thead>
       <tbody>

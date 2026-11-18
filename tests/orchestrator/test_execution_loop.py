@@ -15,7 +15,11 @@ from kavzi_trader.strategies.bracket_intent_schema import BracketIntentSchema
 from kavzi_trader.strategies.target_weight_intent_schema import (
     TargetWeightIntentSchema,
 )
-from kavzi_trader.ui.event_schemas import UiEvent, UiTradeEventSchema
+from kavzi_trader.ui.event_schemas import (
+    UiDecisionEventSchema,
+    UiEvent,
+    UiTradeEventSchema,
+)
 from kavzi_trader.ui.recorder import UiEventRecorder
 from tests.ui.factories import CollectingUiPublisher
 
@@ -321,14 +325,17 @@ async def test_rebalance_fill_is_reported_as_a_trade() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rebalance_skip_without_order_is_not_reported() -> None:
+async def test_rebalance_skip_is_reported_with_its_reason() -> None:
     events = await _run_rebalance_reporting(
         ExecutionResultSchema(
             decision_id="tw-1", status="REJECTED", error_message="within_tolerance"
         )
     )
 
-    assert events == []
+    (skip,) = events
+    assert isinstance(skip, UiDecisionEventSchema)
+    assert (skip.stage, skip.verdict) == ("execution", "NOT TRADED")
+    assert "0.1000 not traded: within_tolerance" in skip.summary
 
 
 @pytest.mark.asyncio
