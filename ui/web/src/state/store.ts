@@ -9,6 +9,9 @@ interface DashboardStore {
   lastMessageMs: number | null;
   lastAccountMs: number | null;
   messageCount: number;
+  // Symbol the chart and decision path show; empty means the first one.
+  selectedSymbol: string;
+  selectSymbol: (symbol: string) => void;
   ingest: (msg: ServerMessage) => void;
   setStatus: (status: ConnectionStatus) => void;
 }
@@ -42,6 +45,8 @@ export const useStore = create<DashboardStore>()((set) => {
     lastMessageMs: null,
     lastAccountMs: null,
     messageCount: 0,
+    selectedSymbol: "",
+    selectSymbol: (selectedSymbol) => set({ selectedSymbol }),
     ingest: (msg) => {
       buffer.push(msg);
       if (flushScheduled) return;

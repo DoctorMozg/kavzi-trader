@@ -15,5 +15,8 @@ class GateInputsSchema(BaseModel):
     newest_at: Annotated[AwareDatetime | None, Field()] = None
     # Headlines tagged with each coin; untagged ones are market-wide news.
     coin_headlines: Annotated[dict[str, int], Field()]
+    # Live reviews logged under this prompt: the sample Part B will be scored on.
+    reviews: Annotated[int, Field(ge=0)]
+    vetoes: Annotated[int, Field(ge=0)]
 
     model_config = ConfigDict(frozen=True)

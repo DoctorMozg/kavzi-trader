@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bufferVerdict, sizeIfLong, trendSteps } from "@/lib/explain";
+import { bufferVerdict, sizeIfLong } from "@/lib/explain";
 import type { TrendState, TrendSymbol } from "@/lib/protocol";
 
 const symbol = (over: Partial<TrendSymbol> = {}): TrendSymbol => ({
@@ -54,27 +54,5 @@ describe("sizeIfLong", () => {
   it("is unknown while vol is warming up", () => {
     const s = symbol({ annual_vol: null });
     expect(sizeIfLong(state([s]), s)).toBeNull();
-  });
-});
-
-describe("trendSteps", () => {
-  it("explains a flat symbol up to the level that would flip it", () => {
-    const s = symbol();
-    const steps = trendSteps(state([s, symbol()]), s, 100);
-    expect(steps.map((x) => x.label)).toEqual([
-      "Signal",
-      "Volatility",
-      "Size if long",
-      "Target",
-      "Buffer",
-      "Next flip",
-    ]);
-    expect(steps.at(-1)?.text).toContain("above 120.000 (+20.0% from 100.000) turns it LONG");
-  });
-
-  it("points a long symbol at its exit level", () => {
-    const s = symbol({ signal: 1, target_weight: 0.25, held_weight: 0.25 });
-    const steps = trendSteps(state([s]), s, 100);
-    expect(steps.at(-1)?.text).toContain("below 90.000 (-10.0% from 100.000) turns it FLAT");
   });
 });

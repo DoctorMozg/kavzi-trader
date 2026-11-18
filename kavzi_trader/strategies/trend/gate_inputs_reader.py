@@ -5,12 +5,13 @@ from datetime import datetime, timedelta
 from kavzi_trader.news.news_store import NewsStore
 from kavzi_trader.strategies.trend.gate_inputs_schema import GateInputsSchema
 from kavzi_trader.strategies.trend.trend_gate_config import TrendGateConfigSchema
+from kavzi_trader.strategies.trend.trend_gate_log import TrendGateLog
 
 logger = logging.getLogger(__name__)
 
 
 class GateInputsReader:
-    """Summarises the headline window the shadow gate reviews entries against."""
+    """Summarises the gate's headline window and its live review log so far."""
 
     def __init__(
         self, config: TrendGateConfigSchema, model_id: str, prompt_sha: str
@@ -27,7 +28,17 @@ class GateInputsReader:
             timedelta(hours=self._config.lag_h),
         )
         coins = Counter(coin for item in items for coin in item.coins)
-        logger.debug("Gate inputs: %d headlines in window", len(items))
+        # A new prompt is a new trial, so only its own reviews count.
+        reviews = [
+            r
+            for r in TrendGateLog(self._config.log_path).read()
+            if r.prompt_sha == self._prompt_sha
+        ]
+        logger.debug(
+            "Gate inputs: %d headlines in window, %d reviews logged",
+            len(items),
+            len(reviews),
+        )
         return GateInputsSchema(
             model_id=self._model_id,
             samples=self._config.samples,
@@ -37,4 +48,6 @@ class GateInputsReader:
             headlines=len(items),
             newest_at=items[0].published_at if items else None,
             coin_headlines=dict(coins),
+            reviews=len(reviews),
+            vetoes=sum(r.decision == "VETO" for r in reviews),
         )

@@ -65,9 +65,11 @@ export type LagH = number;
 export type ModelId = string;
 export type NewestMs = number | null;
 export type PromptSha = string;
+export type Reviews = number;
 export type Samples = number;
 export type TsMs3 = number;
 export type Type3 = "gate_inputs";
+export type Vetoes = number;
 export type WindowH = number;
 export type Confidence1 = number | null;
 export type EntryPrice2 = string | null;
@@ -228,9 +230,11 @@ export interface UiGateInputsEventSchema {
   model_id: ModelId;
   newest_ms: NewestMs;
   prompt_sha: PromptSha;
+  reviews: Reviews;
   samples: Samples;
   ts_ms: TsMs3;
   type: Type3;
+  vetoes: Vetoes;
   window_h: WindowH;
 }
 export interface CoinHeadlines {

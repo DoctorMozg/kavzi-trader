@@ -398,5 +398,7 @@ class UiEventRecorder:
                 if inputs.newest_at is None
                 else _to_ms(inputs.newest_at),
                 coin_headlines=inputs.coin_headlines,
+                reviews=inputs.reviews,
+                vetoes=inputs.vetoes,
             ),
         )

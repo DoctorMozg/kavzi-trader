@@ -1,9 +1,10 @@
 import { BottomPanel } from "@/components/panels/BottomPanel";
 import { ChartPanel } from "@/components/panels/ChartPanel";
 import { DecisionFeed } from "@/components/panels/DecisionFeed";
-import { DriversPanel } from "@/components/panels/DriversPanel";
+import { DecisionPathPanel } from "@/components/panels/DecisionPathPanel";
 import { KpiRow } from "@/components/panels/KpiRow";
 import { PositionsTable } from "@/components/panels/PositionsTable";
+import { ShadowGatePanel } from "@/components/panels/ShadowGatePanel";
 import { TopBar } from "@/components/panels/TopBar";
 import { TrendPanel } from "@/components/panels/TrendPanel";
 import { HintProvider } from "@/components/ui/hint";
@@ -22,7 +23,8 @@ export function App() {
               <PositionsTable />
             </div>
             <div className="flex min-w-0 flex-col gap-3">
-              <DriversPanel />
+              <DecisionPathPanel />
+              <ShadowGatePanel />
               <div className="relative min-h-[480px] flex-1">
                 <div className="inset-0 h-[480px] lg:absolute lg:h-auto">
                   <DecisionFeed />

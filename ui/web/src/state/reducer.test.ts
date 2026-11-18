@@ -133,6 +133,8 @@ const gateInputs = (headlines: number): GateInputs => ({
   headlines,
   newest_ms: null,
   coin_headlines: {},
+  reviews: 0,
+  vetoes: 0,
 });
 
 const ev = (seq: number, event: UiEventPayload): EventMessage => ({ type: "event", seq, event });

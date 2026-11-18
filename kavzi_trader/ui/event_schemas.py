@@ -185,6 +185,8 @@ class UiGateInputsEventSchema(BaseModel):
     headlines: Annotated[int, Field(..., ge=0)]
     newest_ms: Annotated[int | None, Field()] = None
     coin_headlines: Annotated[dict[str, int], Field(...)]
+    reviews: Annotated[int, Field(..., ge=0)]
+    vetoes: Annotated[int, Field(..., ge=0)]
 
     model_config = UI_MODEL_CONFIG
 

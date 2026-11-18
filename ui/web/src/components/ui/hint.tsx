@@ -15,11 +15,13 @@ export function Hint({
   content,
   children,
   plain = false,
+  wide = false,
   className,
 }: {
   content: ReactNode;
   children: ReactNode;
   plain?: boolean;
+  wide?: boolean;
   className?: string;
 }) {
   return (
@@ -41,7 +43,10 @@ export function Hint({
           side="top"
           sideOffset={6}
           collisionPadding={8}
-          className="animate-in fade-in z-50 max-w-sm rounded-md border bg-card px-3 py-2 text-xs normal-case leading-relaxed tracking-normal text-foreground shadow-xl"
+          className={cn(
+            "animate-in fade-in z-50 rounded-md border bg-card px-3 py-2 text-xs normal-case leading-relaxed tracking-normal text-foreground shadow-xl",
+            wide ? "max-w-xl" : "max-w-sm",
+          )}
         >
           {content}
           <Tooltip.Arrow className="fill-border" />

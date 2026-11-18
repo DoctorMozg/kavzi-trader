@@ -2,7 +2,7 @@ import { useState } from "react";
 import { DailyChart } from "@/components/panels/DailyChart";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { PriceChart } from "@/components/panels/PriceChart";
-import { SymbolTabs, useSymbols } from "@/components/panels/SymbolTabs";
+import { SymbolTabs, useSelectedSymbol, useSymbols } from "@/components/panels/SymbolTabs";
 import { fmtPrice } from "@/lib/format";
 import { useStore } from "@/state/store";
 
@@ -49,14 +49,14 @@ function LastPrice({ symbol }: { symbol: string }) {
 
 export function ChartPanel() {
   const symbols = useSymbols();
-  const [selected, setSelected] = useState("");
+  const symbol = useSelectedSymbol();
+  const selectSymbol = useStore((s) => s.selectSymbol);
   const [view, setView] = useState<ChartView>("daily");
-  const symbol = symbols.includes(selected) ? selected : (symbols[0] ?? "");
 
   return (
     <Panel>
       <PanelHeader title="Chart">
-        <SymbolTabs symbols={symbols} value={symbol} onChange={setSelected} />
+        <SymbolTabs symbols={symbols} value={symbol} onChange={selectSymbol} />
         <div className="flex items-center gap-3">
           <ViewToggle value={view} onChange={setView} />
           {symbol && <LastPrice symbol={symbol} />}

@@ -7,6 +7,10 @@ from kavzi_trader.news.news_item_schema import NewsItemSchema
 from kavzi_trader.news.news_store import NewsStore
 from kavzi_trader.strategies.trend.gate_inputs_reader import GateInputsReader
 from kavzi_trader.strategies.trend.trend_gate_config import TrendGateConfigSchema
+from kavzi_trader.strategies.trend.trend_gate_log import TrendGateLog
+from kavzi_trader.strategies.trend.trend_gate_review_schema import (
+    TrendGateReviewSchema,
+)
 
 NOW = datetime(2026, 11, 18, 12, 0, tzinfo=UTC)
 
@@ -23,9 +27,26 @@ def _item(url: str, hours_ago: float, coins: tuple[str, ...]) -> NewsItemSchema:
     )
 
 
+def _review(decision: str, prompt_sha: str) -> TrendGateReviewSchema:
+    return TrendGateReviewSchema.model_validate(
+        {
+            "symbol": "SOLUSDT",
+            "as_of": NOW,
+            "decision": decision,
+            "samples": [],
+            "coin_headlines": 0,
+            "other_headlines": 0,
+            "prompt_sha": prompt_sha,
+        }
+    )
+
+
 @pytest.fixture
 def reader(tmp_path: Path) -> GateInputsReader:
-    NewsStore(tmp_path).add(
+    log = TrendGateLog(tmp_path / "shadow.jsonl")
+    for decision, sha in [("KEEP", "abc123"), ("VETO", "abc123"), ("VETO", "old")]:
+        log.append(_review(decision, sha))
+    NewsStore(tmp_path / "news").add(
         [
             _item("fresh", 1, ("SOL",)),  # inside the 2h lag: the gate can't see it yet
             _item("sol", 5, ("SOL",)),
@@ -34,7 +55,9 @@ def reader(tmp_path: Path) -> GateInputsReader:
             _item("old", 100, ("BTC",)),  # outside the 72h window
         ]
     )
-    config = TrendGateConfigSchema(enabled=True, news_root=tmp_path)
+    config = TrendGateConfigSchema(
+        enabled=True, news_root=tmp_path / "news", log_path=tmp_path / "shadow.jsonl"
+    )
     return GateInputsReader(config, "claude-sonnet-5-5", "abc123")
 
 
@@ -58,8 +81,19 @@ class TestGateInputsReader:
         )
         assert (inputs.window_h, inputs.lag_h) == (72, 2.0)
 
+    def test_counts_only_reviews_under_the_current_prompt(
+        self, reader: GateInputsReader
+    ) -> None:
+        inputs = reader.read(NOW)
+
+        assert (inputs.reviews, inputs.vetoes) == (2, 1)
+
     def test_empty_store_has_no_newest_headline(self, tmp_path: Path) -> None:
-        config = TrendGateConfigSchema(enabled=True, news_root=tmp_path / "none")
+        config = TrendGateConfigSchema(
+            enabled=True,
+            news_root=tmp_path / "none",
+            log_path=tmp_path / "none.jsonl",
+        )
 
         inputs = GateInputsReader(config, "m", "s").read(NOW)
 

@@ -14,6 +14,12 @@ export function useSymbols(): string[] {
   );
 }
 
+export function useSelectedSymbol(): string {
+  const symbols = useSymbols();
+  const selected = useStore((s) => s.selectedSymbol);
+  return symbols.includes(selected) ? selected : (symbols[0] ?? "");
+}
+
 export function SymbolTabs({
   symbols,
   value,

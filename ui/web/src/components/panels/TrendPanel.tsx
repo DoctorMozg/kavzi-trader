@@ -3,8 +3,11 @@ import { Hint } from "@/components/ui/hint";
 import { EmptyState, Panel, PanelHeader } from "@/components/ui/panel";
 import { Table, Td, Th } from "@/components/ui/table";
 import { fmtDuration, fmtPct, fmtPlainPct, fmtPrice } from "@/lib/format";
-import { bufferVerdict, sizeIfLong, trendSteps } from "@/lib/explain";
+import { useSelectedSymbol } from "@/components/panels/SymbolTabs";
+import { buildDecisionPath, type PathInput } from "@/lib/decisionPath";
+import { bufferVerdict, sizeIfLong } from "@/lib/explain";
 import type { TrendState, TrendSymbol } from "@/lib/protocol";
+import { cn } from "@/lib/utils";
 import { channelPosition, flipDistance } from "@/lib/trend";
 import { useNow } from "@/lib/useNow";
 import { useStore } from "@/state/store";
@@ -20,30 +23,53 @@ function ChannelBar({ low, high, price }: { low: number; high: number; price: nu
   );
 }
 
-function Steps({ state, symbol, price }: { state: TrendState; symbol: TrendSymbol; price: number }) {
+function PathHint({ input }: { input: PathInput }) {
+  const path = buildDecisionPath(input);
   return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
-      {trendSteps(state, symbol, price).map((step) => (
-        <div key={step.label} className="contents">
-          <dt className="font-semibold text-muted-foreground">{step.label}</dt>
-          <dd>{step.text}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="space-y-1.5">
+      <dl className="grid grid-cols-[auto_auto_1fr] gap-x-2 gap-y-1">
+        {path.steps.map((step) => (
+          <div key={step.key} className="contents">
+            <dt className="font-semibold text-muted-foreground">{step.label}</dt>
+            <dd className="font-semibold tabular-nums">{step.value}</dd>
+            <dd>{step.text}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="font-medium">{path.next}</p>
+    </div>
   );
 }
 
-function TrendRow({ state, symbol, price }: { state: TrendState; symbol: TrendSymbol; price: number }) {
+interface TrendRowProps {
+  state: TrendState;
+  symbol: TrendSymbol;
+  price: number;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+function TrendRow({ state, symbol, price, selected, onSelect }: TrendRowProps) {
+  const position = useStore((s) => s.data.account?.positions.find((p) => p.symbol === symbol.symbol) ?? null);
+  const decisions = useStore((s) => s.data.decisions);
+  const trades = useStore((s) => s.data.trades);
+  const nowMs = useNow();
   const isLong = symbol.signal > 0;
   const flip = flipDistance(symbol, price);
   const size = sizeIfLong(state, symbol);
   const n = state.lookback;
   const pct = (w: number) => fmtPlainPct(w * 100);
   return (
-    <tr>
-      <Td className="font-medium">{symbol.symbol}</Td>
+    <tr onClick={onSelect} className={cn("cursor-pointer hover:bg-muted/40", selected && "bg-sky-400/10")}>
+      <Td className={cn("border-l-2 font-medium", selected ? "border-l-sky-400" : "border-l-transparent")}>
+        {symbol.symbol}
+      </Td>
       <Td>
-        <Hint plain content={<Steps state={state} symbol={symbol} price={price} />}>
+        <Hint
+          plain
+          wide
+          content={<PathHint input={{ state, symbol, price, position, decisions, trades, nowMs }} />}
+        >
           <Badge tone={isLong ? "green" : "neutral"}>{isLong ? "LONG" : "FLAT"}</Badge>
         </Hint>
       </Td>
@@ -99,6 +125,8 @@ function TrendRow({ state, symbol, price }: { state: TrendState; symbol: TrendSy
 
 export function TrendPanel() {
   const trend = useStore((s) => s.data.trend);
+  const selected = useSelectedSymbol();
+  const selectSymbol = useStore((s) => s.selectSymbol);
   const prices = useStore((s) => s.data.account?.prices);
   const now = useNow();
   return (
@@ -107,9 +135,9 @@ export function TrendPanel() {
         {trend && (
           <span className="text-xs text-muted-foreground">
             <Hint
-              content={`Long when a daily close breaks above the previous ${trend.lookback}-day high, flat when one breaks below the ${trend.lookback}-day low. Hover a LONG/FLAT badge for the full reasoning per symbol.`}
+              content={`Long when a daily close breaks above the previous ${trend.lookback}-day high, flat when one breaks below the ${trend.lookback}-day low. It never shorts: the long/short variant backtested worse (Sharpe 0.27 vs 0.45, drawdown -29% vs -19%, 2022-2026). Click a row for the full decision path.`}
             >
-              {trend.lookback}d Donchian, long/flat
+              {trend.lookback}d Donchian, long/flat (no shorts)
             </Hint>{" "}
             · state of {trend.day} close · next rebalance in{" "}
             <Hint
@@ -128,7 +156,7 @@ export function TrendPanel() {
           <thead>
             <tr>
               <Th>Symbol</Th>
-              <Th hint="LONG holds the coin at its target weight; FLAT holds nothing. Hover a badge for why.">State</Th>
+              <Th hint="LONG holds the coin at its target weight; FLAT holds nothing. There is no SHORT state. Hover a badge for why.">State</Th>
               <Th right hint="Latest price from the exchange">Live</Th>
               <Th hint={`Exit level (${trend.lookback}-day low), live price, entry level (${trend.lookback}-day high)`}>
                 Channel
@@ -148,7 +176,16 @@ export function TrendPanel() {
           <tbody>
             {trend.symbols.map((s) => {
               const live = Number(prices?.[s.symbol]);
-              return <TrendRow key={s.symbol} state={trend} symbol={s} price={Number.isFinite(live) && live > 0 ? live : s.close} />;
+              return (
+                <TrendRow
+                  key={s.symbol}
+                  state={trend}
+                  symbol={s}
+                  price={Number.isFinite(live) && live > 0 ? live : s.close}
+                  selected={s.symbol === selected}
+                  onSelect={() => selectSymbol(s.symbol)}
+                />
+              );
             })}
           </tbody>
         </Table>

@@ -356,6 +356,11 @@
           "title": "Prompt Sha",
           "type": "string"
         },
+        "reviews": {
+          "minimum": 0,
+          "title": "Reviews",
+          "type": "integer"
+        },
         "samples": {
           "minimum": 1,
           "title": "Samples",
@@ -371,6 +376,11 @@
           "default": "gate_inputs",
           "title": "Type",
           "type": "string"
+        },
+        "vetoes": {
+          "minimum": 0,
+          "title": "Vetoes",
+          "type": "integer"
         },
         "window_h": {
           "minimum": 1,
@@ -388,7 +398,9 @@
         "lag_h",
         "headlines",
         "newest_ms",
-        "coin_headlines"
+        "coin_headlines",
+        "reviews",
+        "vetoes"
       ],
       "title": "UiGateInputsEventSchema",
       "type": "object"

@@ -65,6 +65,8 @@ class _GateInputs:
             headlines=12,
             newest_at=T0,
             coin_headlines={"BTC": 4},
+            reviews=2,
+            vetoes=1,
         )
 
 
@@ -165,3 +167,4 @@ class TestUiSnapshotLoop:
         assert gate.reads == 1
         assert (inputs.headlines, inputs.coin_headlines) == (12, {"BTC": 4})
         assert inputs.newest_ms == int(T0.timestamp() * 1000)
+        assert (inputs.reviews, inputs.vetoes) == (2, 1)
