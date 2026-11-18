@@ -95,3 +95,26 @@ def test_benchmark_variants_register_as_their_own_trials(
     lines = (config.system.results_dir / "evals" / "trials.jsonl").read_text()
     [trial] = [json.loads(line) for line in lines.splitlines()]
     assert trial["variant"].startswith(f"{variant} symbols=BTCUSDT,ETHUSDT ")
+
+
+def test_trend_with_its_own_prereg_cites_it_and_decides_alone(
+    config: AppConfig, archive: Path
+) -> None:
+    out = config.system.results_dir / "fresh.md"
+
+    result = _invoke(
+        config,
+        "trend",
+        "--archive-dir", str(archive),
+        "--symbols", "BTCUSDT,ETHUSDT",
+        "--lookbacks", "20",
+        "--prereg", "fresh_prereg.md",
+        "--out", str(out),
+        *WINDOW,
+    )  # fmt: skip
+
+    assert result.exception is None, result.output
+    report = out.read_text()
+    assert "evals/preregistrations/fresh_prereg.md" in report
+    assert "decides on it alone" in report
+    assert "both universes" not in report

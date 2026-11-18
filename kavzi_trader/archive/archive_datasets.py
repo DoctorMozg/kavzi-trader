@@ -17,6 +17,8 @@ _KLINE = [
 
 ARCHIVE_DATASETS = {
     "klines": ArchiveDatasetSchema(name="klines", interval="1m", columns=_KLINE),
+    # Daily bars only, for wide universes where 1m history would be tens of GB.
+    "klines_1d": ArchiveDatasetSchema(name="klines", interval="1d", columns=_KLINE),
     "mark": ArchiveDatasetSchema(name="markPriceKlines", interval="1m", columns=_KLINE),
     "premium": ArchiveDatasetSchema(
         name="premiumIndexKlines", interval="1m", columns=_KLINE

@@ -3,14 +3,18 @@ from kavzi_trader.evals.trend_result_schema import TrendResultSchema
 from kavzi_trader.evals.trend_stats_schema import TrendStatsSchema
 
 PASS_SHARPE = 0.5
+BOTH_UNIVERSES = "The preregistered decision needs both universes to pass."
 
 
 class TrendReportRenderer:
     """Markdown report of one trend backtest, with the preregistered criterion."""
 
-    def __init__(self, rule: str, preregistration: str) -> None:
+    def __init__(
+        self, rule: str, preregistration: str, decision_note: str = BOTH_UNIVERSES
+    ) -> None:
         self._rule = rule
         self._preregistration = preregistration
+        self._decision_note = decision_note
 
     def render(self, result: TrendResultSchema) -> str:
         intro = (
@@ -18,14 +22,12 @@ class TrendReportRenderer:
             f"{result.last_day} ({result.days} days). Rules: "
             f"evals/preregistrations/{self._preregistration}."
         )
-        blocks = [
-            "# Daily weight backtest",
-            intro,
-            self._summary(result),
-            self._years(result),
-            self._criterion(result),
-        ]
+        blocks = ["# Daily weight backtest", intro, *self.sections(result)]
         return "\n\n".join(blocks) + "\n"
+
+    def sections(self, result: TrendResultSchema) -> list[str]:
+        """Summary, per-year Sharpe and criterion, for reports that embed them."""
+        return [self._summary(result), self._years(result), self._criterion(result)]
 
     def criterion_met(self, result: TrendResultSchema) -> bool:
         sharpe = result.net.sharpe
@@ -70,8 +72,7 @@ class TrendReportRenderer:
         verdict = "PASS" if self.criterion_met(result) else "FAIL"
         text = (
             f"Universe criterion (net Sharpe >= {PASS_SHARPE} and above the "
-            f"benchmark): **{verdict}**. The preregistered decision needs both "
-            "universes to pass."
+            f"benchmark): **{verdict}**. {self._decision_note}"
         )
         return Md.section("Criterion", text)
 

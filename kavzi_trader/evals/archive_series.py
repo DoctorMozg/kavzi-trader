@@ -59,6 +59,11 @@ class ArchiveSeries:
         logger.debug("%s: %d %s bars from archive", symbol, len(bars), interval)
         return bars[list(COLUMNS)].reset_index(drop=True)
 
+    def daily_bars(self, symbol: str) -> pd.DataFrame:
+        """Binance's own 1d klines, sorted; empty when none are stored."""
+        bars = self._store.load(ARCHIVE_DATASETS["klines_1d"], symbol)
+        return bars.sort_values("open_time_ms", ignore_index=True)
+
     def funding(self, symbol: str) -> pd.DataFrame:
         """Funding settlements as ``time_ms`` and the rate ``value``."""
         rows = self._store.load(ARCHIVE_DATASETS["funding"], symbol, [TIME, "rate"])

@@ -1,5 +1,6 @@
 import logging
 
+import numpy as np
 import pandas as pd
 
 from kavzi_trader.evals.trend_data_schema import TrendDataSchema
@@ -44,8 +45,13 @@ class WeightBacktest:
             msg = f"signal gave weights {weights.shape} for closes {closes.shape}"
             raise ValueError(msg)
         # Weights set at close of day d earn day d+1's close-to-close return.
-        returns = closes.pct_change().shift(-1).to_numpy()
-        funding = data.funding.shift(-1).to_numpy()
+        # A symbol not yet listed or already delisted has NaN closes. It holds
+        # nothing there, and the day after its last close earns and pays nothing.
+        weights = np.where(closes.isna().to_numpy(), 0.0, weights)
+        raw_returns = closes.pct_change().shift(-1).to_numpy()
+        untraded = np.isnan(raw_returns)
+        returns = np.where(untraded, 0.0, raw_returns)
+        funding = np.where(untraded, 0.0, data.funding.shift(-1).to_numpy())
         return_day = closes.index.to_series().shift(-1)
         scored = ((return_day >= first_day) & (return_day <= last_day)).to_numpy()
         if not scored.any():
@@ -58,7 +64,8 @@ class WeightBacktest:
         logger.info("Backtest %d symbols over %d days", n_symbols, len(days))
 
         metrics = TrendMetrics()
-        benchmark = pd.Series(returns[scored].mean(axis=1), index=days)
+        # Equal weight over the symbols listed that day, so delistings count.
+        benchmark = pd.Series(np.nanmean(raw_returns[scored], axis=1), index=days)
         return TrendResultSchema(
             symbols=list(closes.columns),
             first_day=days[0].date().isoformat(),

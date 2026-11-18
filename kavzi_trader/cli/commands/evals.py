@@ -21,8 +21,17 @@ from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.exchange_client import ExchangeClient
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
 from kavzi_trader.cli.commands.archive import archive_command
+from kavzi_trader.cli.commands.eval_options import (
+    SYMBOLS_FILE_OPTION,
+    SYMBOLS_OPTION,
+    TREND_BUFFER_BAND,
+    TREND_TRADING_SYMBOLS,
+    parse_lookbacks,
+    resolve_symbols,
+)
 from kavzi_trader.cli.commands.replay import replay_command
 from kavzi_trader.cli.commands.trials import trials_command, trials_path
+from kavzi_trader.cli.commands.walk_forward import walk_forward_command
 from kavzi_trader.cli.composition import build_agent_source, load_tier_registry
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.agent_source import AgentSource
@@ -107,17 +116,6 @@ from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 logger = logging.getLogger(__name__)
 
 _MS_PER_S = 1000
-TREND_TRADING_SYMBOLS = [
-    "BTCUSDT",
-    "ETHUSDT",
-    "SOLUSDT",
-    "XRPUSDT",
-    "BNBUSDT",
-    "ADAUSDT",
-    "LINKUSDT",
-    "AVAXUSDT",
-]
-TREND_BUFFER_BAND = 0.2
 _S_PER_MIN = 60
 
 
@@ -589,25 +587,6 @@ def _add_positioning(
     ]
 
 
-def _parse_symbols(
-    _ctx: click.Context, _param: click.Parameter, value: str | None
-) -> list[str] | None:
-    if value is None:
-        return None
-    symbols = [s.strip().upper() for s in value.split(",") if s.strip()]
-    if not symbols:
-        raise click.BadParameter("give at least one symbol")
-    return symbols
-
-
-_SYMBOLS_OPTION = click.option(
-    "--symbols",
-    default=None,
-    callback=_parse_symbols,
-    help="Comma-separated symbols; default the trading symbols.",
-)
-
-
 def _day(ms: int) -> str:
     return datetime.fromtimestamp(ms / _MS_PER_S, UTC).date().isoformat()
 
@@ -636,7 +615,7 @@ def _day(ms: int) -> str:
     default=False,
     help="Also fill the 5-minute metrics archive (OI and long/short ratios).",
 )
-@_SYMBOLS_OPTION
+@SYMBOLS_OPTION
 @click.pass_context
 def refresh_cache(
     ctx: click.Context,
@@ -803,7 +782,7 @@ def _parse_brackets(
     help="A+B: also score bars where all listed signals fire on the same side; "
     "repeatable.",
 )
-@_SYMBOLS_OPTION
+@SYMBOLS_OPTION
 @click.pass_context
 def signal_edge(
     ctx: click.Context,
@@ -907,7 +886,7 @@ def signal_edge(
 
 
 @eval_group.command("funding-xs")
-@_SYMBOLS_OPTION
+@SYMBOLS_OPTION
 @click.option(
     "--cache-dir",
     type=click.Path(path_type=Path, file_okay=False),
@@ -961,15 +940,6 @@ def funding_xs(
     click.echo(f"Report: {path}")
 
 
-def _parse_lookbacks(
-    _ctx: click.Context, _param: click.Parameter, value: str
-) -> tuple[int, ...]:
-    try:
-        return tuple(int(v) for v in value.split(","))
-    except ValueError as exc:
-        raise click.BadParameter("use comma-separated integers") from exc
-
-
 _BENCHMARK_VARIANTS = ("vol-hold", "sma200")
 
 
@@ -1005,7 +975,7 @@ def _trend_rule(
     "--lookbacks",
     default="20,40,80",
     show_default=True,
-    callback=_parse_lookbacks,
+    callback=parse_lookbacks,
     help="Donchian lookbacks in days; the preregistered rule uses all three.",
 )
 @click.option(
@@ -1037,7 +1007,13 @@ def _trend_rule(
     show_default=True,
     help="End of the scored window (UTC day, exclusive).",
 )
-@_SYMBOLS_OPTION
+@click.option(
+    "--prereg",
+    default=None,
+    help="Preregistration file the report cites; default the one for --variant.",
+)
+@SYMBOLS_OPTION
+@SYMBOLS_FILE_OPTION
 @click.pass_context
 def trend_backtest(
     ctx: click.Context,
@@ -1047,7 +1023,9 @@ def trend_backtest(
     out: Path | None,
     start_day: datetime,
     end_day: datetime,
+    prereg: str | None,
     symbols: list[str] | None,
+    symbols_file: list[str] | None,
 ) -> None:
     """Backtest the daily Donchian trend ensemble on archived candles and funding."""
     app_config: AppConfig = ctx.obj["app_config"]
@@ -1055,7 +1033,9 @@ def trend_backtest(
     signal, rule, label = _trend_rule(variant, params)
     archive = ArchiveSeries(archive_dir)
     try:
-        data = TrendDataLoader(archive).load(symbols or TREND_TRADING_SYMBOLS)
+        data = TrendDataLoader(archive).load(
+            resolve_symbols(symbols, symbols_file, TREND_TRADING_SYMBOLS)
+        )
     except FileNotFoundError as exc:
         raise click.ClickException(str(exc)) from exc
     backtest = WeightBacktest(
@@ -1068,12 +1048,16 @@ def trend_backtest(
         result = backtest.run(data, pd.Timestamp(start_day), last_day)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    prereg = (
-        "2026_11_17_trend_vs_simple_benchmarks.md"
-        if variant in _BENCHMARK_VARIANTS
-        else "2026_11_16_trend_following.md"
+    renderer = (
+        TrendReportRenderer(rule, prereg, "This preregistration decides on it alone.")
+        if prereg
+        else TrendReportRenderer(
+            rule,
+            "2026_11_17_trend_vs_simple_benchmarks.md"
+            if variant in _BENCHMARK_VARIANTS
+            else "2026_11_16_trend_following.md",
+        )
     )
-    renderer = TrendReportRenderer(rule, prereg)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = out or app_config.system.results_dir / "evals" / f"trend_{stamp}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1103,3 +1087,4 @@ def trend_backtest(
 eval_group.add_command(replay_command)
 eval_group.add_command(trials_command)
 eval_group.add_command(archive_command)
+eval_group.add_command(walk_forward_command)

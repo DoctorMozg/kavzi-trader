@@ -93,6 +93,34 @@ class TestAnyWeightSignal:
             backtest.run(data)
 
 
+class TestDelistedSymbol:
+    def test_a_delisted_symbol_goes_flat_and_earns_nothing_after(
+        self, data: TrendDataSchema
+    ) -> None:
+        closes = data.closes.copy()
+        closes.loc["2027-02-11":, "B"] = np.nan
+        funding = data.funding.copy()
+        gone = TrendDataSchema(closes=closes, funding=funding)
+        backtest = WeightBacktest(
+            ConstantWeights([0.5, 0.5]), TurnoverBuffer(0.0), TrendPortfolio(0.0)
+        )
+
+        result = backtest.run(
+            gone, pd.Timestamp("2027-02-05"), pd.Timestamp("2027-02-20")
+        )
+
+        net = pd.Series(
+            result.daily_net, index=pd.date_range("2027-02-05", "2027-02-20")
+        )
+        a_only = 0.5 * closes["A"].pct_change() - 0.5 * 0.0001
+        # B's last close is Feb 10, so from Feb 11 only A's half earns or pays.
+        np.testing.assert_allclose(
+            net["2027-02-11":], a_only["2027-02-11":"2027-02-20"]
+        )
+        assert result.benchmark.sharpe is not None
+        assert np.isfinite(result.benchmark.sharpe)
+
+
 def test_donchian_weights_split_the_book_across_symbols(
     data: TrendDataSchema,
 ) -> None:
