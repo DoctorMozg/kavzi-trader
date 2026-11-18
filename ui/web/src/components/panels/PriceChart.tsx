@@ -45,7 +45,8 @@ function useLevels(symbol: string): Level[] {
             return [
               { price: Number(e), title: `${side} entry`, color: CHART_COLORS.accent },
               { price: Number(sl), title: "SL", color: CHART_COLORS.down },
-              { price: Number(tp), title: "TP", color: CHART_COLORS.up },
+              // Trend positions exit on signal and carry no take-profit.
+              ...(tp === "null" ? [] : [{ price: Number(tp), title: "TP", color: CHART_COLORS.up }]),
             ];
           }),
     [key],

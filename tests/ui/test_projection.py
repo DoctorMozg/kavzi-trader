@@ -10,6 +10,7 @@ from tests.ui.factories import (
     make_close,
     make_decision,
     make_trade,
+    make_trend_state,
 )
 
 
@@ -41,6 +42,16 @@ class TestUiStateProjection:
         account = projection.snapshot_message().snapshot.account
         assert account is not None
         assert account.balance_usdt == Decimal(1100)
+
+    def test_trend_state_replaces_previous(self, projection: UiStateProjection) -> None:
+        assert projection.snapshot_message().snapshot.trend is None
+
+        projection.apply(make_trend_state(close=100.0))
+        projection.apply(make_trend_state(close=101.0))
+
+        trend = projection.snapshot_message().snapshot.trend
+        assert trend is not None
+        assert trend.symbols[0].close == 101.0
 
     def test_lists_keep_newest_within_cap(self, projection: UiStateProjection) -> None:
         for ts_ms in range(15):

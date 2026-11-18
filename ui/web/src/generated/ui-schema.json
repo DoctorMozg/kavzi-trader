@@ -205,7 +205,9 @@
             "analyst",
             "trader",
             "filter",
-            "position"
+            "position",
+            "trend",
+            "gate"
           ],
           "title": "Stage",
           "type": "string"
@@ -257,7 +259,8 @@
           "candles": "#/$defs/UiCandlesEventSchema",
           "decision": "#/$defs/UiDecisionEventSchema",
           "position_closed": "#/$defs/UiPositionClosedEventSchema",
-          "trade": "#/$defs/UiTradeEventSchema"
+          "trade": "#/$defs/UiTradeEventSchema",
+          "trend_state": "#/$defs/UiTrendStateEventSchema"
         },
         "propertyName": "type"
       },
@@ -276,6 +279,9 @@
         },
         {
           "$ref": "#/$defs/UiCandlesEventSchema"
+        },
+        {
+          "$ref": "#/$defs/UiTrendStateEventSchema"
         }
       ]
     },
@@ -558,6 +564,17 @@
           },
           "title": "Trades",
           "type": "array"
+        },
+        "trend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UiTrendStateEventSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -566,7 +583,8 @@
         "trades",
         "closed_positions",
         "candles",
-        "candle_interval"
+        "candle_interval",
+        "trend"
       ],
       "title": "UiSnapshotSchema",
       "type": "object"
@@ -574,10 +592,18 @@
     "UiTradeEventSchema": {
       "properties": {
         "confidence": {
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Confidence",
-          "type": "number"
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
         },
         "entry_price": {
           "anyOf": [
@@ -680,6 +706,168 @@
         "reasoning"
       ],
       "title": "UiTradeEventSchema",
+      "type": "object"
+    },
+    "UiTrendDaySchema": {
+      "properties": {
+        "close": {
+          "title": "Close",
+          "type": "number"
+        },
+        "day_ms": {
+          "minimum": 0,
+          "title": "Day Ms",
+          "type": "integer"
+        },
+        "lower": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lower"
+        },
+        "signal": {
+          "title": "Signal",
+          "type": "number"
+        },
+        "upper": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upper"
+        }
+      },
+      "required": [
+        "day_ms",
+        "close",
+        "upper",
+        "lower",
+        "signal"
+      ],
+      "title": "UiTrendDaySchema",
+      "type": "object"
+    },
+    "UiTrendStateEventSchema": {
+      "description": "The trend rule's full per-symbol state; each one replaces the last.",
+      "properties": {
+        "day": {
+          "format": "date",
+          "title": "Day",
+          "type": "string"
+        },
+        "lookback": {
+          "minimum": 1,
+          "title": "Lookback",
+          "type": "integer"
+        },
+        "next_rebalance_ms": {
+          "minimum": 0,
+          "title": "Next Rebalance Ms",
+          "type": "integer"
+        },
+        "symbols": {
+          "items": {
+            "$ref": "#/$defs/UiTrendSymbolSchema"
+          },
+          "title": "Symbols",
+          "type": "array"
+        },
+        "ts_ms": {
+          "minimum": 0,
+          "title": "Ts Ms",
+          "type": "integer"
+        },
+        "type": {
+          "const": "trend_state",
+          "default": "trend_state",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "ts_ms",
+        "day",
+        "lookback",
+        "next_rebalance_ms",
+        "symbols"
+      ],
+      "title": "UiTrendStateEventSchema",
+      "type": "object"
+    },
+    "UiTrendSymbolSchema": {
+      "properties": {
+        "annual_vol": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annual Vol"
+        },
+        "close": {
+          "title": "Close",
+          "type": "number"
+        },
+        "days": {
+          "items": {
+            "$ref": "#/$defs/UiTrendDaySchema"
+          },
+          "title": "Days",
+          "type": "array"
+        },
+        "entry_level": {
+          "title": "Entry Level",
+          "type": "number"
+        },
+        "exit_level": {
+          "title": "Exit Level",
+          "type": "number"
+        },
+        "held_weight": {
+          "title": "Held Weight",
+          "type": "number"
+        },
+        "signal": {
+          "title": "Signal",
+          "type": "number"
+        },
+        "symbol": {
+          "title": "Symbol",
+          "type": "string"
+        },
+        "target_weight": {
+          "title": "Target Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "symbol",
+        "signal",
+        "close",
+        "entry_level",
+        "exit_level",
+        "annual_vol",
+        "target_weight",
+        "held_weight",
+        "days"
+      ],
+      "title": "UiTrendSymbolSchema",
       "type": "object"
     }
   },

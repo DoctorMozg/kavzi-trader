@@ -53,14 +53,14 @@ export type Confidence = number | null;
 export type EventId1 = string;
 export type LatencyMs = number | null;
 export type Reasoning = string | null;
-export type Stage = "scout" | "analyst" | "trader" | "filter" | "position";
+export type Stage = "scout" | "analyst" | "trader" | "filter" | "position" | "trend" | "gate";
 export type Summary = string;
 export type Symbol2 = string;
 export type TsMs2 = number;
 export type Type2 = "decision";
 export type Verdict = string;
 export type Decisions = UiDecisionEventSchema[];
-export type Confidence1 = number;
+export type Confidence1 = number | null;
 export type EntryPrice2 = string | null;
 export type EventId2 = string;
 export type Quantity2 = string | null;
@@ -73,28 +73,49 @@ export type TakeProfit2 = string | null;
 export type TsMs3 = number;
 export type Type3 = "trade";
 export type Trades = UiTradeEventSchema[];
-export type Type4 = "snapshot";
+export type Day = string;
+export type Lookback = number;
+export type NextRebalanceMs = number;
+export type AnnualVol = number | null;
+export type Close1 = number;
+export type Close2 = number;
+export type DayMs = number;
+export type Lower = number | null;
+export type Signal = number;
+export type Upper = number | null;
+export type Days = UiTrendDaySchema[];
+export type EntryLevel = number;
+export type ExitLevel = number;
+export type HeldWeight = number;
+export type Signal1 = number;
+export type Symbol4 = string;
+export type TargetWeight = number;
+export type Symbols = UiTrendSymbolSchema[];
+export type TsMs4 = number;
+export type Type4 = "trend_state";
+export type Type5 = "snapshot";
 export type UiEvent =
   | UiAccountEventSchema
   | UiDecisionEventSchema
   | UiTradeEventSchema
   | UiPositionClosedEventSchema
-  | UiCandlesEventSchema;
+  | UiCandlesEventSchema
+  | UiTrendStateEventSchema;
 /**
  * @minItems 1
  */
 export type Candles1 = [UiCandleSchema, ...UiCandleSchema[]];
 export type Interval = string;
-export type Symbol4 = string;
-export type TsMs4 = number;
-export type Type5 = "candles";
+export type Symbol5 = string;
+export type TsMs5 = number;
+export type Type6 = "candles";
 export type Seq1 = number;
-export type Type6 = "event";
+export type Type7 = "event";
 
 export interface UiSnapshotMessageSchema {
   seq: Seq;
   snapshot: UiSnapshotSchema;
-  type: Type4;
+  type: Type5;
 }
 /**
  * Full dashboard state; lists are oldest-first and bounded by UiConfigSchema.
@@ -106,6 +127,7 @@ export interface UiSnapshotSchema {
   closed_positions: ClosedPositions;
   decisions: Decisions;
   trades: Trades;
+  trend: UiTrendStateEventSchema | null;
 }
 /**
  * Periodic full account state; session fields repeat so trimming is safe.
@@ -195,12 +217,41 @@ export interface UiTradeEventSchema {
   type: Type3;
 }
 /**
+ * The trend rule's full per-symbol state; each one replaces the last.
+ */
+export interface UiTrendStateEventSchema {
+  day: Day;
+  lookback: Lookback;
+  next_rebalance_ms: NextRebalanceMs;
+  symbols: Symbols;
+  ts_ms: TsMs4;
+  type: Type4;
+}
+export interface UiTrendSymbolSchema {
+  annual_vol: AnnualVol;
+  close: Close1;
+  days: Days;
+  entry_level: EntryLevel;
+  exit_level: ExitLevel;
+  held_weight: HeldWeight;
+  signal: Signal1;
+  symbol: Symbol4;
+  target_weight: TargetWeight;
+}
+export interface UiTrendDaySchema {
+  close: Close2;
+  day_ms: DayMs;
+  lower: Lower;
+  signal: Signal;
+  upper: Upper;
+}
+/**
  * A delta; seq is consecutive after the snapshot's seq for one connection.
  */
 export interface UiEventMessageSchema {
   event: UiEvent;
   seq: Seq1;
-  type: Type6;
+  type: Type7;
 }
 /**
  * Closed candles for one symbol: a startup backfill batch or a single close.
@@ -208,7 +259,7 @@ export interface UiEventMessageSchema {
 export interface UiCandlesEventSchema {
   candles: Candles1;
   interval: Interval;
-  symbol: Symbol4;
-  ts_ms: TsMs4;
-  type: Type5;
+  symbol: Symbol5;
+  ts_ms: TsMs5;
+  type: Type6;
 }

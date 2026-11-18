@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from kavzi_trader.strategies.trend.trend_channel_schema import TrendChannelSchema
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 from kavzi_trader.strategies.trend.trend_signal_schema import TrendSignalSchema
 
@@ -48,12 +49,25 @@ class DonchianTrendSignal:
             state[t] = current
         return state
 
+    def annual_vol(self, close: np.ndarray) -> np.ndarray:
+        """Rolling annualised vol of daily log returns; NaN while warming up."""
+        log_ret = pd.Series(np.log(close)).diff()
+        vol: np.ndarray = log_ret.rolling(
+            self._params.vol_window
+        ).std().to_numpy() * np.sqrt(DAYS_PER_YEAR)
+        return vol
+
+    @staticmethod
+    def channel(close: np.ndarray, lookback: int) -> TrendChannelSchema:
+        """Max and min of the previous `lookback` closes: the levels close[t] breaks."""
+        prior = pd.Series(close).shift(1).rolling(lookback)
+        return TrendChannelSchema(
+            upper=prior.max().to_numpy(), lower=prior.min().to_numpy()
+        )
+
     def vol_scale(self, close: np.ndarray) -> np.ndarray:
         """min(target / vol, cap); zero while the vol window is still warming up."""
-        log_ret = pd.Series(np.log(close)).diff()
-        vol = log_ret.rolling(self._params.vol_window).std().to_numpy() * np.sqrt(
-            DAYS_PER_YEAR
-        )
+        vol = self.annual_vol(close)
         with np.errstate(divide="ignore"):
             scale = np.minimum(
                 self._params.annual_vol_target / vol, self._params.max_leverage

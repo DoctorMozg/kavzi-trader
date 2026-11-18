@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from kavzi_trader.ui.event_schemas import (
@@ -9,6 +10,9 @@ from kavzi_trader.ui.event_schemas import (
     UiOpenPositionSchema,
     UiPositionClosedEventSchema,
     UiTradeEventSchema,
+    UiTrendDaySchema,
+    UiTrendStateEventSchema,
+    UiTrendSymbolSchema,
 )
 
 
@@ -110,3 +114,27 @@ class CollectingUiPublisher:
 
     def decisions(self) -> list[UiDecisionEventSchema]:
         return [e for e in self.events if isinstance(e, UiDecisionEventSchema)]
+
+
+def make_trend_state(
+    ts_ms: int = 1_000, close: float = 100.0
+) -> UiTrendStateEventSchema:
+    return UiTrendStateEventSchema(
+        ts_ms=ts_ms,
+        day=date(2026, 11, 17),
+        lookback=20,
+        next_rebalance_ms=ts_ms + 86_400_000,
+        symbols=[
+            UiTrendSymbolSchema(
+                symbol="BTCUSDT",
+                signal=0.0,
+                close=close,
+                entry_level=120.0,
+                exit_level=95.0,
+                annual_vol=0.5,
+                target_weight=0.0,
+                held_weight=0.0,
+                days=[UiTrendDaySchema(day_ms=0, close=close, signal=0.0)],
+            ),
+        ],
+    )

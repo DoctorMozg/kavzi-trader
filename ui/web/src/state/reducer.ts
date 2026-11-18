@@ -7,6 +7,7 @@ import type {
   ServerMessage,
   UiEventPayload,
   Trade,
+  TrendState,
 } from "@/lib/protocol";
 
 export const CAPS = { decisions: 300, trades: 200, closed: 200, candles: 500 } as const;
@@ -19,6 +20,7 @@ export interface DashboardState {
   closed: ClosedPosition[];
   candles: Record<string, Candle[]>;
   candleInterval: string | null;
+  trend: TrendState | null;
 }
 
 export const initialState: DashboardState = {
@@ -29,6 +31,7 @@ export const initialState: DashboardState = {
   closed: [],
   candles: {},
   candleInterval: null,
+  trend: null,
 };
 
 function capTail<T>(items: T[], cap: number): T[] {
@@ -68,6 +71,8 @@ function applyEvent(state: DashboardState, event: UiEventPayload): DashboardStat
       return { ...state, closed: append(state.closed, event, CAPS.closed) };
     case "candles":
       return applyCandles(state, event);
+    case "trend_state":
+      return { ...state, trend: event };
   }
 }
 
@@ -87,6 +92,7 @@ export function applyMessage(state: DashboardState, msg: ServerMessage): Dashboa
         ]),
       ),
       candleInterval: snapshot.candle_interval,
+      trend: snapshot.trend,
     };
   }
   return { ...applyEvent(state, msg.event), seq: msg.seq };

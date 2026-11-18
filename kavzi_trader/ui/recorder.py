@@ -10,6 +10,16 @@ from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
 from kavzi_trader.domain.state_schemas import AccountStateSchema, PositionSchema
 from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.strategies.target_weight_intent_schema import (
+    TargetWeightIntentSchema,
+)
+from kavzi_trader.strategies.trend.trend_gate_review_schema import (
+    TrendGateReviewSchema,
+)
+from kavzi_trader.strategies.trend.trend_symbol_view_schema import (
+    TrendSymbolViewSchema,
+)
+from kavzi_trader.strategies.trend.trend_view_schema import TrendViewSchema
 from kavzi_trader.ui.event_schemas import (
     UiAccountEventSchema,
     UiCandleSchema,
@@ -18,6 +28,9 @@ from kavzi_trader.ui.event_schemas import (
     UiOpenPositionSchema,
     UiPositionClosedEventSchema,
     UiTradeEventSchema,
+    UiTrendDaySchema,
+    UiTrendStateEventSchema,
+    UiTrendSymbolSchema,
 )
 from kavzi_trader.ui.publisher import UiPublisher
 
@@ -28,6 +41,20 @@ def _to_ms(value: datetime) -> int:
 
 def _now_ms() -> int:
     return _to_ms(utc_now())
+
+
+def _trend_summary(symbol: TrendSymbolViewSchema, held_weight: float) -> str:
+    if symbol.signal > 0:
+        room = symbol.close / symbol.exit_level - 1
+        return (
+            f"Long at weight {held_weight:.3f}, close {symbol.close:,.6g}, "
+            f"exits below {symbol.exit_level:,.6g} ({-room:+.1%})"
+        )
+    gap = symbol.entry_level / symbol.close - 1
+    return (
+        f"Flat, close {symbol.close:,.6g} needs to close above "
+        f"{symbol.entry_level:,.6g} ({gap:+.1%})"
+    )
 
 
 def _gross_pnl(position: PositionSchema, price: Decimal) -> Decimal:
@@ -250,5 +277,82 @@ class UiEventRecorder:
                     )
                     for c in candles
                 ],
+            ),
+        )
+
+    async def record_trend_view(self, view: TrendViewSchema) -> None:
+        """Publish the trend state, plus one feed entry per symbol on a rebalance."""
+        now_ms = _now_ms()
+        await self._publisher.publish(
+            UiTrendStateEventSchema(
+                ts_ms=now_ms,
+                day=view.day,
+                lookback=view.lookback,
+                next_rebalance_ms=view.next_rebalance_ms,
+                symbols=[
+                    UiTrendSymbolSchema(
+                        symbol=s.symbol,
+                        signal=s.signal,
+                        close=s.close,
+                        entry_level=s.entry_level,
+                        exit_level=s.exit_level,
+                        annual_vol=s.annual_vol,
+                        target_weight=view.target_weights[s.symbol],
+                        held_weight=view.held_weights[s.symbol],
+                        days=[
+                            UiTrendDaySchema.model_validate(d.model_dump())
+                            for d in s.days
+                        ],
+                    )
+                    for s in view.symbols
+                ],
+            ),
+        )
+        if not view.rebalanced:
+            return
+        for symbol in view.symbols:
+            await self._publisher.publish(
+                UiDecisionEventSchema(
+                    ts_ms=now_ms,
+                    symbol=symbol.symbol,
+                    stage="trend",
+                    verdict="LONG" if symbol.signal > 0 else "FLAT",
+                    summary=_trend_summary(symbol, view.held_weights[symbol.symbol]),
+                ),
+            )
+
+    async def record_gate_review(self, review: TrendGateReviewSchema) -> None:
+        vetoes = sum(s.verdict == "VETO" for s in review.samples)
+        reasons = [s.reasoning for s in review.samples if s.verdict == review.decision]
+        await self._publisher.publish(
+            UiDecisionEventSchema(
+                ts_ms=_now_ms(),
+                symbol=review.symbol,
+                stage="gate",
+                verdict=review.decision,
+                summary=(
+                    f"Shadow news check: {vetoes}/{len(review.samples)} VETO, "
+                    f"{review.coin_headlines} coin + {review.other_headlines} "
+                    "other headlines"
+                ),
+                reasoning=reasons[0] if reasons else None,
+            ),
+        )
+
+    async def record_rebalance(
+        self,
+        intent: TargetWeightIntentSchema,
+        result: ExecutionResultSchema,
+    ) -> None:
+        await self._publisher.publish(
+            UiTradeEventSchema(
+                ts_ms=_now_ms(),
+                symbol=intent.symbol,
+                # The trend rule is long/flat, so a resize stays LONG.
+                side="CLOSE" if intent.target_weight == 0 else "LONG",
+                status=result.status,
+                entry_price=result.executed_price,
+                quantity=result.executed_qty,
+                reasoning=result.error_message or intent.reason,
             ),
         )

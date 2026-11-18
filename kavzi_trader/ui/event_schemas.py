@@ -1,5 +1,6 @@
 """Events the trader publishes to the dashboard; this is the UI wire contract."""
 
+from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import uuid4
@@ -7,7 +8,9 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 PositionSide = Literal["LONG", "SHORT"]
-DecisionStage = Literal["scout", "analyst", "trader", "filter", "position"]
+DecisionStage = Literal[
+    "scout", "analyst", "trader", "filter", "position", "trend", "gate"
+]
 
 # Defaults are always serialized, so the TS types must not mark them optional.
 UI_MODEL_CONFIG = ConfigDict(
@@ -85,7 +88,8 @@ class UiTradeEventSchema(BaseModel):
     symbol: Annotated[str, Field(...)]
     side: Annotated[Literal["LONG", "SHORT", "CLOSE"], Field(...)]
     status: Annotated[str, Field(...)]
-    confidence: Annotated[float, Field(..., ge=0.0, le=1.0)]
+    # None for rule-based trades, which have no model confidence.
+    confidence: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
     entry_price: Annotated[Decimal | None, Field()] = None
     quantity: Annotated[Decimal | None, Field()] = None
     stop_loss: Annotated[Decimal | None, Field()] = None
@@ -126,12 +130,50 @@ class UiCandlesEventSchema(BaseModel):
     model_config = UI_MODEL_CONFIG
 
 
+class UiTrendDaySchema(BaseModel):
+    day_ms: Annotated[int, Field(..., ge=0)]
+    close: Annotated[float, Field(...)]
+    upper: Annotated[float | None, Field()] = None
+    lower: Annotated[float | None, Field()] = None
+    signal: Annotated[float, Field(...)]
+
+    model_config = UI_MODEL_CONFIG
+
+
+class UiTrendSymbolSchema(BaseModel):
+    symbol: Annotated[str, Field(...)]
+    signal: Annotated[float, Field(...)]
+    close: Annotated[float, Field(...)]
+    entry_level: Annotated[float, Field(...)]
+    exit_level: Annotated[float, Field(...)]
+    annual_vol: Annotated[float | None, Field()] = None
+    target_weight: Annotated[float, Field(...)]
+    held_weight: Annotated[float, Field(...)]
+    days: Annotated[list[UiTrendDaySchema], Field(...)]
+
+    model_config = UI_MODEL_CONFIG
+
+
+class UiTrendStateEventSchema(BaseModel):
+    """The trend rule's full per-symbol state; each one replaces the last."""
+
+    type: Annotated[Literal["trend_state"], Field()] = "trend_state"
+    ts_ms: Annotated[int, Field(..., ge=0)]
+    day: Annotated[date, Field(...)]
+    lookback: Annotated[int, Field(..., ge=1)]
+    next_rebalance_ms: Annotated[int, Field(..., ge=0)]
+    symbols: Annotated[list[UiTrendSymbolSchema], Field(...)]
+
+    model_config = UI_MODEL_CONFIG
+
+
 type UiEvent = Annotated[
     UiAccountEventSchema
     | UiDecisionEventSchema
     | UiTradeEventSchema
     | UiPositionClosedEventSchema
-    | UiCandlesEventSchema,
+    | UiCandlesEventSchema
+    | UiTrendStateEventSchema,
     Field(discriminator="type"),
 ]
 

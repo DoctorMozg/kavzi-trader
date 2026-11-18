@@ -20,21 +20,27 @@ from kavzi_trader.strategies.trend.trend_following_config import (
 )
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
+from kavzi_trader.strategies.trend.trend_view_builder import DAY_MS, TrendViewBuilder
+from kavzi_trader.strategies.trend.trend_view_schema import TrendViewSchema
 from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 
 logger = logging.getLogger(__name__)
 
-DAY_MS = 86_400_000
 # Run a minute after the daily close so Binance has published the final bar.
 REBALANCE_DELAY_MS = 60_000
 RETRY_DELAY_MS = 300_000
 INTENT_TTL_MS = 3_600_000
 # Donchian state is path dependent; this much history keeps it settled.
 HISTORY_DAYS = 250
+VIEW_DAYS = 120
 
 
 class EntryReviewer(Protocol):
     async def review_entry(self, symbol: str, as_of_ms: int) -> None: ...
+
+
+class TrendReporter(Protocol):
+    async def record_trend_view(self, view: TrendViewSchema) -> None: ...
 
 
 class TrendFollowingPlugin:
@@ -48,8 +54,10 @@ class TrendFollowingPlugin:
         bars: DailyCloseProvider,
         store: TrendStateStore,
         reviewer: EntryReviewer | None = None,
+        reporter: TrendReporter | None = None,
     ) -> None:
         self._reviewer = reviewer
+        self._reporter = reporter
         self._symbols = config.symbols
         self._disaster_stop_pct = config.disaster_stop_pct
         self._signal = DonchianTrendSignal(
@@ -62,6 +70,9 @@ class TrendFollowingPlugin:
         )
         self._buffer = TurnoverBuffer(config.buffer_band)
         self._min_bars = max(config.lookbacks) + config.vol_window + 1
+        self._lookback = min(config.lookbacks)
+        self._views = TrendViewBuilder(self._signal, self._lookback, VIEW_DAYS)
+        self._reported = False
         self._bars = bars
         self._store = store
         self._last_day: date | None = None
@@ -82,6 +93,8 @@ class TrendFollowingPlugin:
             )
         today = self._utc_day(ctx.now_ms)
         if self._last_day == today:
+            if self._reporter is not None and not self._reported:
+                await self._report_held(ctx.now_ms)
             return self._result([], self._next_rebalance_ms(ctx.now_ms))
         try:
             intents = await self._rebalance(ctx.now_ms)
@@ -130,9 +143,8 @@ class TrendFollowingPlugin:
             )
 
     async def _rebalance(self, now_ms: int) -> list[StrategyIntent]:
-        targets = np.array(
-            [await self._target_weight(s, now_ms) for s in self._symbols]
-        )
+        closes = await self._fetch_closes(now_ms)
+        targets = np.array([self._target_weight(closes[s]) for s in self._symbols])
         held = np.array([self._weights.get(s, 0.0) for s in self._symbols])
         buffered = self._buffer.step(targets, held)
         intents: list[StrategyIntent] = []
@@ -148,14 +160,65 @@ class TrendFollowingPlugin:
             len(intents),
             len(self._symbols),
         )
+        if self._reporter is not None:
+            held_now = dict(zip(self._symbols, map(float, buffered), strict=True))
+            await self._report(self._view(closes, held_now, now_ms, rebalanced=True))
         return intents
 
-    async def _target_weight(self, symbol: str, now_ms: int) -> float:
-        closes = await self._bars.closes(symbol, HISTORY_DAYS, now_ms)
-        if len(closes) < self._min_bars:
-            msg = f"{symbol}: need {self._min_bars} daily bars, got {len(closes)}"
-            raise ValueError(msg)
+    async def _fetch_closes(self, now_ms: int) -> dict[str, np.ndarray]:
+        closes: dict[str, np.ndarray] = {}
+        for symbol in self._symbols:
+            series = await self._bars.closes(symbol, HISTORY_DAYS, now_ms)
+            if len(series) < self._min_bars:
+                msg = f"{symbol}: need {self._min_bars} daily bars, got {len(series)}"
+                raise ValueError(msg)
+            closes[symbol] = series
+        return closes
+
+    def _target_weight(self, closes: np.ndarray) -> float:
         return float(self._signal.compute(closes, len(self._symbols)).weight[-1])
+
+    async def _report_held(self, now_ms: int) -> None:
+        """After a same-day restart, reports the held state without trading."""
+        try:
+            closes = await self._fetch_closes(now_ms)
+        except Exception:
+            logger.exception("Trend view fetch failed", extra={"plugin": self.name})
+            return
+        held = {s: self._weights.get(s, 0.0) for s in self._symbols}
+        await self._report(self._view(closes, held, now_ms, rebalanced=False))
+
+    def _view(
+        self,
+        closes: dict[str, np.ndarray],
+        held: dict[str, float],
+        now_ms: int,
+        rebalanced: bool,
+    ) -> TrendViewSchema:
+        # Providers return closed days only, so the last close is yesterday's bar.
+        last_day_ms = (now_ms // DAY_MS - 1) * DAY_MS
+        return TrendViewSchema(
+            day=self._utc_day(now_ms),
+            lookback=self._lookback,
+            next_rebalance_ms=self._next_rebalance_ms(now_ms),
+            rebalanced=rebalanced,
+            symbols=[
+                self._views.symbol_view(s, closes[s], last_day_ms)
+                for s in self._symbols
+            ],
+            target_weights={s: self._target_weight(closes[s]) for s in self._symbols},
+            held_weights=held,
+        )
+
+    async def _report(self, view: TrendViewSchema) -> None:
+        if self._reporter is None:
+            return
+        self._reported = True
+        try:
+            await self._reporter.record_trend_view(view)
+        except Exception:
+            # The dashboard is optional; a reporting fault must not fail a rebalance.
+            logger.exception("Trend view report failed", extra={"plugin": self.name})
 
     def _intent(
         self, symbol: str, weight: float, reason: str, now_ms: int

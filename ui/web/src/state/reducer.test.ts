@@ -7,6 +7,7 @@ import type {
   EventMessage,
   SnapshotMessage,
   Trade,
+  TrendState,
   UiEventPayload,
 } from "@/lib/protocol";
 import { applyMessage, CAPS, initialState, type DashboardState } from "@/state/reducer";
@@ -88,8 +89,30 @@ const snapshot = (seq: number, over: Partial<SnapshotMessage["snapshot"]> = {}):
     closed_positions: [],
     decisions: [],
     trades: [],
+    trend: null,
     ...over,
   },
+});
+
+const trendState = (close: number): TrendState => ({
+  type: "trend_state",
+  ts_ms: 1,
+  day: "2026-11-17",
+  lookback: 20,
+  next_rebalance_ms: 2,
+  symbols: [
+    {
+      symbol: "BTCUSDT",
+      signal: 0,
+      close,
+      entry_level: 120,
+      exit_level: 90,
+      annual_vol: 0.5,
+      target_weight: 0,
+      held_weight: 0,
+      days: [{ day_ms: 0, close, upper: null, lower: null, signal: 0 }],
+    },
+  ],
 });
 
 const ev = (seq: number, event: UiEventPayload): EventMessage => ({ type: "event", seq, event });
@@ -144,6 +167,15 @@ describe("events", () => {
     expect(s.decisions.map((d) => d.ts_ms)).toEqual([1, 2]);
     expect(s.trades).toHaveLength(1);
     expect(s.closed).toHaveLength(1);
+  });
+
+  it("replaces the trend state and restores it from a snapshot", () => {
+    let s = applyMessage(seeded(), ev(11, trendState(100)));
+    s = applyMessage(s, ev(12, trendState(101)));
+    expect(s.trend?.symbols[0]?.close).toBe(101);
+    const restored = applyMessage(s, snapshot(20, { trend: trendState(99) }));
+    expect(restored.trend?.symbols[0]?.close).toBe(99);
+    expect(applyMessage(s, snapshot(21)).trend).toBeNull();
   });
 
   it("replaces the previous account instead of merging", () => {

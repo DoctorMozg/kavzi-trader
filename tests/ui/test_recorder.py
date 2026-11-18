@@ -1,9 +1,10 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
 
 from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema, KeyLevelsSchema
+from kavzi_trader.domain.execution_result import ExecutionResultSchema
 from kavzi_trader.domain.position_action import PositionActionSchema
 from kavzi_trader.domain.position_action_type import PositionActionType
 from kavzi_trader.domain.scout_decision import ScoutDecisionSchema
@@ -13,10 +14,24 @@ from kavzi_trader.domain.state_schemas import (
     PositionSchema,
 )
 from kavzi_trader.domain.trade_decision import TradeDecisionSchema
+from kavzi_trader.domain.trend_gate_decision import TrendGateDecisionSchema
+from kavzi_trader.strategies.target_weight_intent_schema import (
+    TargetWeightIntentSchema,
+)
+from kavzi_trader.strategies.trend.trend_day_view_schema import TrendDayViewSchema
+from kavzi_trader.strategies.trend.trend_gate_review_schema import (
+    TrendGateReviewSchema,
+)
+from kavzi_trader.strategies.trend.trend_symbol_view_schema import (
+    TrendSymbolViewSchema,
+)
+from kavzi_trader.strategies.trend.trend_view_schema import TrendViewSchema
 from kavzi_trader.ui.event_schemas import (
     UiAccountEventSchema,
     UiDecisionEventSchema,
     UiPositionClosedEventSchema,
+    UiTradeEventSchema,
+    UiTrendStateEventSchema,
 )
 from kavzi_trader.ui.recorder import UiEventRecorder
 from tests.ui.factories import CollectingUiPublisher
@@ -175,3 +190,135 @@ class TestRecordPositions:
             "PARTIAL_EXIT",
             "Reached 1R",
         )
+
+
+def _trend_view(rebalanced: bool) -> TrendViewSchema:
+    days = [
+        TrendDayViewSchema(day_ms=0, close=100.0, upper=None, lower=None, signal=1.0)
+    ]
+    return TrendViewSchema(
+        day=date(2026, 11, 17),
+        lookback=20,
+        next_rebalance_ms=2_000,
+        rebalanced=rebalanced,
+        symbols=[
+            TrendSymbolViewSchema(
+                symbol="BTCUSDT",
+                signal=1.0,
+                close=100.0,
+                entry_level=100.0,
+                exit_level=80.0,
+                annual_vol=0.6,
+                days=days,
+            ),
+            TrendSymbolViewSchema(
+                symbol="ETHUSDT",
+                signal=0.0,
+                close=50.0,
+                entry_level=60.0,
+                exit_level=45.0,
+                days=days,
+            ),
+        ],
+        target_weights={"BTCUSDT": 0.06, "ETHUSDT": 0.0},
+        held_weights={"BTCUSDT": 0.05, "ETHUSDT": 0.0},
+    )
+
+
+class TestRecordTrend:
+    async def test_rebalanced_view_publishes_state_and_one_entry_per_symbol(
+        self,
+        recorder: UiEventRecorder,
+        publisher: CollectingUiPublisher,
+    ) -> None:
+        await recorder.record_trend_view(_trend_view(rebalanced=True))
+
+        state, btc, eth = publisher.events
+        assert isinstance(state, UiTrendStateEventSchema)
+        assert [(s.symbol, s.target_weight, s.held_weight) for s in state.symbols] == [
+            ("BTCUSDT", 0.06, 0.05),
+            ("ETHUSDT", 0.0, 0.0),
+        ]
+        assert isinstance(btc, UiDecisionEventSchema)
+        assert isinstance(eth, UiDecisionEventSchema)
+        assert (btc.stage, btc.verdict) == ("trend", "LONG")
+        assert "exits below 80" in btc.summary
+        assert (eth.stage, eth.verdict) == ("trend", "FLAT")
+        assert "above 60 (+20.0%)" in eth.summary
+
+    async def test_restart_view_publishes_state_only(
+        self,
+        recorder: UiEventRecorder,
+        publisher: CollectingUiPublisher,
+    ) -> None:
+        await recorder.record_trend_view(_trend_view(rebalanced=False))
+
+        (state,) = publisher.events
+        assert isinstance(state, UiTrendStateEventSchema)
+
+    async def test_gate_review_becomes_gate_decision_with_majority_reason(
+        self,
+        recorder: UiEventRecorder,
+        publisher: CollectingUiPublisher,
+    ) -> None:
+        veto = TrendGateDecisionSchema(
+            verdict="VETO",
+            catalyst="exploit",
+            reasoning="Bridge exploit drained funds.",
+        )
+        keep = TrendGateDecisionSchema(
+            verdict="KEEP", catalyst="none", reasoning="No coin-specific negative news."
+        )
+        review = TrendGateReviewSchema(
+            symbol="SOLUSDT",
+            as_of=OPENED_AT,
+            decision="VETO",
+            samples=[keep, veto, veto],
+            coin_headlines=3,
+            other_headlines=27,
+            prompt_sha="abc",
+        )
+
+        await recorder.record_gate_review(review)
+
+        (event,) = publisher.events
+        assert isinstance(event, UiDecisionEventSchema)
+        assert (event.stage, event.verdict) == ("gate", "VETO")
+        assert "2/3 VETO, 3 coin + 27 other" in event.summary
+        assert event.reasoning == veto.reasoning
+
+    @pytest.mark.parametrize(
+        ("weight", "side"), [(Decimal("0.05"), "LONG"), (Decimal(0), "CLOSE")]
+    )
+    async def test_rebalance_fill_becomes_trade_without_confidence(
+        self,
+        recorder: UiEventRecorder,
+        publisher: CollectingUiPublisher,
+        weight: Decimal,
+        side: str,
+    ) -> None:
+        intent = TargetWeightIntentSchema(
+            strategy="trend_following",
+            intent_id="tw-1",
+            symbol="BTCUSDT",
+            target_weight=weight,
+            disaster_stop_pct=Decimal("0.3"),
+            created_at_ms=1,
+            expires_at_ms=2,
+            reason="weight 0.0000 -> 0.0500",
+        )
+        result = ExecutionResultSchema(
+            decision_id="tw-1",
+            order_id="7",
+            status="FILLED",
+            executed_qty=Decimal("0.01"),
+            executed_price=Decimal(65000),
+        )
+
+        await recorder.record_rebalance(intent, result)
+
+        (event,) = publisher.events
+        assert isinstance(event, UiTradeEventSchema)
+        assert (event.side, event.status, event.confidence) == (side, "FILLED", None)
+        assert event.entry_price == Decimal(65000)
+        assert event.reasoning == "weight 0.0000 -> 0.0500"

@@ -262,7 +262,10 @@ class OrchestratorComposer:
             trend,
             DailyBarSource(exchange),
             TrendStateStore(services.redis_client),
-            reviewer=self._create_shadow_gate() if trend.gate.enabled else None,
+            reviewer=(
+                self._create_shadow_gate(services) if trend.gate.enabled else None
+            ),
+            reporter=services.ui_recorder,
         )
         return StrategyLoop(
             plugin=plugin,
@@ -270,7 +273,7 @@ class OrchestratorComposer:
             state_manager=services.state_manager,
         )
 
-    def _create_shadow_gate(self) -> ShadowGateRunner:
+    def _create_shadow_gate(self, services: RuntimeServicesSchema) -> ShadowGateRunner:
         gate_config = self._config.strategy.trend_following.gate
         prompt_loader = PromptLoader()
         factory = AgentFactory(
@@ -286,7 +289,9 @@ class OrchestratorComposer:
             gate_config,
             factory.trend_gate_system_prompt(),
         )
-        return ShadowGateRunner(gate, TrendGateLog(gate_config.log_path))
+        return ShadowGateRunner(
+            gate, TrendGateLog(gate_config.log_path), services.ui_recorder
+        )
 
     def _create_llm_wiring(
         self, services: RuntimeServicesSchema, cache: MarketDataCache

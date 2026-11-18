@@ -30,8 +30,21 @@ class StubGate:
         )
 
 
-def _runner(gate: StubGate, log: TrendGateLog) -> ShadowGateRunner:
-    return ShadowGateRunner(gate, log)
+class RecordingGateReporter:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.reviews: list[TrendGateReviewSchema] = []
+        self._error = error
+
+    async def record_gate_review(self, review: TrendGateReviewSchema) -> None:
+        self.reviews.append(review)
+        if self._error is not None:
+            raise self._error
+
+
+def _runner(
+    gate: StubGate, log: TrendGateLog, reporter: RecordingGateReporter | None = None
+) -> ShadowGateRunner:
+    return ShadowGateRunner(gate, log, reporter)
 
 
 class TestShadowGateRunner:
@@ -55,3 +68,24 @@ class TestShadowGateRunner:
 
         assert log.read() == []
         assert "Shadow trend gate failed for SOLUSDT" in caplog.text
+
+    async def test_reports_the_logged_review_to_the_dashboard(
+        self, tmp_path: Path
+    ) -> None:
+        log = TrendGateLog(tmp_path / "gate.jsonl")
+        reporter = RecordingGateReporter()
+
+        await _runner(StubGate(), log, reporter).review_entry("SOLUSDT", AS_OF_MS)
+
+        assert reporter.reviews == log.read()
+
+    async def test_a_failed_report_keeps_the_log_and_does_not_raise(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        log = TrendGateLog(tmp_path / "gate.jsonl")
+        reporter = RecordingGateReporter(RuntimeError("redis down"))
+
+        await _runner(StubGate(), log, reporter).review_entry("SOLUSDT", AS_OF_MS)
+
+        assert len(log.read()) == 1
+        assert "Shadow trend gate report failed for SOLUSDT" in caplog.text

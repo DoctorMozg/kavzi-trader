@@ -35,7 +35,7 @@ export function TradesTable() {
             <Td right>{price(t.entry_price)}</Td>
             <Td right>{price(t.stop_loss)}</Td>
             <Td right>{price(t.take_profit)}</Td>
-            <Td right>{Math.round(t.confidence * 100)}%</Td>
+            <Td right>{t.confidence === null ? "-" : `${Math.round(t.confidence * 100)}%`}</Td>
           </tr>
         ))}
       </tbody>

@@ -4,6 +4,7 @@ import { DecisionFeed } from "@/components/panels/DecisionFeed";
 import { KpiRow } from "@/components/panels/KpiRow";
 import { PositionsTable } from "@/components/panels/PositionsTable";
 import { TopBar } from "@/components/panels/TopBar";
+import { TrendPanel } from "@/components/panels/TrendPanel";
 
 export function App() {
   return (
@@ -13,6 +14,7 @@ export function App() {
         <KpiRow />
         <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-3">
+            <TrendPanel />
             <ChartPanel />
             <PositionsTable />
           </div>

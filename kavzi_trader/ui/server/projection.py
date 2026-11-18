@@ -9,6 +9,7 @@ from kavzi_trader.ui.event_schemas import (
     UiEvent,
     UiPositionClosedEventSchema,
     UiTradeEventSchema,
+    UiTrendStateEventSchema,
 )
 from kavzi_trader.ui.message_schemas import UiSnapshotMessageSchema, UiSnapshotSchema
 
@@ -29,6 +30,7 @@ class UiStateProjection:
         )
         self._candles: dict[str, dict[int, UiCandleSchema]] = {}
         self._candle_interval: str | None = None
+        self._trend: UiTrendStateEventSchema | None = None
 
     @property
     def seq(self) -> int:
@@ -47,6 +49,8 @@ class UiStateProjection:
                 self._closed.append(event)
             case UiCandlesEventSchema():
                 self._merge_candles(event)
+            case UiTrendStateEventSchema():
+                self._trend = event
         self._seq += 1
         return self._seq
 
@@ -61,6 +65,7 @@ class UiStateProjection:
                 for symbol, by_time in self._candles.items()
             },
             candle_interval=self._candle_interval,
+            trend=self._trend,
         )
         return UiSnapshotMessageSchema(seq=self._seq, snapshot=snapshot)
 

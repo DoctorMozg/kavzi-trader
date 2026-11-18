@@ -15,6 +15,9 @@ from kavzi_trader.strategies.bracket_intent_schema import BracketIntentSchema
 from kavzi_trader.strategies.target_weight_intent_schema import (
     TargetWeightIntentSchema,
 )
+from kavzi_trader.ui.event_schemas import UiEvent, UiTradeEventSchema
+from kavzi_trader.ui.recorder import UiEventRecorder
+from tests.ui.factories import CollectingUiPublisher
 
 
 @pytest.mark.asyncio
@@ -274,6 +277,58 @@ async def test_target_weight_payload_routes_to_rebalance_executor() -> None:
     assert engine.rebalance.execute.call_args.args[0].intent_id == "tw-1"
     engine.execute.assert_not_called()
     assert fake.lists["kt:decisions:processing"] == []
+
+
+async def _run_rebalance_reporting(result: ExecutionResultSchema) -> list[UiEvent]:
+    fake = _FakeRedisLists()
+    await fake.lpush("kt:decisions:pending", _target_weight_payload())
+    redis_client = MagicMock()
+    redis_client.client = fake
+    engine = AsyncMock()
+    engine.rebalance.execute.return_value = result
+    publisher = CollectingUiPublisher()
+    loop = ExecutionLoop(
+        redis_client=redis_client,
+        engine=engine,
+        state_manager=AsyncMock(),
+        ui_recorder=UiEventRecorder(publisher, Decimal(1000), is_paper=True),
+    )
+    await _run_loop_until(
+        loop,
+        lambda: (
+            fake.lists.get("kt:decisions:processing") == []
+            and engine.rebalance.execute.call_count == 1
+        ),
+    )
+    return publisher.events
+
+
+@pytest.mark.asyncio
+async def test_rebalance_fill_is_reported_as_a_trade() -> None:
+    events = await _run_rebalance_reporting(
+        ExecutionResultSchema(
+            decision_id="tw-1",
+            order_id="9",
+            status="FILLED",
+            executed_qty=Decimal("0.01"),
+            executed_price=Decimal(65000),
+        )
+    )
+
+    (trade,) = events
+    assert isinstance(trade, UiTradeEventSchema)
+    assert (trade.symbol, trade.side, trade.status) == ("BTCUSDT", "LONG", "FILLED")
+
+
+@pytest.mark.asyncio
+async def test_rebalance_skip_without_order_is_not_reported() -> None:
+    events = await _run_rebalance_reporting(
+        ExecutionResultSchema(
+            decision_id="tw-1", status="REJECTED", error_message="within_tolerance"
+        )
+    )
+
+    assert events == []
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,9 @@ import type {
   UiSnapshotMessageSchema,
   UiSnapshotSchema,
   UiTradeEventSchema,
+  UiTrendDaySchema,
+  UiTrendStateEventSchema,
+  UiTrendSymbolSchema,
 } from "@/generated/ui-types";
 
 export type ServerMessage = UiServerMessage;
@@ -26,3 +29,6 @@ export type ClosedPosition = UiPositionClosedEventSchema;
 export type CandlesEvent = UiCandlesEventSchema;
 export type Candle = UiCandleSchema;
 export type Stage = Decision["stage"];
+export type TrendState = UiTrendStateEventSchema;
+export type TrendSymbol = UiTrendSymbolSchema;
+export type TrendDay = UiTrendDaySchema;

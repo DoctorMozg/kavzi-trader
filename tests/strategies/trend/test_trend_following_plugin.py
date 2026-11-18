@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from kavzi_trader.strategies.target_weight_intent_schema import (
     TargetWeightIntentSchema,
@@ -15,6 +16,7 @@ from kavzi_trader.strategies.trend.trend_following_plugin import (
 )
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
+from kavzi_trader.strategies.trend.trend_view_schema import TrendViewSchema
 from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 from tests.strategies.trend.conftest import (
     BASE_MS,
@@ -219,3 +221,79 @@ class TestShadowReview:
 
         assert entries
         assert reviewer.calls == entries
+
+
+class RecordingReporter:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.views: list[TrendViewSchema] = []
+        self._error = error
+
+    async def record_trend_view(self, view: TrendViewSchema) -> None:
+        self.views.append(view)
+        if self._error is not None:
+            raise self._error
+
+
+class TestTrendReporting:
+    async def test_rebalance_reports_buffered_weights_and_raw_targets(
+        self,
+        config: TrendFollowingConfigSchema,
+        bars: FakeDailyBars,
+        store: TrendStateStore,
+    ) -> None:
+        reporter = RecordingReporter()
+        plugin = TrendFollowingPlugin(config, bars, store, reporter=reporter)
+
+        intents = await run_day(plugin, bars, FIRST_DAY)
+
+        (view,) = reporter.views
+        assert view.rebalanced
+        assert [s.symbol for s in view.symbols] == SYMBOLS
+        assert view.next_rebalance_ms == BASE_MS + (FIRST_DAY + 1) * DAY_MS + 60_000
+        assert view.symbols[0].days[-1].day_ms == BASE_MS + (FIRST_DAY - 1) * DAY_MS
+        sent = {i.symbol: float(i.target_weight) for i in intents}
+        assert view.held_weights == {s: sent.get(s, 0.0) for s in SYMBOLS}
+        assert any(view.target_weights[s] > 0 for s in SYMBOLS)
+
+    async def test_same_day_restart_reports_held_state_once_without_trading(
+        self,
+        config: TrendFollowingConfigSchema,
+        plugin: TrendFollowingPlugin,
+        bars: FakeDailyBars,
+        store: TrendStateStore,
+    ) -> None:
+        intents = await run_day(plugin, bars, FIRST_DAY)
+        reporter = RecordingReporter()
+        restarted = TrendFollowingPlugin(config, bars, store, reporter=reporter)
+
+        first = await restarted.tick(tick_at(FIRST_DAY))
+        second = await restarted.tick(tick_at(FIRST_DAY))
+
+        assert first.intents == second.intents == []
+        (view,) = reporter.views
+        assert not view.rebalanced
+        assert {s: w for s, w in view.held_weights.items() if w} == {
+            i.symbol: float(i.target_weight) for i in intents
+        }
+
+    async def test_failing_reporter_does_not_change_the_rebalance(
+        self,
+        config: TrendFollowingConfigSchema,
+        plugin: TrendFollowingPlugin,
+        bars: FakeDailyBars,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        reported_bars = FakeDailyBars(bars._closes)
+        reporter = RecordingReporter(RuntimeError("redis down"))
+        reported = TrendFollowingPlugin(
+            config, reported_bars, new_store(), reporter=reporter
+        )
+
+        plain = await run_day(plugin, bars, FIRST_DAY)
+        shadowed = await run_day(reported, reported_bars, FIRST_DAY)
+
+        assert [(i.symbol, i.target_weight) for i in shadowed] == [
+            (i.symbol, i.target_weight) for i in plain
+        ]
+        assert "Trend view report failed" in caplog.text
+        assert (await reported.tick(tick_at(FIRST_DAY))).intents == []
