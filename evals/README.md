@@ -107,14 +107,15 @@ Seven tests from `.mz/research/2026_11_19_research_trade_algos.md`, each preregi
 | Test | Result | Decision |
 | --- | --- | --- |
 | Funding-crowding overlay (`trend-ablation --arm funding-crowding`) | Max drawdown smaller on both sets (fresh -16.6% to -14.5%, trading -19.3% to -18.5%), but Sharpe fell (0.404 to 0.266, 0.640 to 0.578) | REJECT |
-| Mid-channel exit (`--arm mid-exit`) | Fresh 0.404 to 0.688, interval [+0.009, +0.524]; trading 0.640 to 0.905; drawdowns smaller on both | ADOPT: earns a forward paper test; the paper rule is unchanged until then |
+| Mid-channel exit (`--arm mid-exit`) | Fresh 0.404 to 0.688, interval [+0.009, +0.524]; trading 0.640 to 0.905; drawdowns smaller on both | ADOPT; in the paper rule since 2026-11-20 (`exit_rule: mid`) |
 | Fast 10-day component (`--arm fast-10`) | Fresh 0.404 to 0.374, interval [-0.242, +0.164] | REJECT |
 | Buffer width (`buffer-sweep`) | Sharpe rises with width at every cost on both sets; fresh at 2x cost: 0.388 at 0.2, best 0.414 at 0.5 | Keep 0.2 (inside the 0.05 flat region) |
 | Vol forecast (`vol-forecast`) | QLIKE against the 30-day estimate's 0.704: HAR 0.545 (p 0.001), LightGBM 0.555 (p 0.001), Chronos-2 0.748 (worse). Trading HAR: Sharpe 0.640 to 0.565, interval [-0.184, +0.039] | REJECT for trading; HAR is the better forecaster but not the better sizer |
-| Crash replay 2025-10-10 (`crash-replay`) | Book BTC 0.113, ETH 0.060, BNB 0.053. BNB's stop fired at 21:19, filled -34.4%, on both triggers (mark low 866.6 under the 879.3 stop). Day: no stop -2.22%, as live -3.40%, with halving -2.10%. Halving over the window: Sharpe 0.640 to 0.624 | Halving: ADOPT (candidate for the paper rule, not applied). Trigger: keep the last price |
+| Crash replay 2025-10-10 (`crash-replay`) | Book BTC 0.113, ETH 0.060, BNB 0.053. BNB's stop fired at 21:19, filled -34.4%, on both triggers (mark low 866.6 under the 879.3 stop). Day: no stop -2.22%, as live -3.40%, with halving -2.10%. Halving over the window: Sharpe 0.640 to 0.624 | Halving: ADOPT; in the paper rule since 2026-11-20 (`vol_spike`). Trigger: keep the last price |
 | `ls_crowding` market-neutral (`crowding-xs`) | Net Sharpe -0.72, alpha -8.4% a year (t -1.25), beta -0.01 | FAIL: `ls_crowding` closes |
 
 - The mid-exit pass is narrow: its fresh lower bound is +0.009, and the bound is not deflated for the trend family's trial count.
+- Both passes went into the paper rule on 2026-11-20, by the owner's decision, without the forward paper tests their preregistrations asked for; the two were never scored together. The lookback-20 forward test (`2026_11_16_trend_lookback20_forward.md`) is a backtest on new data and still stands, but paper fills no longer follow its rule, so its execution-parity check no longer applies.
 - DVOL helps forecasting on BTC and ETH (HAR+DVOL QLIKE 0.456 against HAR's 0.550, p < 0.0001); it covers 2 of 8 coins, so it was informational only.
 - The 30% stop cost money in the replay: the BNB wick recovered within minutes, so selling at the low lost 1.2% of equity against holding.
 - Not run: the maker/taker execution A/B (test 6). The paper exchange simulates fills and live orders are not allowed, so no fill data exists.
