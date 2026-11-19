@@ -172,33 +172,13 @@ class UiTrendStateEventSchema(BaseModel):
     model_config = UI_MODEL_CONFIG
 
 
-class UiGateInputsEventSchema(BaseModel):
-    """The headline window the shadow gate would review an entry against now."""
-
-    type: Annotated[Literal["gate_inputs"], Field()] = "gate_inputs"
-    ts_ms: Annotated[int, Field(..., ge=0)]
-    model_id: Annotated[str, Field(...)]
-    samples: Annotated[int, Field(..., ge=1)]
-    prompt_sha: Annotated[str, Field(...)]
-    window_h: Annotated[int, Field(..., ge=1)]
-    lag_h: Annotated[float, Field(..., ge=0)]
-    headlines: Annotated[int, Field(..., ge=0)]
-    newest_ms: Annotated[int | None, Field()] = None
-    coin_headlines: Annotated[dict[str, int], Field(...)]
-    reviews: Annotated[int, Field(..., ge=0)]
-    vetoes: Annotated[int, Field(..., ge=0)]
-
-    model_config = UI_MODEL_CONFIG
-
-
 type UiEvent = Annotated[
     UiAccountEventSchema
     | UiDecisionEventSchema
     | UiTradeEventSchema
     | UiPositionClosedEventSchema
     | UiCandlesEventSchema
-    | UiTrendStateEventSchema
-    | UiGateInputsEventSchema,
+    | UiTrendStateEventSchema,
     Field(discriminator="type"),
 ]
 

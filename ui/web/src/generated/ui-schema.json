@@ -259,7 +259,6 @@
           "account": "#/$defs/UiAccountEventSchema",
           "candles": "#/$defs/UiCandlesEventSchema",
           "decision": "#/$defs/UiDecisionEventSchema",
-          "gate_inputs": "#/$defs/UiGateInputsEventSchema",
           "position_closed": "#/$defs/UiPositionClosedEventSchema",
           "trade": "#/$defs/UiTradeEventSchema",
           "trend_state": "#/$defs/UiTrendStateEventSchema"
@@ -284,9 +283,6 @@
         },
         {
           "$ref": "#/$defs/UiTrendStateEventSchema"
-        },
-        {
-          "$ref": "#/$defs/UiGateInputsEventSchema"
         }
       ]
     },
@@ -314,95 +310,6 @@
         "event"
       ],
       "title": "UiEventMessageSchema",
-      "type": "object"
-    },
-    "UiGateInputsEventSchema": {
-      "description": "The headline window the shadow gate would review an entry against now.",
-      "properties": {
-        "coin_headlines": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "title": "Coin Headlines",
-          "type": "object"
-        },
-        "headlines": {
-          "minimum": 0,
-          "title": "Headlines",
-          "type": "integer"
-        },
-        "lag_h": {
-          "minimum": 0,
-          "title": "Lag H",
-          "type": "number"
-        },
-        "model_id": {
-          "title": "Model Id",
-          "type": "string"
-        },
-        "newest_ms": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Newest Ms"
-        },
-        "prompt_sha": {
-          "title": "Prompt Sha",
-          "type": "string"
-        },
-        "reviews": {
-          "minimum": 0,
-          "title": "Reviews",
-          "type": "integer"
-        },
-        "samples": {
-          "minimum": 1,
-          "title": "Samples",
-          "type": "integer"
-        },
-        "ts_ms": {
-          "minimum": 0,
-          "title": "Ts Ms",
-          "type": "integer"
-        },
-        "type": {
-          "const": "gate_inputs",
-          "default": "gate_inputs",
-          "title": "Type",
-          "type": "string"
-        },
-        "vetoes": {
-          "minimum": 0,
-          "title": "Vetoes",
-          "type": "integer"
-        },
-        "window_h": {
-          "minimum": 1,
-          "title": "Window H",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "type",
-        "ts_ms",
-        "model_id",
-        "samples",
-        "prompt_sha",
-        "window_h",
-        "lag_h",
-        "headlines",
-        "newest_ms",
-        "coin_headlines",
-        "reviews",
-        "vetoes"
-      ],
-      "title": "UiGateInputsEventSchema",
       "type": "object"
     },
     "UiOpenPositionSchema": {
@@ -652,17 +559,6 @@
           "title": "Decisions",
           "type": "array"
         },
-        "gate_inputs": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/UiGateInputsEventSchema"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "trades": {
           "items": {
             "$ref": "#/$defs/UiTradeEventSchema"
@@ -689,8 +585,7 @@
         "closed_positions",
         "candles",
         "candle_interval",
-        "trend",
-        "gate_inputs"
+        "trend"
       ],
       "title": "UiSnapshotSchema",
       "type": "object"

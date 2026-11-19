@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
   Account,
-  GateInputs,
   Candle,
   ClosedPosition,
   Decision,
@@ -91,7 +90,6 @@ const snapshot = (seq: number, over: Partial<SnapshotMessage["snapshot"]> = {}):
     decisions: [],
     trades: [],
     trend: null,
-    gate_inputs: null,
     ...over,
   },
 });
@@ -120,21 +118,6 @@ const trendState = (close: number): TrendState => ({
   vol_window: 30,
   buffer_band: 0.2,
   disaster_stop_pct: 0.3,
-});
-
-const gateInputs = (headlines: number): GateInputs => ({
-  type: "gate_inputs",
-  ts_ms: 1,
-  model_id: "claude-sonnet-5-5",
-  samples: 3,
-  prompt_sha: "abc",
-  window_h: 72,
-  lag_h: 2,
-  headlines,
-  newest_ms: null,
-  coin_headlines: {},
-  reviews: 0,
-  vetoes: 0,
 });
 
 const ev = (seq: number, event: UiEventPayload): EventMessage => ({ type: "event", seq, event });
@@ -198,13 +181,6 @@ describe("events", () => {
     const restored = applyMessage(s, snapshot(20, { trend: trendState(99) }));
     expect(restored.trend?.symbols[0]?.close).toBe(99);
     expect(applyMessage(s, snapshot(21)).trend).toBeNull();
-  });
-
-  it("replaces the gate inputs and restores them from a snapshot", () => {
-    const s = applyMessage(seeded(), ev(11, gateInputs(12)));
-    expect(s.gateInputs?.headlines).toBe(12);
-    const restored = applyMessage(s, snapshot(20, { gate_inputs: gateInputs(3) }));
-    expect(restored.gateInputs?.headlines).toBe(3);
   });
 
   it("replaces the previous account instead of merging", () => {

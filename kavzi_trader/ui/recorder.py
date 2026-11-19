@@ -13,7 +13,6 @@ from kavzi_trader.domain.trade_decision import TradeDecisionSchema
 from kavzi_trader.strategies.target_weight_intent_schema import (
     TargetWeightIntentSchema,
 )
-from kavzi_trader.strategies.trend.gate_inputs_schema import GateInputsSchema
 from kavzi_trader.strategies.trend.trend_gate_review_schema import (
     TrendGateReviewSchema,
 )
@@ -26,7 +25,6 @@ from kavzi_trader.ui.event_schemas import (
     UiCandleSchema,
     UiCandlesEventSchema,
     UiDecisionEventSchema,
-    UiGateInputsEventSchema,
     UiOpenPositionSchema,
     UiPositionClosedEventSchema,
     UiTradeEventSchema,
@@ -381,24 +379,5 @@ class UiEventRecorder:
                     f"{result.error_message or result.status}"
                 ),
                 reasoning=intent.reason or None,
-            ),
-        )
-
-    async def record_gate_inputs(self, inputs: GateInputsSchema) -> None:
-        await self._publisher.publish(
-            UiGateInputsEventSchema(
-                ts_ms=_now_ms(),
-                model_id=inputs.model_id,
-                samples=inputs.samples,
-                prompt_sha=inputs.prompt_sha,
-                window_h=inputs.window_h,
-                lag_h=inputs.lag_h,
-                headlines=inputs.headlines,
-                newest_ms=None
-                if inputs.newest_at is None
-                else _to_ms(inputs.newest_at),
-                coin_headlines=inputs.coin_headlines,
-                reviews=inputs.reviews,
-                vetoes=inputs.vetoes,
             ),
         )

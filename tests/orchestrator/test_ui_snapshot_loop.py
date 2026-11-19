@@ -7,12 +7,10 @@ import pytest
 from kavzi_trader.domain.candlestick import CandlestickSchema
 from kavzi_trader.domain.state_schemas import AccountStateSchema
 from kavzi_trader.orchestrator.loops.ui_snapshot import UiSnapshotLoop
-from kavzi_trader.strategies.trend.gate_inputs_schema import GateInputsSchema
 from kavzi_trader.ui.config import UiConfigSchema
 from kavzi_trader.ui.event_schemas import (
     UiAccountEventSchema,
     UiCandlesEventSchema,
-    UiGateInputsEventSchema,
 )
 from kavzi_trader.ui.recorder import UiEventRecorder
 from tests.ui.factories import CollectingUiPublisher
@@ -50,30 +48,8 @@ class _MarketData:
         return list(self.candles) if symbol == "BTCUSDT" else []
 
 
-class _GateInputs:
-    def __init__(self) -> None:
-        self.reads = 0
-
-    def read(self, now: datetime) -> GateInputsSchema:
-        self.reads += 1
-        return GateInputsSchema(
-            model_id="claude-sonnet-5-5",
-            samples=3,
-            prompt_sha="abc",
-            window_h=72,
-            lag_h=2.0,
-            headlines=12,
-            newest_at=T0,
-            coin_headlines={"BTC": 4},
-            reviews=2,
-            vetoes=1,
-        )
-
-
 class _Harness:
-    def __init__(
-        self, account: AccountStateSchema | None, gate: _GateInputs | None = None
-    ) -> None:
+    def __init__(self, account: AccountStateSchema | None) -> None:
         self.publisher = CollectingUiPublisher()
         self.market = _MarketData()
         state = AsyncMock()
@@ -89,7 +65,6 @@ class _Harness:
             market_data=self.market,
             symbols=["BTCUSDT", "ETHUSDT"],
             config=UiConfigSchema(backfill_candles=3),
-            gate_inputs=gate,
         )
 
     def candle_batches(self) -> list[list[int]]:
@@ -149,22 +124,3 @@ class TestUiSnapshotLoop:
         await harness.loop.publish_once([])
 
         assert [e.type for e in harness.publisher.events] == ["candles"]
-
-    async def test_gate_inputs_publish_once_per_interval(
-        self, account: AccountStateSchema
-    ) -> None:
-        gate = _GateInputs()
-        harness = _Harness(account, gate)
-
-        await harness.loop.publish_once([])
-        await harness.loop.publish_once([])
-
-        (inputs,) = [
-            e
-            for e in harness.publisher.events
-            if isinstance(e, UiGateInputsEventSchema)
-        ]
-        assert gate.reads == 1
-        assert (inputs.headlines, inputs.coin_headlines) == (12, {"BTC": 4})
-        assert inputs.newest_ms == int(T0.timestamp() * 1000)
-        assert (inputs.reviews, inputs.vetoes) == (2, 1)

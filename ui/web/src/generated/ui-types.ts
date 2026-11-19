@@ -60,17 +60,6 @@ export type TsMs2 = number;
 export type Type2 = "decision";
 export type Verdict = string;
 export type Decisions = UiDecisionEventSchema[];
-export type Headlines = number;
-export type LagH = number;
-export type ModelId = string;
-export type NewestMs = number | null;
-export type PromptSha = string;
-export type Reviews = number;
-export type Samples = number;
-export type TsMs3 = number;
-export type Type3 = "gate_inputs";
-export type Vetoes = number;
-export type WindowH = number;
 export type Confidence1 = number | null;
 export type EntryPrice2 = string | null;
 export type EventId2 = string;
@@ -81,8 +70,8 @@ export type Status = string;
 export type StopLoss2 = string | null;
 export type Symbol3 = string;
 export type TakeProfit2 = string | null;
-export type TsMs4 = number;
-export type Type4 = "trade";
+export type TsMs3 = number;
+export type Type3 = "trade";
 export type Trades = UiTradeEventSchema[];
 export type AnnualVolTarget = number;
 export type BufferBand = number;
@@ -106,33 +95,32 @@ export type Signal1 = number;
 export type Symbol4 = string;
 export type TargetWeight = number;
 export type Symbols = UiTrendSymbolSchema[];
-export type TsMs5 = number;
-export type Type5 = "trend_state";
+export type TsMs4 = number;
+export type Type4 = "trend_state";
 export type VolWindow = number;
-export type Type6 = "snapshot";
+export type Type5 = "snapshot";
 export type UiEvent =
   | UiAccountEventSchema
   | UiDecisionEventSchema
   | UiTradeEventSchema
   | UiPositionClosedEventSchema
   | UiCandlesEventSchema
-  | UiTrendStateEventSchema
-  | UiGateInputsEventSchema;
+  | UiTrendStateEventSchema;
 /**
  * @minItems 1
  */
 export type Candles1 = [UiCandleSchema, ...UiCandleSchema[]];
 export type Interval = string;
 export type Symbol5 = string;
-export type TsMs6 = number;
-export type Type7 = "candles";
+export type TsMs5 = number;
+export type Type6 = "candles";
 export type Seq1 = number;
-export type Type8 = "event";
+export type Type7 = "event";
 
 export interface UiSnapshotMessageSchema {
   seq: Seq;
   snapshot: UiSnapshotSchema;
-  type: Type6;
+  type: Type5;
 }
 /**
  * Full dashboard state; lists are oldest-first and bounded by UiConfigSchema.
@@ -143,7 +131,6 @@ export interface UiSnapshotSchema {
   candles: Candles;
   closed_positions: ClosedPositions;
   decisions: Decisions;
-  gate_inputs: UiGateInputsEventSchema | null;
   trades: Trades;
   trend: UiTrendStateEventSchema | null;
 }
@@ -220,26 +207,6 @@ export interface UiDecisionEventSchema {
   type: Type2;
   verdict: Verdict;
 }
-/**
- * The headline window the shadow gate would review an entry against now.
- */
-export interface UiGateInputsEventSchema {
-  coin_headlines: CoinHeadlines;
-  headlines: Headlines;
-  lag_h: LagH;
-  model_id: ModelId;
-  newest_ms: NewestMs;
-  prompt_sha: PromptSha;
-  reviews: Reviews;
-  samples: Samples;
-  ts_ms: TsMs3;
-  type: Type3;
-  vetoes: Vetoes;
-  window_h: WindowH;
-}
-export interface CoinHeadlines {
-  [k: string]: number;
-}
 export interface UiTradeEventSchema {
   confidence: Confidence1;
   entry_price: EntryPrice2;
@@ -251,8 +218,8 @@ export interface UiTradeEventSchema {
   stop_loss: StopLoss2;
   symbol: Symbol3;
   take_profit: TakeProfit2;
-  ts_ms: TsMs4;
-  type: Type4;
+  ts_ms: TsMs3;
+  type: Type3;
 }
 /**
  * The trend rule's full per-symbol state; each one replaces the last.
@@ -266,8 +233,8 @@ export interface UiTrendStateEventSchema {
   max_leverage: MaxLeverage;
   next_rebalance_ms: NextRebalanceMs;
   symbols: Symbols;
-  ts_ms: TsMs5;
-  type: Type5;
+  ts_ms: TsMs4;
+  type: Type4;
   vol_window: VolWindow;
 }
 export interface UiTrendSymbolSchema {
@@ -294,7 +261,7 @@ export interface UiTrendDaySchema {
 export interface UiEventMessageSchema {
   event: UiEvent;
   seq: Seq1;
-  type: Type8;
+  type: Type7;
 }
 /**
  * Closed candles for one symbol: a startup backfill batch or a single close.
@@ -303,6 +270,6 @@ export interface UiCandlesEventSchema {
   candles: Candles1;
   interval: Interval;
   symbol: Symbol5;
-  ts_ms: TsMs6;
-  type: Type7;
+  ts_ms: TsMs5;
+  type: Type6;
 }

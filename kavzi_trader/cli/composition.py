@@ -58,7 +58,6 @@ from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.strategies.trend.daily_bar_source import DailyBarSource
-from kavzi_trader.strategies.trend.gate_inputs_reader import GateInputsReader
 from kavzi_trader.strategies.trend.shadow_gate_runner import ShadowGateRunner
 from kavzi_trader.strategies.trend.trend_entry_gate import TrendEntryGate
 from kavzi_trader.strategies.trend.trend_following_plugin import TrendFollowingPlugin
@@ -194,7 +193,6 @@ class OrchestratorComposer:
                     market_data=cache,
                     symbols=config.trading.symbols,
                     config=config.ui,
-                    gate_inputs=wiring.gate_inputs,
                 )
                 if services.ui_recorder is not None
                 else None
@@ -322,14 +320,7 @@ class OrchestratorComposer:
             publisher=DecisionPublisher(services.redis_client),
             state_manager=services.state_manager,
         )
-        return StrategyWiringSchema(
-            loop=loop,
-            gate_inputs=(
-                None
-                if gate is None
-                else GateInputsReader(trend.gate, gate.model_id, gate.prompt_sha)
-            ),
-        )
+        return StrategyWiringSchema(loop=loop)
 
     def _create_shadow_gate(self) -> TrendEntryGate:
         gate_config = self._config.strategy.trend_following.gate
