@@ -49,6 +49,9 @@ Issues = "https://github.com/doctormozg/kavzi-trader/issues"
 requires = ["uv_build>=0.11.13,<0.12"]
 build-backend = "uv_build"
 
+[tool.uv]
+default-groups = ["dev", "research"]
+
 [tool.uv.build-backend]
 module-name = "kavzi_trader"
 module-root = ""
@@ -61,6 +64,10 @@ dev = [
     "pytest-asyncio>=1.5.0",
     "types-dateparser>=1.2.2.20250809",
     "types-pyyaml>=6.0.12.20261113",
+]
+research = [
+    "chronos-forecasting>=2.3.2",
+    "lightgbm>=4.7.0",
 ]
 
 
