@@ -58,6 +58,14 @@ class DonchianTrendSignal:
         return vol
 
     @staticmethod
+    def exit_level[TLevel: (float, np.ndarray)](
+        high: TLevel,  # noqa: ARG004 - the mid exit uses it
+        low: TLevel,
+    ) -> TLevel:
+        """Level a close must fall below to go flat, given the channel high and low."""
+        return low
+
+    @staticmethod
     def channel(close: np.ndarray, lookback: int) -> TrendChannelSchema:
         """Max and min of the previous `lookback` closes: the levels close[t] breaks."""
         prior = pd.Series(close).shift(1).rolling(lookback)

@@ -720,6 +720,18 @@
           "title": "Day Ms",
           "type": "integer"
         },
+        "exit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit"
+        },
         "lower": {
           "anyOf": [
             {
@@ -754,9 +766,42 @@
         "close",
         "upper",
         "lower",
+        "exit",
         "signal"
       ],
       "title": "UiTrendDaySchema",
+      "type": "object"
+    },
+    "UiTrendHalvingSchema": {
+      "properties": {
+        "hour_ms": {
+          "minimum": 0,
+          "title": "Hour Ms",
+          "type": "integer"
+        },
+        "rv": {
+          "minimum": 0,
+          "title": "Rv",
+          "type": "number"
+        },
+        "target_weight": {
+          "minimum": 0,
+          "title": "Target Weight",
+          "type": "number"
+        },
+        "threshold": {
+          "minimum": 0,
+          "title": "Threshold",
+          "type": "number"
+        }
+      },
+      "required": [
+        "hour_ms",
+        "rv",
+        "threshold",
+        "target_weight"
+      ],
+      "title": "UiTrendHalvingSchema",
       "type": "object"
     },
     "UiTrendStateEventSchema": {
@@ -778,6 +823,14 @@
         "disaster_stop_pct": {
           "title": "Disaster Stop Pct",
           "type": "number"
+        },
+        "exit_rule": {
+          "enum": [
+            "low",
+            "mid"
+          ],
+          "title": "Exit Rule",
+          "type": "string"
         },
         "lookback": {
           "minimum": 1,
@@ -811,6 +864,17 @@
           "title": "Type",
           "type": "string"
         },
+        "vol_spike": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UiVolSpikeRuleSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "vol_window": {
           "title": "Vol Window",
           "type": "integer"
@@ -821,13 +885,15 @@
         "ts_ms",
         "day",
         "lookback",
+        "exit_rule",
         "next_rebalance_ms",
         "symbols",
         "annual_vol_target",
         "max_leverage",
         "vol_window",
         "buffer_band",
-        "disaster_stop_pct"
+        "disaster_stop_pct",
+        "vol_spike"
       ],
       "title": "UiTrendStateEventSchema",
       "type": "object"
@@ -865,6 +931,17 @@
           "title": "Exit Level",
           "type": "number"
         },
+        "halving": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UiTrendHalvingSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "held_weight": {
           "title": "Held Weight",
           "type": "number"
@@ -872,6 +949,17 @@
         "signal": {
           "title": "Signal",
           "type": "number"
+        },
+        "spike": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UiVolSpikeReadingSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "symbol": {
           "title": "Symbol",
@@ -891,9 +979,74 @@
         "annual_vol",
         "target_weight",
         "held_weight",
+        "spike",
+        "halving",
         "days"
       ],
       "title": "UiTrendSymbolSchema",
+      "type": "object"
+    },
+    "UiVolSpikeReadingSchema": {
+      "properties": {
+        "hour_ms": {
+          "minimum": 0,
+          "title": "Hour Ms",
+          "type": "integer"
+        },
+        "rv": {
+          "minimum": 0,
+          "title": "Rv",
+          "type": "number"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        }
+      },
+      "required": [
+        "hour_ms",
+        "rv",
+        "threshold"
+      ],
+      "title": "UiVolSpikeReadingSchema",
+      "type": "object"
+    },
+    "UiVolSpikeRuleSchema": {
+      "properties": {
+        "history_hours": {
+          "minimum": 1,
+          "title": "History Hours",
+          "type": "integer"
+        },
+        "min_history_hours": {
+          "minimum": 1,
+          "title": "Min History Hours",
+          "type": "integer"
+        },
+        "quantile": {
+          "title": "Quantile",
+          "type": "number"
+        },
+        "scale": {
+          "title": "Scale",
+          "type": "number"
+        }
+      },
+      "required": [
+        "history_hours",
+        "min_history_hours",
+        "quantile",
+        "scale"
+      ],
+      "title": "UiVolSpikeRuleSchema",
       "type": "object"
     }
   },

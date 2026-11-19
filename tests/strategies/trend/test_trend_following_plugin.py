@@ -5,7 +5,9 @@ from kavzi_trader.strategies.target_weight_intent_schema import (
     TargetWeightIntentSchema,
 )
 from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
+from kavzi_trader.strategies.trend.mid_exit_trend_signal import MidExitTrendSignal
 from kavzi_trader.strategies.trend.trend_following_config import (
+    TrendExitRule,
     TrendFollowingConfigSchema,
 )
 from kavzi_trader.strategies.trend.trend_following_plugin import (
@@ -16,7 +18,6 @@ from kavzi_trader.strategies.trend.trend_following_plugin import (
 )
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
-from kavzi_trader.strategies.trend.trend_view_schema import TrendViewSchema
 from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 from tests.strategies.trend.conftest import (
     BASE_MS,
@@ -26,6 +27,7 @@ from tests.strategies.trend.conftest import (
     tick_at,
 )
 from tests.strategies.trend.fake_daily_bars import FakeDailyBars
+from tests.strategies.trend.recording_reporter import RecordingReporter
 
 
 async def run_day(
@@ -123,14 +125,21 @@ class TestRebalance:
 
 
 class TestParityWithBacktest:
+    @pytest.mark.parametrize(
+        ("exit_rule", "signal_type"),
+        [("low", DonchianTrendSignal), ("mid", MidExitTrendSignal)],
+    )
     async def test_buffered_weights_match_eval_signal_and_buffer(
         self,
-        plugin: TrendFollowingPlugin,
         bars: FakeDailyBars,
         closes: dict[str, np.ndarray],
-        config: TrendFollowingConfigSchema,
+        store: TrendStateStore,
+        exit_rule: TrendExitRule,
+        signal_type: type[DonchianTrendSignal],
     ) -> None:
-        signal = DonchianTrendSignal(TrendParamsSchema(lookbacks=(20,)))
+        config = TrendFollowingConfigSchema(symbols=SYMBOLS, exit_rule=exit_rule)
+        plugin = TrendFollowingPlugin(config, bars, store)
+        signal = signal_type(TrendParamsSchema(lookbacks=(20,)))
         targets = np.column_stack(
             [signal.compute(closes[s], len(SYMBOLS)).weight for s in SYMBOLS]
         )
@@ -221,17 +230,6 @@ class TestShadowReview:
 
         assert entries
         assert reviewer.calls == entries
-
-
-class RecordingReporter:
-    def __init__(self, error: Exception | None = None) -> None:
-        self.views: list[TrendViewSchema] = []
-        self._error = error
-
-    async def record_trend_view(self, view: TrendViewSchema) -> None:
-        self.views.append(view)
-        if self._error is not None:
-            raise self._error
 
 
 class TestTrendReporting:

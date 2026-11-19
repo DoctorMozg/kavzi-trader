@@ -36,6 +36,7 @@ class TrendViewBuilder:
         signal = self._signal.compute(closes, 1).signal
         channel = self._signal.channel(closes, self._lookback)
         vol = self._signal.annual_vol(closes)
+        exits = self._signal.exit_level(channel.upper, channel.lower)
         first = max(0, len(closes) - self._days_shown)
         days = [
             TrendDayViewSchema(
@@ -43,6 +44,7 @@ class TrendViewBuilder:
                 close=float(closes[i]),
                 upper=_finite(channel.upper[i]),
                 lower=_finite(channel.lower[i]),
+                exit=_finite(exits[i]),
                 signal=float(signal[i]),
             )
             for i in range(first, len(closes))
@@ -53,7 +55,9 @@ class TrendViewBuilder:
             signal=float(signal[-1]),
             close=float(closes[-1]),
             entry_level=float(recent.max()),
-            exit_level=float(recent.min()),
+            exit_level=self._signal.exit_level(
+                float(recent.max()), float(recent.min())
+            ),
             annual_vol=_finite(vol[-1]),
             days=days,
         )

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
+from kavzi_trader.strategies.trend.mid_exit_trend_signal import MidExitTrendSignal
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 from kavzi_trader.strategies.trend.trend_view_builder import DAY_MS, TrendViewBuilder
 
@@ -56,6 +57,7 @@ class TestTrendViewBuilder:
         assert breakout.signal == 1.0
         breakdown = view.days[-1]
         assert breakdown.lower == 10.4
+        assert breakdown.exit == 10.4
         assert breakdown.signal == 0.0
         assert view.signal == 0.0
 
@@ -82,3 +84,16 @@ class TestTrendViewBuilder:
     def test_empty_closes_are_rejected(self, builder: TrendViewBuilder) -> None:
         with pytest.raises(ValueError, match="BTCUSDT: no daily closes"):
             builder.symbol_view("BTCUSDT", np.array([]), LAST_DAY_MS)
+
+    def test_mid_exit_levels_are_the_channel_midpoint(self) -> None:
+        signal = MidExitTrendSignal(
+            TrendParamsSchema(lookbacks=(LOOKBACK,), vol_window=3)
+        )
+        view = TrendViewBuilder(signal, LOOKBACK, days_shown=8).symbol_view(
+            "BTCUSDT", CLOSES, LAST_DAY_MS
+        )
+
+        assert view.exit_level == (12.0 + 9.0) / 2
+        last = view.days[-1]
+        assert last.lower == 10.4
+        assert last.exit == (13.0 + 10.4) / 2

@@ -22,10 +22,15 @@ from kavzi_trader.strategies.trend.trend_day_view_schema import TrendDayViewSche
 from kavzi_trader.strategies.trend.trend_gate_review_schema import (
     TrendGateReviewSchema,
 )
+from kavzi_trader.strategies.trend.trend_halving_schema import TrendHalvingSchema
 from kavzi_trader.strategies.trend.trend_symbol_view_schema import (
     TrendSymbolViewSchema,
 )
 from kavzi_trader.strategies.trend.trend_view_schema import TrendViewSchema
+from kavzi_trader.strategies.trend.vol_spike_config import VolSpikeConfigSchema
+from kavzi_trader.strategies.trend.vol_spike_reading_schema import (
+    VolSpikeReadingSchema,
+)
 from kavzi_trader.ui.event_schemas import (
     UiAccountEventSchema,
     UiDecisionEventSchema,
@@ -192,13 +197,25 @@ class TestRecordPositions:
         )
 
 
+HALVING = TrendHalvingSchema(
+    symbol="BTCUSDT",
+    hour_ms=10 * 3_600_000,
+    rv=0.003,
+    threshold=0.001,
+    target_weight=0.025,
+)
+
+
 def _trend_view(rebalanced: bool) -> TrendViewSchema:
     days = [
-        TrendDayViewSchema(day_ms=0, close=100.0, upper=None, lower=None, signal=1.0)
+        TrendDayViewSchema(
+            day_ms=0, close=100.0, upper=110.0, lower=90.0, exit=100.0, signal=1.0
+        )
     ]
     return TrendViewSchema(
         day=date(2026, 11, 17),
         lookback=20,
+        exit_rule="mid",
         next_rebalance_ms=2_000,
         rebalanced=rebalanced,
         symbols=[
@@ -227,6 +244,13 @@ def _trend_view(rebalanced: bool) -> TrendViewSchema:
         vol_window=30,
         buffer_band=0.2,
         disaster_stop_pct=0.3,
+        vol_spike=VolSpikeConfigSchema(),
+        spikes={
+            "BTCUSDT": VolSpikeReadingSchema(
+                hour_ms=HALVING.hour_ms, rv=0.003, threshold=0.001
+            )
+        },
+        halvings={"BTCUSDT": HALVING},
     )
 
 
@@ -261,6 +285,43 @@ class TestRecordTrend:
 
         (state,) = publisher.events
         assert isinstance(state, UiTrendStateEventSchema)
+
+    async def test_exit_rule_spikes_and_halvings_reach_the_dashboard(
+        self,
+        recorder: UiEventRecorder,
+        publisher: CollectingUiPublisher,
+    ) -> None:
+        await recorder.record_trend_view(_trend_view(rebalanced=False))
+
+        (state,) = publisher.events
+        assert isinstance(state, UiTrendStateEventSchema)
+        btc, eth = state.symbols
+        assert state.exit_rule == "mid"
+        assert state.vol_spike is not None
+        assert (state.vol_spike.quantile, state.vol_spike.scale) == (0.99, 0.5)
+        assert btc.days[0].exit == 100.0
+        assert btc.spike is not None
+        assert btc.spike.threshold == 0.001
+        assert btc.halving is not None
+        assert btc.halving.target_weight == 0.025
+        assert (eth.spike, eth.halving) == (None, None)
+
+    async def test_halving_becomes_a_trend_decision(
+        self,
+        recorder: UiEventRecorder,
+        publisher: CollectingUiPublisher,
+    ) -> None:
+        await recorder.record_halving(HALVING)
+
+        (event,) = publisher.events
+        assert isinstance(event, UiDecisionEventSchema)
+        assert (event.symbol, event.stage, event.verdict) == (
+            "BTCUSDT",
+            "trend",
+            "HALVE",
+        )
+        assert "10:00 UTC" in event.summary
+        assert "3.0x its threshold" in event.summary
 
     async def test_gate_review_becomes_gate_decision_with_majority_reason(
         self,

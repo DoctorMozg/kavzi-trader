@@ -135,7 +135,34 @@ class UiTrendDaySchema(BaseModel):
     close: Annotated[float, Field(...)]
     upper: Annotated[float | None, Field()] = None
     lower: Annotated[float | None, Field()] = None
+    exit: Annotated[float | None, Field()] = None
     signal: Annotated[float, Field(...)]
+
+    model_config = UI_MODEL_CONFIG
+
+
+class UiVolSpikeRuleSchema(BaseModel):
+    history_hours: Annotated[int, Field(..., ge=1)]
+    min_history_hours: Annotated[int, Field(..., ge=1)]
+    quantile: Annotated[float, Field(...)]
+    scale: Annotated[float, Field(...)]
+
+    model_config = UI_MODEL_CONFIG
+
+
+class UiVolSpikeReadingSchema(BaseModel):
+    hour_ms: Annotated[int, Field(..., ge=0)]
+    rv: Annotated[float, Field(..., ge=0)]
+    threshold: Annotated[float | None, Field()] = None
+
+    model_config = UI_MODEL_CONFIG
+
+
+class UiTrendHalvingSchema(BaseModel):
+    hour_ms: Annotated[int, Field(..., ge=0)]
+    rv: Annotated[float, Field(..., ge=0)]
+    threshold: Annotated[float, Field(..., ge=0)]
+    target_weight: Annotated[float, Field(..., ge=0)]
 
     model_config = UI_MODEL_CONFIG
 
@@ -149,6 +176,9 @@ class UiTrendSymbolSchema(BaseModel):
     annual_vol: Annotated[float | None, Field()] = None
     target_weight: Annotated[float, Field(...)]
     held_weight: Annotated[float, Field(...)]
+    # Latest closed hour of a held symbol, and today's halving if one fired.
+    spike: Annotated[UiVolSpikeReadingSchema | None, Field()] = None
+    halving: Annotated[UiTrendHalvingSchema | None, Field()] = None
     days: Annotated[list[UiTrendDaySchema], Field(...)]
 
     model_config = UI_MODEL_CONFIG
@@ -161,6 +191,7 @@ class UiTrendStateEventSchema(BaseModel):
     ts_ms: Annotated[int, Field(..., ge=0)]
     day: Annotated[date, Field(...)]
     lookback: Annotated[int, Field(..., ge=1)]
+    exit_rule: Annotated[Literal["low", "mid"], Field(...)]
     next_rebalance_ms: Annotated[int, Field(..., ge=0)]
     symbols: Annotated[list[UiTrendSymbolSchema], Field(...)]
     annual_vol_target: Annotated[float, Field(...)]
@@ -168,6 +199,8 @@ class UiTrendStateEventSchema(BaseModel):
     vol_window: Annotated[int, Field(...)]
     buffer_band: Annotated[float, Field(...)]
     disaster_stop_pct: Annotated[float, Field(...)]
+    # None when vol-spike halving is off.
+    vol_spike: Annotated[UiVolSpikeRuleSchema | None, Field()] = None
 
     model_config = UI_MODEL_CONFIG
 

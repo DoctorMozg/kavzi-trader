@@ -25,7 +25,12 @@ class MidExitTrendSignal(DonchianTrendSignal):
             high, low = window.max(), window.min()
             if close[t] > high:
                 current = 1.0
-            elif close[t] < (high + low) / 2:
+            elif close[t] < self.exit_level(high, low):
                 current = 0.0
             state[t] = current
         return state
+
+    @staticmethod
+    def exit_level[TLevel: (float, np.ndarray)](high: TLevel, low: TLevel) -> TLevel:
+        mid: TLevel = (high + low) / 2
+        return mid

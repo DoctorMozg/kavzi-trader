@@ -11,6 +11,8 @@ class TrendDayViewSchema(BaseModel):
     # Breakout levels for this day's close; None until the lookback has filled.
     upper: Annotated[float | None, Field()] = None
     lower: Annotated[float | None, Field()] = None
+    # A close below it goes flat: the low, or the channel midpoint for the mid exit.
+    exit: Annotated[float | None, Field()] = None
     signal: Annotated[float, Field(ge=-1, le=1)]
 
     model_config = ConfigDict(frozen=True)

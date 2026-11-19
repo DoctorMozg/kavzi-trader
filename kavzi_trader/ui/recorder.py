@@ -1,5 +1,7 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
+
+from pydantic import BaseModel
 
 from kavzi_trader.commons.time_utility import utc_now
 from kavzi_trader.domain.analyst_decision import AnalystDecisionSchema
@@ -16,6 +18,7 @@ from kavzi_trader.strategies.target_weight_intent_schema import (
 from kavzi_trader.strategies.trend.trend_gate_review_schema import (
     TrendGateReviewSchema,
 )
+from kavzi_trader.strategies.trend.trend_halving_schema import TrendHalvingSchema
 from kavzi_trader.strategies.trend.trend_symbol_view_schema import (
     TrendSymbolViewSchema,
 )
@@ -29,8 +32,11 @@ from kavzi_trader.ui.event_schemas import (
     UiPositionClosedEventSchema,
     UiTradeEventSchema,
     UiTrendDaySchema,
+    UiTrendHalvingSchema,
     UiTrendStateEventSchema,
     UiTrendSymbolSchema,
+    UiVolSpikeReadingSchema,
+    UiVolSpikeRuleSchema,
 )
 from kavzi_trader.ui.publisher import UiPublisher
 
@@ -41,6 +47,15 @@ def _to_ms(value: datetime) -> int:
 
 def _now_ms() -> int:
     return _to_ms(utc_now())
+
+
+def _ui_model[TUi: BaseModel](
+    ui_type: type[TUi], value: BaseModel | None
+) -> TUi | None:
+    """Copies a domain model into its dashboard twin, which has a subset of fields."""
+    if value is None:
+        return None
+    return ui_type.model_validate(value.model_dump(include=set(ui_type.model_fields)))
 
 
 def _trend_summary(symbol: TrendSymbolViewSchema, held_weight: float) -> str:
@@ -288,6 +303,7 @@ class UiEventRecorder:
                 ts_ms=now_ms,
                 day=view.day,
                 lookback=view.lookback,
+                exit_rule=view.exit_rule,
                 next_rebalance_ms=view.next_rebalance_ms,
                 symbols=[
                     UiTrendSymbolSchema(
@@ -299,6 +315,12 @@ class UiEventRecorder:
                         annual_vol=s.annual_vol,
                         target_weight=view.target_weights[s.symbol],
                         held_weight=view.held_weights[s.symbol],
+                        spike=_ui_model(
+                            UiVolSpikeReadingSchema, view.spikes.get(s.symbol)
+                        ),
+                        halving=_ui_model(
+                            UiTrendHalvingSchema, view.halvings.get(s.symbol)
+                        ),
                         days=[
                             UiTrendDaySchema.model_validate(d.model_dump())
                             for d in s.days
@@ -311,6 +333,7 @@ class UiEventRecorder:
                 vol_window=view.vol_window,
                 buffer_band=view.buffer_band,
                 disaster_stop_pct=view.disaster_stop_pct,
+                vol_spike=_ui_model(UiVolSpikeRuleSchema, view.vol_spike),
             ),
         )
         if not view.rebalanced:
@@ -325,6 +348,23 @@ class UiEventRecorder:
                     summary=_trend_summary(symbol, view.held_weights[symbol.symbol]),
                 ),
             )
+
+    async def record_halving(self, halving: TrendHalvingSchema) -> None:
+        hour = datetime.fromtimestamp(halving.hour_ms / 1000, tz=UTC)
+        await self._publisher.publish(
+            UiDecisionEventSchema(
+                ts_ms=_now_ms(),
+                symbol=halving.symbol,
+                stage="trend",
+                verdict="HALVE",
+                summary=(
+                    f"Vol spike {hour:%H}:00 UTC: 1h variance "
+                    f"{halving.rv / halving.threshold:.1f}x its threshold; "
+                    f"halved to weight {halving.target_weight:.3f} until the "
+                    "next rebalance"
+                ),
+            ),
+        )
 
     async def record_gate_review(self, review: TrendGateReviewSchema) -> None:
         vetoes = sum(s.verdict == "VETO" for s in review.samples)

@@ -58,11 +58,14 @@ from kavzi_trader.spine.risk.symbol_tier_registry import SymbolTierRegistry
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.strategies.trend.daily_bar_source import DailyBarSource
+from kavzi_trader.strategies.trend.hourly_variance_store import HourlyVarianceStore
+from kavzi_trader.strategies.trend.minute_variance_source import MinuteVarianceSource
 from kavzi_trader.strategies.trend.shadow_gate_runner import ShadowGateRunner
 from kavzi_trader.strategies.trend.trend_entry_gate import TrendEntryGate
 from kavzi_trader.strategies.trend.trend_following_plugin import TrendFollowingPlugin
 from kavzi_trader.strategies.trend.trend_gate_log import TrendGateLog
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
+from kavzi_trader.strategies.trend.vol_spike_monitor import VolSpikeMonitor
 from kavzi_trader.ui.recorder import UiEventRecorder
 from kavzi_trader.ui.redis_publisher import RedisUiPublisher
 
@@ -302,6 +305,15 @@ class OrchestratorComposer:
     ) -> StrategyWiringSchema:
         trend = self._config.strategy.trend_following
         gate = self._create_shadow_gate() if trend.gate.enabled else None
+        spikes = (
+            VolSpikeMonitor(
+                trend.vol_spike,
+                MinuteVarianceSource(exchange),
+                HourlyVarianceStore(services.redis_client),
+            )
+            if trend.vol_spike.enabled
+            else None
+        )
         plugin = TrendFollowingPlugin(
             trend,
             DailyBarSource(exchange),
@@ -314,6 +326,7 @@ class OrchestratorComposer:
                 )
             ),
             reporter=services.ui_recorder,
+            spikes=spikes,
         )
         loop = StrategyLoop(
             plugin=plugin,

@@ -22,6 +22,7 @@ from kavzi_trader.replay.replay_result_schema import ReplayResultSchema
 from kavzi_trader.replay.replay_runner import ReplayRunner
 from kavzi_trader.spine.precision.symbol_precision import SymbolPrecision
 from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
+from kavzi_trader.strategies.trend.mid_exit_trend_signal import MidExitTrendSignal
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 from tests.archive.conftest import write_bars, write_funding
@@ -122,7 +123,10 @@ async def replay(config: AppConfig, archive: ArchiveSeries) -> ReplayResultSchem
 def reference(config: AppConfig, archive: ArchiveSeries) -> pd.Series:
     """Daily net returns of the vectorized rule, labelled by the day they span."""
     trend = config.strategy.trend_following
-    signal = DonchianTrendSignal(
+    signal_type = (
+        MidExitTrendSignal if trend.exit_rule == "mid" else DonchianTrendSignal
+    )
+    signal = signal_type(
         TrendParamsSchema(
             lookbacks=tuple(trend.lookbacks),
             vol_window=trend.vol_window,

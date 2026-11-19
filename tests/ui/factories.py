@@ -123,6 +123,7 @@ def make_trend_state(
         ts_ms=ts_ms,
         day=date(2026, 11, 17),
         lookback=20,
+        exit_rule="mid",
         next_rebalance_ms=ts_ms + 86_400_000,
         symbols=[
             UiTrendSymbolSchema(

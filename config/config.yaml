@@ -593,7 +593,9 @@ strategy:
   active: trend_following
 
   # EXPERIMENTAL: the rule failed its 20/40/80 preregistration; lookback 20
-  # alone is under a paper-only forward test until 2027-11-16.
+  # alone is under a paper-only forward test until 2027-11-16. Since
+  # 2026-11-20 the paper rule also uses the mid-channel exit and vol-spike
+  # halving (evals/README.md, research trials 2026-11-19).
   trend_following:
     # Must all be listed in trading.symbols. Weight per symbol is scaled by 1/N.
     symbols:
@@ -607,6 +609,10 @@ strategy:
       - AVAXUSDT
     # Donchian breakout lookbacks in days, and the daily-vol estimation window.
     lookbacks: [20]
+    # low = exit when a close falls below the lookback low; mid = below the
+    # midpoint of the lookback high and low (backtest Sharpe 0.40 -> 0.69 on
+    # 115 fresh coins, 0.64 -> 0.91 on these 8).
+    exit_rule: mid
     vol_window: 30
     # Annualised vol target per unit weight, capped at max_leverage.
     annual_vol_target: 0.25
@@ -619,6 +625,18 @@ strategy:
     # It sets margin and liquidation only: at 5x isolated a leg liquidates ~20%
     # below entry, before the stop. Startup refuses any value that does that.
     leverage: 2
+    # Hourly check of each held coin: if the last hour's 1m realized variance
+    # tops the `quantile` of the previous `history_hours` hours, the position
+    # drops to `scale` of itself until the next daily rebalance. No spike fires
+    # before `min_history_hours` of history. Rules fixed in
+    # evals/preregistrations/2026_11_19_crash_replay.md; the first check
+    # backfills 90 days of 1m bars per held coin into Redis.
+    vol_spike:
+      enabled: true
+      history_hours: 2160
+      min_history_hours: 720
+      quantile: 0.99
+      scale: 0.5
     # Shadow LLM news check on each new entry (flat -> long). It only logs
     # KEEP/VETO to log_path and never changes a trade; scoring is preregistered
     # in evals/preregistrations/2026_11_17_trend_news_gate.md.

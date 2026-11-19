@@ -19,7 +19,6 @@ from kavzi_trader.evals.ablation_report_renderer import AblationReportRenderer
 from kavzi_trader.evals.archive_series import ArchiveSeries
 from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.funding_crowding_overlay import FundingCrowdingOverlay
-from kavzi_trader.evals.mid_exit_trend_signal import MidExitTrendSignal
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_data_schema import TrendDataSchema
 from kavzi_trader.evals.trend_metrics import TrendMetrics
@@ -31,6 +30,7 @@ from kavzi_trader.evals.validation.trial_schema import TrialSchema
 from kavzi_trader.evals.weight_backtest import FIRST_RETURN_DAY, WeightBacktest
 from kavzi_trader.evals.weight_signal import WeightSignal
 from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
+from kavzi_trader.strategies.trend.mid_exit_trend_signal import MidExitTrendSignal
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
 
