@@ -36,6 +36,15 @@ def _redis_client(app_config: AppConfig, socket_timeout_s: float) -> Redis:
     )
 
 
+def route_uvicorn_logs() -> None:
+    """Send uvicorn's server log through the project's handlers."""
+    # Without a log_config uvicorn adds no handlers, so its lines reach no output.
+    server_log = logging.getLogger("uvicorn.error")
+    server_log.handlers = list(logging.getLogger("kavzi_trader").handlers)
+    server_log.setLevel(logging.INFO)
+    server_log.propagate = False
+
+
 @click.group()
 def ui() -> None:
     """Real-time WebSocket dashboard."""
@@ -64,7 +73,7 @@ def serve(ctx: click.Context, host: str | None, port: int | None) -> None:
     bind_host = host or ui_config.host
     bind_port = port or ui_config.port
     click.echo(f"Dashboard: http://{bind_host}:{bind_port}")
-    # log_config=None keeps the project's logging setup instead of uvicorn's.
+    route_uvicorn_logs()
     uvicorn.run(app, host=bind_host, port=bind_port, log_config=None)
 
 
