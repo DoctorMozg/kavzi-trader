@@ -34,8 +34,9 @@ def test_trade_status_outputs_counts(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(
         "kavzi_trader.cli.commands.trade.build_state_manager",
-        lambda _: mock_manager,
+        lambda *_: mock_manager,
     )
+    monkeypatch.setattr(trade_module, "build_exchange", lambda _: AsyncMock())
     ctx = click.Context(trade, obj={"app_config": AppConfig.from_env()})
     callback = trade_module.status.callback
     assert callback is not None
@@ -79,7 +80,9 @@ class _LoopRecorder:
 @pytest.mark.parametrize("command", ["status", "positions"])
 def test_state_commands_use_one_event_loop_and_close(monkeypatch, command) -> None:
     recorder = _LoopRecorder()
-    monkeypatch.setattr(trade_module, "build_state_manager", lambda _: recorder)
+    exchange = _LoopRecorder()
+    monkeypatch.setattr(trade_module, "build_state_manager", lambda *_: recorder)
+    monkeypatch.setattr(trade_module, "build_exchange", lambda _: exchange)
 
     result = CliRunner().invoke(
         trade, [command], obj={"app_config": AppConfig.from_env()}
@@ -87,8 +90,10 @@ def test_state_commands_use_one_event_loop_and_close(monkeypatch, command) -> No
 
     assert result.exit_code == 0, result.output
     assert len(recorder.loops) >= 3
-    assert len(set(recorder.loops)) == 1, "calls ran on different event loops"
+    assert len(set(recorder.loops + exchange.loops)) == 1, "calls ran on many loops"
     assert recorder.closed
+    # The exchange client owns an aiohttp session; leaving it open warns at exit.
+    assert exchange.closed
 
 
 def test_history_uses_one_event_loop_and_closes(monkeypatch) -> None:

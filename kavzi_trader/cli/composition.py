@@ -103,11 +103,12 @@ def build_exchange(app_config: AppConfig) -> BinanceClient:
 
 def build_state_manager(
     app_config: AppConfig,
-    exchange_client: ExchangeClient | None = None,
+    exchange_client: ExchangeClient,
 ) -> StateManager:
+    """The caller owns ``exchange_client`` and closes it."""
     return StateManager(
         redis_client=RedisStateClient(app_config.redis),
-        exchange_client=exchange_client or build_exchange(app_config),
+        exchange_client=exchange_client,
     )
 
 

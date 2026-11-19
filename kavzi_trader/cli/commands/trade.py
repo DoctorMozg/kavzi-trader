@@ -4,14 +4,21 @@ Trading commands for the KavziTrader CLI.
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import click
 
-from kavzi_trader.cli.composition import OrchestratorComposer, build_state_manager
+from kavzi_trader.cli.composition import (
+    OrchestratorComposer,
+    build_exchange,
+    build_state_manager,
+)
 from kavzi_trader.config import AppConfig
 from kavzi_trader.events.aggregate_type import AggregateType
 from kavzi_trader.events.store import RedisEventStore
 from kavzi_trader.infra.redis_client import RedisStateClient
+from kavzi_trader.spine.state.manager import StateManager
 
 logger = logging.getLogger(__name__)
 
@@ -81,14 +88,24 @@ def start(
     )
 
 
-async def _show_status(app_config: AppConfig) -> None:
-    state_manager = build_state_manager(app_config)
-    await state_manager.connect()
+@asynccontextmanager
+async def _connected_state(app_config: AppConfig) -> AsyncIterator[StateManager]:
+    exchange = build_exchange(app_config)
     try:
+        state_manager = build_state_manager(app_config, exchange)
+        await state_manager.connect()
+        try:
+            yield state_manager
+        finally:
+            await state_manager.close()
+    finally:
+        await exchange.close()
+
+
+async def _show_status(app_config: AppConfig) -> None:
+    async with _connected_state(app_config) as state_manager:
         positions = await state_manager.get_all_positions()
         orders = await state_manager.get_open_orders()
-    finally:
-        await state_manager.close()
     click.echo(f"Positions: {len(positions)}")
     click.echo(f"Open orders: {len(orders)}")
 
@@ -101,12 +118,8 @@ def status(ctx: click.Context) -> None:
 
 
 async def _list_positions(app_config: AppConfig) -> None:
-    state_manager = build_state_manager(app_config)
-    await state_manager.connect()
-    try:
+    async with _connected_state(app_config) as state_manager:
         positions = await state_manager.get_all_positions()
-    finally:
-        await state_manager.close()
     if not positions:
         click.echo("No open positions")
         return
