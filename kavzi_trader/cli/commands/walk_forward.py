@@ -16,8 +16,10 @@ from kavzi_trader.cli.commands.eval_options import (
 from kavzi_trader.cli.commands.trials import trials_path
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.archive_series import ArchiveSeries
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.date_window_schema import DateWindowSchema
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
+from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.validation.trial_registry import TrialRegistry
 from kavzi_trader.evals.validation.trial_schema import TrialSchema
@@ -97,7 +99,10 @@ def walk_forward_command(
         raise click.ClickException(str(exc)) from exc
     buffer = TurnoverBuffer(TREND_BUFFER_BAND)
     portfolio = TrendPortfolio(float(app_config.paper.commission_rate))
-    walk = WalkForward({lb: _signal(lb) for lb in lookbacks}, buffer, portfolio)
+    metrics = TrendMetrics(CashRate.from_csv())
+    walk = WalkForward(
+        {lb: _signal(lb) for lb in lookbacks}, buffer, portfolio, metrics
+    )
     span = DateWindowSchema(
         first_day=test_from.date(), last_day=end_day.date() - timedelta(days=1)
     )
@@ -105,9 +110,9 @@ def walk_forward_command(
         result = walk.run(data, train_from.date(), WalkForward.calendar_years(span))
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    hindsight = WeightBacktest(_signal(hindsight_lookback), buffer, portfolio).run(
-        data, pd.Timestamp(span.first_day), pd.Timestamp(span.last_day)
-    )
+    hindsight = WeightBacktest(
+        _signal(hindsight_lookback), buffer, portfolio, metrics
+    ).run(data, pd.Timestamp(span.first_day), pd.Timestamp(span.last_day))
 
     renderer = WalkForwardReportRenderer(prereg)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

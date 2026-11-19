@@ -41,6 +41,21 @@ class CandleCache:
             return pd.DataFrame(columns=list(COLUMNS)).astype(self._dtypes())
         return pd.read_csv(path, dtype=self._dtypes())
 
+    def load_traded(self, symbol: str) -> pd.DataFrame:
+        """Cached candles without zero-volume bars, which Binance keeps serving,
+        flat, after a delisting or during a trading pause."""
+        frame = self.load(symbol)
+        traded = frame[frame["volume"] > 0].reset_index(drop=True)
+        dropped = len(frame) - len(traded)
+        if dropped:
+            logger.info(
+                "%s: dropped %d zero-volume candles",
+                symbol,
+                dropped,
+                extra={"symbol": symbol, "dropped": dropped},
+            )
+        return traded
+
     def merge(self, symbol: str, candles: list[CandlestickSchema]) -> None:
         """Add candles to the cache, dropping duplicates by open time."""
         if not candles:

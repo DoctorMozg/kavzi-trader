@@ -43,6 +43,7 @@ from kavzi_trader.orchestrator.providers.live_order_flow_fetcher import (
 from kavzi_trader.orchestrator.providers.live_stream_manager import LiveStreamManager
 from kavzi_trader.orchestrator.providers.market_data_cache import MarketDataCache
 from kavzi_trader.order_flow.calculator import OrderFlowCalculator
+from kavzi_trader.paper.bar_fills import liquidation_price
 from kavzi_trader.paper.costs_schema import PaperCostsSchema
 from kavzi_trader.paper.exchange import PaperExchangeClient
 from kavzi_trader.paper.mode import TradingMode
@@ -119,7 +120,7 @@ class OrchestratorComposer:
         paper: bool = False,
         paper_balance: float | None = None,
     ) -> None:
-        self._config = app_config
+        self._config = self._with_trend_leverage(app_config)
         self._is_paper = paper
         self._paper_balance = paper_balance
         self._tier_registry = load_tier_registry()
@@ -132,7 +133,7 @@ class OrchestratorComposer:
             self._regime_policy,
         )
         self._spine = SpineComposer(
-            app_config,
+            self._config,
             self._tier_registry,
             self._volatility_detector,
         )
@@ -225,11 +226,54 @@ class OrchestratorComposer:
         missing = sorted(set(trend.symbols) - set(config.trading.symbols))
         if missing:
             errors.append(f"strategy.trend_following.symbols not in trading: {missing}")
+        errors.extend(self._trend_leverage_errors())
         if errors:
             raise ValueError(
                 "Strategy configuration errors:\n  - " + "\n  - ".join(errors)
             )
         self._warn_small_notional()
+
+    @staticmethod
+    def _with_trend_leverage(config: AppConfig) -> AppConfig:
+        """Gives trend legs their own leverage in the one map every reader uses."""
+        if config.strategy.active != "trend_following":
+            return config
+        trend = config.strategy.trend_following
+        overrides = dict.fromkeys(trend.symbols, trend.leverage)
+        futures = config.futures.model_copy(
+            update={"symbol_leverage": {**config.futures.symbol_leverage, **overrides}}
+        )
+        return config.model_copy(update={"futures": futures})
+
+    def _trend_leverage_errors(self) -> list[str]:
+        trend = self._config.strategy.trend_following
+        errors: list[str] = []
+        if trend.leverage < trend.max_leverage:
+            errors.append(
+                f"trend_following.leverage {trend.leverage} cannot margin a book "
+                f"at max_leverage {trend.max_leverage}"
+            )
+        liq = liquidation_price(
+            "LONG",
+            Decimal(1),
+            trend.leverage,
+            self._paper_costs().maintenance_margin_rate,
+        )
+        # The backtest assumes a leg survives until the disaster stop or the signal.
+        if 1 - liq <= trend.disaster_stop_pct:
+            errors.append(
+                f"trend_following.leverage {trend.leverage} liquidates a leg "
+                f"{1 - liq:.1%} below entry, before the "
+                f"{trend.disaster_stop_pct:.0%} disaster stop"
+            )
+        return errors
+
+    def _paper_costs(self) -> PaperCostsSchema:
+        # Live paper charges the configured rate on every fill, maker or taker.
+        return PaperCostsSchema(
+            taker_fee_rate=self._config.paper.commission_rate,
+            maker_fee_rate=self._config.paper.commission_rate,
+        )
 
     def _warn_small_notional(self) -> None:
         trend = self._config.strategy.trend_following
@@ -353,11 +397,7 @@ class OrchestratorComposer:
         balance = self._paper_balance_usdt()
         exchange = PaperExchangeClient(
             initial_balance_usdt=balance,
-            # Live paper charges the configured rate on every fill, maker or taker.
-            costs=PaperCostsSchema(
-                taker_fee_rate=self._config.paper.commission_rate,
-                maker_fee_rate=self._config.paper.commission_rate,
-            ),
+            costs=self._paper_costs(),
         )
         logger.info("Paper exchange created: balance=%s USDT", balance)
         return exchange

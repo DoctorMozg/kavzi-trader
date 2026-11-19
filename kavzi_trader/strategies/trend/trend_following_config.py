@@ -27,6 +27,8 @@ class TrendFollowingConfigSchema(BaseModel):
     max_leverage: Annotated[float, Field(gt=0)] = 2.0
     buffer_band: Annotated[float, Field(ge=0)] = 0.2
     disaster_stop_pct: Annotated[Decimal, Field(gt=0, lt=1)] = Decimal("0.3")
+    # Exchange leverage of each leg: it sets margin and liquidation, never size.
+    leverage: Annotated[int, Field(ge=1)] = 2
     gate: Annotated[TrendGateConfigSchema, Field(default_factory=TrendGateConfigSchema)]
 
     model_config = ConfigDict(frozen=True)

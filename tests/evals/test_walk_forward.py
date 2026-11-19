@@ -4,10 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.date_window_schema import DateWindowSchema
 from kavzi_trader.evals.scheduled_signal import ScheduledSignal
 from kavzi_trader.evals.signal_period_schema import SignalPeriodSchema
 from kavzi_trader.evals.trend_data_schema import TrendDataSchema
+from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.walk_forward import WalkForward
 from kavzi_trader.strategies.trend.turnover_buffer import TurnoverBuffer
@@ -44,7 +46,10 @@ def _data(a_drift: dict[int, float], b_drift: dict[int, float]) -> TrendDataSche
 @pytest.fixture
 def walk() -> WalkForward:
     return WalkForward(
-        {1: Holds(0), 2: Holds(1)}, TurnoverBuffer(0.0), TrendPortfolio(0.0)
+        {1: Holds(0), 2: Holds(1)},
+        TurnoverBuffer(0.0),
+        TrendPortfolio(0.0),
+        TrendMetrics(CashRate.constant(0.0)),
     )
 
 

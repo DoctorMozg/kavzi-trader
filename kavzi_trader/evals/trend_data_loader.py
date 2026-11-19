@@ -41,7 +41,9 @@ class TrendDataLoader:
         if bars.empty:
             return None
         day = pd.to_datetime(bars["open_time_ms"] // MS_PER_DAY, unit="D")
-        return pd.Series(bars["close"].to_numpy(dtype=float), index=day, name=symbol)
+        # Zero-volume bars are flat filler after a delisting or during a pause.
+        close = bars["close"].where(bars["volume"] > 0)
+        return pd.Series(close.to_numpy(dtype=float), index=day, name=symbol)
 
     def _close_from_minutes(self, symbol: str) -> pd.Series:
         frame = self._archive.candles(symbol, "4h")

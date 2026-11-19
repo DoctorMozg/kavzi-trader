@@ -53,6 +53,47 @@ def test_writes_one_section_per_bracket(config: AppConfig, tmp_path: Path) -> No
     assert f"Report: {out}" in result.output
 
 
+def test_symbols_file_picks_the_sampled_symbols(
+    config: AppConfig, tmp_path: Path
+) -> None:
+    write_cache(tmp_path / "cache", btc_frame(extra_bars=200))
+    universe = tmp_path / "universe.txt"
+    universe.write_text("# fresh coins\nbtcusdt\n")
+    out = tmp_path / "signals.md"
+
+    result = _invoke(
+        config,
+        tmp_path / "cache",
+        "--stride", "29",
+        "--bracket", "1.5:3:20",
+        "--symbols-file", str(universe),
+        "--out", str(out),
+    )  # fmt: skip
+
+    assert result.exception is None, result.output
+    assert "Every 29th 15m bar of BTCUSDT, all cached bars;" in out.read_text()
+
+
+def test_skips_a_symbol_with_only_zero_volume_bars(
+    config: AppConfig, tmp_path: Path
+) -> None:
+    write_cache(tmp_path / "cache", btc_frame(extra_bars=200))
+    dead = btc_frame(extra_bars=200).assign(volume=0.0)
+    write_cache(tmp_path / "cache", dead, symbol="ETHUSDT")
+    out = tmp_path / "signals.md"
+
+    result = _invoke(
+        config,
+        tmp_path / "cache",
+        "--stride", "29",
+        "--bracket", "1.5:3:20",
+        "--out", str(out),
+    )  # fmt: skip
+
+    assert result.exception is None, result.output
+    assert "Every 29th 15m bar of BTCUSDT, all cached bars;" in out.read_text()
+
+
 def test_rejects_a_malformed_bracket(config: AppConfig, tmp_path: Path) -> None:
     write_cache(tmp_path / "cache", btc_frame())
     result = _invoke(config, tmp_path / "cache", "--bracket", "1.5:3")

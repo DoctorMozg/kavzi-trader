@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.trend_stats_schema import TrendStatsSchema
 from kavzi_trader.strategies.trend.donchian_trend_signal import DAYS_PER_YEAR
 
@@ -9,6 +10,9 @@ MIN_DAYS = 2
 
 class TrendMetrics:
     """Return statistics from daily returns on a UTC day index."""
+
+    def __init__(self, cash: CashRate) -> None:
+        self._cash = cash
 
     def stats(self, returns: pd.Series) -> TrendStatsSchema:
         if returns.empty:
@@ -20,12 +24,18 @@ class TrendMetrics:
             annual_return=float(equity.iloc[-1] ** (1.0 / years) - 1.0),
             annual_vol=float(returns.std() * np.sqrt(DAYS_PER_YEAR)),
             sharpe=self.sharpe(returns),
+            sharpe_over_cash=self.sharpe(returns - self._cash.daily(returns.index)),
             max_drawdown=float((equity / equity.cummax() - 1.0).min()),
             sharpe_by_year={
                 int(year): self.sharpe(chunk)
                 for year, chunk in returns.groupby(returns.index.year)
             },
         )
+
+    def cash_return(self, days: pd.DatetimeIndex) -> float:
+        """Annualised return of holding cash over ``days``."""
+        growth = float((1.0 + self._cash.daily(days)).prod())
+        return float(growth ** (DAYS_PER_YEAR / len(days)) - 1.0)
 
     @staticmethod
     def sharpe(returns: pd.Series) -> float | None:

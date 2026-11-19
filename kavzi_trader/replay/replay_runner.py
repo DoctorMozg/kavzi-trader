@@ -28,9 +28,12 @@ _MIN_SAMPLES = 2
 class ReplayRunner:
     """Feeds stored bars and funding through the live loops on simulated time."""
 
-    def __init__(self, rig: ReplayRigSchema, data: ReplayDataSchema) -> None:
+    def __init__(
+        self, rig: ReplayRigSchema, data: ReplayDataSchema, metrics: TrendMetrics
+    ) -> None:
         self._rig = rig
         self._data = data
+        self._metrics = metrics
         self._prices: dict[str, Decimal] = {}
         self._bar_ms = KLINE_INTERVALS[data.interval] * 1000
 
@@ -183,7 +186,7 @@ class ReplayRunner:
             interval=self._data.interval,
             symbols=self._rig.symbols,
             equity=equity,
-            stats=TrendMetrics().stats(returns),
+            stats=self._metrics.stats(returns),
             initial_equity=values[0],
             final_equity=values[-1],
             funding_received=received,

@@ -615,6 +615,10 @@ strategy:
     buffer_band: 0.2
     # Wide protective stop (fraction of entry); the rule itself exits on signal.
     disaster_stop_pct: 0.3
+    # Exchange leverage of each leg; overrides futures leverage for these symbols.
+    # It sets margin and liquidation only: at 5x isolated a leg liquidates ~20%
+    # below entry, before the stop. Startup refuses any value that does that.
+    leverage: 2
     # Shadow LLM news check on each new entry (flat -> long). It only logs
     # KEEP/VETO to log_path and never changes a trade; scoring is preregistered
     # in evals/preregistrations/2026_11_17_trend_news_gate.md.

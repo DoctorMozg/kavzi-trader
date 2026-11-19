@@ -17,5 +17,7 @@ class TrendResultSchema(BaseModel):
     turnover_per_year: float
     cost_drag: float
     funding_drag: float
+    # Annualised 3-month T-bill return over the same days.
+    cash_return: float
     # Net return of each scored day, oldest first; trial statistics read it.
     daily_net: list[float]

@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.trend_data_schema import TrendDataSchema
+from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.weight_backtest import WeightBacktest
 from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
@@ -29,6 +31,7 @@ def backtest() -> WeightBacktest:
         DonchianTrendSignal(TrendParamsSchema(lookbacks=(20,))),
         TurnoverBuffer(0.2),
         TrendPortfolio(0.0005),
+        TrendMetrics(CashRate.constant(0.0)),
     )
 
 
@@ -66,7 +69,10 @@ class TestAnyWeightSignal:
         self, data: TrendDataSchema
     ) -> None:
         backtest = WeightBacktest(
-            ConstantWeights([0.5, -0.25]), TurnoverBuffer(0.0), TrendPortfolio(0.001)
+            ConstantWeights([0.5, -0.25]),
+            TurnoverBuffer(0.0),
+            TrendPortfolio(0.001),
+            TrendMetrics(CashRate.constant(0.0)),
         )
 
         result = backtest.run(
@@ -86,7 +92,10 @@ class TestAnyWeightSignal:
         self, data: TrendDataSchema
     ) -> None:
         backtest = WeightBacktest(
-            ConstantWeights([1.0]), TurnoverBuffer(0.0), TrendPortfolio(0.0)
+            ConstantWeights([1.0]),
+            TurnoverBuffer(0.0),
+            TrendPortfolio(0.0),
+            TrendMetrics(CashRate.constant(0.0)),
         )
 
         with pytest.raises(ValueError, match="weights"):
@@ -102,7 +111,10 @@ class TestDelistedSymbol:
         funding = data.funding.copy()
         gone = TrendDataSchema(closes=closes, funding=funding)
         backtest = WeightBacktest(
-            ConstantWeights([0.5, 0.5]), TurnoverBuffer(0.0), TrendPortfolio(0.0)
+            ConstantWeights([0.5, 0.5]),
+            TurnoverBuffer(0.0),
+            TrendPortfolio(0.0),
+            TrendMetrics(CashRate.constant(0.0)),
         )
 
         result = backtest.run(

@@ -67,3 +67,29 @@ class TestDailyBars:
 
         with pytest.raises(ValueError, match="HOLE has 1 missing daily bars"):
             loader.load(["HOLE"])
+
+    def test_zero_volume_bars_after_a_delisting_are_nan(
+        self, store: ArchiveStore, loader: TrendDataLoader
+    ) -> None:
+        # Binance keeps archiving flat zero-volume bars after a delisting.
+        bars = _daily([9, 8, 7, 7, 7])
+        bars.loc[3:, "volume"] = 0.0
+        store.write(ARCHIVE_DATASETS["klines_1d"], "DEAD", "2022-01", bars)
+
+        closes = loader.load(["DEAD"]).closes["DEAD"]
+
+        assert closes.tolist()[:3] == [9, 8, 7]
+        assert closes.iloc[3:].isna().all()
+
+    def test_a_zero_volume_stretch_inside_the_history_is_nan(
+        self, store: ArchiveStore, loader: TrendDataLoader
+    ) -> None:
+        bars = _daily([1, 2, 2, 2, 5])
+        bars.loc[1:3, "volume"] = 0.0
+        store.write(ARCHIVE_DATASETS["klines_1d"], "PAUSED", "2022-01", bars)
+
+        closes = loader.load(["PAUSED"]).closes["PAUSED"]
+
+        assert closes.iloc[0] == 1
+        assert closes.iloc[1:4].isna().all()
+        assert closes.iloc[4] == 5

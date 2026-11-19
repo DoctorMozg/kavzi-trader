@@ -100,3 +100,18 @@ class TestKlineDownloader:
             await KlineDownloader(
                 cast("ExchangeClient", FakeClient()), cache, "15m"
             ).ensure_range("AAA", START, START)
+
+
+class TestLoadTraded:
+    def test_drops_zero_volume_bars(self, cache: CandleCache) -> None:
+        candles = [_candle(START + i * STEP_MS) for i in range(4)]
+        dead = [c.model_copy(update={"volume": Decimal(0)}) for c in candles[2:]]
+        cache.merge("AAA", candles[:2] + dead)
+
+        traded = cache.load_traded("AAA")
+
+        assert traded["open_time_ms"].tolist() == [START, START + STEP_MS]
+        assert traded.index.tolist() == [0, 1]
+
+    def test_a_missing_symbol_is_empty(self, cache: CandleCache) -> None:
+        assert cache.load_traded("NONE").empty

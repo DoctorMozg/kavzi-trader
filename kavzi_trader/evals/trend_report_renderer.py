@@ -47,6 +47,11 @@ class TrendReportRenderer:
             ["Volatility", self._pct(net.annual_vol), self._pct(bench.annual_vol)],
             ["Sharpe", Md.num(net.sharpe), Md.num(bench.sharpe)],
             [
+                "Sharpe over cash",
+                Md.num(net.sharpe_over_cash),
+                Md.num(bench.sharpe_over_cash),
+            ],
+            [
                 "Max drawdown",
                 self._pct(net.max_drawdown),
                 self._pct(bench.max_drawdown),
@@ -55,7 +60,14 @@ class TrendReportRenderer:
             ["Cost drag per year", self._pct(result.cost_drag), "0"],
             ["Funding drag per year", self._pct(result.funding_drag), "0"],
         ]
-        return Md.section("Summary", Md.table(["", "Strategy", "Benchmark"], rows))
+        cash = (
+            f"Cash (3-month US T-bill, `evals/cash/tb3ms_monthly.csv`) paid "
+            f"{self._pct(result.cash_return)} a year over the same days. Sharpe over "
+            "cash scores the return above that rate."
+        )
+        return Md.section(
+            "Summary", Md.table(["", "Strategy", "Benchmark"], rows), cash
+        )
 
     def _years(self, result: TrendResultSchema) -> str:
         years = sorted(result.net.sharpe_by_year)

@@ -47,6 +47,7 @@ from kavzi_trader.evals.case_context_builder import CaseContextBuilder
 from kavzi_trader.evals.case_dataset_file import CaseDatasetFile
 from kavzi_trader.evals.case_result_schema import CaseResultSchema
 from kavzi_trader.evals.case_selector import CaseSelector
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.cost_calculator import CostCalculator
 from kavzi_trader.evals.dataset_build_params_schema import DatasetBuildParamsSchema
 from kavzi_trader.evals.dataset_builder import (
@@ -94,6 +95,7 @@ from kavzi_trader.evals.signal_sampler import (
 )
 from kavzi_trader.evals.sma_filter_signal import SmaFilterSignal
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
+from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_report_renderer import TrendReportRenderer
 from kavzi_trader.evals.validation.trial_registry import TrialRegistry
@@ -783,6 +785,7 @@ def _parse_brackets(
     "repeatable.",
 )
 @SYMBOLS_OPTION
+@SYMBOLS_FILE_OPTION
 @click.pass_context
 def signal_edge(
     ctx: click.Context,
@@ -800,6 +803,7 @@ def signal_edge(
     scout_vol_mins: tuple[float, ...],
     combos: tuple[str, ...],
     symbols: list[str] | None,
+    symbols_file: list[str] | None,
 ) -> None:
     """Measure each confluence signal's R edge on cached candles; no LLM calls."""
     if oi and metrics:
@@ -808,10 +812,8 @@ def signal_edge(
     history = app_config.trading.history_candles
     interval = interval or app_config.trading.interval
     cache = CandleCache(cache_dir, interval)
-    frames = {
-        s: cache.load(s).reset_index(drop=True)
-        for s in symbols or app_config.trading.symbols
-    }
+    names = resolve_symbols(symbols, symbols_file, app_config.trading.symbols)
+    frames = {s: cache.load_traded(s) for s in names}
     frames = {s: f for s, f in frames.items() if not f.empty}
     if not frames:
         msg = (
@@ -1042,6 +1044,7 @@ def trend_backtest(
         signal,
         TurnoverBuffer(TREND_BUFFER_BAND),
         TrendPortfolio(float(app_config.paper.commission_rate)),
+        TrendMetrics(CashRate.from_csv()),
     )
     last_day = pd.Timestamp(end_day) - pd.Timedelta(days=1)
     try:

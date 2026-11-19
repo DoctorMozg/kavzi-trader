@@ -15,12 +15,14 @@ from kavzi_trader.config import AppConfig
 from kavzi_trader.domain.symbol_filters import SymbolFiltersSchema
 from kavzi_trader.evals.archive_series import ArchiveSeries
 from kavzi_trader.evals.candle_cache import COLUMNS
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.metrics_cache import (
     GLOBAL_RATIO,
     OPEN_INTEREST,
     TIME,
     TOP_POSITION_RATIO,
 )
+from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.events.event_schema import EventSchema
 from kavzi_trader.replay.llm_tape import LlmTape
 from kavzi_trader.replay.replay_data_loader import ReplayDataLoader
@@ -148,7 +150,9 @@ async def _run(
     costs = replay_costs(Decimal("0.0005"), Decimal(0))
     composer = ReplayComposer(config, _precision(), costs, agents)
     rig = await composer.compose("llm_pipeline", data, _ms(START))
-    result = await ReplayRunner(rig, data).run(_ms(START), _ms(END))
+    result = await ReplayRunner(rig, data, TrendMetrics(CashRate.constant(0.0))).run(
+        _ms(START), _ms(END)
+    )
     return ReplayRun(result, await rig.event_store.read(rig.decision_stream))
 
 

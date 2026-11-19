@@ -7,6 +7,7 @@ from kavzi_trader.evals.date_window_schema import DateWindowSchema
 from kavzi_trader.evals.scheduled_signal import ScheduledSignal
 from kavzi_trader.evals.signal_period_schema import SignalPeriodSchema
 from kavzi_trader.evals.trend_data_schema import TrendDataSchema
+from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.walk_forward_choice_schema import WalkForwardChoiceSchema
 from kavzi_trader.evals.walk_forward_result_schema import WalkForwardResultSchema
@@ -25,6 +26,7 @@ class WalkForward:
         candidates: dict[int, WeightSignal],
         buffer: TurnoverBuffer,
         portfolio: TrendPortfolio,
+        metrics: TrendMetrics,
     ) -> None:
         if not candidates:
             msg = "need at least one candidate lookback"
@@ -32,6 +34,7 @@ class WalkForward:
         self._candidates = candidates
         self._buffer = buffer
         self._portfolio = portfolio
+        self._metrics = metrics
 
     @staticmethod
     def calendar_years(span: DateWindowSchema) -> list[DateWindowSchema]:
@@ -99,4 +102,4 @@ class WalkForward:
         return WalkForwardChoiceSchema(window=period, lookback=lookback, scores=scores)
 
     def _backtest(self, signal: WeightSignal) -> WeightBacktest:
-        return WeightBacktest(signal, self._buffer, self._portfolio)
+        return WeightBacktest(signal, self._buffer, self._portfolio, self._metrics)

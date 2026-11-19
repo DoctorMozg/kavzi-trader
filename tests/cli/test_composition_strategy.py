@@ -1,5 +1,5 @@
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import SecretStr
@@ -18,10 +18,14 @@ def _config(
     mode: TradingMode = TradingMode.PAPER,
     reset_on_start: bool = False,
     balance: str = "10000",
+    trend_leverage: int = 2,
 ) -> AppConfig:
+    strategy = StrategyConfigSchema.model_validate(
+        {"active": active, "trend_following": {"leverage": trend_leverage}}
+    )
     return base.model_copy(
         update={
-            "strategy": StrategyConfigSchema(active=active),  # type: ignore[arg-type]
+            "strategy": strategy,
             "paper": base.paper.model_copy(
                 update={
                     "mode": mode,
@@ -57,6 +61,41 @@ class TestTrendFollowingGuards:
 
         with pytest.raises(ValueError, match="reset_on_start"):
             await composer.compose()
+
+    @pytest.mark.parametrize(
+        ("leverage", "message"),
+        [
+            (5, r"liquidates a leg 19\.7% below entry, before the 30% disaster stop"),
+            (1, "cannot margin a book at max_leverage 2.0"),
+        ],
+    )
+    def test_unsafe_trend_leverage_is_refused(
+        self, app_config: AppConfig, leverage: int, message: str
+    ) -> None:
+        composer = OrchestratorComposer(
+            _config(app_config, trend_leverage=leverage), paper=True
+        )
+
+        with pytest.raises(ValueError, match=message):
+            composer._validate_strategy()
+
+    async def test_trend_legs_open_at_the_trend_leverage(
+        self, app_config: AppConfig
+    ) -> None:
+        composer = OrchestratorComposer(
+            _config(app_config, trend_leverage=3), paper=True
+        )
+        exchange = AsyncMock()
+
+        await composer._init_futures(exchange)
+
+        leverages = {
+            c.args[0]: c.args[1]
+            for c in exchange.futures_change_leverage.await_args_list
+        }
+        assert leverages == dict.fromkeys(
+            app_config.strategy.trend_following.symbols, 3
+        )
 
     def test_small_balance_warns(
         self, app_config: AppConfig, caplog: pytest.LogCaptureFixture

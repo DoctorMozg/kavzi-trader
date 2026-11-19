@@ -11,6 +11,7 @@ from kavzi_trader.config import AppConfig
 from kavzi_trader.domain.symbol_filters import SymbolFiltersSchema
 from kavzi_trader.evals.archive_series import ArchiveSeries
 from kavzi_trader.evals.candle_cache import COLUMNS
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
 from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
@@ -113,7 +114,7 @@ async def replay(config: AppConfig, archive: ArchiveSeries) -> ReplayResultSchem
     data = ReplayDataLoader(archive).load(NEEDS)
     composer = ReplayComposer(config, _precision(), replay_costs(TAKER_FEE, Decimal(0)))
     rig = await composer.compose("trend_following", data, _ms(START))
-    runner = ReplayRunner(rig, data)
+    runner = ReplayRunner(rig, data, TrendMetrics(CashRate.constant(0.0)))
     return await runner.run(_ms(START), _ms(END))
 
 
@@ -183,7 +184,9 @@ async def test_rejections_are_tallied_by_reason(
     rig = await composer.compose("trend_following", data, _ms(START))
     end = START + pd.Timedelta(days=30)
 
-    result = await ReplayRunner(rig, data).run(_ms(START), _ms(end))
+    result = await ReplayRunner(rig, data, TrendMetrics(CashRate.constant(0.0))).run(
+        _ms(START), _ms(end)
+    )
 
     assert result.orders == 0
     assert list(result.rejections) == ["Stop loss at or beyond liquidation price"]
@@ -206,7 +209,9 @@ async def test_stop_filled_in_the_bar_is_seen_before_the_rebalance(
     start = pd.Timestamp("2021-03-01")
     rig = await composer.compose("trend_following", data, _ms(start))
 
-    result = await ReplayRunner(rig, data).run(_ms(start), _ms(start) + 42 * 86_400_000)
+    result = await ReplayRunner(rig, data, TrendMetrics(CashRate.constant(0.0))).run(
+        _ms(start), _ms(start) + 42 * 86_400_000
+    )
 
     assert result.orders > 0
     assert result.failed_decisions == 0
@@ -230,4 +235,6 @@ async def test_runner_rejects_a_start_off_midnight(
     rig = await composer.compose("trend_following", data, _ms(START))
 
     with pytest.raises(ValueError, match="UTC midnights"):
-        await ReplayRunner(rig, data).run(_ms(START) + 1, _ms(END))
+        await ReplayRunner(rig, data, TrendMetrics(CashRate.constant(0.0))).run(
+            _ms(START) + 1, _ms(END)
+        )

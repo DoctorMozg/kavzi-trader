@@ -20,7 +20,9 @@ from kavzi_trader.cli.replay_composition import (
 from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.agent_source import AgentSource
 from kavzi_trader.evals.archive_series import ArchiveSeries
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.trend_data_loader import TrendDataLoader
+from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
 from kavzi_trader.evals.trend_stats_schema import TrendStatsSchema
 from kavzi_trader.evals.weight_backtest import (
@@ -66,7 +68,7 @@ async def _replay(
     composer = ReplayComposer(app_config, precision, costs, agents)
     start_ms, end_ms = (int(day.value // 1_000_000) for day in window)
     rig = await composer.compose(strategy, data, start_ms)
-    runner = ReplayRunner(rig, data)
+    runner = ReplayRunner(rig, data, TrendMetrics(CashRate.from_csv()))
     return await runner.run(start_ms, end_ms)
 
 
@@ -116,6 +118,7 @@ def _vectorized_trend(
         DonchianTrendSignal(params),
         TurnoverBuffer(trend.buffer_band),
         TrendPortfolio(float(app_config.paper.commission_rate)),
+        TrendMetrics(CashRate.from_csv()),
     )
     data = TrendDataLoader(archive).load(trend.symbols)
     return backtest.run(data, window[0], window[1] - pd.Timedelta(days=1)).net

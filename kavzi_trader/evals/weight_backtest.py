@@ -26,10 +26,12 @@ class WeightBacktest:
         signal: WeightSignal,
         buffer: TurnoverBuffer,
         portfolio: TrendPortfolio,
+        metrics: TrendMetrics,
     ) -> None:
         self._signal = signal
         self._buffer = buffer
         self._portfolio = portfolio
+        self._metrics = metrics
 
     def run(
         self,
@@ -63,7 +65,7 @@ class WeightBacktest:
         days = pd.DatetimeIndex(return_day[scored])
         logger.info("Backtest %d symbols over %d days", n_symbols, len(days))
 
-        metrics = TrendMetrics()
+        metrics = self._metrics
         # Equal weight over the symbols listed that day, so delistings count.
         benchmark = pd.Series(np.nanmean(raw_returns[scored], axis=1), index=days)
         return TrendResultSchema(
@@ -76,5 +78,6 @@ class WeightBacktest:
             turnover_per_year=float(run.traded.mean() * DAYS_PER_YEAR),
             cost_drag=float(run.cost.mean() * DAYS_PER_YEAR),
             funding_drag=float(run.funding.mean() * DAYS_PER_YEAR),
+            cash_return=metrics.cash_return(days),
             daily_net=run.net.tolist(),
         )
