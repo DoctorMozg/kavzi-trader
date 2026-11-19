@@ -1,6 +1,6 @@
 # Evaluation suite
 
-Seven commands under `kavzitrader eval` (`kavzi_trader/cli/commands/evals.py`):
+The main commands under `kavzitrader eval` (`kavzi_trader/cli/commands/evals.py`):
 
 | Command | Calls an LLM? | Purpose |
 | --- | --- | --- |
@@ -11,6 +11,12 @@ Seven commands under `kavzitrader eval` (`kavzi_trader/cli/commands/evals.py`):
 | `refresh-cache` | no | Fill cached candles, funding and OI (optionally the 5m metrics archive) up to today 00:00 UTC, leave `cases_v1.jsonl` alone |
 | `trend` | no | Backtest the daily Donchian trend ensemble against buy-and-hold |
 | `funding-xs` | no | Backtest the market-neutral cross-sectional funding rank |
+| `trend-ablation` | no | Paired test of one change to the paper trend rule (`--arm`) |
+| `buffer-sweep` | no | Trend Sharpe and turnover across buffer widths and cost multiples |
+| `vol-forecast` | no | Score 7-day vol forecasters by QLIKE, trade the best in the trend rule |
+| `dvol-download` | no | Fetch Deribit's daily DVOL for BTC and ETH into `evals/dvol/` |
+| `crash-replay` | no | Replay the paper book minute by minute through one day |
+| `crowding-xs` | no | Market-neutral `ls_crowding` book, alpha against BTC |
 
 They share the gitignored cache `data/eval_cache/` (`--cache-dir`): `build-dataset` and `refresh-cache` download into it, the other commands read from it. `trend` and `replay` read the gitignored `data/archive/` mirror instead (`--archive-dir`), which `eval archive` fills from data.binance.vision monthly files and which lags by up to a month. Candle and funding history can always be re-downloaded from Binance. Open interest older than about 30 days cannot (the `metrics` archive below can), so don't delete the OI files.
 
@@ -94,17 +100,40 @@ Wide universes only need daily bars, not 1m history: `eval archive --dataset kli
 
 Each calendar year from `--test-from` (default 2022-01-01) to `--to` (default 2026-11-01, exclusive) trades the single lookback from `--lookbacks` (default 10,20,30,40,60,80,120) with the best net Sharpe from `--train-from` (default 2020-12-15) to the day before that year; ties go to the shorter lookback (`evals/walk_forward.py`). The chosen rules are stitched into one weight series (`scheduled_signal.py`) and the turnover buffer runs over it without a reset at year ends. The report lists each year's choice with every candidate's training Sharpe, the usual summary of the stitched result, and fixed `--hindsight-lookback` (default 20) over the same days for comparison. Takes `--symbols`/`--symbols-file`, `--archive-dir` and `--out` (default `results/evals/walkforward_<UTC time>.md`), and registers one trial.
 
+### Research trials (2026-11-19)
+
+Seven tests from `.mz/research/2026_11_19_research_trade_algos.md`, each preregistered in `evals/preregistrations/2026_11_19_*.md`, committed, then run once on 2026-11-19. Trend arms use return days 2022-03-15 to 2026-10-31 and the paired block bootstrap in `validation/paired_sharpe_test.py` (5000 resamples, 20-day blocks, 90% interval). Each run registers a trial.
+
+| Test | Result | Decision |
+| --- | --- | --- |
+| Funding-crowding overlay (`trend-ablation --arm funding-crowding`) | Max drawdown smaller on both sets (fresh -16.6% to -14.5%, trading -19.3% to -18.5%), but Sharpe fell (0.404 to 0.266, 0.640 to 0.578) | REJECT |
+| Mid-channel exit (`--arm mid-exit`) | Fresh 0.404 to 0.688, interval [+0.009, +0.524]; trading 0.640 to 0.905; drawdowns smaller on both | ADOPT: earns a forward paper test; the paper rule is unchanged until then |
+| Fast 10-day component (`--arm fast-10`) | Fresh 0.404 to 0.374, interval [-0.242, +0.164] | REJECT |
+| Buffer width (`buffer-sweep`) | Sharpe rises with width at every cost on both sets; fresh at 2x cost: 0.388 at 0.2, best 0.414 at 0.5 | Keep 0.2 (inside the 0.05 flat region) |
+| Vol forecast (`vol-forecast`) | QLIKE against the 30-day estimate's 0.704: HAR 0.545 (p 0.001), LightGBM 0.555 (p 0.001), Chronos-2 0.748 (worse). Trading HAR: Sharpe 0.640 to 0.565, interval [-0.184, +0.039] | REJECT for trading; HAR is the better forecaster but not the better sizer |
+| Crash replay 2025-10-10 (`crash-replay`) | Book BTC 0.113, ETH 0.060, BNB 0.053. BNB's stop fired at 21:19, filled -34.4%, on both triggers (mark low 866.6 under the 879.3 stop). Day: no stop -2.22%, as live -3.40%, with halving -2.10%. Halving over the window: Sharpe 0.640 to 0.624 | Halving: ADOPT (candidate for the paper rule, not applied). Trigger: keep the last price |
+| `ls_crowding` market-neutral (`crowding-xs`) | Net Sharpe -0.72, alpha -8.4% a year (t -1.25), beta -0.01 | FAIL: `ls_crowding` closes |
+
+- The mid-exit pass is narrow: its fresh lower bound is +0.009, and the bound is not deflated for the trend family's trial count.
+- DVOL helps forecasting on BTC and ETH (HAR+DVOL QLIKE 0.456 against HAR's 0.550, p < 0.0001); it covers 2 of 8 coins, so it was informational only.
+- The 30% stop cost money in the replay: the BNB wick recovered within minutes, so selling at the low lost 1.2% of equity against holding.
+- Not run: the maker/taker execution A/B (test 6). The paper exchange simulates fills and live orders are not allowed, so no fill data exists.
+
 ### Closed lines
 
 Each of these failed a preregistered test. Don't loosen a threshold, swap a window or add a filter until one passes: that is fitting noise. A new idea gets a new preregistration with out-of-sample data.
 
 - LLM pipeline as the trading strategy (lost to buy-and-hold in the July 2026 replay). It stays available, not active.
 - Candle and funding confluence signals, and loosening Scout or Analyst gates (no lift above fees, 2026-11-16).
-- Funding carry across coins (`eval funding-xs`, FAIL at 0.43).
+- Funding carry across coins (`eval funding-xs`, FAIL at 0.43; 0.25 over cash in the 2026-11-19 re-score).
 - Trend ensemble 20/40/80 (FAIL at 0.45 / 0.50).
 - Trend lookback 20 on the fresh 115-coin universe (FAIL at 0.37, -0.03 over cash; 0.40 after the zero-volume fix).
 - Long above the 200-day average on the fresh 115-coin universe (FAIL at -0.15, -0.29 over cash). The BTC-only pass of 2026-11-17 is treated as a single-asset accident.
 - SHORT `smart_vs_crowd` on fresh coins (FAIL, fired +0.015 R against a 0.025 R fee).
+- Halving trend longs while funding is crowded (Sharpe fell on both sets, 2026-11-19).
+- A fast 10-day Donchian component (2026-11-19).
+- HAR, LightGBM or Chronos-2 vol forecasts as the trend sizer (HAR lowered Sharpe; Chronos-2 lost to the 30-day estimate, 2026-11-19).
+- `ls_crowding` in any direction: the market-neutral book lost money (alpha -8.4%, t -1.25), so the SHORT pass of 2026-11-18 was market drift.
 - Switching the paper rule to lookback 10 because walk-forward picked it: that choice was made after seeing the result and needs its own forward test.
 
 ## Funding cross-section backtest
@@ -120,7 +149,7 @@ Options:
 - `--hold-days` (default 3) and `--legs` (default 3): the pre-registered values. Other values are exploratory.
 - `--cache-dir`, `--out` (default `results/evals/funding_xs_<time>.md`).
 
-It prints net Sharpe, annual return and PASS or FAIL (net Sharpe >= 0.5, net return > 0, and positive net return in at least 3 calendar years). The report splits return into price, funding and cost, gross against net.
+It prints net Sharpe, Sharpe over cash (3-month T-bill, `evals/cash/tb3ms_monthly.csv`), annual return and PASS or FAIL (net Sharpe >= 0.5, net return > 0, and positive net return in at least 3 calendar years). The report splits return into price, funding and cost, gross against net. The primary run's re-score of 2026-11-19 gives 0.42 net and 0.25 over cash.
 
 ## Signal edge
 
