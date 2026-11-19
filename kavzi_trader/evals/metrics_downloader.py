@@ -3,9 +3,9 @@ import io
 import logging
 import zipfile
 
-import httpx2
 import pandas as pd
 
+from kavzi_trader.archive.vision_client import VisionClient
 from kavzi_trader.evals.metrics_cache import (
     GLOBAL_RATIO,
     OPEN_INTEREST,
@@ -42,7 +42,7 @@ class MetricsDownloader:
     """
 
     def __init__(
-        self, http: httpx2.AsyncClient, cache: MetricsCache, concurrency: int = 8
+        self, http: VisionClient, cache: MetricsCache, concurrency: int = 8
     ) -> None:
         self._http = http
         self._cache = cache

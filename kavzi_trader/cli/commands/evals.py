@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.api.binance.constants import KLINE_INTERVALS
 from kavzi_trader.api.exchange_client import ExchangeClient
+from kavzi_trader.archive.vision_client import VisionClient
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
 from kavzi_trader.cli.commands.archive import archive_command
 from kavzi_trader.cli.commands.eval_options import (
@@ -556,7 +557,7 @@ def _load_metrics(
 
     async def _job() -> None:
         async with httpx2.AsyncClient(timeout=_METRICS_TIMEOUT_S) as http:
-            downloader = MetricsDownloader(http, cache)
+            downloader = MetricsDownloader(VisionClient(http), cache)
             for symbol, frame in frames.items():
                 await downloader.ensure_range(
                     symbol,

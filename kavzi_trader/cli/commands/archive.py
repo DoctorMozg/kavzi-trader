@@ -10,6 +10,7 @@ from kavzi_trader.archive.archive_downloader import ArchiveDownloader
 from kavzi_trader.archive.archive_listing import ArchiveListing
 from kavzi_trader.archive.archive_store import ArchiveStore
 from kavzi_trader.archive.point_in_time_universe import PointInTimeUniverse
+from kavzi_trader.archive.vision_client import VisionClient
 from kavzi_trader.config import AppConfig
 
 _TIMEOUT_S = 120.0
@@ -65,7 +66,8 @@ def archive_command(
     first_month = from_month.strftime("%Y-%m")
 
     async def _job() -> None:
-        async with httpx2.AsyncClient(timeout=_TIMEOUT_S) as http:
+        async with httpx2.AsyncClient(timeout=_TIMEOUT_S) as raw_http:
+            http = VisionClient(raw_http)
             current_month = datetime.now(UTC).strftime("%Y-%m")
             downloader = ArchiveDownloader(
                 http, ArchiveListing(http), store, current_month

@@ -12,8 +12,10 @@ from kavzi_trader.archive.archive_downloader import ArchiveDownloader
 from kavzi_trader.archive.archive_listing import ArchiveListing
 from kavzi_trader.archive.archive_store import ArchiveStore
 from kavzi_trader.archive.checksum_mismatch_error import ChecksumMismatchError
+from kavzi_trader.archive.vision_client import VisionClient
 from tests.archive.conftest import (
     METRICS_HEADER,
+    NO_WAIT,
     FakeVision,
     daily_kline_key,
     kline_csv,
@@ -56,14 +58,14 @@ def delisted(vision: FakeVision) -> FakeVision:
 
 
 @pytest_asyncio.fixture
-async def http(delisted: FakeVision) -> AsyncIterator[httpx2.AsyncClient]:
+async def http(delisted: FakeVision) -> AsyncIterator[VisionClient]:
     transport = httpx2.MockTransport(delisted.handler)
     async with httpx2.AsyncClient(transport=transport) as client:
-        yield client
+        yield VisionClient(client, NO_WAIT)
 
 
 @pytest.fixture
-def downloader(http: httpx2.AsyncClient, store: ArchiveStore) -> ArchiveDownloader:
+def downloader(http: VisionClient, store: ArchiveStore) -> ArchiveDownloader:
     return ArchiveDownloader(http, ArchiveListing(http), store, current_month="2099-01")
 
 
@@ -187,7 +189,7 @@ class TestDailyArchives:
         }
 
     async def test_the_month_in_progress_waits_until_it_ends(
-        self, metrics: FakeVision, http: httpx2.AsyncClient, store: ArchiveStore
+        self, metrics: FakeVision, http: VisionClient, store: ArchiveStore
     ) -> None:
         downloader = ArchiveDownloader(
             http, ArchiveListing(http), store, current_month="2020-02"
@@ -199,7 +201,7 @@ class TestDailyArchives:
 
 class TestArchiveListing:
     async def test_periods_follow_every_page_and_skip_checksum_keys(
-        self, http: httpx2.AsyncClient
+        self, http: VisionClient
     ) -> None:
         assert await ArchiveListing(http).periods(KLINES, "SRMUSDT") == [
             "2020-01",

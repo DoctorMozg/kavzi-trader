@@ -5,7 +5,6 @@ import logging
 import zipfile
 from collections import defaultdict
 
-import httpx2
 import pandas as pd
 
 from kavzi_trader.archive.archive_dataset_schema import ArchiveDatasetSchema
@@ -13,6 +12,7 @@ from kavzi_trader.archive.archive_listing import ArchiveListing
 from kavzi_trader.archive.archive_store import ArchiveStore
 from kavzi_trader.archive.archive_sync_schema import ArchiveSyncSchema
 from kavzi_trader.archive.checksum_mismatch_error import ChecksumMismatchError
+from kavzi_trader.archive.vision_client import VisionClient
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class ArchiveDownloader:
 
     def __init__(
         self,
-        http: httpx2.AsyncClient,
+        http: VisionClient,
         listing: ArchiveListing,
         store: ArchiveStore,
         current_month: str,

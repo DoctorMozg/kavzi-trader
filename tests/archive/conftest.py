@@ -10,6 +10,7 @@ import pytest
 
 from kavzi_trader.archive.archive_datasets import ARCHIVE_DATASETS
 from kavzi_trader.archive.archive_store import ArchiveStore
+from kavzi_trader.commons.retry import RetryPolicySchema
 from kavzi_trader.evals.candle_cache import COLUMNS
 
 KLINE_HEADER = (
@@ -153,3 +154,11 @@ def write_metrics(root: Path, symbol: str, rows: pd.DataFrame) -> None:
     store = ArchiveStore(root)
     for month, part in _by_month(full, "time_ms").items():
         store.write(metrics, symbol, month, part)
+
+
+# Retries without sleeping, so tests of retried failures stay fast.
+NO_WAIT = RetryPolicySchema(
+    attempts=3,
+    backoff_base_s=0,
+    retry_on=(httpx2.HTTPStatusError, httpx2.TransportError),
+)

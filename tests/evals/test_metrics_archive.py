@@ -1,13 +1,13 @@
 import io
 import zipfile
 from pathlib import Path
-from typing import cast
 
 import httpx2
 import numpy as np
 import pandas as pd
 import pytest
 
+from kavzi_trader.archive.vision_client import VisionClient
 from kavzi_trader.evals.metrics_alignment import MetricsAlignment
 from kavzi_trader.evals.metrics_cache import (
     GLOBAL_RATIO,
@@ -18,6 +18,7 @@ from kavzi_trader.evals.metrics_cache import (
 )
 from kavzi_trader.evals.metrics_downloader import MetricsDownloader
 from kavzi_trader.evals.series_cache import VALUE
+from tests.archive.conftest import NO_WAIT
 
 DAY_MS = 86_400_000
 DAY0 = 20_000  # 2024-10-04 UTC, as days since the epoch
@@ -46,34 +47,32 @@ def day_zip(symbol: str, day: int) -> bytes:
     return buffer.getvalue()
 
 
-class FakeResponse:
-    def __init__(self, status_code: int, content: bytes = b"") -> None:
-        self.status_code = status_code
-        self.content = content
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            msg = f"HTTP {self.status_code}"
-            raise RuntimeError(msg)
-
-
 class FakeArchive:
-    """Serves daily metrics zips by day; days outside ``days`` are 404."""
+    """Serves daily metrics zips by day; days outside ``days`` are 404.
 
-    def __init__(self, days: set[int], broken: int | None = None) -> None:
+    ``broken`` always answers 500; ``flaky`` answers 503 once, then the zip.
+    """
+
+    def __init__(
+        self, days: set[int], broken: int | None = None, flaky: int | None = None
+    ) -> None:
         self.days = days
         self.broken = broken
+        self.flaky = flaky
         self.requested: list[str] = []
 
-    async def get(self, url: str) -> FakeResponse:
+    def handler(self, request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url)
         self.requested.append(url)
         stamp = url.rsplit("-metrics-", 1)[1].removesuffix(".zip")
         day = int(pd.Timestamp(stamp).timestamp() * 1000) // DAY_MS
         if day == self.broken:
-            return FakeResponse(500)
+            return httpx2.Response(500)
+        if day == self.flaky and self.requested.count(url) == 1:
+            return httpx2.Response(503)
         if day not in self.days:
-            return FakeResponse(404)
-        return FakeResponse(200, day_zip("BTCUSDT", day))
+            return httpx2.Response(404)
+        return httpx2.Response(200, content=day_zip("BTCUSDT", day))
 
 
 @pytest.fixture
@@ -82,7 +81,8 @@ def cache(tmp_path: Path) -> MetricsCache:
 
 
 def _downloader(archive: FakeArchive, cache: MetricsCache) -> MetricsDownloader:
-    return MetricsDownloader(cast("httpx2.AsyncClient", archive), cache)
+    http = httpx2.AsyncClient(transport=httpx2.MockTransport(archive.handler))
+    return MetricsDownloader(VisionClient(http, NO_WAIT), cache)
 
 
 class TestMetricsDownloader:
@@ -137,13 +137,22 @@ class TestMetricsDownloader:
     ) -> None:
         archive = FakeArchive({DAY0 + i for i in range(40)}, broken=DAY0 + 35)
 
-        with pytest.raises(RuntimeError, match="HTTP 500"):
+        with pytest.raises(httpx2.HTTPStatusError, match="500"):
             await _downloader(archive, cache).ensure_range(
                 "BTCUSDT", DAY0 * DAY_MS, (DAY0 + 40) * DAY_MS
             )
 
         # The first batch of 32 days was written before the failing one.
         assert len({t // DAY_MS for t in cache.load("BTCUSDT")[TIME]}) == 32
+
+    async def test_a_passing_server_error_is_retried(self, cache: MetricsCache) -> None:
+        archive = FakeArchive({DAY0, DAY0 + 1}, flaky=DAY0 + 1)
+
+        await _downloader(archive, cache).ensure_range(
+            "BTCUSDT", DAY0 * DAY_MS, (DAY0 + 2) * DAY_MS
+        )
+
+        assert {t // DAY_MS for t in cache.load("BTCUSDT")[TIME]} == {DAY0, DAY0 + 1}
 
     async def test_rejects_an_empty_range(self, cache: MetricsCache) -> None:
         with pytest.raises(ValueError, match="empty range"):

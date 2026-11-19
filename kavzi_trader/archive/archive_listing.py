@@ -1,9 +1,8 @@
 import logging
 import xml.etree.ElementTree as ET
 
-import httpx2
-
 from kavzi_trader.archive.archive_dataset_schema import ArchiveDatasetSchema
+from kavzi_trader.archive.vision_client import VisionClient
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +13,7 @@ _NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
 class ArchiveListing:
     """Lists what data.binance.vision holds, following S3's 1000-entry pages."""
 
-    def __init__(self, http: httpx2.AsyncClient) -> None:
+    def __init__(self, http: VisionClient) -> None:
         self._http = http
 
     async def periods(self, dataset: ArchiveDatasetSchema, symbol: str) -> list[str]:
