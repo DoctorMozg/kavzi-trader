@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner, Result
 
-from kavzi_trader.cli.commands import evals as evals_cli
+from kavzi_trader.cli.commands import market_data_loader
 from kavzi_trader.cli.commands.evals import eval_group
 from kavzi_trader.config import AppConfig, TradingConfigSchema
 from tests.cli.test_eval_run_command import _silenced_live_logs
@@ -136,7 +136,7 @@ def test_oi_flag_scores_oi_signals_in_the_oi_window(
     write_cache(tmp_path / "cache", frame)
     out = tmp_path / "signals.md"
     # Synthetic candles are years old; let the OI window reach back to them.
-    monkeypatch.setattr(evals_cli, "_OI_LOOKBACK_MS", 10**13)
+    monkeypatch.setattr(market_data_loader, "OI_LOOKBACK_MS", 10**13)
     client = FakeExchange(int(frame["close_time_ms"].iloc[-1]))
 
     with _silenced_live_logs():

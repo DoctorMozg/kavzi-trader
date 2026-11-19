@@ -1,6 +1,13 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
+
+from kavzi_trader.api.binance.constants import KLINE_INTERVALS
+
+MS_PER_S = 1000
+S_PER_MIN = 60
+INTERVAL_CHOICE = click.Choice(list(KLINE_INTERVALS))
 
 TREND_TRADING_SYMBOLS = [
     "BTCUSDT",
@@ -13,6 +20,13 @@ TREND_TRADING_SYMBOLS = [
     "AVAXUSDT",
 ]
 TREND_BUFFER_BAND = 0.2
+
+
+def day_start_ms(day: datetime | None) -> int:
+    """Midnight UTC of ``day`` (default: today), so same-day reruns agree."""
+    moment = day or datetime.now(UTC)
+    midnight = moment.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
+    return int(midnight.timestamp() * MS_PER_S)
 
 
 def parse_lookbacks(
