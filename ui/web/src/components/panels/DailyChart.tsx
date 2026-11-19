@@ -23,32 +23,41 @@ const FLAT_COLOR = CHART_COLORS.text;
 interface DailySeries {
   close: LineData<Time>[];
   upper: LineData<Time>[];
+  exit: LineData<Time>[];
   lower: LineData<Time>[];
   todayMs: number;
 }
 
 // Closed days, plus today's forming point at the levels the next close must break.
-function dailySeries(symbol: TrendSymbol): DailySeries {
+// The channel low is drawn only when the exit sits elsewhere (the midpoint).
+function dailySeries(symbol: TrendSymbol, midExit: boolean): DailySeries {
   const close: LineData<Time>[] = [];
   const upper: LineData<Time>[] = [];
+  const exit: LineData<Time>[] = [];
   const lower: LineData<Time>[] = [];
   for (const day of symbol.days) {
     const time = toChartTime(day.day_ms);
     close.push({ time, value: day.close, color: day.signal > 0 ? CHART_COLORS.up : FLAT_COLOR });
     if (day.upper !== null) upper.push({ time, value: day.upper });
-    if (day.lower !== null) lower.push({ time, value: day.lower });
+    if (day.exit !== null) exit.push({ time, value: day.exit });
+    if (midExit && day.lower !== null) lower.push({ time, value: day.lower });
   }
   const todayMs = (symbol.days.at(-1)?.day_ms ?? 0) + DAY_MS;
   upper.push({ time: toChartTime(todayMs), value: symbol.entry_level });
-  lower.push({ time: toChartTime(todayMs), value: symbol.exit_level });
-  return { close, upper, lower, todayMs };
+  exit.push({ time: toChartTime(todayMs), value: symbol.exit_level });
+  return { close, upper, exit, lower, todayMs };
 }
 
-function channelLine(chart: IChartApi, color: string, title: string): ISeriesApi<"Line"> {
+function channelLine(
+  chart: IChartApi,
+  color: string,
+  title: string,
+  lineStyle: LineStyle = LineStyle.Dashed,
+): ISeriesApi<"Line"> {
   return chart.addSeries(LineSeries, {
     color,
     lineWidth: 1,
-    lineStyle: LineStyle.Dashed,
+    lineStyle,
     title,
     priceLineVisible: false,
     crosshairMarkerVisible: false,
@@ -58,16 +67,18 @@ function channelLine(chart: IChartApi, color: string, title: string): ISeriesApi
 export function DailyChart({ symbol }: { symbol: string }) {
   const trendSymbol = useStore((s) => s.data.trend?.symbols.find((t) => t.symbol === symbol));
   const lookback = useStore((s) => s.data.trend?.lookback);
+  const midExit = useStore((s) => s.data.trend?.exit_rule === "mid");
   const priceText = useStore((s) => s.data.account?.prices[symbol]);
   const trades = useStore((s) => s.data.trades);
   const closed = useStore((s) => s.data.closed);
-  const series = useMemo(() => (trendSymbol ? dailySeries(trendSymbol) : null), [trendSymbol]);
+  const series = useMemo(() => (trendSymbol ? dailySeries(trendSymbol, midExit) : null), [trendSymbol, midExit]);
   const marks = useMemo(() => tradeMarks(symbol, trades, closed), [symbol, trades, closed]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const closeRef = useRef<ISeriesApi<"Line"> | null>(null);
   const upperRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const exitRef = useRef<ISeriesApi<"Line"> | null>(null);
   const lowerRef = useRef<ISeriesApi<"Line"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const fittedRef = useRef<string | null>(null);
@@ -80,13 +91,15 @@ export function DailyChart({ symbol }: { symbol: string }) {
     chartRef.current = chart;
     closeRef.current = chart.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: false });
     upperRef.current = channelLine(chart, CHART_COLORS.up, "entry");
-    lowerRef.current = channelLine(chart, CHART_COLORS.down, "exit");
+    exitRef.current = channelLine(chart, CHART_COLORS.down, "exit");
+    lowerRef.current = channelLine(chart, CHART_COLORS.text, "low", LineStyle.Dotted);
     markersRef.current = createSeriesMarkers(closeRef.current, []);
     return () => {
       chart.remove();
       chartRef.current = null;
       closeRef.current = null;
       upperRef.current = null;
+      exitRef.current = null;
       lowerRef.current = null;
       markersRef.current = null;
       fittedRef.current = null;
@@ -97,6 +110,7 @@ export function DailyChart({ symbol }: { symbol: string }) {
     if (!series) return;
     closeRef.current?.setData(series.close);
     upperRef.current?.setData(series.upper);
+    exitRef.current?.setData(series.exit);
     lowerRef.current?.setData(series.lower);
     if (fittedRef.current !== symbol) {
       chartRef.current?.timeScale().fitContent();
@@ -127,9 +141,20 @@ export function DailyChart({ symbol }: { symbol: string }) {
           <Hint plain content={`Highest close of the previous ${lookback} days. A daily close above this line turns the symbol LONG.`}>
             <span className="text-profit">- -</span> {lookback}d high: entry
           </Hint>
-          <Hint plain content={`Lowest close of the previous ${lookback} days. A daily close below this line turns the symbol FLAT.`}>
-            <span className="text-loss">- -</span> {lookback}d low: exit
-          </Hint>
+          {midExit ? (
+            <>
+              <Hint plain content={`Midpoint of the previous ${lookback} days' highest and lowest close. A daily close below this line turns the symbol FLAT.`}>
+                <span className="text-loss">- -</span> {lookback}d midpoint: exit
+              </Hint>
+              <Hint plain content={`Lowest close of the previous ${lookback} days, for reference: the old exit level.`}>
+                <span>···</span> {lookback}d low
+              </Hint>
+            </>
+          ) : (
+            <Hint plain content={`Lowest close of the previous ${lookback} days. A daily close below this line turns the symbol FLAT.`}>
+              <span className="text-loss">- -</span> {lookback}d low: exit
+            </Hint>
+          )}
           <Hint plain content="Daily close line, green on days the rule was LONG and grey when FLAT. The last point is the live price. Arrows mark actual entries and exits.">
             <span className="text-profit">━</span> long <span className="ml-1">━</span> flat
           </Hint>

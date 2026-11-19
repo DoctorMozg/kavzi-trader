@@ -77,6 +77,7 @@ export type AnnualVolTarget = number;
 export type BufferBand = number;
 export type Day = string;
 export type DisasterStopPct = number;
+export type ExitRule = "low" | "mid";
 export type Lookback = number;
 export type MaxLeverage = number;
 export type NextRebalanceMs = number;
@@ -84,19 +85,31 @@ export type AnnualVol = number | null;
 export type Close1 = number;
 export type Close2 = number;
 export type DayMs = number;
+export type Exit = number | null;
 export type Lower = number | null;
 export type Signal = number;
 export type Upper = number | null;
 export type Days = UiTrendDaySchema[];
 export type EntryLevel = number;
 export type ExitLevel = number;
+export type HourMs = number;
+export type Rv = number;
+export type TargetWeight = number;
+export type Threshold = number;
 export type HeldWeight = number;
 export type Signal1 = number;
+export type HourMs1 = number;
+export type Rv1 = number;
+export type Threshold1 = number | null;
 export type Symbol4 = string;
-export type TargetWeight = number;
+export type TargetWeight1 = number;
 export type Symbols = UiTrendSymbolSchema[];
 export type TsMs4 = number;
 export type Type4 = "trend_state";
+export type HistoryHours = number;
+export type MinHistoryHours = number;
+export type Quantile = number;
+export type Scale = number;
 export type VolWindow = number;
 export type Type5 = "snapshot";
 export type UiEvent =
@@ -229,12 +242,14 @@ export interface UiTrendStateEventSchema {
   buffer_band: BufferBand;
   day: Day;
   disaster_stop_pct: DisasterStopPct;
+  exit_rule: ExitRule;
   lookback: Lookback;
   max_leverage: MaxLeverage;
   next_rebalance_ms: NextRebalanceMs;
   symbols: Symbols;
   ts_ms: TsMs4;
   type: Type4;
+  vol_spike: UiVolSpikeRuleSchema | null;
   vol_window: VolWindow;
 }
 export interface UiTrendSymbolSchema {
@@ -243,17 +258,37 @@ export interface UiTrendSymbolSchema {
   days: Days;
   entry_level: EntryLevel;
   exit_level: ExitLevel;
+  halving: UiTrendHalvingSchema | null;
   held_weight: HeldWeight;
   signal: Signal1;
+  spike: UiVolSpikeReadingSchema | null;
   symbol: Symbol4;
-  target_weight: TargetWeight;
+  target_weight: TargetWeight1;
 }
 export interface UiTrendDaySchema {
   close: Close2;
   day_ms: DayMs;
+  exit: Exit;
   lower: Lower;
   signal: Signal;
   upper: Upper;
+}
+export interface UiTrendHalvingSchema {
+  hour_ms: HourMs;
+  rv: Rv;
+  target_weight: TargetWeight;
+  threshold: Threshold;
+}
+export interface UiVolSpikeReadingSchema {
+  hour_ms: HourMs1;
+  rv: Rv1;
+  threshold: Threshold1;
+}
+export interface UiVolSpikeRuleSchema {
+  history_hours: HistoryHours;
+  min_history_hours: MinHistoryHours;
+  quantile: Quantile;
+  scale: Scale;
 }
 /**
  * A delta; seq is consecutive after the snapshot's seq for one connection.

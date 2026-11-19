@@ -14,6 +14,7 @@ import type {
   UiTrendDaySchema,
   UiTrendStateEventSchema,
   UiTrendSymbolSchema,
+  UiVolSpikeReadingSchema,
 } from "@/generated/ui-types";
 
 export type ServerMessage = UiServerMessage;
@@ -32,3 +33,4 @@ export type Stage = Decision["stage"];
 export type TrendState = UiTrendStateEventSchema;
 export type TrendSymbol = UiTrendSymbolSchema;
 export type TrendDay = UiTrendDaySchema;
+export type VolSpikeReading = UiVolSpikeReadingSchema;

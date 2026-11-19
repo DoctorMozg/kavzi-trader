@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClosedPosition, Trade, TrendSymbol } from "@/lib/protocol";
-import { channelPosition, DAY_MS, flipDistance, tradeMarks } from "@/lib/trend";
+import { channelPosition, DAY_MS, exitName, flipDistance, fmtUtcHour, spikeRatio, tradeMarks } from "@/lib/trend";
 
 const symbol = (signal: number): TrendSymbol => ({
   symbol: "BTCUSDT",
@@ -11,6 +11,8 @@ const symbol = (signal: number): TrendSymbol => ({
   annual_vol: 0.5,
   target_weight: 0,
   held_weight: 0,
+  spike: null,
+  halving: null,
   days: [],
 });
 
@@ -81,5 +83,22 @@ describe("tradeMarks", () => {
 
   it("ignores other symbols", () => {
     expect(tradeMarks("ETHUSDT", [trade(DAY_MS, "LONG")], [close(DAY_MS)])).toEqual([]);
+  });
+});
+
+describe("exit rule and spike helpers", () => {
+  it("names the exit level by rule", () => {
+    expect(exitName({ exit_rule: "mid", lookback: 20 })).toBe("20-day midpoint");
+    expect(exitName({ exit_rule: "low", lookback: 20 })).toBe("20-day low");
+  });
+
+  it("gives the variance as a multiple of the threshold, or null without one", () => {
+    expect(spikeRatio({ hour_ms: 0, rv: 3, threshold: 2 })).toBe(1.5);
+    expect(spikeRatio({ hour_ms: 0, rv: 3, threshold: null })).toBeNull();
+    expect(spikeRatio(null)).toBeNull();
+  });
+
+  it("formats the UTC hour", () => {
+    expect(fmtUtcHour(DAY_MS + 9 * 3_600_000)).toBe("09:00 UTC");
   });
 });

@@ -1,4 +1,4 @@
-import type { ClosedPosition, Trade, TrendSymbol } from "@/lib/protocol";
+import type { ClosedPosition, Trade, TrendState, TrendSymbol, VolSpikeReading } from "@/lib/protocol";
 
 export const DAY_MS = 86_400_000;
 
@@ -9,6 +9,26 @@ export function channelPosition(price: number, low: number, high: number): numbe
   if (high <= low) return 0.5;
   return Math.min(1, Math.max(0, (price - low) / (high - low)));
 }
+
+// What a close must fall below to go FLAT, in words.
+export function exitName(state: Pick<TrendState, "exit_rule" | "lookback">): string {
+  return state.exit_rule === "mid" ? `${state.lookback}-day midpoint` : `${state.lookback}-day low`;
+}
+
+export function exitRuleText(state: Pick<TrendState, "exit_rule" | "lookback">): string {
+  const n = state.lookback;
+  return state.exit_rule === "mid"
+    ? `Midpoint of the previous ${n} daily closes' high and low. A close below it turns the symbol FLAT (mid-channel exit, adopted 2026-11-20).`
+    : `Lowest of the last ${n} daily closes. A close below it turns the symbol FLAT.`;
+}
+
+// The last closed hour's variance as a multiple of its spike threshold.
+export function spikeRatio(reading: VolSpikeReading | null): number | null {
+  if (reading === null || reading.threshold === null || reading.threshold <= 0) return null;
+  return reading.rv / reading.threshold;
+}
+
+export const fmtUtcHour = (ms: number): string => `${String(new Date(ms).getUTCHours()).padStart(2, "0")}:00 UTC`;
 
 export interface FlipDistance {
   target: "entry" | "exit";

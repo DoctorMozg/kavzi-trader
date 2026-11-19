@@ -99,6 +99,7 @@ const trendState = (close: number): TrendState => ({
   ts_ms: 1,
   day: "2026-11-17",
   lookback: 20,
+  exit_rule: "mid",
   next_rebalance_ms: 2,
   symbols: [
     {
@@ -110,7 +111,9 @@ const trendState = (close: number): TrendState => ({
       annual_vol: 0.5,
       target_weight: 0,
       held_weight: 0,
-      days: [{ day_ms: 0, close, upper: null, lower: null, signal: 0 }],
+      spike: null,
+      halving: null,
+      days: [{ day_ms: 0, close, upper: null, lower: null, exit: null, signal: 0 }],
     },
   ],
   annual_vol_target: 0.25,
@@ -118,6 +121,7 @@ const trendState = (close: number): TrendState => ({
   vol_window: 30,
   buffer_band: 0.2,
   disaster_stop_pct: 0.3,
+  vol_spike: null,
 });
 
 const ev = (seq: number, event: UiEventPayload): EventMessage => ({ type: "event", seq, event });

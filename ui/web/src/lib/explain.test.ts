@@ -11,6 +11,8 @@ const symbol = (over: Partial<TrendSymbol> = {}): TrendSymbol => ({
   annual_vol: 0.5,
   target_weight: 0,
   held_weight: 0,
+  spike: null,
+  halving: null,
   days: [],
   ...over,
 });
@@ -20,6 +22,7 @@ const state = (symbols: TrendSymbol[]): TrendState => ({
   ts_ms: 0,
   day: "2026-11-17",
   lookback: 20,
+  exit_rule: "mid",
   next_rebalance_ms: 0,
   symbols,
   annual_vol_target: 0.25,
@@ -27,6 +30,7 @@ const state = (symbols: TrendSymbol[]): TrendState => ({
   vol_window: 30,
   buffer_band: 0.2,
   disaster_stop_pct: 0.3,
+  vol_spike: { history_hours: 2160, min_history_hours: 720, quantile: 0.99, scale: 0.5 },
 });
 
 describe("bufferVerdict", () => {

@@ -8,7 +8,7 @@ import { buildDecisionPath, type PathInput } from "@/lib/decisionPath";
 import { bufferVerdict, sizeIfLong } from "@/lib/explain";
 import type { TrendState, TrendSymbol } from "@/lib/protocol";
 import { cn } from "@/lib/utils";
-import { channelPosition, flipDistance } from "@/lib/trend";
+import { channelPosition, exitName, exitRuleText, flipDistance, fmtUtcHour, spikeRatio } from "@/lib/trend";
 import { useNow } from "@/lib/useNow";
 import { useStore } from "@/state/store";
 
@@ -38,6 +38,44 @@ function PathHint({ input }: { input: PathInput }) {
       </dl>
       <p className="font-medium">{path.next}</p>
     </div>
+  );
+}
+
+function SpikeCell({ state, symbol }: { state: TrendState; symbol: TrendSymbol }) {
+  const rule = state.vol_spike;
+  if (rule === null) return <Hint content="Vol-spike halving is off.">-</Hint>;
+  const p = `p${Math.round(rule.quantile * 100)}`;
+  const days = Math.round(rule.history_hours / 24);
+  const halving = symbol.halving;
+  if (halving !== null) {
+    return (
+      <Hint
+        content={`The ${fmtUtcHour(halving.hour_ms)} hour's 1-minute variance was ${(halving.rv / halving.threshold).toFixed(1)}× the ${p} of the previous ${days} days, so the position was cut to ${fmtPlainPct(rule.scale * 100)} until the next daily rebalance restores it.`}
+      >
+        <Badge tone="amber">halved {fmtUtcHour(halving.hour_ms).slice(0, 5)}</Badge>
+      </Hint>
+    );
+  }
+  const reading = symbol.spike;
+  if (reading === null) {
+    return (
+      <Hint content={symbol.held_weight > 0 ? "First hourly check is pending." : "Checked once an hour, only while the coin is held."}>
+        -
+      </Hint>
+    );
+  }
+  const ratio = spikeRatio(reading);
+  if (ratio === null) {
+    return <Hint content={`Needs ${Math.round(rule.min_history_hours / 24)} days of hourly history before a spike can fire.`}>…</Hint>;
+  }
+  return (
+    <Hint
+      content={`Last closed hour (${fmtUtcHour(reading.hour_ms)}): 1-minute variance is ${ratio.toFixed(2)}× the ${p} of the previous ${days} days. Above 1× the position is halved until the next rebalance.`}
+    >
+      <span className={cn("tabular-nums", ratio > 1 ? "text-loss" : ratio >= 0.5 ? "text-warn" : "text-muted-foreground")}>
+        {ratio.toFixed(2)}×
+      </span>
+    </Hint>
   );
 }
 
@@ -72,6 +110,11 @@ function TrendRow({ state, symbol, price, selected, onSelect }: TrendRowProps) {
         >
           <Badge tone={isLong ? "green" : "neutral"}>{isLong ? "LONG" : "FLAT"}</Badge>
         </Hint>
+        {symbol.halving && (
+          <Badge tone="amber" className="ml-1">
+            ½
+          </Badge>
+        )}
       </Td>
       <Td right>
         <Hint content={`Live price. The rule acted on the ${state.day} daily close of ${fmtPrice(symbol.close)}.`}>
@@ -80,7 +123,7 @@ function TrendRow({ state, symbol, price, selected, onSelect }: TrendRowProps) {
       </Td>
       <Td>
         <div className="flex items-center gap-2 text-xs">
-          <Hint className="text-loss" content={`Lowest of the last ${n} daily closes. A close below it turns the symbol FLAT.`}>
+          <Hint className="text-loss" content={exitRuleText(state)}>
             {fmtPrice(symbol.exit_level)}
           </Hint>
           <Hint plain content={`Where the live price sits in the ${n}-day channel: left edge is the exit level, right edge is the entry level.`}>
@@ -110,14 +153,26 @@ function TrendRow({ state, symbol, price, selected, onSelect }: TrendRowProps) {
         )}
       </Td>
       <Td right>
+        <SpikeCell state={state} symbol={symbol} />
+      </Td>
+      <Td right>
         <Hint content={`Signal ${symbol.signal} × size. What the rule wants to hold before the buffer.`}>
           {pct(symbol.target_weight)}
         </Hint>
       </Td>
       <Td right>
-        <Hint content={bufferVerdict(symbol.target_weight, symbol.held_weight, state.buffer_band).text}>
-          {pct(symbol.held_weight)}
-        </Hint>
+        {symbol.halving ? (
+          <Hint
+            className="text-warn"
+            content={`The rule holds ${pct(symbol.held_weight)}; the ${fmtUtcHour(symbol.halving.hour_ms)} vol spike cut it to ${pct(symbol.halving.target_weight)} until the next rebalance.`}
+          >
+            {pct(symbol.halving.target_weight)}
+          </Hint>
+        ) : (
+          <Hint content={bufferVerdict(symbol.target_weight, symbol.held_weight, state.buffer_band).text}>
+            {pct(symbol.held_weight)}
+          </Hint>
+        )}
       </Td>
     </tr>
   );
@@ -135,14 +190,24 @@ export function TrendPanel() {
         {trend && (
           <span className="text-xs text-muted-foreground">
             <Hint
-              content={`Long when a daily close breaks above the previous ${trend.lookback}-day high, flat when one breaks below the ${trend.lookback}-day low. It never shorts: the long/short variant backtested worse (Sharpe 0.27 vs 0.45, drawdown -29% vs -19%, 2022-2026). Click a row for the full decision path.`}
+              content={`Long when a daily close breaks above the previous ${trend.lookback}-day high, flat when one closes below the ${exitName(trend)}. ${trend.exit_rule === "mid" ? "The midpoint exit (adopted 2026-11-20) lifted backtest Sharpe from 0.40 to 0.69 on 115 fresh coins and from 0.64 to 0.91 on the 8 traded, with smaller drawdowns. " : ""}It never shorts: the long/short variant backtested worse (Sharpe 0.27 vs 0.45, drawdown -29% vs -19%, 2022-2026). Click a row for the full decision path.`}
             >
-              {trend.lookback}d Donchian, long/flat (no shorts)
-            </Hint>{" "}
+              {trend.lookback}d Donchian, long/flat, {trend.exit_rule === "mid" ? "mid exit" : "low exit"}
+            </Hint>
+            {trend.vol_spike && (
+              <>
+                {" · "}
+                <Hint
+                  content={`Hourly, for each held coin: if the last hour's 1-minute variance tops the p${Math.round(trend.vol_spike.quantile * 100)} of the previous ${Math.round(trend.vol_spike.history_hours / 24)} days, the position drops to ${fmtPlainPct(trend.vol_spike.scale * 100)} until the next rebalance. On the 10 Oct 2025 crash replay it cut the day's loss from -3.40% to -2.10%; it costs about 0.016 Sharpe in normal times.`}
+                >
+                  spike halving
+                </Hint>
+              </>
+            )}{" "}
             · state of {trend.day} close · next rebalance in{" "}
             <Hint
               className="tabular-nums text-foreground"
-              content="The rule runs once a day at 00:01 UTC, a minute after Binance closes the daily bar. Nothing trades between runs except the disaster stop."
+              content="The rule runs once a day at 00:01 UTC, a minute after Binance closes the daily bar. Between runs only a vol-spike halving or the disaster stop trades."
             >
               {fmtDuration(trend.next_rebalance_ms - now)}
             </Hint>
@@ -158,7 +223,7 @@ export function TrendPanel() {
               <Th>Symbol</Th>
               <Th hint="LONG holds the coin at its target weight; FLAT holds nothing. There is no SHORT state. Hover a badge for why.">State</Th>
               <Th right hint="Latest price from the exchange">Live</Th>
-              <Th hint={`Exit level (${trend.lookback}-day low), live price, entry level (${trend.lookback}-day high)`}>
+              <Th hint={`Exit level (${exitName(trend)}), live price, entry level (${trend.lookback}-day high)`}>
                 Channel
               </Th>
               <Th right hint="Move from the live price to the level a daily close must break; only the 00:00 UTC close counts">
@@ -167,8 +232,11 @@ export function TrendPanel() {
               <Th right hint={`Annualised realised volatility over ${trend.vol_window} days; it sets the position size`}>
                 Vol
               </Th>
+              <Th right hint="Last closed hour's 1-minute variance as a multiple of the spike threshold; above 1× halves a held coin until the next rebalance">
+                1h vol
+              </Th>
               <Th right hint="Weight of equity the rule wants, before the turnover buffer">Target</Th>
-              <Th right hint={`Weight actually held after the ${fmtPlainPct(trend.buffer_band * 100)} turnover buffer`}>
+              <Th right hint={`Weight actually held after the ${fmtPlainPct(trend.buffer_band * 100)} turnover buffer, or after a vol-spike halving`}>
                 Held
               </Th>
             </tr>

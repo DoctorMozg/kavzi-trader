@@ -15,7 +15,7 @@ export const STAGE_TONE: Record<Stage, BadgeTone> = {
 };
 
 export const STAGE_HINT: Record<Stage, string> = {
-  trend: "Daily Donchian rule result for one symbol. This is the decision: it sets the target weight the executor trades.",
+  trend: "Daily Donchian rule result for one symbol, or an hourly vol-spike halving (HALVE). This is the decision: it sets the target weight the executor trades.",
   gate: "Shadow LLM news check on a new LONG entry. Logged for later scoring; it never changes the trade.",
   execution: "A target change the executor did not trade, with the reason (too small to matter, or a risk check failed).",
   scout: "LLM pipeline only: deterministic filter that decides whether a candle is worth sending to the Analyst.",
