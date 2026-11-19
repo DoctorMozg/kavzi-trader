@@ -132,7 +132,7 @@ It prints net Sharpe, annual return and PASS or FAIL (net Sharpe >= 0.5, net ret
     uv run kavzitrader eval refresh-cache --interval 4h --months 60 --metrics
     uv run kavzitrader eval signals --interval 4h --stride 1 --metrics --bracket 1.5:3:12
 
-No LLM calls. Asks whether each live confluence signal predicts outcomes, before any LLM sees the setup. It samples every Nth cached bar of the chosen interval, computes indicators with the live calculator over the trailing history window, and gets flags from the live `ConfluenceCalculator`. Each bar is labelled with every `--bracket SL_ATR:TP_ATR:HORIZON_BARS` (repeatable, default `1.5:3:96`). Horizons are in bars of the interval. Zero-volume bars are dropped, so a delisted coin ends at its last traded bar.
+No LLM calls. Asks whether each live confluence signal predicts outcomes, before any LLM sees the setup. It samples every Nth cached bar of the chosen interval, computes indicators with the live calculator over the trailing history window, and gets flags from the live `ConfluenceCalculator`. Each bar is labelled with every `--bracket SL_ATR:TP_ATR:HORIZON_BARS` (repeatable, default `1.5:3:96`). Horizons are in bars of the interval. Zero-volume bars are dropped, so a delisted coin ends at its last traded bar. The positioning signals (`--metrics`) rank each ratio among the last trailing-window known ratios; a bar whose latest ratio is over a day old has no rank and fires nothing (added 2026-11-19, after the fresh SHORT test; earlier `--metrics` results carried the last ratio forward with no limit).
 
 Per signal and side, the report (`results/evals/signals_<UTC time>.md`, override with `--out`) gives:
 

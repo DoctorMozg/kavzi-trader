@@ -126,3 +126,44 @@ class TestSmartVsCrowd:
 
         assert out["LONG_ls_crowding"].tolist() == [True]
         assert out["LONG_smart_vs_crowd"].tolist() == [True]
+
+
+class TestStaleRatios:
+    GAP = 101  # 15m bars: just over a day
+
+    @pytest.fixture
+    def long_frame(self) -> pd.DataFrame:
+        return make_frame(HISTORY + 150)
+
+    def _with_gap(
+        self, frame: pd.DataFrame, crowd: np.ndarray, start: int
+    ) -> pd.DataFrame:
+        metrics = _metrics(frame, crowd, np.ones(len(frame)))
+        return metrics.drop(index=range(start, start + self.GAP)).reset_index(drop=True)
+
+    def test_a_ratio_older_than_a_day_never_fires(
+        self, long_frame: pd.DataFrame
+    ) -> None:
+        crowd = np.random.default_rng(3).uniform(1.0, 2.0, len(long_frame))
+        last_seen = HISTORY + 39
+        crowd[last_seen] = 0.2
+        metrics = self._with_gap(long_frame, crowd, last_seen + 1)
+        bar = last_seen + self.GAP
+
+        out = PositioningSignals(HISTORY).add(long_frame, _samples(bar), metrics)
+
+        assert out["LONG_ls_crowding"].tolist() == [False]
+        assert out["LONG_smart_vs_crowd"].tolist() == [False]
+
+    def test_a_gap_does_not_blank_the_ranks_after_it(
+        self, long_frame: pd.DataFrame
+    ) -> None:
+        crowd = np.random.default_rng(3).uniform(1.0, 2.0, len(long_frame))
+        bar = len(long_frame) - 10
+        crowd[bar] = 0.2
+        metrics = self._with_gap(long_frame, crowd, 50)
+
+        out = PositioningSignals(HISTORY).add(long_frame, _samples(bar), metrics)
+
+        # 240 fresh ratios precede the bar, enough to rank among the last 200.
+        assert out["LONG_ls_crowding"].tolist() == [True]
