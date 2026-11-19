@@ -66,3 +66,13 @@ close-to-close returns), no costs or funding.
   symbols still archived in 2026-10 (`evals/universes/fresh_2022_survivors.txt`),
   to show how much dropping delisted coins would have flattered the result.
 - No parameter in this file may change after the first run.
+
+## Erratum (2026-11-19, after scoring)
+
+Binance keeps archiving flat zero-volume daily bars after a delisting and during
+trading pauses. The run counted them as listed days at 0%, so 39 coins were dead
+or paused for part of the window, not 14, and 26 of the 101 "survivors" were
+dead. `TrendDataLoader` now treats zero-volume bars as untraded. A labelled
+re-run of the same command scored net Sharpe 0.40 (0.01 over cash) against
+buy-and-hold's -0.05 (-28.8% a year). That is still below 0.5. The FAIL of
+record stands, and the re-run is exploratory.
