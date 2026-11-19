@@ -4,7 +4,6 @@ import { DecisionFeed } from "@/components/panels/DecisionFeed";
 import { DecisionPathPanel } from "@/components/panels/DecisionPathPanel";
 import { KpiRow } from "@/components/panels/KpiRow";
 import { PositionsTable } from "@/components/panels/PositionsTable";
-import { ShadowGatePanel } from "@/components/panels/ShadowGatePanel";
 import { TopBar } from "@/components/panels/TopBar";
 import { TrendPanel } from "@/components/panels/TrendPanel";
 import { HintProvider } from "@/components/ui/hint";
@@ -24,7 +23,6 @@ export function App() {
             </div>
             <div className="flex min-w-0 flex-col gap-3">
               <DecisionPathPanel />
-              <ShadowGatePanel />
               <div className="relative min-h-[480px] flex-1">
                 <div className="inset-0 h-[480px] lg:absolute lg:h-auto">
                   <DecisionFeed />
