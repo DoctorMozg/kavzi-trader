@@ -5,6 +5,7 @@ import click
 
 from kavzi_trader.cli.commands.eval_options import SYMBOLS_OPTION
 from kavzi_trader.config import AppConfig
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.funding_xs_backtester import FundingXsBacktester
 from kavzi_trader.evals.funding_xs_loader import UNIVERSE, FundingXsLoader
 from kavzi_trader.evals.funding_xs_metrics import FundingXsMetrics
@@ -53,8 +54,9 @@ def funding_xs_command(
     net_run = FundingXsBacktester(prices, settlements, params).run()
     gross_params = params.model_copy(update={"cost_rate": 0.0})
     gross_run = FundingXsBacktester(prices, settlements, gross_params).run()
-    net = FundingXsMetrics.summarize(net_run)
-    gross = FundingXsMetrics.summarize(gross_run)
+    cash = CashRate.from_csv()
+    net = FundingXsMetrics.summarize(net_run, cash)
+    gross = FundingXsMetrics.summarize(gross_run, cash)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = out or app_config.system.results_dir / "evals" / f"funding_xs_{stamp}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -62,6 +64,7 @@ def funding_xs_command(
     path.write_text(renderer.render(net_run, net, gross), encoding="utf-8")
     verdict = "PASS" if FundingXsMetrics.passes(net) else "FAIL"
     click.echo(
-        f"Net Sharpe {net.sharpe}, annual return {net.annual_return:+.2%}: {verdict}"
+        f"Net Sharpe {net.sharpe} ({net.sharpe_over_cash} over cash), "
+        f"annual return {net.annual_return:+.2%}: {verdict}"
     )
     click.echo(f"Report: {path}")

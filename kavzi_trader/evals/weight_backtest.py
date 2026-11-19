@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from kavzi_trader.evals.scored_inputs_schema import ScoredInputsSchema
 from kavzi_trader.evals.trend_data_schema import TrendDataSchema
 from kavzi_trader.evals.trend_metrics import TrendMetrics
 from kavzi_trader.evals.trend_portfolio import TrendPortfolio
@@ -41,7 +42,43 @@ class WeightBacktest:
     ) -> TrendResultSchema:
         """Scores return days from ``first_day`` to ``last_day``, both inclusive."""
         closes = data.closes
-        n_symbols = closes.shape[1]
+        inputs = self._scored(data, first_day, last_day)
+        run = self._portfolio.run(inputs.held, inputs.returns, inputs.funding)
+        days = inputs.days
+        raw_returns = inputs.raw_returns
+        logger.info("Backtest %d symbols over %d days", closes.shape[1], len(days))
+
+        metrics = self._metrics
+        # Equal weight over the symbols listed that day, so delistings count.
+        benchmark = pd.Series(np.nanmean(raw_returns, axis=1), index=days)
+        return TrendResultSchema(
+            symbols=list(closes.columns),
+            first_day=days[0].date().isoformat(),
+            last_day=days[-1].date().isoformat(),
+            days=len(days),
+            net=metrics.stats(pd.Series(run.net, index=days)),
+            benchmark=metrics.stats(benchmark),
+            turnover_per_year=float(run.traded.mean() * DAYS_PER_YEAR),
+            cost_drag=float(run.cost.mean() * DAYS_PER_YEAR),
+            funding_drag=float(run.funding.mean() * DAYS_PER_YEAR),
+            cash_return=metrics.cash_return(days),
+            daily_net=run.net.tolist(),
+        )
+
+    def held_weights(
+        self,
+        data: TrendDataSchema,
+        first_day: pd.Timestamp = FIRST_RETURN_DAY,
+        last_day: pd.Timestamp = LAST_RETURN_DAY,
+    ) -> pd.DataFrame:
+        """Weights held through each scored return day, as ``run`` holds them."""
+        inputs = self._scored(data, first_day, last_day)
+        return pd.DataFrame(inputs.held, index=inputs.days, columns=data.closes.columns)
+
+    def _scored(
+        self, data: TrendDataSchema, first_day: pd.Timestamp, last_day: pd.Timestamp
+    ) -> ScoredInputsSchema:
+        closes = data.closes
         weights = self._signal.weights(closes)
         if weights.shape != closes.shape:
             msg = f"signal gave weights {weights.shape} for closes {closes.shape}"
@@ -59,25 +96,10 @@ class WeightBacktest:
         if not scored.any():
             msg = f"no return days between {first_day.date()} and {last_day.date()}"
             raise ValueError(msg)
-
-        held = self._buffer.apply(weights[scored])
-        run = self._portfolio.run(held, returns[scored], funding[scored])
-        days = pd.DatetimeIndex(return_day[scored])
-        logger.info("Backtest %d symbols over %d days", n_symbols, len(days))
-
-        metrics = self._metrics
-        # Equal weight over the symbols listed that day, so delistings count.
-        benchmark = pd.Series(np.nanmean(raw_returns[scored], axis=1), index=days)
-        return TrendResultSchema(
-            symbols=list(closes.columns),
-            first_day=days[0].date().isoformat(),
-            last_day=days[-1].date().isoformat(),
-            days=len(days),
-            net=metrics.stats(pd.Series(run.net, index=days)),
-            benchmark=metrics.stats(benchmark),
-            turnover_per_year=float(run.traded.mean() * DAYS_PER_YEAR),
-            cost_drag=float(run.cost.mean() * DAYS_PER_YEAR),
-            funding_drag=float(run.funding.mean() * DAYS_PER_YEAR),
-            cash_return=metrics.cash_return(days),
-            daily_net=run.net.tolist(),
+        return ScoredInputsSchema(
+            days=pd.DatetimeIndex(return_day[scored]),
+            held=self._buffer.apply(weights[scored]),
+            returns=returns[scored],
+            funding=funding[scored],
+            raw_returns=raw_returns[scored],
         )

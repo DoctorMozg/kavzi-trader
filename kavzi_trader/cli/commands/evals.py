@@ -13,6 +13,9 @@ import click
 from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
 from kavzi_trader.cli.commands.archive import archive_command
+from kavzi_trader.cli.commands.buffer_sweep import buffer_sweep_command
+from kavzi_trader.cli.commands.crash_replay import crash_replay_command
+from kavzi_trader.cli.commands.crowding_xs import crowding_xs_command
 from kavzi_trader.cli.commands.eval_options import (
     day_start_ms,
 )
@@ -21,7 +24,12 @@ from kavzi_trader.cli.commands.refresh_cache import refresh_cache_command
 from kavzi_trader.cli.commands.replay import replay_command
 from kavzi_trader.cli.commands.signals import signals_command
 from kavzi_trader.cli.commands.trend import trend_command
+from kavzi_trader.cli.commands.trend_ablation import trend_ablation_command
 from kavzi_trader.cli.commands.trials import trials_command
+from kavzi_trader.cli.commands.vol_forecast import (
+    dvol_download_command,
+    vol_forecast_command,
+)
 from kavzi_trader.cli.commands.walk_forward import walk_forward_command
 from kavzi_trader.cli.composition import build_agent_source, load_tier_registry
 from kavzi_trader.config import AppConfig
@@ -414,3 +422,9 @@ eval_group.add_command(replay_command)
 eval_group.add_command(trials_command)
 eval_group.add_command(archive_command)
 eval_group.add_command(walk_forward_command)
+eval_group.add_command(trend_ablation_command)
+eval_group.add_command(buffer_sweep_command)
+eval_group.add_command(vol_forecast_command)
+eval_group.add_command(dvol_download_command)
+eval_group.add_command(crash_replay_command)
+eval_group.add_command(crowding_xs_command)

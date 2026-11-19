@@ -56,6 +56,11 @@ class FundingXsReportRenderer:
             ["Annualised return", pct(net.annual_return), pct(gross.annual_return)],
             ["Volatility", pct(net.annual_volatility), pct(gross.annual_volatility)],
             ["Sharpe", Md.rate(net.sharpe), Md.rate(gross.sharpe)],
+            [
+                "Sharpe over cash (3-month T-bill)",
+                Md.rate(net.sharpe_over_cash),
+                Md.rate(gross.sharpe_over_cash),
+            ],
             ["Max drawdown", pct(net.max_drawdown), pct(gross.max_drawdown)],
             [
                 "Price component (annual)",

@@ -59,6 +59,17 @@ class ArchiveSeries:
         logger.debug("%s: %d %s bars from archive", symbol, len(bars), interval)
         return bars[list(COLUMNS)].reset_index(drop=True)
 
+    def minutes(
+        self, symbol: str, columns: list[str], *, mark: bool = False
+    ) -> pd.DataFrame:
+        """Raw 1m klines (or mark-price klines), sorted by open time."""
+        dataset = ARCHIVE_DATASETS["mark" if mark else "klines"]
+        rows = self._store.load(dataset, symbol, ["open_time_ms", *columns])
+        if rows.empty:
+            msg = f"no archived 1m {dataset.name} for {symbol} under {self._root}"
+            raise FileNotFoundError(msg)
+        return rows.sort_values("open_time_ms", ignore_index=True)
+
     def daily_bars(self, symbol: str) -> pd.DataFrame:
         """Binance's own 1d klines, sorted; empty when none are stored."""
         bars = self._store.load(ARCHIVE_DATASETS["klines_1d"], symbol)

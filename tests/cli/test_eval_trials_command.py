@@ -8,22 +8,8 @@ from kavzi_trader.cli.commands.evals import eval_group
 from kavzi_trader.cli.commands.trials import trials_path
 from kavzi_trader.config import AppConfig
 from tests.cli.test_eval_run_command import _silenced_live_logs
-from tests.replay.test_replay_runner import _regime_closes, _write_archive
 
 WINDOW = ["--from", "2021-04-01", "--to", "2021-12-20"]
-
-
-@pytest.fixture
-def config(app_config: AppConfig, tmp_path: Path) -> AppConfig:
-    system = app_config.system.model_copy(update={"results_dir": tmp_path / "out"})
-    return app_config.model_copy(update={"system": system})
-
-
-@pytest.fixture
-def archive(tmp_path: Path) -> Path:
-    path = tmp_path / "archive"
-    _write_archive(path, _regime_closes())
-    return path
 
 
 def _invoke(config: AppConfig, *args: str) -> Result:

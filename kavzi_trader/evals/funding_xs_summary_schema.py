@@ -8,6 +8,8 @@ class FundingXsSummarySchema(BaseModel):
     annual_return: float
     annual_volatility: float
     sharpe: float | None
+    # Sharpe of the return minus the 3-month T-bill rate, what idle cash earned.
+    sharpe_over_cash: float | None
     max_drawdown: float
     annual_turnover: float
     annual_price_return: float

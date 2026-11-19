@@ -2,9 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.funding_xs_backtester import FundingXsBacktester
+from kavzi_trader.evals.funding_xs_day_schema import FundingXsDaySchema
 from kavzi_trader.evals.funding_xs_leg_picker import FundingXsLegPicker
 from kavzi_trader.evals.funding_xs_loader import DAY_MS
+from kavzi_trader.evals.funding_xs_metrics import FundingXsMetrics
 from kavzi_trader.evals.funding_xs_params_schema import FundingXsParamsSchema
 from kavzi_trader.evals.funding_xs_run_schema import FundingXsRunSchema
 from kavzi_trader.evals.series_cache import TIME, VALUE
@@ -132,3 +135,42 @@ class TestCosts:
         ).run()
 
         assert np.isclose(run.days[0].equity, 1.05)
+
+
+class TestSharpeOverCash:
+    @staticmethod
+    def _run(returns: list[float]) -> FundingXsRunSchema:
+        start_ms = 1_704_153_600_000  # 2024-01-02 00:00, the mark closing 2024-01-01
+        days, equity = [], 1.0
+        for i, r in enumerate(returns):
+            equity *= 1 + r
+            days.append(
+                FundingXsDaySchema(
+                    day_ms=start_ms + i * DAY_MS,
+                    price_return=r,
+                    funding_return=0.0,
+                    cost_return=0.0,
+                    equity=equity,
+                )
+            )
+        return FundingXsRunSchema(
+            days=days, rebalances=1, skipped_rebalances=0, turnover=0.0
+        )
+
+    def test_subtracting_cash_lowers_the_sharpe_and_zero_cash_changes_nothing(
+        self,
+    ) -> None:
+        returns = list(np.random.default_rng(3).normal(0.0005, 0.005, 400))
+        run = self._run(returns)
+
+        no_cash = FundingXsMetrics.summarize(run, CashRate.constant(0.0))
+        with_cash = FundingXsMetrics.summarize(run, CashRate.constant(0.05))
+
+        assert no_cash.sharpe_over_cash == pytest.approx(no_cash.sharpe)
+        assert with_cash.sharpe == no_cash.sharpe
+        assert with_cash.sharpe is not None
+        assert with_cash.sharpe_over_cash is not None
+        daily_cash = with_cash.sharpe - with_cash.sharpe_over_cash
+        # Same vol, mean lower by the daily cash return, annualised by sqrt(365).
+        expected = 0.05 / 365 / np.std(returns, ddof=1) * np.sqrt(365)
+        assert daily_cash == pytest.approx(expected)

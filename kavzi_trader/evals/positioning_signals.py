@@ -45,6 +45,13 @@ class PositioningSignals:
         out["SHORT_smart_vs_crowd"] = smart_rank <= _LOWER_RANK
         return out
 
+    def crowd_rank(
+        self, frame: pd.DataFrame, metrics: pd.DataFrame, lag_ms: int = 0
+    ) -> npt.NDArray[np.float64]:
+        """ls_crowding's rank at each bar close, from ratios ``lag_ms`` older."""
+        close_ms = frame["close_time_ms"].to_numpy(dtype=np.int64) - lag_ms
+        return self._rank(self._ratio_at(metrics, GLOBAL_RATIO, close_ms))
+
     @staticmethod
     def _ratio_at(
         metrics: pd.DataFrame, column: str, close_ms: npt.NDArray[np.int64]
