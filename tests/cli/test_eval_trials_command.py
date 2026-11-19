@@ -5,6 +5,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from kavzi_trader.cli.commands.evals import eval_group
+from kavzi_trader.cli.commands.trials import trials_path
 from kavzi_trader.config import AppConfig
 from tests.cli.test_eval_run_command import _silenced_live_logs
 from tests.replay.test_replay_runner import _regime_closes, _write_archive
@@ -54,6 +55,45 @@ def test_trend_runs_register_each_variant_once(
     assert "1 trend trials so far" in first.output
     assert "registered" not in again.output
     assert "2 trend trials so far" in other.output
+
+
+@pytest.mark.parametrize(
+    ("variant", "description", "label"),
+    [
+        (
+            "long-flat",
+            "Donchian ensemble long/flat, lookbacks [20]",
+            "long-flat lookbacks=20",
+        ),
+        (
+            "long-short",
+            "Donchian ensemble long/short, lookbacks [20]",
+            "long-short lookbacks=20",
+        ),
+        ("vol-hold", "Vol-managed hold", "vol-hold "),
+        ("sma200", "Long above the 200-day SMA", "sma200 "),
+    ],
+)
+def test_each_variant_names_its_rule_and_trial(
+    config: AppConfig, archive: Path, variant: str, description: str, label: str
+) -> None:
+    out = config.system.results_dir / "trend.md"
+
+    result = _invoke(
+        config,
+        "trend",
+        "--variant", variant,
+        "--archive-dir", str(archive),
+        "--symbols", "BTCUSDT,ETHUSDT",
+        "--lookbacks", "20",
+        "--out", str(out),
+        *WINDOW,
+    )  # fmt: skip
+
+    assert result.exception is None, result.output
+    assert description in out.read_text(encoding="utf-8")
+    trial = json.loads(trials_path(config).read_text(encoding="utf-8"))
+    assert trial["variant"].startswith(label)
 
 
 def test_trials_reports_deflated_sharpe_and_pbo(
