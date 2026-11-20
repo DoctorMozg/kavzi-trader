@@ -1,4 +1,4 @@
-import type { ClosedPosition, Trade, TrendState, TrendSymbol, VolSpikeReading } from "@/lib/protocol";
+import type { ClosedPosition, OpenPosition, Trade, TrendState, TrendSymbol, VolSpikeReading } from "@/lib/protocol";
 
 export const DAY_MS = 86_400_000;
 
@@ -58,4 +58,25 @@ export function tradeMarks(symbol: string, trades: Trade[], closed: ClosedPositi
     .filter((c) => c.symbol === symbol)
     .map((c) => ({ dayMs: dayStartMs(c.ts_ms), kind: "exit", text: c.close_reason }));
   return [...entries, ...exits].sort((a, b) => a.dayMs - b.dayMs);
+}
+
+export interface StopPoint {
+  dayMs: number;
+  value: number;
+}
+
+// The position's resting disaster stop from its open day to today, clipped to the shown days.
+// A position opened today starts a day earlier so the segment has two points.
+export function stopSegment(
+  position: Pick<OpenPosition, "stop_loss" | "opened_at_ms"> | null,
+  firstDayMs: number,
+  todayMs: number,
+): StopPoint[] {
+  const value = Number(position?.stop_loss);
+  if (position === null || !Number.isFinite(value) || value <= 0) return [];
+  const startMs = Math.max(firstDayMs, Math.min(dayStartMs(position.opened_at_ms), todayMs - DAY_MS));
+  return [
+    { dayMs: startMs, value },
+    { dayMs: todayMs, value },
+  ];
 }

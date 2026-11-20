@@ -4,6 +4,7 @@ import { SideBadge } from "@/components/ui/sideBadge";
 import { Table, Td, Th } from "@/components/ui/table";
 import { fmtDuration, fmtPct, fmtPrice, fmtQty, fmtSignedUsd, pnlClass } from "@/lib/format";
 import type { OpenPosition } from "@/lib/protocol";
+import { exitName } from "@/lib/trend";
 import { useNow } from "@/lib/useNow";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/state/store";
@@ -47,6 +48,8 @@ function PositionRow({ position, now }: { position: OpenPosition; now: number })
 
 export function PositionsTable() {
   const positions = useStore((s) => s.data.account?.positions);
+  const trend = useStore((s) => s.data.trend);
+  const exit = trend ? exitName(trend) : "channel exit";
   const now = useNow();
   return (
     <Panel>
@@ -63,7 +66,7 @@ export function PositionsTable() {
               <Th right hint="Average fill price">Entry</Th>
               <Th right hint="Live mark price used for unrealised PnL">Mark</Th>
               <Th right hint="Unrealised PnL in USDT, and as % of the entry notional">uPnL</Th>
-              <Th hint="Stop loss and take profit. Trend positions carry only the disaster stop; the rule exits on a daily close below the channel low ('signal exit').">
+              <Th hint={`Stop loss and take profit. Trend positions carry only the disaster stop and no take profit: the rule exits on a daily close below the ${exit} ('signal exit'), which trails up as the trend runs.`}>
                 SL / TP
               </Th>
               <Th right hint="Exchange leverage setting. Exposure is set by the target weight, not by this number.">Lev</Th>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClosedPosition, Trade, TrendSymbol } from "@/lib/protocol";
-import { channelPosition, DAY_MS, exitName, flipDistance, fmtUtcHour, spikeRatio, tradeMarks } from "@/lib/trend";
+import { channelPosition, DAY_MS, exitName, flipDistance, fmtUtcHour, spikeRatio, stopSegment, tradeMarks } from "@/lib/trend";
 
 const symbol = (signal: number): TrendSymbol => ({
   symbol: "BTCUSDT",
@@ -100,5 +100,31 @@ describe("exit rule and spike helpers", () => {
 
   it("formats the UTC hour", () => {
     expect(fmtUtcHour(DAY_MS + 9 * 3_600_000)).toBe("09:00 UTC");
+  });
+});
+
+describe("stopSegment", () => {
+  const today = 100 * DAY_MS;
+  const first = 90 * DAY_MS;
+
+  it("runs flat at the stop from the open day to today", () => {
+    const points = stopSegment({ stop_loss: "70.5", opened_at_ms: 95 * DAY_MS + 60_000 }, first, today);
+    expect(points).toEqual([
+      { dayMs: 95 * DAY_MS, value: 70.5 },
+      { dayMs: today, value: 70.5 },
+    ]);
+  });
+
+  it("clips an older position to the first shown day", () => {
+    expect(stopSegment({ stop_loss: "70", opened_at_ms: 10 * DAY_MS }, first, today)[0]?.dayMs).toBe(first);
+  });
+
+  it("starts a day back for a position opened today", () => {
+    expect(stopSegment({ stop_loss: "70", opened_at_ms: today + 60_000 }, first, today)[0]?.dayMs).toBe(today - DAY_MS);
+  });
+
+  it("is empty without a position or a usable stop", () => {
+    expect(stopSegment(null, first, today)).toEqual([]);
+    expect(stopSegment({ stop_loss: "0", opened_at_ms: today }, first, today)).toEqual([]);
   });
 });

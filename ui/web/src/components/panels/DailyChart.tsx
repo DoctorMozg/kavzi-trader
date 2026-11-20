@@ -14,8 +14,9 @@ import { useEffect, useMemo, useRef } from "react";
 import { Hint } from "@/components/ui/hint";
 import { EmptyState } from "@/components/ui/panel";
 import { CHART_COLORS, chartOptions, toChartTime } from "@/lib/chartTheme";
-import type { TrendSymbol } from "@/lib/protocol";
-import { DAY_MS, tradeMarks } from "@/lib/trend";
+import { fmtPrice } from "@/lib/format";
+import type { OpenPosition, TrendSymbol } from "@/lib/protocol";
+import { DAY_MS, stopSegment, tradeMarks } from "@/lib/trend";
 import { useStore } from "@/state/store";
 
 const FLAT_COLOR = CHART_COLORS.text;
@@ -25,12 +26,13 @@ interface DailySeries {
   upper: LineData<Time>[];
   exit: LineData<Time>[];
   lower: LineData<Time>[];
+  stop: LineData<Time>[];
   todayMs: number;
 }
 
 // Closed days, plus today's forming point at the levels the next close must break.
 // The channel low is drawn only when the exit sits elsewhere (the midpoint).
-function dailySeries(symbol: TrendSymbol, midExit: boolean): DailySeries {
+function dailySeries(symbol: TrendSymbol, midExit: boolean, position: OpenPosition | null): DailySeries {
   const close: LineData<Time>[] = [];
   const upper: LineData<Time>[] = [];
   const exit: LineData<Time>[] = [];
@@ -45,7 +47,11 @@ function dailySeries(symbol: TrendSymbol, midExit: boolean): DailySeries {
   const todayMs = (symbol.days.at(-1)?.day_ms ?? 0) + DAY_MS;
   upper.push({ time: toChartTime(todayMs), value: symbol.entry_level });
   exit.push({ time: toChartTime(todayMs), value: symbol.exit_level });
-  return { close, upper, exit, lower, todayMs };
+  const stop = stopSegment(position, symbol.days[0]?.day_ms ?? todayMs, todayMs).map((p) => ({
+    time: toChartTime(p.dayMs),
+    value: p.value,
+  }));
+  return { close, upper, exit, lower, stop, todayMs };
 }
 
 function channelLine(
@@ -69,9 +75,14 @@ export function DailyChart({ symbol }: { symbol: string }) {
   const lookback = useStore((s) => s.data.trend?.lookback);
   const midExit = useStore((s) => s.data.trend?.exit_rule === "mid");
   const priceText = useStore((s) => s.data.account?.prices[symbol]);
+  const position = useStore((s) => s.data.account?.positions.find((p) => p.symbol === symbol) ?? null);
+  const stopPct = useStore((s) => s.data.trend?.disaster_stop_pct);
   const trades = useStore((s) => s.data.trades);
   const closed = useStore((s) => s.data.closed);
-  const series = useMemo(() => (trendSymbol ? dailySeries(trendSymbol, midExit) : null), [trendSymbol, midExit]);
+  const series = useMemo(
+    () => (trendSymbol ? dailySeries(trendSymbol, midExit, position) : null),
+    [trendSymbol, midExit, position],
+  );
   const marks = useMemo(() => tradeMarks(symbol, trades, closed), [symbol, trades, closed]);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -80,6 +91,7 @@ export function DailyChart({ symbol }: { symbol: string }) {
   const upperRef = useRef<ISeriesApi<"Line"> | null>(null);
   const exitRef = useRef<ISeriesApi<"Line"> | null>(null);
   const lowerRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stopRef = useRef<ISeriesApi<"Line"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const fittedRef = useRef<string | null>(null);
 
@@ -93,6 +105,7 @@ export function DailyChart({ symbol }: { symbol: string }) {
     upperRef.current = channelLine(chart, CHART_COLORS.up, "entry");
     exitRef.current = channelLine(chart, CHART_COLORS.down, "exit");
     lowerRef.current = channelLine(chart, CHART_COLORS.text, "low", LineStyle.Dotted);
+    stopRef.current = channelLine(chart, CHART_COLORS.warn, "stop", LineStyle.SparseDotted);
     markersRef.current = createSeriesMarkers(closeRef.current, []);
     return () => {
       chart.remove();
@@ -101,6 +114,7 @@ export function DailyChart({ symbol }: { symbol: string }) {
       upperRef.current = null;
       exitRef.current = null;
       lowerRef.current = null;
+      stopRef.current = null;
       markersRef.current = null;
       fittedRef.current = null;
     };
@@ -112,6 +126,7 @@ export function DailyChart({ symbol }: { symbol: string }) {
     upperRef.current?.setData(series.upper);
     exitRef.current?.setData(series.exit);
     lowerRef.current?.setData(series.lower);
+    stopRef.current?.setData(series.stop);
     if (fittedRef.current !== symbol) {
       chartRef.current?.timeScale().fitContent();
       fittedRef.current = symbol;
@@ -155,6 +170,11 @@ export function DailyChart({ symbol }: { symbol: string }) {
               <span className="text-loss">- -</span> {lookback}d low: exit
             </Hint>
           )}
+          {position && series.stop.length > 0 ? (
+            <Hint plain content={`Disaster stop resting on the exchange at ${fmtPrice(Number(position.stop_loss))}, ${Math.round((stopPct ?? 0) * 100)}% below the fill. It trades only on a crash between daily closes; normally the exit line sells first.`}>
+              <span className="text-warn">· ·</span> disaster stop
+            </Hint>
+          ) : null}
           <Hint plain content="Daily close line, green on days the rule was LONG and grey when FLAT. The last point is the live price. Arrows mark actual entries and exits.">
             <span className="text-profit">━</span> long <span className="ml-1">━</span> flat
           </Hint>
