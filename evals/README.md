@@ -115,10 +115,25 @@ Seven tests from `.mz/research/2026_11_19_research_trade_algos.md`, each preregi
 | `ls_crowding` market-neutral (`crowding-xs`) | Net Sharpe -0.72, alpha -8.4% a year (t -1.25), beta -0.01 | FAIL: `ls_crowding` closes |
 
 - The mid-exit pass is narrow: its fresh lower bound is +0.009, and the bound is not deflated for the trend family's trial count.
-- Both passes went into the paper rule on 2026-11-20, by the owner's decision, without the forward paper tests their preregistrations asked for; the two were never scored together. The lookback-20 forward test (`2026_11_16_trend_lookback20_forward.md`) is a backtest on new data and still stands, but paper fills no longer follow its rule, so its execution-parity check no longer applies.
+- Both passes went into the paper rule on 2026-11-20, by the owner's decision, without the forward paper tests their preregistrations asked for; they were scored together on 2026-11-20 (below). The lookback-20 forward test (`2026_11_16_trend_lookback20_forward.md`) is a backtest on new data and still stands, but paper fills no longer follow its rule, so its execution-parity check no longer applies.
 - DVOL helps forecasting on BTC and ETH (HAR+DVOL QLIKE 0.456 against HAR's 0.550, p < 0.0001); it covers 2 of 8 coins, so it was informational only.
 - The 30% stop cost money in the replay: the BNB wick recovered within minutes, so selling at the low lost 1.2% of equity against holding.
 - Not run: the maker/taker execution A/B (test 6). The paper exchange simulates fills and live orders are not allowed, so no fill data exists.
+
+### Combined mid exit and halving (2026-11-20)
+
+`eval combined-mid-halving` scored the 2x2 on the trading 8 (same days, costs and bootstrap as above; the fresh coins have no 1m bars), preregistered in `evals/preregistrations/2026_11_20_combined_mid_halving.md`. The three single arms reproduced their 2026-11-19 Sharpes exactly (0.640, 0.905, 0.624).
+
+| Arm | Sharpe | Return | Vol | Max drawdown |
+| --- | --- | --- | --- | --- |
+| Low exit | 0.640 | 8.7% | 14.7% | -19.3% |
+| Mid exit | 0.905 | 10.2% | 11.5% | -14.9% |
+| Low exit + halving | 0.624 | 7.9% | 13.6% | -19.7% |
+| Mid exit + halving (paper rule) | 0.980 | 10.3% | 10.6% | -14.3% |
+
+- Mid gain with halving on: +0.355, interval [+0.081, +0.620] (bar +0.13): KEEP.
+- Halving under the mid exit: Sharpe +0.075, interval [-0.059, +0.208] (cost bar 0.05): KEEP. Under the low exit it cost 0.016, so the two interact mildly in the paper rule's favour.
+- The paper rule stays mid exit + halving. This is a check on the pair, not new evidence: it uses the 8 coins the rule was designed on.
 
 ### Closed lines
 
