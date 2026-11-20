@@ -2,8 +2,19 @@ import asyncio
 import logging
 import random
 import time
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from kavzi_trader.strategies.trend.trend_day_view_schema import TrendDayViewSchema
+from kavzi_trader.strategies.trend.trend_halving_schema import TrendHalvingSchema
+from kavzi_trader.strategies.trend.trend_symbol_view_schema import (
+    TrendSymbolViewSchema,
+)
+from kavzi_trader.strategies.trend.trend_view_schema import TrendViewSchema
+from kavzi_trader.strategies.trend.vol_spike_config import VolSpikeConfigSchema
+from kavzi_trader.strategies.trend.vol_spike_reading_schema import (
+    VolSpikeReadingSchema,
+)
 from kavzi_trader.ui.event_schemas import (
     UiAccountEventSchema,
     UiCandleSchema,
@@ -14,6 +25,7 @@ from kavzi_trader.ui.event_schemas import (
     UiTradeEventSchema,
 )
 from kavzi_trader.ui.publisher import UiPublisher
+from kavzi_trader.ui.recorder import UiEventRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +37,12 @@ _PIPELINE_STEP_CHANCE = 0.35
 _EXIT_CHANCE = 0.4
 _SCOUT_PASS_CHANCE = 0.5
 _ENTRY_CONFIDENCE = 0.6
+_DAY_MS = 24 * 60 * 60 * 1000
+_HOUR_MS = 60 * 60 * 1000
+_TREND_DAYS = 60
+_TREND_LOOKBACK = 20
+_HELD_WEIGHT = 0.25
+_DISASTER_STOP_PCT = 0.15
 
 
 def _now_ms() -> int:
@@ -53,9 +71,16 @@ class UiDemoFeed:
         self._bar: dict[str, list[Decimal]] = {}
         self._positions: dict[str, UiOpenPositionSchema] = {}
         self._realized = Decimal(0)
+        self._recorder = UiEventRecorder(
+            publisher,
+            initial_balance_usdt=_INITIAL_BALANCE,
+            is_paper=True,
+            session_started_at_ms=self._started_ms,
+        )
 
     async def run(self) -> None:
         await self._backfill()
+        await self._publish_trend()
         logger.info("Demo feed running for %s", ", ".join(self._symbols))
         tick = 0
         ticks_per_candle = max(1, round(self._seconds_per_candle))
@@ -94,6 +119,110 @@ class UiDemoFeed:
                 ),
             )
 
+    async def _publish_trend(self) -> None:
+        """Trend state with a halved held coin, a steady one and a flat one."""
+        today_ms = _now_ms() - _now_ms() % _DAY_MS
+        symbols = [self._trend_symbol(s, today_ms) for s in self._symbols]
+        held = {s.symbol: _HELD_WEIGHT for s in symbols[:2]}
+        weights = {s.symbol: held.get(s.symbol, 0.0) for s in symbols}
+        hour_ms = _now_ms() - _now_ms() % _HOUR_MS - _HOUR_MS
+        halved = symbols[0].symbol
+        first_day_ms = symbols[0].days[-4].day_ms
+        entry = Decimal(str(symbols[0].days[-4].close))
+        self._open_trend_position(halved, entry, first_day_ms + 5 * _HOUR_MS)
+        tomorrow = datetime.fromtimestamp(today_ms / 1000, tz=UTC) + timedelta(days=1)
+        threshold = 4.0e-5
+        view = TrendViewSchema(
+            day=datetime.fromtimestamp(today_ms / 1000, tz=UTC).date(),
+            lookback=_TREND_LOOKBACK,
+            exit_rule="mid",
+            next_rebalance_ms=int(tomorrow.timestamp() * 1000) + 60_000,
+            rebalanced=False,
+            symbols=symbols,
+            target_weights=weights,
+            held_weights=weights,
+            annual_vol_target=0.4,
+            max_leverage=1.0,
+            vol_window=30,
+            buffer_band=0.05,
+            disaster_stop_pct=_DISASTER_STOP_PCT,
+            vol_spike=VolSpikeConfigSchema(),
+            spikes={
+                halved: VolSpikeReadingSchema(
+                    hour_ms=hour_ms, rv=2.3 * threshold, threshold=threshold
+                ),
+                symbols[1].symbol: VolSpikeReadingSchema(
+                    hour_ms=hour_ms, rv=0.4 * threshold, threshold=threshold
+                ),
+            }
+            if len(symbols) > 1
+            else {},
+            halvings={
+                halved: TrendHalvingSchema(
+                    symbol=halved,
+                    hour_ms=hour_ms,
+                    rv=2.3 * threshold,
+                    threshold=threshold,
+                    target_weight=_HELD_WEIGHT / 2,
+                ),
+            },
+        )
+        await self._recorder.record_trend_view(view)
+        await self._recorder.record_halving(view.halvings[halved])
+
+    def _trend_symbol(self, symbol: str, today_ms: int) -> TrendSymbolViewSchema:
+        closes = [float(self._prices[symbol])]
+        for _ in range(_TREND_DAYS - 1):
+            closes.append(closes[-1] / (1 + self._rng.gauss(0.004, 0.025)))
+        closes.reverse()
+        days = []
+        for i, close in enumerate(closes):
+            window = closes[max(0, i - _TREND_LOOKBACK) : i]
+            full = len(window) == _TREND_LOOKBACK
+            upper = max(window) if full else None
+            lower = min(window) if full else None
+            days.append(
+                TrendDayViewSchema(
+                    day_ms=today_ms - (_TREND_DAYS - i) * _DAY_MS,
+                    close=close,
+                    upper=upper,
+                    lower=lower,
+                    exit=(upper + lower) / 2 if upper and lower else None,
+                    signal=1.0 if symbol in self._symbols[:2] else 0.0,
+                ),
+            )
+        last = days[-1]
+        return TrendSymbolViewSchema(
+            symbol=symbol,
+            signal=last.signal,
+            close=last.close,
+            entry_level=max(closes[-_TREND_LOOKBACK:]),
+            exit_level=(max(closes[-_TREND_LOOKBACK:]) + min(closes[-_TREND_LOOKBACK:]))
+            / 2,
+            annual_vol=0.55,
+            days=days,
+        )
+
+    def _open_trend_position(
+        self, symbol: str, entry: Decimal, opened_at_ms: int
+    ) -> None:
+        price = self._prices[symbol]
+        self._positions[symbol] = UiOpenPositionSchema(
+            id=f"demo-trend-{symbol}",
+            symbol=symbol,
+            side="LONG",
+            quantity=(_INITIAL_BALANCE * Decimal(str(_HELD_WEIGHT)) / price).quantize(
+                Decimal("0.0001")
+            ),
+            entry_price=entry.quantize(_QUANT),
+            mark_price=price,
+            stop_loss=(entry * Decimal(str(1 - _DISASTER_STOP_PCT))).quantize(_QUANT),
+            take_profit=None,
+            unrealized_pnl_usdt=Decimal(0),
+            leverage=1,
+            opened_at_ms=opened_at_ms,
+        )
+
     def _step_prices(self) -> None:
         for symbol in self._symbols:
             price = self._walk(self._prices[symbol], volatility=0.0015)
@@ -117,7 +246,8 @@ class UiDemoFeed:
         self._candle_open_ms += _CANDLE_MS
 
     async def _publish_pipeline_step(self) -> None:
-        symbol = self._rng.choice(self._symbols)
+        # The first symbol is the trend book's held coin; keep it open for the panel.
+        symbol = self._rng.choice(self._symbols[1:] or self._symbols)
         if symbol in self._positions and self._rng.random() < _EXIT_CHANCE:
             await self._close_position(symbol)
             return
