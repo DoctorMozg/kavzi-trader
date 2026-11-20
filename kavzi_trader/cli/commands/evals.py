@@ -14,6 +14,9 @@ from kavzi_trader.api.binance.client import BinanceClient
 from kavzi_trader.brain.config import ANTHROPIC_AGENT_DEFAULTS
 from kavzi_trader.cli.commands.archive import archive_command
 from kavzi_trader.cli.commands.buffer_sweep import buffer_sweep_command
+from kavzi_trader.cli.commands.combined_mid_halving import (
+    combined_mid_halving_command,
+)
 from kavzi_trader.cli.commands.crash_replay import crash_replay_command
 from kavzi_trader.cli.commands.crowding_xs import crowding_xs_command
 from kavzi_trader.cli.commands.eval_options import (
@@ -427,4 +430,5 @@ eval_group.add_command(buffer_sweep_command)
 eval_group.add_command(vol_forecast_command)
 eval_group.add_command(dvol_download_command)
 eval_group.add_command(crash_replay_command)
+eval_group.add_command(combined_mid_halving_command)
 eval_group.add_command(crowding_xs_command)
