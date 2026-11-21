@@ -59,9 +59,11 @@ from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.strategies.trend.daily_bar_source import DailyBarSource
 from kavzi_trader.strategies.trend.hourly_variance_store import HourlyVarianceStore
+from kavzi_trader.strategies.trend.intraday_bar_source import IntradayBarSource
 from kavzi_trader.strategies.trend.minute_variance_source import MinuteVarianceSource
 from kavzi_trader.strategies.trend.shadow_gate_runner import ShadowGateRunner
 from kavzi_trader.strategies.trend.trend_entry_gate import TrendEntryGate
+from kavzi_trader.strategies.trend.trend_following_config import DAILY_CHECK_HOURS
 from kavzi_trader.strategies.trend.trend_following_plugin import TrendFollowingPlugin
 from kavzi_trader.strategies.trend.trend_gate_log import TrendGateLog
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
@@ -327,6 +329,11 @@ class OrchestratorComposer:
             ),
             reporter=services.ui_recorder,
             spikes=spikes,
+            intraday=(
+                None
+                if trend.check_hours == DAILY_CHECK_HOURS
+                else IntradayBarSource(exchange, trend.check_hours)
+            ),
         )
         loop = StrategyLoop(
             plugin=plugin,

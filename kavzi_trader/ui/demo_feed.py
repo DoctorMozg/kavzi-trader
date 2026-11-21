@@ -2,7 +2,7 @@ import asyncio
 import logging
 import random
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from kavzi_trader.strategies.trend.trend_day_view_schema import TrendDayViewSchema
@@ -130,13 +130,14 @@ class UiDemoFeed:
         first_day_ms = symbols[0].days[-4].day_ms
         entry = Decimal(str(symbols[0].days[-4].close))
         self._open_trend_position(halved, entry, first_day_ms + 5 * _HOUR_MS)
-        tomorrow = datetime.fromtimestamp(today_ms / 1000, tz=UTC) + timedelta(days=1)
+        next_check_ms = _now_ms() - _now_ms() % (6 * _HOUR_MS) + 6 * _HOUR_MS + 60_000
         threshold = 4.0e-5
         view = TrendViewSchema(
             day=datetime.fromtimestamp(today_ms / 1000, tz=UTC).date(),
             lookback=_TREND_LOOKBACK,
             exit_rule="mid",
-            next_rebalance_ms=int(tomorrow.timestamp() * 1000) + 60_000,
+            check_hours=6,
+            next_rebalance_ms=next_check_ms,
             rebalanced=False,
             symbols=symbols,
             target_weights=weights,

@@ -815,6 +815,14 @@
           "title": "Buffer Band",
           "type": "number"
         },
+        "check_hours": {
+          "enum": [
+            6,
+            24
+          ],
+          "title": "Check Hours",
+          "type": "integer"
+        },
         "day": {
           "format": "date",
           "title": "Day",
@@ -886,6 +894,7 @@
         "day",
         "lookback",
         "exit_rule",
+        "check_hours",
         "next_rebalance_ms",
         "symbols",
         "annual_vol_target",

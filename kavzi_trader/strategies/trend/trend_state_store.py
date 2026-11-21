@@ -1,26 +1,24 @@
-from datetime import date
-
 from kavzi_trader.infra.redis_client import RedisStateClient
 from kavzi_trader.strategies.trend.trend_halving_schema import TrendHalvingSchema
 from kavzi_trader.strategies.trend.trend_state_schema import TrendStateSchema
 
 STATE_KEY = "kt:strategy:trend:state"
-_DAY_FIELD = "last_rebalance_day"
+_CHECK_FIELD = "last_check_ms"
 _WEIGHT_PREFIX = "weight:"
 _HALVING_PREFIX = "halving:"
 
 
 class TrendStateStore:
-    """Persists the rebalance day, last-set weights and halvings in one Redis hash."""
+    """Persists the last check, last-set weights and halvings in one Redis hash."""
 
     def __init__(self, redis_client: RedisStateClient) -> None:
         self._redis = redis_client
 
     async def load(self) -> TrendStateSchema:
         raw = await self._redis.hgetall(STATE_KEY)
-        day = raw.get(_DAY_FIELD)
+        check = raw.get(_CHECK_FIELD)
         return TrendStateSchema(
-            last_rebalance_day=date.fromisoformat(day) if day else None,
+            last_check_ms=int(check) if check else None,
             weights={
                 field.removeprefix(_WEIGHT_PREFIX): float(value)
                 for field, value in raw.items()
@@ -35,8 +33,8 @@ class TrendStateStore:
             },
         )
 
-    async def save_day(self, day: date) -> None:
-        await self._redis.hset(STATE_KEY, {_DAY_FIELD: day.isoformat()})
+    async def save_check(self, slot_ms: int) -> None:
+        await self._redis.hset(STATE_KEY, {_CHECK_FIELD: str(slot_ms)})
 
     async def save_weight(self, symbol: str, weight: float) -> None:
         await self._redis.hset(STATE_KEY, {f"{_WEIGHT_PREFIX}{symbol}": repr(weight)})

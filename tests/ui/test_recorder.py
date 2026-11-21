@@ -216,6 +216,7 @@ def _trend_view(rebalanced: bool) -> TrendViewSchema:
         day=date(2026, 11, 17),
         lookback=20,
         exit_rule="mid",
+        check_hours=6,
         next_rebalance_ms=2_000,
         rebalanced=rebalanced,
         symbols=[

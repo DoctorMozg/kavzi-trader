@@ -15,6 +15,24 @@ export function exitName(state: Pick<TrendState, "exit_rule" | "lookback">): str
   return state.exit_rule === "mid" ? `${state.lookback}-day midpoint` : `${state.lookback}-day low`;
 }
 
+type Checks = Pick<TrendState, "check_hours">;
+
+// The closes the rule compares with its daily levels.
+export const checkedClose = (state: Checks): string => (state.check_hours === 24 ? "daily close" : "6h close");
+
+// The closes that can flip the state next, with their UTC times.
+export const countingClose = (state: Checks): string =>
+  state.check_hours === 24 ? "a 00:00 UTC close" : "a 6h close (00, 06, 12 or 18 UTC)";
+
+export const checkSchedule = (state: Checks): string =>
+  state.check_hours === 24
+    ? "once a day at 00:01 UTC, a minute after Binance closes the daily bar"
+    : "every 6 hours at 00:01, 06:01, 12:01 and 18:01 UTC, a minute after each 6h bar closes";
+
+// Start of the check slot the state was taken at; the next check runs a minute after the next slot opens.
+export const lastCheckMs = (state: Pick<TrendState, "check_hours" | "next_rebalance_ms">): number =>
+  Math.floor(state.next_rebalance_ms / 3_600_000) * 3_600_000 - state.check_hours * 3_600_000;
+
 export function exitRuleText(state: Pick<TrendState, "exit_rule" | "lookback">): string {
   const n = state.lookback;
   return state.exit_rule === "mid"
@@ -35,7 +53,7 @@ export interface FlipDistance {
   pct: number;
 }
 
-// The move a daily close needs, from the current price, to flip the rule's state.
+// The move a checked close needs, from the current price, to flip the rule's state.
 export function flipDistance(symbol: TrendSymbol, price: number): FlipDistance {
   return symbol.signal > 0
     ? { target: "exit", pct: (symbol.exit_level / price - 1) * 100 }

@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any, Protocol
 
 import numpy as np
+import pandas as pd
 
 from kavzi_trader.strategies.strategy_intent import StrategyIntent
 from kavzi_trader.strategies.target_weight_intent_schema import (
@@ -13,14 +14,22 @@ from kavzi_trader.strategies.target_weight_intent_schema import (
 )
 from kavzi_trader.strategies.tick_result_schema import StrategyTickResultSchema
 from kavzi_trader.strategies.tick_schema import StrategyTickSchema
+from kavzi_trader.strategies.trend.channel_state_machine import ChannelStateMachine
 from kavzi_trader.strategies.trend.daily_close_provider import DailyCloseProvider
 from kavzi_trader.strategies.trend.donchian_trend_signal import DonchianTrendSignal
+from kavzi_trader.strategies.trend.intraday_close_provider import (
+    IntradayCloseProvider,
+)
 from kavzi_trader.strategies.trend.mid_exit_trend_signal import MidExitTrendSignal
 from kavzi_trader.strategies.trend.trend_following_config import (
+    DAILY_CHECK_HOURS,
     TrendFollowingConfigSchema,
 )
 from kavzi_trader.strategies.trend.trend_halving_schema import TrendHalvingSchema
 from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
+from kavzi_trader.strategies.trend.trend_rule_state_schema import (
+    TrendRuleStateSchema,
+)
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
 from kavzi_trader.strategies.trend.trend_view_builder import DAY_MS, TrendViewBuilder
 from kavzi_trader.strategies.trend.trend_view_schema import TrendViewSchema
@@ -32,7 +41,7 @@ from kavzi_trader.strategies.trend.vol_spike_reading_schema import (
 
 logger = logging.getLogger(__name__)
 
-# Run a minute after the daily close so Binance has published the final bar.
+# Run a minute after each check's bar close so Binance has published the bar.
 REBALANCE_DELAY_MS = 60_000
 RETRY_DELAY_MS = 300_000
 INTENT_TTL_MS = 3_600_000
@@ -52,7 +61,12 @@ class TrendReporter(Protocol):
 
 
 class TrendFollowingPlugin:
-    """Daily long/flat Donchian trend rule, rebalanced once per UTC day."""
+    """Long/flat daily Donchian channel, checked every ``check_hours`` hours.
+
+    Every check sizes on daily vol known at the last daily close, so checks
+    between daily closes can only enter or exit. Halvings last until the first
+    check of the next UTC day.
+    """
 
     name = "trend_following"
 
@@ -64,7 +78,13 @@ class TrendFollowingPlugin:
         reviewer: EntryReviewer | None = None,
         reporter: TrendReporter | None = None,
         spikes: VolSpikeMonitor | None = None,
+        intraday: IntradayCloseProvider | None = None,
     ) -> None:
+        if config.check_hours != DAILY_CHECK_HOURS and intraday is None:
+            msg = f"check_hours {config.check_hours} needs an intraday bar provider"
+            raise ValueError(msg)
+        self._intraday = intraday
+        self._check_ms = config.check_hours * HOUR_MS
         self._reviewer = reviewer
         self._spikes = spikes
         self._reporter = reporter
@@ -86,10 +106,11 @@ class TrendFollowingPlugin:
         self._min_bars = max(config.lookbacks) + config.vol_window + 1
         self._lookback = min(config.lookbacks)
         self._views = TrendViewBuilder(self._signal, self._lookback, VIEW_DAYS)
+        self._machine = ChannelStateMachine(self._signal)
         self._reported = False
         self._bars = bars
         self._store = store
-        self._last_day: date | None = None
+        self._last_check_ms: int | None = None
         self._weights: dict[str, float] = {}
         self._halvings: dict[str, TrendHalvingSchema] = {}
         self._pending_halvings: dict[str, TrendHalvingSchema] = {}
@@ -101,32 +122,32 @@ class TrendFollowingPlugin:
     async def tick(self, ctx: StrategyTickSchema) -> StrategyTickResultSchema:
         if not self._loaded:
             state = await self._store.load()
-            self._last_day = state.last_rebalance_day
+            self._last_check_ms = state.last_check_ms
             self._weights = dict(state.weights)
             self._halvings = dict(state.halvings)
             self._loaded = True
             logger.info(
-                "Trend state loaded: last_day=%s weights=%s halved=%s",
-                self._last_day,
+                "Trend state loaded: last_check_ms=%s weights=%s halved=%s",
+                self._last_check_ms,
                 self._weights,
                 sorted(self._halvings),
             )
-        today = self._utc_day(ctx.now_ms)
-        if self._last_day == today:
+        slot_ms = ctx.now_ms // self._check_ms * self._check_ms
+        if self._last_check_ms == slot_ms:
             if self._reporter is not None and not self._reported:
                 await self._report_held(ctx.now_ms)
             intents = [] if self._spikes is None else await self._check_spikes(ctx)
             return self._result(intents, self._next_tick_ms(ctx.now_ms))
         try:
-            intents = await self._rebalance(ctx.now_ms)
+            intents = await self._check(ctx.now_ms, slot_ms)
         except Exception:
             logger.exception(
-                "Trend rebalance failed, retrying",
-                extra={"plugin": self.name, "day": today.isoformat()},
+                "Trend check failed, retrying",
+                extra={"plugin": self.name, "slot_ms": slot_ms},
             )
             return self._result([], ctx.now_ms + RETRY_DELAY_MS)
-        await self._store.save_day(today)
-        self._last_day = today
+        await self._store.save_check(slot_ms)
+        self._last_check_ms = slot_ms
         return self._result(intents, self._next_tick_ms(ctx.now_ms))
 
     def on_enqueued(self, intent: StrategyIntent) -> None:
@@ -248,7 +269,7 @@ class TrendFollowingPlugin:
         reason = (
             f"vol spike {hour:%H}:00 UTC: 1h variance {halving.rv:.3g} > "
             f"p{self._quantile_pct()} {halving.threshold:.3g}; "
-            f"halve until the next rebalance"
+            f"halve until the first check of the next UTC day"
         )
         return TargetWeightIntentSchema(
             strategy=self.name,
@@ -279,34 +300,48 @@ class TrendFollowingPlugin:
             )
         )
 
-    async def _rebalance(self, now_ms: int) -> list[StrategyIntent]:
+    async def _check(self, now_ms: int, slot_ms: int) -> list[StrategyIntent]:
         closes = await self._fetch_closes(now_ms)
-        targets = np.array([self._target_weight(closes[s]) for s in self._symbols])
+        states = await self._rule_states(closes, now_ms, slot_ms)
+        raw = self._targets(closes, states)
+        targets = np.array([raw[s] for s in self._symbols])
         held = np.array([self._weights.get(s, 0.0) for s in self._symbols])
         buffered = self._buffer.step(targets, held)
+        new_day = self._last_check_ms is None or self._utc_day(
+            self._last_check_ms
+        ) != self._utc_day(slot_ms)
+        restored = list(self._halvings) if new_day else []
         intents: list[StrategyIntent] = []
-        for symbol, new, old, raw in zip(
+        for symbol, new, old, target in zip(
             self._symbols, buffered, held, targets, strict=True
         ):
-            if new != old or symbol in self._halvings:
-                reason = f"weight {old:.4f} -> {new:.4f} (raw target {raw:.4f})"
-                if symbol in self._halvings:
-                    reason += "; restores the vol-spike halving"
-                intents.append(self._intent(symbol, float(new), reason, now_ms))
-        if self._halvings:
-            await self._store.clear_halvings(list(self._halvings))
-            self._halvings.clear()
-        self._pending_halvings.clear()
-        self._readings.clear()
+            if new == old and symbol not in restored:
+                continue
+            reason = f"weight {old:.4f} -> {new:.4f} (raw target {target:.4f})"
+            if symbol in restored:
+                reason += "; restores the vol-spike halving"
+            elif symbol in self._halvings:
+                reason += "; ends the vol-spike halving"
+                restored.append(symbol)
+            intents.append(self._intent(symbol, float(new), reason, now_ms, slot_ms))
+        if restored:
+            await self._store.clear_halvings(restored)
+            for symbol in restored:
+                self._halvings.pop(symbol, None)
+        if new_day:
+            self._pending_halvings.clear()
+            self._readings.clear()
         logger.info(
-            "Trend rebalance %s: %d of %d symbols changed",
-            self._utc_day(now_ms),
+            "Trend check %s: %d of %d symbols changed",
+            self._slot_label(slot_ms),
             len(intents),
             len(self._symbols),
         )
         if self._reporter is not None:
             held_now = dict(zip(self._symbols, map(float, buffered), strict=True))
-            await self._report(self._view(closes, held_now, now_ms, rebalanced=True))
+            await self._report(
+                self._view(closes, states, raw, held_now, now_ms, rebalanced=True)
+            )
         return intents
 
     async def _fetch_closes(self, now_ms: int) -> dict[str, np.ndarray]:
@@ -319,22 +354,82 @@ class TrendFollowingPlugin:
             closes[symbol] = series
         return closes
 
-    def _target_weight(self, closes: np.ndarray) -> float:
-        return float(self._signal.compute(closes, len(self._symbols)).weight[-1])
+    def _targets(
+        self, closes: dict[str, np.ndarray], states: dict[str, TrendRuleStateSchema]
+    ) -> dict[str, float]:
+        """Raw rule weight per symbol: its state now x the size from daily vol."""
+        n = len(self._symbols)
+        return {
+            s: states[s].state * float(self._signal.vol_scale(closes[s])[-1]) / n
+            for s in self._symbols
+        }
+
+    async def _rule_states(
+        self, closes: dict[str, np.ndarray], now_ms: int, slot_ms: int
+    ) -> dict[str, TrendRuleStateSchema]:
+        return {
+            s: await self._rule_state(s, closes[s], now_ms, slot_ms)
+            for s in self._symbols
+        }
+
+    async def _rule_state(
+        self, symbol: str, daily: np.ndarray, now_ms: int, slot_ms: int
+    ) -> TrendRuleStateSchema:
+        if self._intraday is None:
+            # Daily checks: the bars are the daily closes themselves.
+            days = np.arange(len(daily))
+            day_states = np.mean(
+                [
+                    self._machine.states(daily, daily, days, lb)
+                    for lb in self._config.lookbacks
+                ],
+                axis=0,
+            )
+            return TrendRuleStateSchema(
+                state=float(day_states[-1]), day_states=day_states.tolist()
+            )
+        count = HISTORY_DAYS * DAY_MS // self._check_ms - 1
+        bars = await self._intraday.closes(symbol, count, now_ms)
+        if not bars.open_time_ms or bars.open_time_ms[-1] + self._check_ms != slot_ms:
+            msg = f"{symbol}: the bar closing at {self._slot_label(slot_ms)} is missing"
+            raise ValueError(msg)
+        # daily[-1] is yesterday's close, so daily[i] is day (today - len + i).
+        first_day = now_ms // DAY_MS - len(daily)
+        bar_days = np.array(bars.open_time_ms) // DAY_MS - first_day
+        kept = (bar_days >= 0) & (bar_days <= len(daily))
+        states = self._machine.states(
+            daily, np.array(bars.closes)[kept], bar_days[kept], self._lookback
+        )
+        by_day = (
+            pd.Series(states)
+            .groupby(bar_days[kept])
+            .last()
+            .reindex(range(len(daily)))
+            .ffill()
+            .fillna(0.0)
+        )
+        return TrendRuleStateSchema(state=float(states[-1]), day_states=by_day.tolist())
 
     async def _report_held(self, now_ms: int) -> None:
-        """After a same-day restart, reports the held state without trading."""
+        """After a restart within a check slot, reports the held state, no trades."""
         try:
             closes = await self._fetch_closes(now_ms)
+            slot_ms = now_ms // self._check_ms * self._check_ms
+            states = await self._rule_states(closes, now_ms, slot_ms)
         except Exception:
             logger.exception("Trend view fetch failed", extra={"plugin": self.name})
             return
         held = {s: self._weights.get(s, 0.0) for s in self._symbols}
-        await self._report(self._view(closes, held, now_ms, rebalanced=False))
+        targets = self._targets(closes, states)
+        await self._report(
+            self._view(closes, states, targets, held, now_ms, rebalanced=False)
+        )
 
     def _view(
         self,
         closes: dict[str, np.ndarray],
+        states: dict[str, TrendRuleStateSchema],
+        targets: dict[str, float],
         held: dict[str, float],
         now_ms: int,
         rebalanced: bool,
@@ -345,13 +440,14 @@ class TrendFollowingPlugin:
             day=self._utc_day(now_ms),
             lookback=self._lookback,
             exit_rule=self._config.exit_rule,
-            next_rebalance_ms=self._next_rebalance_ms(now_ms),
+            check_hours=self._config.check_hours,
+            next_rebalance_ms=self._next_check_ms(now_ms),
             rebalanced=rebalanced,
             symbols=[
-                self._views.symbol_view(s, closes[s], last_day_ms)
+                self._views.symbol_view(s, closes[s], states[s], last_day_ms)
                 for s in self._symbols
             ],
-            target_weights={s: self._target_weight(closes[s]) for s in self._symbols},
+            target_weights=targets,
             held_weights=held,
             annual_vol_target=self._config.annual_vol_target,
             max_leverage=self._config.max_leverage,
@@ -375,11 +471,11 @@ class TrendFollowingPlugin:
             logger.exception("Trend view report failed", extra={"plugin": self.name})
 
     def _intent(
-        self, symbol: str, weight: float, reason: str, now_ms: int
+        self, symbol: str, weight: float, reason: str, now_ms: int, slot_ms: int
     ) -> TargetWeightIntentSchema:
         return TargetWeightIntentSchema(
             strategy=self.name,
-            intent_id=f"{self.name}:{self._utc_day(now_ms)}:{symbol}",
+            intent_id=f"{self.name}:{self._slot_label(slot_ms)}:{symbol}",
             symbol=symbol,
             target_weight=Decimal(repr(weight)),
             disaster_stop_pct=self._disaster_stop_pct,
@@ -392,16 +488,19 @@ class TrendFollowingPlugin:
     def _utc_day(now_ms: int) -> date:
         return datetime.fromtimestamp(now_ms / 1000, tz=UTC).date()
 
+    @staticmethod
+    def _slot_label(slot_ms: int) -> str:
+        return datetime.fromtimestamp(slot_ms / 1000, tz=UTC).strftime("%Y-%m-%dT%H")
+
     def _next_tick_ms(self, now_ms: int) -> int:
         """Hourly while halving is on, a minute after each 1m bar of the hour closes."""
-        rebalance_ms = self._next_rebalance_ms(now_ms)
+        check_ms = self._next_check_ms(now_ms)
         if self._spikes is None:
-            return rebalance_ms
-        return min(rebalance_ms, (now_ms // HOUR_MS + 1) * HOUR_MS + REBALANCE_DELAY_MS)
+            return check_ms
+        return min(check_ms, (now_ms // HOUR_MS + 1) * HOUR_MS + REBALANCE_DELAY_MS)
 
-    @staticmethod
-    def _next_rebalance_ms(now_ms: int) -> int:
-        return (now_ms // DAY_MS + 1) * DAY_MS + REBALANCE_DELAY_MS
+    def _next_check_ms(self, now_ms: int) -> int:
+        return (now_ms // self._check_ms + 1) * self._check_ms + REBALANCE_DELAY_MS
 
     @staticmethod
     def _result(

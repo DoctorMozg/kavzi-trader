@@ -136,7 +136,7 @@ Main configuration lives in `config/config.yaml`, loaded through `kavzi_trader.c
 
 Top-level sections: `system`, `api`, `brain`, `scout`, `trading`, `futures`, `risk`, `position_management`, `filters`, `redis`, `execution`, `events`, `orchestrator`, `monitoring`, `ui`, `external_sources`, `paper`.
 
-`strategy.active` picks what feeds the execution queue: `trend_following` (the default, a daily Donchian trend rule, paper only, started with `--paper`) or `llm_pipeline` (Scout, Analyst, Trader). The LLM pipeline lost to buy-and-hold in its July 2026 replay; see `evals/README.md`.
+`strategy.active` picks what feeds the execution queue: `trend_following` (the default, a Donchian trend rule on daily levels checked at every 6h close, paper only, started with `--paper`) or `llm_pipeline` (Scout, Analyst, Trader). The LLM pipeline lost to buy-and-hold in its July 2026 replay; see `evals/README.md`.
 
 `paper.mode` is `PAPER`, `LIVE` or `DISABLED`. It also sets the initial balance, commission rate and `reset_on_start` (`false`, the default, keeps paper positions across restarts; trend following requires it).
 

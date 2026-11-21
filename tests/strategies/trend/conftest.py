@@ -24,7 +24,7 @@ def tick_at(day: int) -> StrategyTickSchema:
 
 @pytest.fixture
 def config() -> TrendFollowingConfigSchema:
-    return TrendFollowingConfigSchema(symbols=SYMBOLS)
+    return TrendFollowingConfigSchema(symbols=SYMBOLS, check_hours=24)
 
 
 @pytest.fixture

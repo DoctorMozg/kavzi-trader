@@ -124,7 +124,8 @@ def make_trend_state(
         day=date(2026, 11, 17),
         lookback=20,
         exit_rule="mid",
-        next_rebalance_ms=ts_ms + 86_400_000,
+        check_hours=6,
+        next_rebalance_ms=ts_ms + 21_600_000,
         symbols=[
             UiTrendSymbolSchema(
                 symbol="BTCUSDT",

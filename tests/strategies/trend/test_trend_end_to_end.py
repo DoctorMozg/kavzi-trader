@@ -40,7 +40,7 @@ async def test_trend_intents_open_expected_positions(rig: Rig) -> None:
     bars = FakeDailyBars(_closes())
     bars.upto = 99
     plugin = TrendFollowingPlugin(
-        TrendFollowingConfigSchema(symbols=SYMBOLS),
+        TrendFollowingConfigSchema(symbols=SYMBOLS, check_hours=24),
         bars,
         TrendStateStore(rig.redis_client),
     )

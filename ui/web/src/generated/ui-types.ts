@@ -75,6 +75,7 @@ export type Type3 = "trade";
 export type Trades = UiTradeEventSchema[];
 export type AnnualVolTarget = number;
 export type BufferBand = number;
+export type CheckHours = 6 | 24;
 export type Day = string;
 export type DisasterStopPct = number;
 export type ExitRule = "low" | "mid";
@@ -240,6 +241,7 @@ export interface UiTradeEventSchema {
 export interface UiTrendStateEventSchema {
   annual_vol_target: AnnualVolTarget;
   buffer_band: BufferBand;
+  check_hours: CheckHours;
   day: Day;
   disaster_stop_pct: DisasterStopPct;
   exit_rule: ExitRule;

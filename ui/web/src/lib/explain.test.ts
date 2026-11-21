@@ -23,6 +23,7 @@ const state = (symbols: TrendSymbol[]): TrendState => ({
   day: "2026-11-17",
   lookback: 20,
   exit_rule: "mid",
+  check_hours: 6,
   next_rebalance_ms: 0,
   symbols,
   annual_vol_target: 0.25,

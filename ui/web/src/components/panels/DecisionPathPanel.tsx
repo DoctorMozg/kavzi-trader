@@ -2,6 +2,7 @@ import { useSelectedSymbol } from "@/components/panels/SymbolTabs";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, Panel, PanelHeader } from "@/components/ui/panel";
 import { buildDecisionPath, type PathStep } from "@/lib/decisionPath";
+import { checkSchedule } from "@/lib/trend";
 import { useNow } from "@/lib/useNow";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/state/store";
@@ -80,8 +81,8 @@ export function DecisionPathPanel() {
                 {path.next}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Steps 1 to 3 run once a day on the closed daily bar. Only step 1 can open or close a
-                position; steps 2 to 6 decide how much and how safely.
+                Steps 1 to 3 run {checkSchedule(trend)}. Only step 1 can open or close a position;
+                steps 2 to 6 decide how much and how safely.
               </p>
             </div>
           );

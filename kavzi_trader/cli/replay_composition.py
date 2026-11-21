@@ -50,6 +50,7 @@ from kavzi_trader.spine.risk.regime_policy import RegimePolicy
 from kavzi_trader.spine.risk.volatility import VolatilityRegimeDetector
 from kavzi_trader.spine.state.manager import StateManager
 from kavzi_trader.strategies.strategy_plugin import StrategyPlugin
+from kavzi_trader.strategies.trend.trend_following_config import DAILY_CHECK_HOURS
 from kavzi_trader.strategies.trend.trend_following_plugin import TrendFollowingPlugin
 from kavzi_trader.strategies.trend.trend_state_store import TrendStateStore
 
@@ -211,8 +212,12 @@ class ReplayComposer:
         redis_client: RedisStateClient,
     ) -> StrategyPlugin:
         if strategy == "trend_following" and data.daily_closes is not None:
+            # Replays carry daily closes only, so they run the daily checks.
             trend = self._config.strategy.trend_following.model_copy(
-                update={"symbols": list(data.candles)},
+                update={
+                    "symbols": list(data.candles),
+                    "check_hours": DAILY_CHECK_HOURS,
+                },
             )
             return TrendFollowingPlugin(
                 trend,

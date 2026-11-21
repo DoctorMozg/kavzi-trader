@@ -586,7 +586,7 @@ paper:
 # Strategy — which plugin feeds the execution queue
 # -----------------------------------------------------------------------------
 strategy:
-  # trend_following = daily Donchian trend rule (default); paper only, needs
+  # trend_following = Donchian trend rule on daily levels (default); paper only, needs
   # paper.reset_on_start: false and --paper.
   # llm_pipeline = Scout -> Analyst -> Trader. Its July 2026 replay lost 4% vs
   # +7.8% buy-and-hold, with direction worse than random (evals/README.md).
@@ -595,7 +595,8 @@ strategy:
   # EXPERIMENTAL: the rule failed its 20/40/80 preregistration; lookback 20
   # alone is under a paper-only forward test until 2027-11-16. Since
   # 2026-11-20 the paper rule also uses the mid-channel exit and vol-spike
-  # halving (evals/README.md, research trials 2026-11-19).
+  # halving (evals/README.md, research trials 2026-11-19); since 2026-11-21
+  # it checks the daily channel at every 6h close (check_hours below).
   trend_following:
     # Must all be listed in trading.symbols. Weight per symbol is scaled by 1/N.
     symbols:
@@ -613,6 +614,11 @@ strategy:
     # midpoint of the lookback high and low (backtest Sharpe 0.40 -> 0.69 on
     # 115 fresh coins, 0.64 -> 0.91 on these 8).
     exit_rule: mid
+    # Hours between checks of the daily channel against the last closed bar:
+    # 24 = once a day; 6 = at every 6h close (00/06/12/18 UTC), B-6h. Sizing
+    # stays daily, so 6h checks only enter or exit. B-6h beat daily in backtests
+    # but its holdout test was INCONCLUSIVE; chosen by the owner 2026-11-21.
+    check_hours: 6
     vol_window: 30
     # Annualised vol target per unit weight, capped at max_leverage.
     annual_vol_target: 0.25
@@ -627,7 +633,7 @@ strategy:
     leverage: 2
     # Hourly check of each held coin: if the last hour's 1m realized variance
     # tops the `quantile` of the previous `history_hours` hours, the position
-    # drops to `scale` of itself until the next daily rebalance. No spike fires
+    # drops to `scale` of itself until the next day's first check. No spike fires
     # before `min_history_hours` of history. Rules fixed in
     # evals/preregistrations/2026_11_19_crash_replay.md; the first check
     # backfills 90 days of 1m bars per held coin into Redis.

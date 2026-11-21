@@ -10,7 +10,7 @@ const STALE_ACCOUNT_S = 5;
 const LOOP_HINT: Record<string, string> = {
   ingest: "Streams candles and prices from Binance into the market data cache.",
   order_flow: "Polls funding rate, open interest and liquidation data.",
-  reasoning: "Runs the active strategy: in trend mode, the daily Donchian rebalance.",
+  reasoning: "Runs the active strategy: in trend mode, the Donchian channel checks.",
   execution: "Turns strategy intents into orders, after risk validation.",
   position: "Watches open positions: stops, partial and time exits.",
   ui_snapshot: "Publishes account, candles and gate inputs to this dashboard.",

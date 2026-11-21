@@ -304,6 +304,7 @@ class UiEventRecorder:
                 day=view.day,
                 lookback=view.lookback,
                 exit_rule=view.exit_rule,
+                check_hours=view.check_hours,
                 next_rebalance_ms=view.next_rebalance_ms,
                 symbols=[
                     UiTrendSymbolSchema(

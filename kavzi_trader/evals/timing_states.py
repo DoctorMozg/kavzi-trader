@@ -1,5 +1,6 @@
 import numpy as np
 
+from kavzi_trader.strategies.trend.channel_state_machine import ChannelStateMachine
 from kavzi_trader.strategies.trend.mid_exit_trend_signal import MidExitTrendSignal
 
 
@@ -11,6 +12,7 @@ class TimingStates:
 
     def __init__(self, signal: MidExitTrendSignal, lookback: int) -> None:
         self._signal = signal
+        self._machine = ChannelStateMachine(signal)
         self._lookback = lookback
 
     def on_bars(self, bar_closes: np.ndarray) -> np.ndarray:
@@ -30,20 +32,11 @@ class TimingStates:
         Bars closing during UTC day x face the levels x's own close faces: the
         max and midpoint of the previous ``lookback`` daily closes.
         """
-        states = np.zeros_like(bar_closes)
-        for j in range(bar_closes.shape[1]):
-            channel = self._signal.channel(daily_closes[:, j], self._lookback)
-            upper = np.repeat(channel.upper, per_day)
-            exit_ = np.repeat(
-                self._signal.exit_level(channel.upper, channel.lower), per_day
+        bar_days = np.repeat(np.arange(len(daily_closes)), per_day)
+        columns = [
+            self._machine.states(
+                daily_closes[:, j], bar_closes[:, j], bar_days, self._lookback
             )
-            price = bar_closes[:, j]
-            current = 0.0
-            for b in range(len(price)):
-                # NaN levels or prices compare False and leave the state alone.
-                if price[b] > upper[b]:
-                    current = 1.0
-                elif price[b] < exit_[b]:
-                    current = 0.0
-                states[b, j] = current
-        return states
+            for j in range(bar_closes.shape[1])
+        ]
+        return np.column_stack(columns)

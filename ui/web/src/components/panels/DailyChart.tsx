@@ -16,7 +16,7 @@ import { EmptyState } from "@/components/ui/panel";
 import { CHART_COLORS, chartOptions, toChartTime } from "@/lib/chartTheme";
 import { fmtPrice } from "@/lib/format";
 import type { OpenPosition, TrendSymbol } from "@/lib/protocol";
-import { DAY_MS, stopSegment, tradeMarks } from "@/lib/trend";
+import { checkedClose, DAY_MS, stopSegment, tradeMarks } from "@/lib/trend";
 import { useStore } from "@/state/store";
 
 const FLAT_COLOR = CHART_COLORS.text;
@@ -74,6 +74,8 @@ export function DailyChart({ symbol }: { symbol: string }) {
   const trendSymbol = useStore((s) => s.data.trend?.symbols.find((t) => t.symbol === symbol));
   const lookback = useStore((s) => s.data.trend?.lookback);
   const midExit = useStore((s) => s.data.trend?.exit_rule === "mid");
+  const checkHours = useStore((s) => s.data.trend?.check_hours ?? 24);
+  const close = checkedClose({ check_hours: checkHours });
   const priceText = useStore((s) => s.data.account?.prices[symbol]);
   const position = useStore((s) => s.data.account?.positions.find((p) => p.symbol === symbol) ?? null);
   const stopPct = useStore((s) => s.data.trend?.disaster_stop_pct);
@@ -153,12 +155,12 @@ export function DailyChart({ symbol }: { symbol: string }) {
       <div ref={containerRef} className="absolute inset-0" />
       {series ? (
         <div className="absolute left-2 top-1 z-10 flex gap-3 text-[11px] text-muted-foreground">
-          <Hint plain content={`Highest close of the previous ${lookback} days. A daily close above this line turns the symbol LONG.`}>
+          <Hint plain content={`Highest close of the previous ${lookback} days. A ${close} above this line turns the symbol LONG.`}>
             <span className="text-profit">- -</span> {lookback}d high: entry
           </Hint>
           {midExit ? (
             <>
-              <Hint plain content={`Midpoint of the previous ${lookback} days' highest and lowest close. A daily close below this line turns the symbol FLAT.`}>
+              <Hint plain content={`Midpoint of the previous ${lookback} days' highest and lowest close. A ${close} below this line turns the symbol FLAT.`}>
                 <span className="text-loss">- -</span> {lookback}d midpoint: exit
               </Hint>
               <Hint plain content={`Lowest close of the previous ${lookback} days, for reference: the old exit level.`}>
@@ -166,16 +168,16 @@ export function DailyChart({ symbol }: { symbol: string }) {
               </Hint>
             </>
           ) : (
-            <Hint plain content={`Lowest close of the previous ${lookback} days. A daily close below this line turns the symbol FLAT.`}>
+            <Hint plain content={`Lowest close of the previous ${lookback} days. A ${close} below this line turns the symbol FLAT.`}>
               <span className="text-loss">- -</span> {lookback}d low: exit
             </Hint>
           )}
           {position && series.stop.length > 0 ? (
-            <Hint plain content={`Disaster stop resting on the exchange at ${fmtPrice(Number(position.stop_loss))}, ${Math.round((stopPct ?? 0) * 100)}% below the fill. It trades only on a crash between daily closes; normally the exit line sells first.`}>
+            <Hint plain content={`Disaster stop resting on the exchange at ${fmtPrice(Number(position.stop_loss))}, ${Math.round((stopPct ?? 0) * 100)}% below the fill. It trades only on a crash between ${close}s; normally the exit line sells first.`}>
               <span className="text-warn">· ·</span> disaster stop
             </Hint>
           ) : null}
-          <Hint plain content="Daily close line, green on days the rule was LONG and grey when FLAT. The last point is the live price. Arrows mark actual entries and exits.">
+          <Hint plain content="Daily close line, green on days the rule was LONG at the day's last check and grey when FLAT. The last point is the live price. Arrows mark actual entries and exits.">
             <span className="text-profit">━</span> long <span className="ml-1">━</span> flat
           </Hint>
         </div>

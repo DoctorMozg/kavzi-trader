@@ -3,7 +3,10 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from kavzi_trader.strategies.trend.trend_following_config import TrendExitRule
+from kavzi_trader.strategies.trend.trend_following_config import (
+    TrendCheckHours,
+    TrendExitRule,
+)
 from kavzi_trader.strategies.trend.trend_halving_schema import TrendHalvingSchema
 from kavzi_trader.strategies.trend.trend_symbol_view_schema import (
     TrendSymbolViewSchema,
@@ -15,11 +18,12 @@ from kavzi_trader.strategies.trend.vol_spike_reading_schema import (
 
 
 class TrendViewSchema(BaseModel):
-    """The trend rule's state for every symbol, reported once per UTC day."""
+    """The trend rule's state for every symbol, reported at each check."""
 
     day: Annotated[date, Field()]
     lookback: Annotated[int, Field(ge=1)]
     exit_rule: Annotated[TrendExitRule, Field()]
+    check_hours: Annotated[TrendCheckHours, Field()]
     next_rebalance_ms: Annotated[int, Field(ge=0)]
     # False when the view is a restart re-report of a day already rebalanced.
     rebalanced: Annotated[bool, Field()]

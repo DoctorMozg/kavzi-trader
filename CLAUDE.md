@@ -44,7 +44,7 @@ cd docker && docker compose up -d
 
 ### Brain-Spine Paradigm
 
-`strategy.active` defaults to `trend_following` (daily Donchian rule in `strategies/trend/`, paper only). The LLM Brain below runs when it is set to `llm_pipeline`; its July 2026 replay lost to buy-and-hold (`evals/README.md`).
+`strategy.active` defaults to `trend_following` (Donchian rule on daily levels checked every 6h, in `strategies/trend/`, paper only). The LLM Brain below runs when it is set to `llm_pipeline`; its July 2026 replay lost to buy-and-hold (`evals/README.md`).
 
 **Brain (LLM Layer)** — `kavzi_trader/brain/`
 - Scout (deterministic rule filter in `spine/filters/scout.py`, <1ms, no LLM) → Analyst (LLM, `claude-sonnet-5-5` via direct Anthropic API) → Trader (LLM, `claude-opus-5-5` via direct Anthropic API); OpenRouter is a supported per-agent alternative (`provider: openrouter`)

@@ -25,6 +25,7 @@ const state = (symbols: TrendSymbol[]): TrendState => ({
   day: "2026-11-17",
   lookback: 20,
   exit_rule: "mid",
+  check_hours: 6,
   next_rebalance_ms: 0,
   symbols,
   annual_vol_target: 0.25,
@@ -86,6 +87,17 @@ describe("buildDecisionPath", () => {
     expect(path.next).toContain("below 90.000 (-10.0% from 100.000). That takes it FLAT, never SHORT");
   });
 
+  it.each([
+    [6, "Enter only if a 6h close (00, 06, 12 or 18 UTC) lands above", "A 6h close"],
+    [24, "Enter only if a 00:00 UTC close lands above", "A daily close"],
+  ] as const)("names the closes a %ih check acts on", (hours, next, direction) => {
+    const base = input(symbol());
+    const path = buildDecisionPath({ ...base, state: { ...base.state, check_hours: hours } });
+    expect(path.next).toContain(next);
+    const long = buildDecisionPath({ ...input(symbol({ signal: 1 })), state: { ...base.state, check_hours: hours } });
+    expect(long.steps[0]?.text).toContain(direction);
+  });
+
   it("names the mid-channel exit in the direction step", () => {
     const long = symbol({ signal: 1, target_weight: 0.25, held_weight: 0.25 });
     expect(buildDecisionPath(input(long)).steps[0]?.text).toContain("20-day midpoint (90.000)");
@@ -105,7 +117,7 @@ describe("buildDecisionPath", () => {
     const step = buildDecisionPath(input(halved)).steps.find((s) => s.key === "halving");
     expect(step?.value).toBe("halved → 12.0%");
     expect(step?.text).toContain("10:00 UTC hour's 1-minute variance was 3.0× the p99 of the previous 90 days");
-    expect(step?.text).toContain("next daily rebalance restores");
+    expect(step?.text).toContain("first check of the next UTC day restores");
   });
 
   it("drops the spike step when halving is off", () => {

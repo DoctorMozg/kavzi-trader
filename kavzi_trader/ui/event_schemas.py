@@ -192,6 +192,8 @@ class UiTrendStateEventSchema(BaseModel):
     day: Annotated[date, Field(...)]
     lookback: Annotated[int, Field(..., ge=1)]
     exit_rule: Annotated[Literal["low", "mid"], Field(...)]
+    # Hours between checks of the daily channel: 24 = daily closes only.
+    check_hours: Annotated[Literal[6, 24], Field(...)]
     next_rebalance_ms: Annotated[int, Field(..., ge=0)]
     symbols: Annotated[list[UiTrendSymbolSchema], Field(...)]
     annual_vol_target: Annotated[float, Field(...)]

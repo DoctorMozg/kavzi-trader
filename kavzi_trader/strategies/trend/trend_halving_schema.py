@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class TrendHalvingSchema(BaseModel):
-    """A vol-spike halving of one symbol, undone at the next daily rebalance."""
+    """A vol-spike halving of one symbol, undone at the next day's first check."""
 
     symbol: Annotated[str, Field(min_length=1)]
     hour_ms: Annotated[int, Field(ge=0)]

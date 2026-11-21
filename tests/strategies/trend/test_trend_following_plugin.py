@@ -137,7 +137,9 @@ class TestParityWithBacktest:
         exit_rule: TrendExitRule,
         signal_type: type[DonchianTrendSignal],
     ) -> None:
-        config = TrendFollowingConfigSchema(symbols=SYMBOLS, exit_rule=exit_rule)
+        config = TrendFollowingConfigSchema(
+            symbols=SYMBOLS, exit_rule=exit_rule, check_hours=24
+        )
         plugin = TrendFollowingPlugin(config, bars, store)
         signal = signal_type(TrendParamsSchema(lookbacks=(20,)))
         targets = np.column_stack(
@@ -194,7 +196,7 @@ class TestPersistence:
         ]
         stored = await store.load()
         assert stored.weights
-        assert stored.last_rebalance_day is not None
+        assert stored.last_check_ms is not None
 
 
 class RecordingReviewer:

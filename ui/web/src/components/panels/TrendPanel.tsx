@@ -8,7 +8,18 @@ import { buildDecisionPath, type PathInput } from "@/lib/decisionPath";
 import { bufferVerdict, sizeIfLong } from "@/lib/explain";
 import type { TrendState, TrendSymbol } from "@/lib/protocol";
 import { cn } from "@/lib/utils";
-import { channelPosition, exitName, exitRuleText, flipDistance, fmtUtcHour, spikeRatio } from "@/lib/trend";
+import {
+  channelPosition,
+  checkedClose,
+  checkSchedule,
+  countingClose,
+  exitName,
+  exitRuleText,
+  flipDistance,
+  fmtUtcHour,
+  lastCheckMs,
+  spikeRatio,
+} from "@/lib/trend";
 import { useNow } from "@/lib/useNow";
 import { useStore } from "@/state/store";
 
@@ -50,7 +61,7 @@ function SpikeCell({ state, symbol }: { state: TrendState; symbol: TrendSymbol }
   if (halving !== null) {
     return (
       <Hint
-        content={`The ${fmtUtcHour(halving.hour_ms)} hour's 1-minute variance was ${(halving.rv / halving.threshold).toFixed(1)}× the ${p} of the previous ${days} days, so the position was cut to ${fmtPlainPct(rule.scale * 100)} until the next daily rebalance restores it.`}
+        content={`The ${fmtUtcHour(halving.hour_ms)} hour's 1-minute variance was ${(halving.rv / halving.threshold).toFixed(1)}× the ${p} of the previous ${days} days, so the position was cut to ${fmtPlainPct(rule.scale * 100)} until the first check of the next UTC day restores it.`}
       >
         <Badge tone="amber">halved {fmtUtcHour(halving.hour_ms).slice(0, 5)}</Badge>
       </Hint>
@@ -70,7 +81,7 @@ function SpikeCell({ state, symbol }: { state: TrendState; symbol: TrendSymbol }
   }
   return (
     <Hint
-      content={`Last closed hour (${fmtUtcHour(reading.hour_ms)}): 1-minute variance is ${ratio.toFixed(2)}× the ${p} of the previous ${days} days. Above 1× the position is halved until the next rebalance.`}
+      content={`Last closed hour (${fmtUtcHour(reading.hour_ms)}): 1-minute variance is ${ratio.toFixed(2)}× the ${p} of the previous ${days} days. Above 1× the position is halved until the first check of the next UTC day.`}
     >
       <span className={cn("tabular-nums", ratio > 1 ? "text-loss" : ratio >= 0.5 ? "text-warn" : "text-muted-foreground")}>
         {ratio.toFixed(2)}×
@@ -117,7 +128,7 @@ function TrendRow({ state, symbol, price, selected, onSelect }: TrendRowProps) {
         )}
       </Td>
       <Td right>
-        <Hint content={`Live price. The rule acted on the ${state.day} daily close of ${fmtPrice(symbol.close)}.`}>
+        <Hint content={`Live price. The last daily close was ${fmtPrice(symbol.close)}.`}>
           {fmtPrice(price)}
         </Hint>
       </Td>
@@ -129,7 +140,7 @@ function TrendRow({ state, symbol, price, selected, onSelect }: TrendRowProps) {
           <Hint plain content={`Where the live price sits in the ${n}-day channel: left edge is the exit level, right edge is the entry level.`}>
             <ChannelBar low={symbol.exit_level} high={symbol.entry_level} price={price} />
           </Hint>
-          <Hint className="text-profit" content={`Highest of the last ${n} daily closes. A close above it turns the symbol LONG.`}>
+          <Hint className="text-profit" content={`Highest of the last ${n} daily closes. A ${checkedClose(state)} above it turns the symbol LONG.`}>
             {fmtPrice(symbol.entry_level)}
           </Hint>
         </div>
@@ -164,7 +175,7 @@ function TrendRow({ state, symbol, price, selected, onSelect }: TrendRowProps) {
         {symbol.halving ? (
           <Hint
             className="text-warn"
-            content={`The rule holds ${pct(symbol.held_weight)}; the ${fmtUtcHour(symbol.halving.hour_ms)} vol spike cut it to ${pct(symbol.halving.target_weight)} until the next rebalance.`}
+            content={`The rule holds ${pct(symbol.held_weight)}; the ${fmtUtcHour(symbol.halving.hour_ms)} vol spike cut it to ${pct(symbol.halving.target_weight)} until the first check of the next UTC day.`}
           >
             {pct(symbol.halving.target_weight)}
           </Hint>
@@ -190,7 +201,7 @@ export function TrendPanel() {
         {trend && (
           <span className="text-xs text-muted-foreground">
             <Hint
-              content={`Long when a daily close breaks above the previous ${trend.lookback}-day high, flat when one closes below the ${exitName(trend)}. ${trend.exit_rule === "mid" ? "The midpoint exit (adopted 2026-11-20) lifted backtest Sharpe from 0.40 to 0.69 on 115 fresh coins and from 0.64 to 0.91 on the 8 traded, with smaller drawdowns. " : ""}It never shorts: the long/short variant backtested worse (Sharpe 0.27 vs 0.45, drawdown -29% vs -19%, 2022-2026). Click a row for the full decision path.`}
+              content={`Long when a ${checkedClose(trend)} breaks above the previous ${trend.lookback}-day high, flat when one closes below the ${exitName(trend)}. ${trend.exit_rule === "mid" ? "The midpoint exit (adopted 2026-11-20) lifted backtest Sharpe from 0.40 to 0.69 on 115 fresh coins and from 0.64 to 0.91 on the 8 traded, with smaller drawdowns. " : ""}It never shorts: the long/short variant backtested worse (Sharpe 0.27 vs 0.45, drawdown -29% vs -19%, 2022-2026). Click a row for the full decision path.`}
             >
               {trend.lookback}d Donchian, long/flat, {trend.exit_rule === "mid" ? "mid exit" : "low exit"}
             </Hint>
@@ -198,16 +209,16 @@ export function TrendPanel() {
               <>
                 {" · "}
                 <Hint
-                  content={`Hourly, for each held coin: if the last hour's 1-minute variance tops the p${Math.round(trend.vol_spike.quantile * 100)} of the previous ${Math.round(trend.vol_spike.history_hours / 24)} days, the position drops to ${fmtPlainPct(trend.vol_spike.scale * 100)} until the next rebalance. On the 10 Oct 2025 crash replay it cut the day's loss from -3.40% to -2.10%; it costs about 0.016 Sharpe in normal times.`}
+                  content={`Hourly, for each held coin: if the last hour's 1-minute variance tops the p${Math.round(trend.vol_spike.quantile * 100)} of the previous ${Math.round(trend.vol_spike.history_hours / 24)} days, the position drops to ${fmtPlainPct(trend.vol_spike.scale * 100)} until the first check of the next UTC day. On the 10 Oct 2025 crash replay it cut the day's loss from -3.40% to -2.10%; it costs about 0.016 Sharpe in normal times.`}
                 >
                   spike halving
                 </Hint>
               </>
             )}{" "}
-            · state of {trend.day} close · next rebalance in{" "}
+            · state at the {fmtUtcHour(lastCheckMs(trend))} check · next check in{" "}
             <Hint
               className="tabular-nums text-foreground"
-              content="The rule runs once a day at 00:01 UTC, a minute after Binance closes the daily bar. Between runs only a vol-spike halving or the disaster stop trades."
+              content={`The rule runs ${checkSchedule(trend)}. Between runs only a vol-spike halving or the disaster stop trades.`}
             >
               {fmtDuration(trend.next_rebalance_ms - now)}
             </Hint>
@@ -226,7 +237,7 @@ export function TrendPanel() {
               <Th hint={`Exit level (${exitName(trend)}), live price, entry level (${trend.lookback}-day high)`}>
                 Channel
               </Th>
-              <Th right hint="Move from the live price to the level a daily close must break; only the 00:00 UTC close counts">
+              <Th right hint={`Move from the live price to the level the next checked close must break: ${countingClose(trend)}`}>
                 Flip
               </Th>
               <Th right hint={`Annualised realised volatility over ${trend.vol_window} days; it sets the position size`}>

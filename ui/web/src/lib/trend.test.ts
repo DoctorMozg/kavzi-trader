@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { ClosedPosition, Trade, TrendSymbol } from "@/lib/protocol";
-import { channelPosition, DAY_MS, exitName, flipDistance, fmtUtcHour, spikeRatio, stopSegment, tradeMarks } from "@/lib/trend";
+import {
+  channelPosition,
+  DAY_MS,
+  exitName,
+  flipDistance,
+  fmtUtcHour,
+  lastCheckMs,
+  spikeRatio,
+  stopSegment,
+  tradeMarks,
+} from "@/lib/trend";
 
 const symbol = (signal: number): TrendSymbol => ({
   symbol: "BTCUSDT",
@@ -126,5 +136,14 @@ describe("stopSegment", () => {
   it("is empty without a position or a usable stop", () => {
     expect(stopSegment(null, first, today)).toEqual([]);
     expect(stopSegment({ stop_loss: "0", opened_at_ms: today }, first, today)).toEqual([]);
+  });
+});
+
+describe("lastCheckMs", () => {
+  it("is the slot before the next check, which runs a minute after its slot opens", () => {
+    const hour = 3_600_000;
+    const next = 20_000 * DAY_MS + 12 * hour + 60_000;
+    expect(lastCheckMs({ check_hours: 6, next_rebalance_ms: next })).toBe(20_000 * DAY_MS + 6 * hour);
+    expect(lastCheckMs({ check_hours: 24, next_rebalance_ms: 20_001 * DAY_MS + 60_000 })).toBe(20_000 * DAY_MS);
   });
 });
