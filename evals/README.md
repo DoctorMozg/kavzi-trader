@@ -135,9 +135,22 @@ Seven tests from `.mz/research/2026_11_19_research_trade_algos.md`, each preregi
 - Halving under the mid exit: Sharpe +0.075, interval [-0.059, +0.208] (cost bar 0.05): KEEP. Under the low exit it cost 0.016, so the two interact mildly in the paper rule's favour.
 - The paper rule stays mid exit + halving. This is a check on the pair, not new evidence: it uses the 8 coins the rule was designed on.
 
-### Timing of the trend rule (prepared 2026-11-20, not scored)
+### Timing of the trend rule (2026-11-21)
 
-`eval trend-timing --universe fresh|trading` scores six arms against the daily paper rule, preregistered in `evals/preregistrations/2026_11_20_trend_timing.md`: the mid-exit rule on 12h, 6h and 4h bars (`A-*`), and the daily 20-day channel checked at every 12h, 6h and 4h close (`B-*`). It needs the `klines_1h` mirror (`eval archive --dataset klines_1h --symbols ...`, 1h bars from data.binance.vision; the prereg has the full command) and builds every bar length from it. Weights are held between checks and returns are summed to UTC days, so the paired Sharpe test and Bonferroni-adjusted interval compare day by day with the base (`timing_backtest.py`, `timing_verdict.py`). Each arm registers a trial.
+`eval trend-timing --universe fresh|trading` scored six arms against the daily paper rule (mid exit, no halving), preregistered in `evals/preregistrations/2026_11_20_trend_timing.md`: the mid-exit rule on 12h, 6h and 4h bars (`A-*`, lookback 20 bars), and the daily 20-day channel checked at every 12h, 6h and 4h close (`B-*`). Bars come from the `klines_1h` mirror (`eval archive --dataset klines_1h`). Weights are held between checks and returns are summed to UTC days for the paired test; the decision interval is Bonferroni-adjusted (98.33% per arm). Both base reproductions (0.688 fresh, 0.905 trading) and the bar integrity checks passed.
+
+| Arm | Fresh Sharpe | Fresh diff, 90% / adjusted interval | Trading Sharpe (diff) | Trades/yr fresh | Decision |
+| --- | --- | --- | --- | --- | --- |
+| Base (daily) | 0.688 | | 0.905 | 1811 | |
+| A-12h | 0.482 | -0.206, [-0.643, +0.237] / [-0.833, +0.424] | 0.956 (+0.051) | 3488 | REJECT |
+| A-6h | 0.405 | -0.283, [-0.859, +0.308] / [-1.110, +0.567] | 1.059 (+0.154) | 6617 | REJECT |
+| A-4h | 0.155 | -0.533, [-1.227, +0.198] / [-1.565, +0.501] | 0.756 (-0.149) | 9813 | REJECT |
+| B-12h | 0.803 | +0.115, [+0.002, +0.232] / [-0.043, +0.286] | 1.147 (+0.243) | 1995 | REJECT |
+| B-6h | 0.848 | +0.160, [+0.012, +0.306] / [-0.046, +0.375] | 1.219 (+0.315) | 2145 | REJECT |
+| B-4h | 0.799 | +0.111, [-0.093, +0.321] / [-0.180, +0.408] | 1.209 (+0.304) | 2225 | REJECT |
+
+- A (shorter bars) is worse on the fresh coins at every speed and doubles to quintuples trading: closed.
+- B (same channel, checked more often) is better on both universes at every speed, with smaller fresh drawdowns (-9.4% to -10.9% against -12.0%) and about 10-20% more trades. B-12h and B-6h clear the plain 90% bar on the fresh coins but not the preregistered adjusted one, so all six arms are REJECT and the paper rule stays daily. B is a lead for a new test on unseen data, not a result; the same data can't be re-scored to rescue it.
 
 ### Closed lines
 
