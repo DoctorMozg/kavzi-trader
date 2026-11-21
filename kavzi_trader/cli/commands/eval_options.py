@@ -19,6 +19,17 @@ TREND_TRADING_SYMBOLS = [
     "LINKUSDT",
     "AVAXUSDT",
 ]
+# Trend holdout of 2026_11_16_trend_following.md; untouched by the timing arms.
+TREND_HOLDOUT_SYMBOLS = [
+    "DOGEUSDT",
+    "LTCUSDT",
+    "DOTUSDT",
+    "BCHUSDT",
+    "ATOMUSDT",
+    "TRXUSDT",
+    "ETCUSDT",
+    "FILUSDT",
+]
 TREND_BUFFER_BAND = 0.2
 FRESH_UNIVERSE_FILE = Path("evals/universes/fresh_2022.txt")
 

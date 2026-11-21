@@ -1,3 +1,5 @@
+from typing import Literal
+
 from kavzi_trader.evals.bar_quality_schema import BarQualitySchema
 from kavzi_trader.evals.timing_arm_schema import TIMING_ARMS
 from kavzi_trader.evals.validation.paired_sharpe_schema import PairedSharpeSchema
@@ -36,8 +38,20 @@ class TimingVerdict:
         return paired.difference >= 0
 
     @staticmethod
+    def holdout_outcome(
+        paired: PairedSharpeSchema,
+    ) -> Literal["confirm", "inconclusive", "fail"]:
+        """Holdout 8: the 90% lower bound must clear zero to confirm."""
+        if paired.lower > 0:
+            return "confirm"
+        return "inconclusive" if paired.difference > 0 else "fail"
+
+    @staticmethod
     def reproduction_error(universe: str, base_sharpe: float | None) -> str | None:
-        expected = REPRODUCED[universe]
+        # The holdout has no earlier mid-exit score to reproduce.
+        expected = REPRODUCED.get(universe)
+        if expected is None:
+            return None
         if base_sharpe is None or abs(base_sharpe - expected) > REPRODUCTION_TOLERANCE:
             return f"base Sharpe {base_sharpe}, 2026-11-19 reports gave {expected}"
         return None

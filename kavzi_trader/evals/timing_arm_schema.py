@@ -39,3 +39,5 @@ TIMING_ARMS = tuple(
     for approach in ("A", "B")
     for hours in (12, 6, 4)
 )
+# The one arm 2026_11_21_trend_timing_holdout.md confirms on the holdout coins.
+HOLDOUT_ARM = TimingArmSchema(approach="B", hours=6)

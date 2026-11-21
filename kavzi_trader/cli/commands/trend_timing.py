@@ -9,6 +9,7 @@ from kavzi_trader.cli.commands.eval_options import (
     SYMBOLS_FILE_OPTION,
     SYMBOLS_OPTION,
     TREND_BUFFER_BAND,
+    TREND_HOLDOUT_SYMBOLS,
     TREND_TRADING_SYMBOLS,
     read_symbols_file,
     resolve_symbols,
@@ -19,7 +20,7 @@ from kavzi_trader.config import AppConfig
 from kavzi_trader.evals.archive_series import ArchiveSeries
 from kavzi_trader.evals.cash_rate import CashRate
 from kavzi_trader.evals.intraday_data_loader import IntradayDataLoader
-from kavzi_trader.evals.timing_arm_schema import TIMING_ARMS
+from kavzi_trader.evals.timing_arm_schema import HOLDOUT_ARM, TIMING_ARMS
 from kavzi_trader.evals.timing_report_renderer import TimingReportRenderer
 from kavzi_trader.evals.timing_scorer import TimingScorer
 from kavzi_trader.evals.timing_verdict import TimingVerdict
@@ -30,7 +31,9 @@ from kavzi_trader.strategies.trend.trend_params_schema import TrendParamsSchema
 
 
 @click.command("trend-timing")
-@click.option("--universe", type=click.Choice(["fresh", "trading"]), required=True)
+@click.option(
+    "--universe", type=click.Choice(["fresh", "trading", "holdout"]), required=True
+)
 @window_options
 @click.option("--prereg", default=None, help="Preregistration file the report cites.")
 @click.option("--out", type=click.Path(path_type=Path, dir_okay=False), default=None)
@@ -48,24 +51,27 @@ def trend_timing_command(
     symbols: list[str] | None,
     symbols_file: list[str] | None,
 ) -> None:
-    """Score the six timing arms of the trend rule against the daily rule."""
+    """Score the timing arms of the trend rule against the daily rule.
+
+    The holdout scores only B-6h, the arm its own preregistration confirms.
+    """
     app_config: AppConfig = ctx.obj["app_config"]
     fee = float(app_config.paper.commission_rate)
+    defaults = {"trading": TREND_TRADING_SYMBOLS, "holdout": TREND_HOLDOUT_SYMBOLS}
     default = (
         read_symbols_file(FRESH_UNIVERSE_FILE)
         if universe == "fresh"
-        else TREND_TRADING_SYMBOLS
+        else defaults[universe]
     )
+    arms = (HOLDOUT_ARM,) if universe == "holdout" else TIMING_ARMS
     names = resolve_symbols(symbols, symbols_file, default)
     data = load_trend_data(archive_dir, names)
     loader = IntradayDataLoader(ArchiveSeries(archive_dir))
     try:
-        intraday = loader.load(
-            names, data.closes, sorted({arm.hours for arm in TIMING_ARMS})
-        )
+        intraday = loader.load(names, data.closes, sorted({arm.hours for arm in arms}))
     except FileNotFoundError as exc:
         raise click.ClickException(str(exc)) from exc
-    verdict = TimingVerdict()
+    verdict = TimingVerdict(len(arms))
     scorer = TimingScorer(
         TrendParamsSchema(lookbacks=(20,)),
         TREND_BUFFER_BAND,
@@ -80,6 +86,7 @@ def trend_timing_command(
             intraday,
             pd.Timestamp(start_day),
             pd.Timestamp(end_day) - pd.Timedelta(days=1),
+            arms,
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc

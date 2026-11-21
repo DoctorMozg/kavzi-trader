@@ -127,18 +127,27 @@ class TimingReportRenderer:
             ]
             for o in run.arms
         ]
-        rule = (
-            "fresh: adjusted lower bound > 0."
-            if run.universe == "fresh"
-            else "trading: Sharpe difference >= 0."
-        )
-        note = (
-            f"Criterion on this universe, {rule} An arm is an ADOPT candidate only "
-            "if it passes on both universes."
-        )
+        if run.universe == "holdout":
+            note = (
+                "Criterion on the holdout: CONFIRM if the 90% lower bound > 0, "
+                "INCONCLUSIVE if the difference is positive but the interval "
+                "reaches zero, FAIL otherwise."
+            )
+        else:
+            rule = (
+                "fresh: adjusted lower bound > 0."
+                if run.universe == "fresh"
+                else "trading: Sharpe difference >= 0."
+            )
+            note = (
+                f"Criterion on this universe, {rule} An arm is an ADOPT candidate "
+                "only if it passes on both universes."
+            )
         return "\n\n".join([text, Md.table(headers, rows), note])
 
     def _criterion(self, universe: str, outcome: TimingArmOutcomeSchema) -> str:
+        if universe == "holdout":
+            return self._verdict.holdout_outcome(outcome.paired)
         if universe == "fresh":
             passed = self._verdict.fresh_passes(outcome.adjusted)
         else:

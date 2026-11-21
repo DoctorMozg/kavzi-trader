@@ -54,6 +54,23 @@ class TestTrendTimingCommand:
         assert "Trial registered" not in again.output
         assert len(trials_path(config).read_text(encoding="utf-8").splitlines()) == 6
 
+    def test_holdout_scores_only_b_6h_and_registers_one_trial(
+        self, config: AppConfig, hourly_archive: Path
+    ) -> None:
+        out = config.system.results_dir / "holdout.md"
+        args = ["trend-timing", "--universe", "holdout", "--archive-dir"]
+        args += [str(hourly_archive), *SYMBOLS, *WINDOW, "--out", str(out)]
+
+        result = _invoke(config, *args)
+
+        assert result.exception is None, result.output
+        report = out.read_text(encoding="utf-8")
+        assert "| B-6h |" in report
+        assert all(f"| {label} |" not in report for label in LABELS if label != "B-6h")
+        assert "Reproduction: VOID" not in report
+        assert "Criterion on the holdout" in report
+        assert result.output.count("Trial registered") == 1
+
     def test_missing_hourly_klines_name_the_archive_command(
         self, config: AppConfig, archive: Path
     ) -> None:

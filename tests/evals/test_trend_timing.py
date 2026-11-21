@@ -293,6 +293,26 @@ class TestBonferroniVerdict:
         assert (error is None) is ok
         assert set(REPRODUCED) == {"fresh", "trading"}
 
+    @pytest.mark.parametrize(
+        ("lower", "difference", "outcome"),
+        [
+            (1e-9, 0.2, "confirm"),
+            (0.0, 0.2, "inconclusive"),
+            (-0.3, 1e-9, "inconclusive"),
+            (-0.3, 0.0, "fail"),
+        ],
+    )
+    def test_holdout_confirms_only_above_zero_and_fails_without_a_gain(
+        self, lower: float, difference: float, outcome: str
+    ) -> None:
+        assert self.verdict.holdout_outcome(_paired(lower, difference)) == outcome
+
+    def test_holdout_has_no_base_to_reproduce(self) -> None:
+        assert self.verdict.reproduction_error("holdout", 0.1) is None
+
+    def test_one_arm_keeps_the_plain_90_percent_level(self) -> None:
+        assert TimingVerdict(1).adjusted_confidence == pytest.approx(0.90)
+
     def test_the_adjusted_interval_is_wider_than_the_90_percent_one(self) -> None:
         rng = np.random.default_rng(4)
         base = list(rng.normal(0.0005, 0.02, 600))
