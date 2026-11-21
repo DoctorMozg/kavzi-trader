@@ -9,10 +9,12 @@ class PairedSharpeSchema(BaseModel):
     base_sharpe: float
     arm_sharpe: float
     difference: float
-    # Two-sided 90% interval of the difference: 5th and 95th bootstrap percentiles.
+    # Two-sided interval of the difference at ``confidence``; 90% is the 5th and 95th
+    # bootstrap percentiles.
     lower: float
     upper: float
     # Share of bootstrap differences at or below zero.
     p_not_better: float
     resamples: int
     mean_block_days: int
+    confidence: float = 0.90

@@ -224,3 +224,67 @@ def test_a_month_is_written_whole_or_not_at_all(tmp_path: Path) -> None:
 
     assert not list(tmp_path.rglob("*.partial"))
     assert store.load(FUNDING, "X")["time_ms"].dtype == "int64"
+
+
+HOURLY = ARCHIVE_DATASETS["klines_1h"]
+HOUR_MS = 3_600_000
+
+
+def _hourly_key(symbol: str, period: str, *, daily: bool = False) -> str:
+    cadence = "daily" if daily else "monthly"
+    stem = HOURLY.file_stem(symbol, period)
+    return f"data/futures/um/{cadence}/{HOURLY.symbol_dir(symbol)}/{stem}.zip"
+
+
+def _hourly_csv(first_ms: int, count: int) -> str:
+    rows = [
+        f"{first_ms + i * HOUR_MS},1.0,2.0,0.5,{1.5 + i},10,"
+        f"{first_ms + (i + 1) * HOUR_MS - 1},15,3,4,6,0"
+        for i in range(count)
+    ]
+    return "\n".join(rows)
+
+
+class TestHourlyKlines:
+    async def test_hours_are_mirrored_beside_the_other_intervals(
+        self, downloader: ArchiveDownloader, delisted: FakeVision, store: ArchiveStore
+    ) -> None:
+        delisted.add(
+            _hourly_key("BTCUSDT", "2020-01"),
+            "BTCUSDT-1h-2020-01.csv",
+            _hourly_csv(JAN_MS, 3),
+        )
+
+        assert await _sync(downloader, "BTCUSDT", dataset=HOURLY) == (1, 0)
+
+        path = store.path(HOURLY, "BTCUSDT", "2020-01")
+        assert path.parent.parts[-3:] == ("klines", "BTCUSDT", "1h")
+        rows = store.load(HOURLY, "BTCUSDT")
+        assert rows["open_time_ms"].tolist() == [JAN_MS + i * HOUR_MS for i in range(3)]
+        assert rows["close"].tolist() == [1.5, 2.5, 3.5]
+        assert store.months(KLINES, "BTCUSDT") == []
+
+    async def test_a_day_the_monthly_file_lacks_comes_from_the_daily_hours(
+        self, downloader: ArchiveDownloader, delisted: FakeVision, store: ArchiveStore
+    ) -> None:
+        delisted.add(
+            _hourly_key("BTCUSDT", "2020-01"),
+            "BTCUSDT-1h-2020-01.csv",
+            _hourly_csv(JAN_MS, 2),
+        )
+        for day, first_ms in (("2020-01-01", JAN_MS), ("2020-01-02", JAN_MS + DAY_MS)):
+            delisted.add(
+                _hourly_key("BTCUSDT", day, daily=True),
+                f"BTCUSDT-1h-{day}.csv",
+                _hourly_csv(first_ms, 2),
+            )
+
+        await _sync(downloader, "BTCUSDT", dataset=HOURLY)
+
+        times = store.load(HOURLY, "BTCUSDT")["open_time_ms"].tolist()
+        assert times == [
+            JAN_MS,
+            JAN_MS + HOUR_MS,
+            JAN_MS + DAY_MS,
+            JAN_MS + DAY_MS + HOUR_MS,
+        ]

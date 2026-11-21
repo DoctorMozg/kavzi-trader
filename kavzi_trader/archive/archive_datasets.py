@@ -19,6 +19,8 @@ ARCHIVE_DATASETS = {
     "klines": ArchiveDatasetSchema(name="klines", interval="1m", columns=_KLINE),
     # Daily bars only, for wide universes where 1m history would be tens of GB.
     "klines_1d": ArchiveDatasetSchema(name="klines", interval="1d", columns=_KLINE),
+    # Hourly bars, the base of the 4h/6h/12h bars of the trend timing test.
+    "klines_1h": ArchiveDatasetSchema(name="klines", interval="1h", columns=_KLINE),
     "mark": ArchiveDatasetSchema(name="markPriceKlines", interval="1m", columns=_KLINE),
     "premium": ArchiveDatasetSchema(
         name="premiumIndexKlines", interval="1m", columns=_KLINE

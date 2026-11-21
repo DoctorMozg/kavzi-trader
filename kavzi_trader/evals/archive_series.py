@@ -75,6 +75,19 @@ class ArchiveSeries:
         bars = self._store.load(ARCHIVE_DATASETS["klines_1d"], symbol)
         return bars.sort_values("open_time_ms", ignore_index=True)
 
+    def hourly_closes(self, symbol: str) -> pd.DataFrame:
+        """Binance's own 1h klines as ``open_time_ms`` and ``close``, sorted."""
+        dataset = ARCHIVE_DATASETS["klines_1h"]
+        bars = self._store.load(dataset, symbol, ["open_time_ms", "close"])
+        if bars.empty:
+            msg = (
+                f"no archived 1h klines for {symbol} under {self._root}; run "
+                f"`kavzitrader eval archive --dataset klines_1h --symbols {symbol} "
+                f"--root {self._root}`"
+            )
+            raise FileNotFoundError(msg)
+        return bars.sort_values("open_time_ms", ignore_index=True)
+
     def funding(self, symbol: str) -> pd.DataFrame:
         """Funding settlements as ``time_ms`` and the rate ``value``."""
         rows = self._store.load(ARCHIVE_DATASETS["funding"], symbol, [TIME, "rate"])

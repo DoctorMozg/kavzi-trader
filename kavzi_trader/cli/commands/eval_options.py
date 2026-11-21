@@ -20,6 +20,7 @@ TREND_TRADING_SYMBOLS = [
     "AVAXUSDT",
 ]
 TREND_BUFFER_BAND = 0.2
+FRESH_UNIVERSE_FILE = Path("evals/universes/fresh_2022.txt")
 
 
 def day_start_ms(day: datetime | None) -> int:
@@ -49,18 +50,20 @@ def _parse_symbols(
     return symbols
 
 
-def _read_symbols_file(
-    _ctx: click.Context, _param: click.Parameter, value: Path | None
-) -> list[str] | None:
+def read_symbols_file(path: Path) -> list[str]:
     """One symbol per line; blank lines and ``#`` comments are skipped."""
-    if value is None:
-        return None
-    lines = value.read_text(encoding="utf-8").splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     symbols = [s.split("#", 1)[0].strip().upper() for s in lines]
     symbols = [s for s in symbols if s]
     if not symbols:
-        raise click.BadParameter(f"{value} lists no symbols")
+        raise click.BadParameter(f"{path} lists no symbols")
     return symbols
+
+
+def _read_symbols_option(
+    _ctx: click.Context, _param: click.Parameter, value: Path | None
+) -> list[str] | None:
+    return None if value is None else read_symbols_file(value)
 
 
 SYMBOLS_OPTION = click.option(
@@ -74,7 +77,7 @@ SYMBOLS_FILE_OPTION = click.option(
     "--symbols-file",
     type=click.Path(path_type=Path, dir_okay=False, exists=True),
     default=None,
-    callback=_read_symbols_file,
+    callback=_read_symbols_option,
     help="File with one symbol per line; an alternative to --symbols.",
 )
 

@@ -20,7 +20,11 @@ class PairedSharpeTest:
         resamples: int = 5000,
         mean_block_days: int = 20,
         seed: int = BOOTSTRAP_SEED,
+        confidence: float = 0.90,
     ) -> None:
+        if not 0 < confidence < 1:
+            msg = f"confidence must be in (0, 1), got {confidence}"
+            raise ValueError(msg)
         if resamples < 1 or mean_block_days < 1:
             msg = (
                 f"need positive resamples and block, got {resamples}, {mean_block_days}"
@@ -29,6 +33,7 @@ class PairedSharpeTest:
         self._resamples = resamples
         self._block = mean_block_days
         self._seed = seed
+        self._confidence = confidence
 
     def compare(self, base: list[float], arm: list[float]) -> PairedSharpeSchema:
         base_arr, arm_arr = np.asarray(base, float), np.asarray(arm, float)
@@ -42,15 +47,18 @@ class PairedSharpeTest:
         diffs = self._sharpe(arm_arr[idx]) - self._sharpe(base_arr[idx])
         base_sharpe = float(self._sharpe(base_arr[None, :])[0])
         arm_sharpe = float(self._sharpe(arm_arr[None, :])[0])
+        # Rounded so 0.90 gives exactly the 5th and 95th percentiles.
+        tail = round(50 * (1.0 - self._confidence), 10)
         return PairedSharpeSchema(
             base_sharpe=base_sharpe,
             arm_sharpe=arm_sharpe,
             difference=arm_sharpe - base_sharpe,
-            lower=float(np.percentile(diffs, 5)),
-            upper=float(np.percentile(diffs, 95)),
+            lower=float(np.percentile(diffs, tail)),
+            upper=float(np.percentile(diffs, 100 - tail)),
             p_not_better=float((diffs <= 0).mean()),
             resamples=self._resamples,
             mean_block_days=self._block,
+            confidence=self._confidence,
         )
 
     def _indices(self, n_days: int) -> np.ndarray:

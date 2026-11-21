@@ -28,6 +28,7 @@ from kavzi_trader.cli.commands.replay import replay_command
 from kavzi_trader.cli.commands.signals import signals_command
 from kavzi_trader.cli.commands.trend import trend_command
 from kavzi_trader.cli.commands.trend_ablation import trend_ablation_command
+from kavzi_trader.cli.commands.trend_timing import trend_timing_command
 from kavzi_trader.cli.commands.trials import trials_command
 from kavzi_trader.cli.commands.vol_forecast import (
     dvol_download_command,
@@ -431,4 +432,5 @@ eval_group.add_command(vol_forecast_command)
 eval_group.add_command(dvol_download_command)
 eval_group.add_command(crash_replay_command)
 eval_group.add_command(combined_mid_halving_command)
+eval_group.add_command(trend_timing_command)
 eval_group.add_command(crowding_xs_command)

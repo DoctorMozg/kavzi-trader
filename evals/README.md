@@ -135,6 +135,10 @@ Seven tests from `.mz/research/2026_11_19_research_trade_algos.md`, each preregi
 - Halving under the mid exit: Sharpe +0.075, interval [-0.059, +0.208] (cost bar 0.05): KEEP. Under the low exit it cost 0.016, so the two interact mildly in the paper rule's favour.
 - The paper rule stays mid exit + halving. This is a check on the pair, not new evidence: it uses the 8 coins the rule was designed on.
 
+### Timing of the trend rule (prepared 2026-11-20, not scored)
+
+`eval trend-timing --universe fresh|trading` scores six arms against the daily paper rule, preregistered in `evals/preregistrations/2026_11_20_trend_timing.md`: the mid-exit rule on 12h, 6h and 4h bars (`A-*`), and the daily 20-day channel checked at every 12h, 6h and 4h close (`B-*`). It needs the `klines_1h` mirror (`eval archive --dataset klines_1h --symbols ...`, 1h bars from data.binance.vision; the prereg has the full command) and builds every bar length from it. Weights are held between checks and returns are summed to UTC days, so the paired Sharpe test and Bonferroni-adjusted interval compare day by day with the base (`timing_backtest.py`, `timing_verdict.py`). Each arm registers a trial.
+
 ### Closed lines
 
 Each of these failed a preregistered test. Don't loosen a threshold, swap a window or add a filter until one passes: that is fitting noise. A new idea gets a new preregistration with out-of-sample data.
